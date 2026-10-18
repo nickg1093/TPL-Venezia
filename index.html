@@ -770,7 +770,6 @@ function openTripPanel(v, back = null) {
   openTrip = { src: v.src, tripId: v.tripId, routeId: v.routeId, line: v.line, label: v.label, back, drawn: false };
   panel.hidden = false;
   
-  // Impostazione iniziale pulita con il badge circolare uniforme e la dicitura M/B o M/S
   const kInit = colorInfo(v.color);
   const badgeInit = `<div class="bus" style="display:inline-flex; vertical-align:middle; margin-right:8px; --c:${kInit.c}; --t:${kInit.ink}; --b:${kInit.ink}">${esc(v.line)}</div>`;
   const vehicleNameStr = vehName(v.src, v.label);
@@ -798,31 +797,24 @@ async function loadTrip() {
   }
 }
 function tripHtml(d) {
-  const k = colorInfo(d.trip.color), live = d.live;
+  const k = colorInfo(d.trip.color), live = d.live, n = d.stops.length;
   const vehicleIcon = getVehicleIcon(d.trip.src, d.trip.vehicle);
-  
   return `<div class="tl" style="--rc:${k.rail}">` + d.stops.map((s, i) => {
-    let statusLabel = s.stateText || (s.state === 'next' ? 'Prossima fermata' : 'da orario');
-    let delayBadge = '';
-    
+    let time, sub = '';
     if (live && s.delay != null) {
-      const isLate = s.delay >= 1;
-      const isEarly = s.delay <= -1;
-      delayBadge = `<span class="${isLate ? 'late' : (isEarly ? 'ok' : 'muted')}">` +
-        `${s.delay === 0 ? 'in orario' : (s.delay > 0 ? `+${s.delay} min` : `${s.delay} min`)}</span>`;
-    } else {
-      delayBadge = `<span class="muted">da orario</span>`;
-    }
+      time = `<strong class="${s.delay >= 1 ? 'late' : 'ok'}">${esc(s.exp)}</strong>`;
+      sub = s.delay === 0 ? 'in orario' : `prog. ${esc(s.sched)} (${s.delay > 0 ? '+' : ''}${s.delay} min)`;
+    } else { time = `<strong>${esc(s.sched)}</strong>`; sub = live ? 'da orario' : ''; }
+    
+    let meta = '';
+    if (s.skipped) meta = 'Fermata non servita';
+    else if (s.stateText) meta = s.stateText;
+    else if (s.state === 'next') meta = s.inMin <= 0 ? 'Prossima fermata · in arrivo' : `Prossima fermata · tra ${s.inMin} min`;
 
-    return `<div class="st ${s.state || ''}" data-i="${i}">` +
+    return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === 0 ? ' first' : ''}${i === n - 1 ? ' last' : ''}" data-i="${i}">` +
       `<div class="rail"><span class="dot"></span></div>` +
-      `<div class="sn">` +
-        `<div class="nm" style="font-size:0.9rem; font-weight:500;">${esc(statusLabel)}</div>` +
-      `</div>` +
-      `<div class="tm" style="text-align:right;">` +
-        `<div style="font-size:0.85rem;">${delayBadge}</div>` +
-      `</div>` +
-    `</div>`;
+      `<div class="sn"><div class="nm">${esc(s.name)}</div>${meta ? `<div class="muted">${meta}</div>` : ''}</div>` +
+      `<div class="tm">${time}<div class="muted">${sub}</div></div></div>`;
   }).join('') + `<div class="trav"></div><div class="veh">${vehicleIcon}</div></div>`;
 }
 
@@ -848,11 +840,9 @@ function renderTrip(first) {
   const lab = d.trip.vehicle || openTrip.label;
   const vehicleNameStr = vehName(d.trip.src, lab);
   
-  // Generazione del cerchio con diametro uniforme e inserimento del numero della linea all'interno
   const k = colorInfo(d.trip.color);
   const badgeHtml = `<div class="bus" style="display:inline-flex; vertical-align:middle; margin-right:8px; --c:${k.c}; --t:${k.ink}; --b:${k.ink}">${esc(d.trip.line)}</div>`;
   
-  // Sostituisce il testo "Linea" con il cerchio colorato e la dicitura M/B o M/S
   pname.innerHTML = `${badgeHtml} ${vehicleNameStr ? vehicleNameStr : ''}`;
   
   psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '') + [d.trip.headsign && '→ ' + esc(d.trip.headsign),
