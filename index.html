@@ -185,7 +185,7 @@
       <option value="60">60x</option>
     </select>
     <span id="tl-count" class="muted" style="font-size: 0.8rem;">0 in navigazione</span>
-    <input id="tl-range" type="range" min="0" max="86400" value="43200" step="30" title="Timeline">
+    <input id="tl-range" type="range" min="0" max="86400" value="43200" step="1" title="Timeline">
   </div>
 
   <aside id="panel" hidden aria-label="Transiti alla fermata">
@@ -197,7 +197,7 @@
   </aside>
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"></script>
 <script>
 const map = L.map('map', { preferCanvas: true }).setView([45.437, 12.335], 12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -234,53 +234,54 @@ function updateClock() {
     document.getElementById('clock-time').innerHTML = `${h}:${m}:<small>${s}</small>`;
     const diffSec = Math.floor((Date.now() - lastServerUpdate) / 1000);
     document.getElementById('updated-ago').textContent = diffSec <= 2 ? '· aggiornato ora' : `· aggiornato ${diffSec}s fa`;
-  } else {
-    const secs = +document.getElementById('tl-range').value;
-    document.getElementById('tl-time').textContent = formatSecs(secs);
   }
 }
 setInterval(updateClock, 1000);
 
-// Logica di aggiornamento della timeline pianificata
-function stepTimeline() {
+// Gestione fluida e indipendente della timeline programmata
+let lastLoadSecs = -1;
+function applyTimelineTime(secs, forceLoad = false) {
   const range = document.getElementById('tl-range');
-  const speed = +document.getElementById('tl-speed').value;
-  let val = +range.value + speed;
-  if (val > 86400) val = 0;
-  range.value = val;
-  document.getElementById('tl-time').textContent = formatSecs(val);
-  load();
-  if (openStop) loadDepartures();
+  range.value = secs;
+  document.getElementById('tl-time').textContent = formatSecs(secs);
+  
+  // Ricarica i dati se cambiano i secondi o se forzato
+  if (forceLoad || Math.abs(secs - lastLoadSecs) >= 5) {
+    lastLoadSecs = secs;
+    load();
+    if (openStop) loadDepartures();
+  }
 }
 
 document.getElementById('tl-play').addEventListener('click', () => {
   isPlaying = !isPlaying;
   document.getElementById('tl-play').textContent = isPlaying ? '⏸️' : '▶️';
   if (isPlaying) {
-    playInterval = setInterval(stepTimeline, 1000);
+    playInterval = setInterval(() => {
+      const range = document.getElementById('tl-range');
+      const speed = +document.getElementById('tl-speed').value;
+      let val = +range.value + speed;
+      if (val > 86400) val = 0;
+      applyTimelineTime(val);
+    }, 1000);
   } else {
     clearInterval(playInterval);
   }
 });
 
 document.getElementById('tl-now').addEventListener('click', () => {
+  if (isPlaying) { isPlaying = false; clearInterval(playInterval); document.getElementById('tl-play').textContent = '▶️'; }
   const curSecs = nowSecs();
-  document.getElementById('tl-range').value = curSecs;
   document.getElementById('tl-date').valueAsDate = new Date();
-  document.getElementById('tl-time').textContent = formatSecs(curSecs);
-  load();
-  if (openStop) loadDepartures();
+  applyTimelineTime(curSecs, true);
 });
 
 document.getElementById('tl-range').addEventListener('input', () => {
-  document.getElementById('tl-time').textContent = formatSecs(+document.getElementById('tl-range').value);
-  load();
-  if (openStop) loadDepartures();
+  applyTimelineTime(+document.getElementById('tl-range').value);
 });
 
 document.getElementById('tl-date').addEventListener('change', () => {
-  load();
-  if (openStop) loadDepartures();
+  applyTimelineTime(+document.getElementById('tl-range').value, true);
 });
 
 function getVehicleIcon(src, label) {
@@ -720,14 +721,15 @@ document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener(
   if (mode === 'sched') {
     document.getElementById('clock-bar').style.display = 'none';
     document.getElementById('timeline-bar').classList.add('active');
+    applyTimelineTime(+document.getElementById('tl-range').value, true);
   } else {
     document.getElementById('timeline-bar').classList.remove('active');
     document.getElementById('clock-bar').style.display = 'flex';
     if (isPlaying) { isPlaying = false; clearInterval(playInterval); document.getElementById('tl-play').textContent = '▶️'; }
+    load();
   }
   render(); renderDepartures();
   if (openTrip && openTrip.tripId) loadTrip();
-  load();
   if (openStop) loadDepartures();
 }));
 
