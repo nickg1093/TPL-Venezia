@@ -48,7 +48,6 @@
   .seg label:has(input:checked) { background:var(--accent); color:var(--bg); font-weight:600; }
   .seg label:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:-2px; }
   .late { color:var(--late); font-weight:600; } .ok { color:var(--ok); font-weight:600; }
-  /* pannello corsa (stile Google Transit) */
   #panel { padding:0; }
   .ph { position:sticky; top:0; z-index:2; background:var(--bg); padding:.8rem .8rem .5rem; margin:0; border-bottom:1px solid var(--line); }
   #plist { padding:.3rem .8rem .8rem; }
@@ -89,7 +88,6 @@
   <div class="seg" role="group" aria-label="Servizi">
     <label><input type="checkbox" name="src" value="nav" checked>⛴ Navigazione</label>
     <label><input type="checkbox" name="src" value="aut" checked>🚌 Automobilistico</label>
-    <label><input type="checkbox" name="src" value="ali" checked>🛥️ Alilaguna</label>
   </div>
   <button id="locate" type="button" title="Mostra la mia posizione">📍 Dove sono</button>
   <input id="filter" type="search" placeholder="Filtra linea (es. 1, 5.1)" aria-label="Filtra per linea">
@@ -117,29 +115,29 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 const statusEl = document.getElementById('status'), filterEl = document.getElementById('filter');
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let mode = 'live';                                  // 'live' | 'sched'
-const active = new Set(['nav', 'aut', 'ali']);             // servizi visibili
+let mode = 'live';
+const active = new Set(['nav', 'aut']);
 const srcParam = () => [...active].join(',');
-const ICON = { nav: '⛴', aut: '🚌', ali: '🛥️' };
+const ICON = { nav: '⛴', aut: '🚌' };
 const POLL_MS = 15000, MOVE_MS = 14000;
-// Come si chiama il mezzo: navigazione → M/B (1-99), M/S (100-300) oppure M/N + nome; automobilistico → BUS + numero
+
 function vehName(src, label) {
   const l = String(label ?? '').trim();
   if (!l) return '';
   if (src === 'aut') {
-    const tram = /^tram_(.+)$/i.exec(l);            // es. TRAM_12 → "TRAM 12" (senza underscore, senza "BUS")
+    const tram = /^tram_(.+)$/i.exec(l);
     return tram ? `TRAM ${tram[1]}` : `BUS ${l}`;
   }
   if (/^\d+$/.test(l)) {
     const n = +l;
     if (n >= 1 && n <= 99) return `M/B ${n}`;
     if (n >= 100 && n <= 300) return `M/S ${n}`;
-    return `mezzo ${n}`;                            // numero fuori dalle fasce previste
+    return `mezzo ${n}`;
   }
   return `M/N ${l}`;
 }
-let follow = false, followAfter = 0;               // la mappa segue il mezzo selezionato
-let selVeh = null;                                  // mezzo selezionato (pannello corsa aperto)
+let follow = false, followAfter = 0;
+let selVeh = null;
 
 function colorInfo(c) {
   const ok = /^#[0-9a-f]{6}$/i.test(c || ''), col = ok ? c : '#0a6c8c';
@@ -152,14 +150,12 @@ function busHtml(v) {
 }
 const tip = v => esc(`${ICON[v.src] || ''} ${v.line}${v.headsign ? ' → ' + v.headsign : ''}${v.label ? ' · ' + vehName(v.src, v.label) : ''}${v.estimated ? ' · da orario' : ''}`);
 
-// fermate e linee si (ri)caricano ogni volta che il server finisce di leggere un GTFS (campo "version")
 let staticVer = -1;
 function loadStatics() {
   fetch('/api/routes', { cache: 'no-store' }).then(r => r.json()).then(d => { if (d && !d.error) routesData = d; }).catch(() => {});
   fetch('/api/stops', { cache: 'no-store' }).then(r => r.json()).then(d => { if (Array.isArray(d)) { stops = d; drawStops(); } }).catch(() => {});
 }
 
-// ---- Tracciati delle linee (richiesti a richiesta)
 let routesData = {};
 const shapeCache = new Map(), lineLayer = L.layerGroup().addTo(map), tripLayer = L.layerGroup().addTo(map);
 let routeToken = 0;
@@ -186,8 +182,7 @@ function showFilteredRoutes() {
 }
 map.on('click', () => { if (!filterEl.value.trim() && !openTrip) clearRoutes(); });
 
-// ---- Mezzi, con movimento fluido tra un aggiornamento e l'altro
-const markers = new Map();                          // id -> { m, html, from, to, t0 }
+const markers = new Map();
 let vehicles = [];
 function render() {
   const q = filterEl.value.trim().toLowerCase();
@@ -212,7 +207,7 @@ function render() {
       e.m.setTooltipContent(tip(v));
       if (e.to[0] !== v.lat || e.to[1] !== v.lon) {
         const cur = e.m.getLatLng();
-        if (Math.abs(cur.lat - v.lat) + Math.abs(cur.lng - v.lon) > 0.02) { e.m.setLatLng([v.lat, v.lon]); e.from = null; }   // salto grande: niente animazione
+        if (Math.abs(cur.lat - v.lat) + Math.abs(cur.lng - v.lon) > 0.02) { e.m.setLatLng([v.lat, v.lon]); e.from = null; }
         else { e.from = [cur.lat, cur.lng]; e.t0 = performance.now(); }
         e.to = [v.lat, v.lon];
       }
@@ -248,7 +243,6 @@ async function load() {
     const wait = [...active].filter(s => d.ready && !d.ready[s]);
     statusEl.textContent = `${parts} ${m === 'sched' ? 'corse in servizio (da orario)' : 'mezzi'} · ${t}` +
       (wait.length ? ` · orari in caricamento: ${wait.join(', ')}` : '') +
-      (m === 'live' && active.has('ali') ? ' · 🛥️ da orario (nessun feed live)' : '') +
       (m === 'sched' && d.notes?.length ? ' · ' + d.notes.map(x => `${ICON[x.src]} ${x.mode}`).join(' · ') : '');
   } catch (e) {
     if (m !== mode) return;
@@ -256,23 +250,23 @@ async function load() {
   }
 }
 
-// ---- Pannello laterale: fermata (passaggi) oppure corsa (lista fermate)
 let stops = [], openStop = null, openStopName = '', openSrc = null, openTrip = null, panelTimer = null, lastDeps = null, lastTrip = null;
 const stopLayer = L.layerGroup().addTo(map), hintEl = document.getElementById('hint');
 const panel = document.getElementById('panel'), plist = document.getElementById('plist');
 const pname = document.getElementById('pname'), psub = document.getElementById('psub');
 const MIN_STOP_ZOOM = 14;
+
 function drawStops() {
   stopLayer.clearLayers();
   const near = map.getZoom() >= MIN_STOP_ZOOM;
   hintEl.hidden = near;
   if (!near) return;
   const b = map.getBounds().pad(0.1); let n = 0;
-  for (const [id, name, lat, lon, src, extra] of stops) {                  // extra: servizio che usa lo stesso pontile (Alilaguna)
-    if (!(active.has(src) || (extra && active.has(extra))) || !b.contains([lat, lon])) continue;
+  for (const [id, name, lat, lon, src] of stops) {
+    if (!active.has(src) || !b.contains([lat, lon])) continue;
     if (++n > 2500) break;
     L.circleMarker([lat, lon], { radius: 6, weight: 2, color: '#14232b', fillColor: id === openStop ? '#f5a623' : '#ffffff', fillOpacity: 1 })
-      .bindTooltip(`${ICON[src]}${extra ? ICON[extra] : ''} ${esc(name)}`).on('click', () => openPanel(id, name, src)).addTo(stopLayer);
+      .bindTooltip(`${ICON[src]} ${esc(name)}`).on('click', () => openPanel(id, name, src)).addTo(stopLayer);
   }
 }
 map.on('moveend', drawStops);
@@ -288,7 +282,6 @@ function resetTrip() {
   if (had && !filterEl.value.trim()) clearRoutes();
 }
 
-// -- fermata
 function openPanel(id, name, src) {
   resetTrip();
   openStop = id; openStopName = name; openSrc = src; lastDeps = null; panel.hidden = false;
@@ -340,7 +333,6 @@ function renderDepartures() {
   plist.innerHTML = html ? html + '<p class="muted">Tocca un passaggio per seguire il mezzo.</p>' : '<p class="muted">Nessun passaggio nei prossimi 90 minuti.</p>';
 }
 
-// -- corsa (clic su un mezzo)
 function openTripPanel(v, back = null) {
   setFollow(false);
   openStop = null; clearInterval(panelTimer); lastTrip = null; tripLayer.clearLayers();
@@ -351,7 +343,7 @@ function openTripPanel(v, back = null) {
   psub.textContent = v.headsign ? '→ ' + v.headsign : '';
   render(); drawStops();
   if (!v.tripId) {
-    plist.innerHTML = '<p class="muted">Per questo mezzo il feed non indica la corsa: non posso mostrare la lista delle fermate.</p>';
+    plist.innerHTML = '<p class="muted">Per questo mezzo il feed non indica la corsa.</p>';
     showRoutes([v.routeId]); return;
   }
   plist.innerHTML = '<p class="muted">Caricamento…</p>';
@@ -386,7 +378,7 @@ function tripHtml(d) {
       `<div class="tm">${time}<div class="muted">${sub}</div></div></div>`;
   }).join('') + `<div class="trav"></div><div class="veh">${ICON[d.trip.src]}</div></div>`;
 }
-// Il segnalino del mezzo sta tra due fermate in base a quanta strada ha fatto, e scorre piano fino alla nuova posizione
+
 let vehMemo = { trip: null, y: 0 };
 function placeVehicle(d, first) {
   const tl = plist.querySelector('.tl'), veh = tl && tl.querySelector('.veh'), trav = tl && tl.querySelector('.trav');
@@ -395,10 +387,10 @@ function placeVehicle(d, first) {
   if (!a) { veh.style.display = 'none'; trav.style.display = 'none'; return; }
   const ca = a.offsetTop + a.offsetHeight / 2, cb = b ? b.offsetTop + b.offsetHeight / 2 : ca;
   const y = ca + (cb - ca) * (b ? d.progress.frac : 0);
-  const from = !first && vehMemo.trip === openTrip.tripId ? vehMemo.y : y;     // riparte da dove era nell'aggiornamento precedente
+  const from = !first && vehMemo.trip === openTrip.tripId ? vehMemo.y : y;
   veh.style.transition = trav.style.transition = 'none';
   veh.style.top = from + 'px'; trav.style.height = from + 'px';
-  void veh.offsetHeight;                                                        // applica la posizione di partenza
+  void veh.offsetHeight;
   veh.style.transition = trav.style.transition = '';
   veh.style.top = y + 'px'; trav.style.height = y + 'px';
   vehMemo = { trip: openTrip.tripId, y };
@@ -409,13 +401,13 @@ function renderTrip(first) {
   const lab = d.trip.vehicle || openTrip.label;
   pname.textContent = `${ICON[d.trip.src]} Linea ${d.trip.line}${lab ? ' · ' + vehName(d.trip.src, lab) : ''}`;
   psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '') + [d.trip.headsign && '→ ' + esc(d.trip.headsign),
-    d.live ? dl || (d.stops.some(s => s.delay != null) ? 'ritardo non disponibile' : 'nessun dato live: orario programmato') : 'orario programmato (posizione stimata)'].filter(Boolean).join(' · ') +
+    d.live ? dl || (d.stops.some(s => s.delay != null) ? 'ritardo non disponibile' : 'nessun dato live') : 'orario programmato'].filter(Boolean).join(' · ') +
     (d.note ? `<br>${esc(d.note)}` : '');
   const footer = d.live && d.historyKnown ? '<p class="muted">Fermate già passate: ultima previsione registrata prima del passaggio.</p>' : '';
   plist.innerHTML = (d.cancelled ? '<div class="banner">Corsa soppressa</div>' : '') + tripHtml(d) + footer;
   placeVehicle(d, first);
   if (!first) return;
-  routeToken++; lineLayer.clearLayers(); tripLayer.clearLayers();                 // tracciato e fermate della corsa sulla mappa
+  routeToken++; lineLayer.clearLayers(); tripLayer.clearLayers();
   const k = colorInfo(d.trip.color);
   if (d.shape?.length) L.polyline(d.shape, { color: k.rail, weight: 5, opacity: .85 }).addTo(lineLayer);
   else showRoutes([openTrip.routeId]);
@@ -424,7 +416,7 @@ function renderTrip(first) {
   const focus = plist.querySelector('.veh'), row = focus && focus.style.display !== 'none' ? focus : plist.querySelector('.st.next');
   if (row) row.scrollIntoView({ block: 'center' });
 }
-plist.addEventListener('click', e => {                // clic su un passaggio: segui il mezzo; clic su una fermata della corsa: la mappa si sposta lì
+plist.addEventListener('click', e => {
   const dep = e.target.closest('.dep.go');
   if (dep && openStop) return followDeparture(dep.dataset.trip, dep.dataset.src);
   const row = e.target.closest('.st'); if (!row || !lastTrip) return;
@@ -432,35 +424,25 @@ plist.addEventListener('click', e => {                // clic su un passaggio: s
   if (s && s.lat != null) map.flyTo([s.lat, s.lon], Math.max(map.getZoom(), 15));
 });
 
-plist.addEventListener('keydown', e => {
-  if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('go') && openStop) { e.preventDefault(); followDeparture(e.target.dataset.trip, e.target.dataset.src); }
-});
-psub.addEventListener('click', e => {                   // "← nome fermata": torna ai passaggi della fermata
-  if (e.target.id !== 'pback') return;
-  e.preventDefault();
-  const b = openTrip && openTrip.back; if (b) openPanel(b.id, b.name, b.src);
-});
-
-// ---- Segui il mezzo (dal pannello di una fermata)
 const followEl = document.getElementById('follow');
 function setFollow(on) { follow = on; followEl.hidden = !on; }
-function followTarget(ll, z) {                          // il mezzo resta al centro della parte di mappa non coperta dal pannello
+function followTarget(ll, z) {
   const p = map.project(ll, z), narrow = window.innerWidth <= 640;
   return map.unproject(p.add(narrow ? [0, map.getSize().y * 0.22] : [181, 0]), z);
 }
 function followDeparture(tripId, depSrc) {
-  const ds = depSrc || openSrc;                           // il passaggio può essere di un altro servizio (Alilaguna al pontile ACTV)
+  const ds = depSrc || openSrc;
   const x = lastDeps && lastDeps.departures.find(d => d.tripId === tripId && (d.src || openSrc) === ds); if (!x) return;
   const src = ds, back = { id: openStop, name: openStopName, src: openSrc };
   const v = vehicles.find(c => c.src === src && c.tripId === tripId)
-    || { id: null, src, tripId, routeId: null, line: x.line, label: x.vehicle, headsign: x.headsign, color: x.color };   // nessun mezzo sulla mappa: solo la lista fermate
+    || { id: null, src, tripId, routeId: null, line: x.line, label: x.vehicle, headsign: x.headsign, color: x.color };
   openTripPanel(v, back);
   if (!v.id) return;
   const e = markers.get(v.id), ll = e ? e.m.getLatLng() : L.latLng(v.lat, v.lon), z = Math.max(map.getZoom(), 15);
   setFollow(true); followAfter = Date.now() + 1200;
   map.flyTo(followTarget(ll, z), z, { duration: 0.8 });
 }
-setInterval(() => {                                     // ogni secondo riporta il mezzo al centro (si ferma se trascini la mappa)
+setInterval(() => {
   if (!follow || !selVeh || Date.now() < followAfter) return;
   const e = markers.get(selVeh), c = vehicles.find(x => x.id === selVeh);
   const ll = e ? e.m.getLatLng() : c && L.latLng(c.lat, c.lon);
@@ -469,7 +451,6 @@ setInterval(() => {                                     // ogni secondo riporta 
 map.on('dragstart', () => setFollow(false));
 followEl.addEventListener('click', () => setFollow(false));
 
-// ---- La mia posizione
 let me = null;
 document.getElementById('locate').addEventListener('click', () => map.locate({ setView: true, maxZoom: 16 }));
 map.on('locationfound', e => {
@@ -478,7 +459,6 @@ map.on('locationfound', e => {
 });
 map.on('locationerror', e => { statusEl.className = 'err'; statusEl.textContent = 'Posizione non disponibile: ' + e.message; });
 
-// ---- Controlli: Live / Orario programmato, Navigazione / Automobilistico, filtro linea
 document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener('change', () => {
   mode = el.value; vehicles = []; render(); renderDepartures();
   if (openTrip && openTrip.tripId) loadTrip();
@@ -486,7 +466,7 @@ document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener(
 }));
 document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('change', () => {
   if (el.checked) active.add(el.value); else active.delete(el.value);
-  if (!active.size) { active.add(el.value); el.checked = true; }          // almeno un servizio resta attivo
+  if (!active.size) { active.add(el.value); el.checked = true; }
   vehicles = vehicles.filter(v => active.has(v.src));
   render(); drawStops(); showFilteredRoutes(); load();
 }));
