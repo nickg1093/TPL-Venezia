@@ -107,7 +107,6 @@
     display: inline-block; width: 9px; height: 9px; background-color: #2ecc71; border-radius: 50%; animation: blink-dot 1.5s infinite; margin-right: 4px;
   }
 
-  /* Stile comune barra inferiore stile miniVenice */
   .bottom-bar {
     position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); z-index: 900;
     background: #10191e; color: #e6eef1; border: 1px solid #2a3b44; border-radius: 28px; padding: 0.5rem 1rem;
@@ -117,7 +116,6 @@
   .time-display { font-weight: 700; font-size: 1.05rem; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 0.2rem; }
   .time-display small { font-size: 0.75rem; font-weight: 400; opacity: 0.8; }
 
-  /* Pulsante ORA in stile miniVenice */
   .ora-btn {
     background: #1e8449; color: #fff; border: none; border-radius: 6px; padding: 0.25rem 0.6rem;
     font-weight: 700; font-size: 0.8rem; cursor: pointer; text-transform: uppercase;
@@ -169,14 +167,12 @@
   <div id="hint" class="hint">Avvicina lo zoom per vedere le fermate</div>
   <button id="follow" class="hint" type="button" hidden>📍 Seguo il mezzo · tocca per smettere</button>
   
-  <!-- Barra inferiore Live -->
   <div id="clock-bar" class="bottom-bar">
     <span class="live-indicator" style="width: 7px; height: 7px;"></span>
     <div class="time-display" id="clock-time">00:00:<small>00</small></div>
     <span style="color: var(--muted);" id="updated-ago">· aggiornato ora</span>
   </div>
 
-  <!-- Barra inferiore Pianificato stile miniVenice -->
   <div id="timeline-bar" class="bottom-bar">
     <button id="tl-play" type="button" title="Play / Pausa">▶️</button>
     <div class="time-display" id="tl-time">12:00:00</div>
@@ -245,27 +241,28 @@ function updateClock() {
 }
 setInterval(updateClock, 1000);
 
-// Gestione Play / Pausa timeline
+// Logica di aggiornamento della timeline pianificata
+function stepTimeline() {
+  const range = document.getElementById('tl-range');
+  const speed = +document.getElementById('tl-speed').value;
+  let val = +range.value + speed;
+  if (val > 86400) val = 0;
+  range.value = val;
+  document.getElementById('tl-time').textContent = formatSecs(val);
+  load();
+  if (openStop) loadDepartures();
+}
+
 document.getElementById('tl-play').addEventListener('click', () => {
   isPlaying = !isPlaying;
   document.getElementById('tl-play').textContent = isPlaying ? '⏸️' : '▶️';
   if (isPlaying) {
-    const speed = +document.getElementById('tl-speed').value;
-    playInterval = setInterval(() => {
-      let r = document.getElementById('tl-range');
-      let val = +r.value + speed;
-      if (val > 86400) val = 0;
-      r.value = val;
-      document.getElementById('tl-time').textContent = formatSecs(val);
-      load();
-      if (openStop) loadDepartures();
-    }, 1000);
+    playInterval = setInterval(stepTimeline, 1000);
   } else {
     clearInterval(playInterval);
   }
 });
 
-// Pulsante ORA per tornare all'orario attuale in modalità pianificato
 document.getElementById('tl-now').addEventListener('click', () => {
   const curSecs = nowSecs();
   document.getElementById('tl-range').value = curSecs;
@@ -449,7 +446,6 @@ function render() {
   }
   for (const [id, e] of markers) if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
   
-  // Aggiorna contatore veicoli nella barra inferiore pianificato
   const navCount = shown.filter(v => v.src === 'nav').length;
   const autCount = shown.filter(v => v.src === 'aut').length;
   const countText = [...active].map(s => `${s === 'nav' ? navCount : autCount} in ${s === 'nav' ? 'navigazione' : 'servizio'}`).join(' · ');
