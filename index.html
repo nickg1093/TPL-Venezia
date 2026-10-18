@@ -120,10 +120,14 @@
   #panel { right: 16px; padding: 0; }
   
   .ph { position: sticky; top: 0; z-index: 2; background: var(--bg-glass-solid); padding: 1rem 1rem 0.75rem; margin: 0; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start; backdrop-filter: blur(12px); }
-  .ph-content { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; flex: 1; }
-  .ph-top { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
-  .ph-top strong { font-size: 1rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ph-status { font-size: 0.8rem; }
+  
+  /* Struttura a griglia pulita per le 3 righe dell'intestazione */
+  .ph-content { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 0.75rem; align-items: center; min-width: 0; flex: 1; }
+  .ph-badge-area { grid-row: span 2; display: flex; align-items: flex-start; }
+  .ph-top { grid-column: 2; font-size: 1rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ph-sub { grid-column: 2; }
+  .ph-status { grid-column: 1 / span 2; margin-top: 0.2rem; font-size: 0.8rem; }
+
   .muted { color: var(--muted); font-size: 0.75rem; }
   #plist { padding: 0.5rem 1rem 1rem; }
   
@@ -303,12 +307,10 @@
   <aside id="panel" class="side-panel" hidden aria-label="Transiti alla fermata">
     <div class="ph">
       <div class="ph-content">
-        <div class="ph-top">
-          <div id="pbadge"></div>
-          <strong id="pname"></strong>
-        </div>
-        <div id="psub" class="muted"></div>
-        <div id="pstatus" class="ph-status"></div>
+        <div class="ph-badge-area" id="pbadge"></div>
+        <div class="ph-top" id="pname"></div>
+        <div class="ph-sub muted" id="psub"></div>
+        <div class="ph-status" id="pstatus"></div>
       </div>
       <button id="pclose" type="button" aria-label="Chiudi" style="padding: 0.2rem 0.5rem; min-height: auto;">✕</button>
     </div>
@@ -841,10 +843,10 @@ function renderTrip(first) {
   const lab = d.trip.vehicle || openTrip.label;
   const vehicleNameStr = vehName(d.trip.src, lab);
   
-  // Capolinea di destinazione con freccia in alto
+  // Riga 1: Destinazione con freccia
   pname.textContent = d.trip.headsign ? `→ ${d.trip.headsign}` : `→ Linea ${d.trip.line}`;
   
-  // Provenienza/partenza in piccolo (seconda riga)
+  // Riga 2: Provenienza e orario di partenza
   const originStop = d.stops && d.stops.length > 0 ? d.stops[0] : null;
   const originName = originStop ? originStop.name : '';
   const originTime = originStop ? originStop.sched : '';
@@ -853,7 +855,7 @@ function renderTrip(first) {
   psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '') + 
     originSubText + (d.note ? `<br>${esc(d.note)}` : '');
 
-  // Terza riga: stato e nome mezzo, allineata tutta a sinistra
+  // Riga 3: Stato puntualità e mezzo (allineati a sinistra sotto il badge)
   if (pstatusEl) {
     pstatusEl.innerHTML = `${statusText} · ${vehicleNameStr}`;
   }
