@@ -43,7 +43,7 @@
   .bus.aut { border-radius:6px; }
   .bus.sched { border-style:dashed; opacity:.9; }
   .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
-  .seg label { padding:.35rem .7rem; cursor:pointer; font-size:.9rem; user-select:none; }
+  .seg label { padding:.35rem .7rem; cursor:pointer; font-size:1rem; user-select:none; display:flex; align-items:center; justify-content:center; }
   .seg input { position:absolute; opacity:0; pointer-events:none; }
   .seg label:has(input:checked) { background:var(--accent); color:var(--bg); font-weight:600; }
   .seg label:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:-2px; }
@@ -76,20 +76,28 @@
   .dep.go { cursor:pointer; border-radius:6px; }
   .dep.go:hover, .dep.go:focus-visible { background:color-mix(in srgb, var(--line) 35%, transparent); outline:none; }
   #pback { color:var(--accent); text-decoration:none; font-weight:600; }
+  
+  /* Animazione radar per il simbolo live */
+  @keyframes pulse-radar {
+    0% { transform: scale(0.95); opacity: 0.8; }
+    50% { transform: scale(1.15); opacity: 1; text-shadow: 0 0 8px var(--accent); }
+    100% { transform: scale(0.95); opacity: 0.8; }
+  }
+  .live-icon { display: inline-block; animation: pulse-radar 2s infinite ease-in-out; }
 </style>
 </head>
 <body>
 <header>
   <h1>ACTV</h1>
   <div class="seg" role="radiogroup" aria-label="Modalità">
-    <label><input type="radio" name="mode" value="live" checked>Live</label>
-    <label><input type="radio" name="mode" value="sched">Orario programmato</label>
+    <label title="Live"><input type="radio" name="mode" value="live" checked><span class="live-icon">📡</span></label>
+    <label title="Orario programmato"><input type="radio" name="mode" value="sched">🕒</label>
   </div>
   <div class="seg" role="group" aria-label="Servizi">
-    <label><input type="checkbox" name="src" value="nav" checked>⛴ Navigazione</label>
-    <label><input type="checkbox" name="src" value="aut" checked>🚌 Automobilistico</label>
+    <label title="Navigazione"><input type="checkbox" name="src" value="nav" checked>⛴️</label>
+    <label title="Automobilistico"><input type="checkbox" name="src" value="aut" checked>🚌</label>
   </div>
-  <button id="locate" type="button" title="Mostra la mia posizione">📍 Dove sono</button>
+  <button id="locate" type="button" title="Mostra la mia posizione">📍</button>
   <input id="filter" type="search" placeholder="Filtra linea (es. 1, 5.1)" aria-label="Filtra per linea">
   <span id="status" role="status">Caricamento…</span>
 </header>
@@ -118,15 +126,26 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
 let mode = 'live';
 const active = new Set(['nav', 'aut']);
 const srcParam = () => [...active].join(',');
-const ICON = { nav: '⛴', aut: '🚌' };
 const POLL_MS = 15000, MOVE_MS = 14000;
+
+// Funzione intelligente per determinare l'icona corretta in base al tipo e al nome del mezzo
+function getVehicleIcon(src, label) {
+  const l = String(label ?? '').trim();
+  if (src === 'aut') {
+    if (/^tram_/i.test(l) || /^tram/i.test(l)) return '🚊'; // Tram
+    return '🚌'; // Bus normale
+  }
+  // Navigazione
+  if (/^M\/N/i.test(l) || (l.length > 3 && !/^\d+$/.test(l))) return '🛳️'; // Nave / Barca grande per M/N o nomi estesi
+  return '⛴️'; // Vaporetto standard
+}
 
 function vehName(src, label) {
   const l = String(label ?? '').trim();
   if (!l) return '';
   if (src === 'aut') {
     const tram = /^tram_(.+)$/i.exec(l);
-    return tram ? `TRAM ${tram[1]}` : `BUS ${l}`;
+    return tram ? `TRAM ${tram[1]}` : (/^tram/i.test(l) ? l.toUpperCase() : `BUS ${l}`);
   }
   if (/^\d+$/.test(l)) {
     const n = +l;
@@ -136,6 +155,7 @@ function vehName(src, label) {
   }
   return `M/N ${l}`;
 }
+
 let follow = false, followAfter = 0;
 let selVeh = null;
 
@@ -148,7 +168,7 @@ function busHtml(v) {
   const k = colorInfo(v.color);
   return `<div class="bus${v.src === 'aut' ? ' aut' : ''}${mode === 'sched' || v.estimated ? ' sched' : ''}${v.id === selVeh ? ' sel' : ''}" style="--c:${k.c};--t:${k.ink};--b:${k.ink}">${esc(v.line)}</div>`;
 }
-const tip = v => esc(`${ICON[v.src] || ''} ${v.line}${v.headsign ? ' → ' + v.headsign : ''}${v.label ? ' · ' + vehName(v.src, v.label) : ''}${v.estimated ? ' · da orario' : ''}`);
+const tip = v => esc(`${getVehicleIcon(v.src, v.label)} ${v.line}${v.headsign ? ' → ' + v.headsign : ''}${v.label ? ' · ' + vehName(v.src, v.label) : ''}${v.estimated ? ' · da orario' : ''}`);
 
 let staticVer = -1;
 function loadStatics() {
@@ -239,11 +259,12 @@ async function load() {
     if (d.error) throw new Error(d.error);
     const t = new Date(d.updated).toLocaleTimeString('it-IT');
     statusEl.className = '';
-    const parts = [...active].map(s => `${ICON[s]} ${vehicles.filter(v => v.src === s).length}`).join(' · ');
+    const iconMap = { nav: '⛴️', aut: '🚌' };
+    const parts = [...active].map(s => `${iconMap[s]} ${vehicles.filter(v => v.src === s).length}`).join(' · ');
     const wait = [...active].filter(s => d.ready && !d.ready[s]);
     statusEl.textContent = `${parts} ${m === 'sched' ? 'corse in servizio (da orario)' : 'mezzi'} · ${t}` +
       (wait.length ? ` · orari in caricamento: ${wait.join(', ')}` : '') +
-      (m === 'sched' && d.notes?.length ? ' · ' + d.notes.map(x => `${ICON[x.src]} ${x.mode}`).join(' · ') : '');
+      (m === 'sched' && d.notes?.length ? ' · ' + d.notes.map(x => `${iconMap[x.src]} ${x.mode}`).join(' · ') : '');
   } catch (e) {
     if (m !== mode) return;
     statusEl.className = 'err'; statusEl.textContent = 'Dati non aggiornati: ' + e.message;
@@ -262,11 +283,12 @@ function drawStops() {
   hintEl.hidden = near;
   if (!near) return;
   const b = map.getBounds().pad(0.1); let n = 0;
+  const iconMap = { nav: '⛴️', aut: '🚌' };
   for (const [id, name, lat, lon, src] of stops) {
     if (!active.has(src) || !b.contains([lat, lon])) continue;
     if (++n > 2500) break;
     L.circleMarker([lat, lon], { radius: 6, weight: 2, color: '#14232b', fillColor: id === openStop ? '#f5a623' : '#ffffff', fillOpacity: 1 })
-      .bindTooltip(`${ICON[src]} ${esc(name)}`).on('click', () => openPanel(id, name, src)).addTo(stopLayer);
+      .bindTooltip(`${iconMap[src]} ${esc(name)}`).on('click', () => openPanel(id, name, src)).addTo(stopLayer);
   }
 }
 map.on('moveend', drawStops);
@@ -285,7 +307,8 @@ function resetTrip() {
 function openPanel(id, name, src) {
   resetTrip();
   openStop = id; openStopName = name; openSrc = src; lastDeps = null; panel.hidden = false;
-  pname.textContent = `${ICON[src]} ${name}`; psub.textContent = '';
+  const iconMap = { nav: '⛴️', aut: '🚌' };
+  pname.textContent = `${iconMap[src]} ${name}`; psub.textContent = '';
   plist.innerHTML = '<p class="muted">Caricamento…</p>';
   loadDepartures(); startPanelTimer(); drawStops();
 }
@@ -339,7 +362,7 @@ function openTripPanel(v, back = null) {
   selVeh = v.id;
   openTrip = { src: v.src, tripId: v.tripId, routeId: v.routeId, line: v.line, label: v.label, back, drawn: false };
   panel.hidden = false;
-  pname.textContent = `${ICON[v.src]} Linea ${v.line}${v.label ? ' · ' + vehName(v.src, v.label) : ''}`;
+  pname.textContent = `${getVehicleIcon(v.src, v.label)} Linea ${v.line}${v.label ? ' · ' + vehName(v.src, v.label) : ''}`;
   psub.textContent = v.headsign ? '→ ' + v.headsign : '';
   render(); drawStops();
   if (!v.tripId) {
@@ -363,6 +386,7 @@ async function loadTrip() {
 }
 function tripHtml(d) {
   const k = colorInfo(d.trip.color), live = d.live, n = d.stops.length;
+  const vehicleIcon = getVehicleIcon(d.trip.src, d.trip.vehicle);
   return `<div class="tl" style="--rc:${k.rail}">` + d.stops.map((s, i) => {
     let time, sub = '';
     if (live && s.delay != null) {
@@ -376,7 +400,7 @@ function tripHtml(d) {
       `<div class="rail"><span class="dot"></span></div>` +
       `<div class="sn"><div class="nm">${esc(s.name)}</div>${meta ? `<div class="muted">${meta}</div>` : ''}</div>` +
       `<div class="tm">${time}<div class="muted">${sub}</div></div></div>`;
-  }).join('') + `<div class="trav"></div><div class="veh">${ICON[d.trip.src]}</div></div>`;
+  }).join('') + `<div class="trav"></div><div class="veh">${vehicleIcon}</div></div>`;
 }
 
 let vehMemo = { trip: null, y: 0 };
@@ -399,7 +423,8 @@ function renderTrip(first) {
   const d = lastTrip; if (!d || !openTrip) return;
   const dl = d.delayNow == null ? '' : d.delayNow >= 1 ? `<span class="late">+${d.delayNow} min</span>` : '<span class="ok">in orario</span>';
   const lab = d.trip.vehicle || openTrip.label;
-  pname.textContent = `${ICON[d.trip.src]} Linea ${d.trip.line}${lab ? ' · ' + vehName(d.trip.src, lab) : ''}`;
+  const vehicleIcon = getVehicleIcon(d.trip.src, lab);
+  pname.textContent = `${vehicleIcon} Linea ${d.trip.line}${lab ? ' · ' + vehName(d.trip.src, lab) : ''}`;
   psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '') + [d.trip.headsign && '→ ' + esc(d.trip.headsign),
     d.live ? dl || (d.stops.some(s => s.delay != null) ? 'ritardo non disponibile' : 'nessun dato live') : 'orario programmato'].filter(Boolean).join(' · ') +
     (d.note ? `<br>${esc(d.note)}` : '');
