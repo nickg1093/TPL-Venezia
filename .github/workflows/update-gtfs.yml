@@ -2,28 +2,34 @@ name: Aggiorna GTFS ACTV
 
 on:
   schedule:
-    # Esegue l'azione ogni lunedì alle 3:00 di notte (puoi cambiarlo)
-    - cron: '0 3 * * 1'
-  workflow_dispatch: # Ti permette di avviarlo manualmente quando vuoi con un click
+    - cron: '0 3 * * 1'   # ogni lunedì alle 3:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   update-data:
     runs-on: ubuntu-latest
     steps:
-      - name: Scarica repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Scarica i file ZIP aggiornati da ACTV e Alilaguna
+      - name: Scarica i GTFS ACTV
         run: |
           mkdir -p data
-          curl -L "https://actv.avmspa.it/sites/default/files/attachments/opendata/navigazione/actv_nav.zip" -o "data/actv_nav.zip"
-          curl -L "https://actv.avmspa.it/sites/default/files/attachments/opendata/automobilistico/actv_aut.zip" -o "data/actv_aut.zip"
-          curl -L "https://alilaguna.it/attuale/alilaguna.zip" -o "data/alilaguna.zip"
+          for f in navigazione/actv_nav automobilistico/actv_aut; do
+            out="data/$(basename $f).zip"
+            curl -fL --retry 3 "https://actv.avmspa.it/sites/default/files/attachments/opendata/$f.zip" -o "$out.tmp"
+            head -c 2 "$out.tmp" | grep -q PK
+            mv "$out.tmp" "$out"
+          done
 
-      - name: Salva e carica le modifiche su GitHub se ci sono aggiornamenti
+      - name: Commit se ci sono modifiche
         run: |
-          git config --global user.name "Bot Aggiornamento GTFS"
-          git config --global user.email "bot@actions.github.io"
+          git config user.name "Bot Aggiornamento GTFS"
+          git config user.email "bot@actions.github.io"
           git add data/*.zip
-          git diff --quiet && git diff --cached --quiet || git commit -m "Aggiornamento automatico file GTFS ACTV"
-          git push
+          if ! git diff --cached --quiet; then
+            git commit -m "Aggiornamento automatico file GTFS ACTV"
+            git push
+          fi
