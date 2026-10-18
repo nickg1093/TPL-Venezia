@@ -260,10 +260,16 @@ http.createServer((req, res) => {
     if (url.pathname === '/api/stop') {
       const full = url.searchParams.get('id'), [i, sid] = splitId(full);
       if (!D[i]) return send(res, { error: 'fermata sconosciuta' }, 'no-store', 404);
+      
+      const secsParam = url.searchParams.get('secs');
+      const dateParam = url.searchParams.get('date');
+      const secs = secsParam !== null ? +secsParam : null;
+      const date = dateParam || null;
+
       const labels = new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
       return send(res, { stop: { id: full, name: D[i].stops[sid] || sid, src: i }, updated: Date.now(), liveUpdated: S[i].updated,
                          note: schedule.scheduleMode(D[i]) === 'ok' ? null : schedule.scheduleMode(D[i]),
-                         departures: schedule.departures(D[i], S[i].live, sid).map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) });
+                         departures: schedule.departures(D[i], S[i].live, sid, secs, date).map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) });
     }
     if (url.pathname === '/api/trip') {
       const full = url.searchParams.get('id'), [i, tid] = splitId(full);
