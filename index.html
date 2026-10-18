@@ -14,8 +14,22 @@
   html, body { height:100%; margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
   body { display:flex; flex-direction:column; }
   header { display:flex; flex-wrap:wrap; gap:.75rem 1rem; align-items:center; padding:.6rem .9rem; border-bottom:1px solid var(--line); background:var(--bg); z-index:1000; }
-  input[type="search"] { font:inherit; padding:.35rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); width:16rem; }
+  
+  /* Stile contenitore ricerca stile miniVenice */
+  .search-wrapper { position: relative; display: inline-block; }
+  input[type="search"] { font:inherit; padding:.35rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); width:18rem; }
   input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  
+  #search-results {
+    position: absolute; top: calc(100% + 4px); left: 0; width: 22rem; max-height: 22rem; overflow-y: auto;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    z-index: 1200; display: none;
+  }
+  #search-results.active { display: block; }
+  .search-category { font-size: 0.75rem; font-weight: 700; color: var(--muted); padding: 0.4rem 0.8rem; background: color-mix(in srgb, var(--line) 25%, transparent); text-transform: uppercase; letter-spacing: 0.5px; }
+  .search-item { padding: 0.5rem 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 0.6rem; font-size: 0.9rem; border-bottom: 1px solid color-mix(in srgb, var(--line) 20%, transparent); }
+  .search-item:hover { background: color-mix(in srgb, var(--line) 40%, transparent); }
+
   #status { margin-left:auto; font-size:.85rem; color:var(--muted); }
   #status.err { color:var(--late); }
   #wrap { position:relative; flex:1; min-height:0; }
@@ -115,9 +129,11 @@
   </div>
   <button id="locate" type="button" title="Mostra la mia posizione">📍</button>
   
-  <!-- Barra di ricerca unificata con supporto datalist fermate -->
-  <input id="filter" type="search" placeholder="🔍 Cerca linea (es. 1) o fermata..." list="stops-list" aria-label="Cerca fermata o linea">
-  <datalist id="stops-list"></datalist>
+  <!-- Contenitore di ricerca stile miniVenice -->
+  <div class="search-wrapper">
+    <input id="filter" type="search" placeholder="🔍 Cerca fermata o linea..." autocomplete="off" aria-label="Cerca fermata o linea">
+    <div id="search-results"></div>
+  </div>
 
   <span id="status" role="status">Caricamento…</span>
 </header>
@@ -163,6 +179,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 const statusEl = document.getElementById('status'), filterEl = document.getElementById('filter');
+const searchResultsEl = document.getElementById('search-results');
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let mode = 'live';
 const active = new Set(['nav', 'aut']);
@@ -273,16 +290,8 @@ function loadStatics() {
     if (Array.isArray(d)) { 
       stops = d; 
       drawStops(); 
-      populateStopsDatalist(); 
     } 
   }).catch(() => {});
-}
-
-function populateStopsDatalist() {
-  const dl = document.getElementById('stops-list');
-  if (!dl) return;
-  const uniqueNames = [...new Set(stops.map(s => s[1]))].sort();
-  dl.innerHTML = uniqueNames.map(name => `<option value="${esc(name)}">`).join('');
 }
 
 let routesData = {};
@@ -305,45 +314,82 @@ async function showRoutes(ids) {
 }
 function clearRoutes() { routeToken++; lineLayer.clearLayers(); }
 
-// Gestione intelligente della barra di ricerca:
-// - Se corrisponde a una fermata: sposta la mappa e apre il pannello transiti.
-// - Se corrisponde a una linea: filtra i mezzi visibili in mappa e ne traccia il percorso.
+// Gestione del menu a tendina stile miniVenice durante la digitazione
 filterEl.addEventListener('input', () => {
   const q = filterEl.value.trim().toLowerCase();
-  
-  // 1. Controlla se è una fermata
-  const foundStop = stops.find(s => s[1].toLowerCase() === q);
-  if (foundStop) {
-    map.flyTo([foundStop[2], foundStop[3]], 16);
-    openPanel(foundStop[0], foundStop[1], foundstop[4] = foundStop[4]);
-  } else {
-    // Altrimenti controlla se è una ricerca parziale di fermata per spostare la mappa
-    const partialStop = stops.find(s => s[1].toLowerCase().includes(q) && q.length >= 3);
-    if (partialStop && !vehicles.some(v => String(v.line).toLowerCase() === q)) {
-      map.flyTo([partialStop[2], partialStop[3]], 15);
+  if (!q) {
+    searchResultsEl.classList.remove('active');
+    searchResultsEl.innerHTML = '';
+    render();
+    clearRoutes();
+    return;
+  }
+
+  // Filtra fermate (massimo 8 risultati)
+  const matchedStops = stops.filter(s => s[1].toLowerCase().includes(q)).slice(0, 8);
+  // Filtra linee (massimo 8 risultati unici per nome linea)
+  const matchedRoutes = Object.entries(routesData).filter(([id, r]) => active.has(r.src) && (String(r.name).toLowerCase().includes(q) || String(r.headsign || '').toLowerCase().includes(q))).slice(0, 8);
+
+  let html = '';
+  if (matchedStops.length > 0) {
+    html += `<div class="search-category">Fermate</div>`;
+    for (const s of matchedStops) {
+      html += `<div class="search-item" data-type="stop" data-id="${esc(s[0])}" data-name="${esc(s[1])}" data-lat="${s[2]}" data-lon="${s[3]}" data-src="${esc(s[4])}">📍 ${esc(s[1])}</div>`;
     }
   }
-  
+  if (matchedRoutes.length > 0) {
+    html += `<div class="search-category">Linee</div>`;
+    for (const [id, r] of matchedRoutes) {
+      const badge = `<div class="bus" style="--c:${colorInfo(r.color).c};--t:${colorInfo(r.color).ink};--b:${colorInfo(r.color).ink}">${esc(r.name)}</div>`;
+      html += `<div class="search-item" data-type="route" data-id="${esc(id)}" data-name="${esc(r.name)}">${badge} <span>${esc(r.headsign || 'Linea ' + r.name)}</span></div>`;
+    }
+  }
+
+  if (html) {
+    searchResultsEl.innerHTML = html;
+    searchResultsEl.classList.add('active');
+  } else {
+    searchResultsEl.innerHTML = `<div class="search-item muted">Nessun risultato trovato</div>`;
+    searchResultsEl.classList.add('active');
+  }
   render();
-  showFilteredRoutes();
 });
 
-function showFilteredRoutes() {
-  const q = filterEl.value.trim().toLowerCase();
-  if (!q) return openTrip ? null : clearRoutes();
-  showRoutes(Object.keys(routesData).filter(id => active.has(routesData[id].src) && String(routesData[id].name).toLowerCase() === q));
-}
+// Gestione click sui risultati della ricerca stile miniVenice
+searchResultsEl.addEventListener('click', e => {
+  const item = e.target.closest('.search-item');
+  if (!item) return;
+  const type = item.dataset.type;
+  if (type === 'stop') {
+    const id = item.dataset.id, name = item.dataset.name, lat = +item.dataset.lat, lon = +item.dataset.lon, src = item.dataset.src;
+    filterEl.value = name;
+    searchResultsEl.classList.remove('active');
+    map.flyTo([lat, lon], 16);
+    openPanel(id, name, src);
+  } else if (type === 'route') {
+    const id = item.dataset.id, name = item.dataset.name;
+    filterEl.value = name;
+    searchResultsEl.classList.remove('active');
+    showRoutes([id]);
+    render();
+  }
+});
 
-map.on('click', () => { if (!filterEl.value.trim() && !openTrip) clearRoutes(); });
+// Chiudi i risultati se si clicca fuori
+document.addEventListener('click', e => {
+  if (!e.target.closest('.search-wrapper')) {
+    searchResultsEl.classList.remove('active');
+  }
+});
+
+map.on('click', () => { if (!openTrip && !filterEl.value) clearRoutes(); });
 
 const markers = new Map();
 let vehicles = [];
 function render() {
   const q = filterEl.value.trim().toLowerCase();
-  // Filtra i mezzi in base alla linea digitata (se il testo corrisponde o inizia per la linea)
-  const shown = vehicles.filter(v => active.has(v.src) &&
-    (!q || String(v.line).toLowerCase() === q || String(v.line).toLowerCase().startsWith(q)));
-  
+  // Filtra i mezzi in mappa se l'utente ha cercato una linea specifica
+  const shown = vehicles.filter(v => active.has(v.src) && (!q || String(v.line).toLowerCase() === q));
   const keep = new Set();
   for (const v of shown) {
     if (!Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
@@ -444,7 +490,7 @@ function resetTrip() {
   const had = !!openTrip;
   openTrip = null; lastTrip = null; tripLayer.clearLayers();
   if (selVeh) { selVeh = null; render(); }
-  if (had && !filterEl.value.trim()) clearRoutes();
+  if (had && !filterEl.value) clearRoutes();
 }
 
 function openPanel(id, name, src) {
@@ -457,7 +503,7 @@ function openPanel(id, name, src) {
 }
 function closePanel() {
   openStop = null; resetTrip(); panel.hidden = true; clearInterval(panelTimer);
-  if (!filterEl.value.trim()) clearRoutes();
+  if (!filterEl.value) clearRoutes();
   drawStops();
 }
 document.getElementById('pclose').addEventListener('click', closePanel);
@@ -654,10 +700,9 @@ document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('
   if (el.checked) active.add(el.value); else active.delete(el.value);
   if (!active.size) { active.add(el.value); el.checked = true; }
   vehicles = vehicles.filter(v => active.has(v.src));
-  render(); drawStops(); showFilteredRoutes(); load();
+  render(); drawStops(); load();
 }));
 
-filterEl.addEventListener('input', () => { showFilteredRoutes(); render(); });
 load(); setInterval(load, POLL_MS);
 updateClock();
 </script>
