@@ -293,4 +293,18 @@ http.createServer((req, res) => {
       const out = {};
       for (const i of IDS) for (const r in D[i].routes) out[`${i}:${r}`] = { ...D[i].routes[r], src: i };
       return send(res, out, 'no-store');
-    
+    }
+    if (url.pathname === '/api/shapes') {
+      const [i, rid] = splitId(url.searchParams.get('id'));
+      return send(res, { shapes: D[i]?.routeShapes[rid] || [] }, 'no-store');
+    }
+  } catch (e) {
+    return send(res, { error: e.message }, 'no-store', 500);
+  }
+  const page = [path.join(__dirname, 'public', 'index.html'), path.join(__dirname, 'index.html')].find(f => fs.existsSync(f));
+  fs.readFile(page || '', (err, html) => {
+    if (err) { res.writeHead(500); return res.end('index.html mancante'); }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(html);
+  });
+}).listen(PORT, () => console.log(`http://localhost:${PORT}`));
