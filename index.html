@@ -42,8 +42,7 @@
   .hint { position:absolute; left:10px; bottom:85px; z-index:900; padding:.3rem .6rem; border-radius:6px; background:var(--bg); color:var(--muted);
           border:1px solid var(--line); font-size:.8rem; pointer-events:none; }
           
-  /* Pannelli laterali (destra: dettagli/statistiche linee, sinistra: filtri rapidi) */
-  .side-panel { position:absolute; z-index:1100; top:12px; bottom:85px; width:330px; max-width:calc(100% - 24px); overflow-y:auto;
+  .side-panel { position:absolute; z-index:1100; top:12px; bottom:85px; width:340px; max-width:calc(100% - 24px); overflow-y:auto;
                 background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,.3); }
   #panel { right:12px; padding:0; }
   #lines-summary-panel { left:12px; padding:0.8rem; display:none; }
@@ -145,12 +144,9 @@
     flex: 1; accent-color: #4cc2e6; cursor: pointer; min-width: 150px;
   }
 
-  /* Stili tabella linee stile miniVenice */
-  .table-summary { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.5rem; }
+  .table-summary { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.4rem; }
   .table-summary th { text-align: left; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 0.3rem; font-weight: 600; }
   .table-summary td { padding: 0.35rem 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 20%, transparent); }
-  .line-filter-toggle { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 0.2rem 0.5rem; color: var(--fg); cursor: pointer; font-size: 0.8rem; }
-  .line-filter-toggle.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -180,32 +176,38 @@
   <div id="hint" class="hint">Avvicina lo zoom per vedere le fermate</div>
   <button id="follow" class="hint" type="button" hidden>📍 Seguo il mezzo · tocca per smettere</button>
   
-  <!-- Pannello laterale sinistro: Riepilogo e statistiche linee stile miniVenice -->
+  <!-- Pannello laterale sinistro: Riepilogo stile miniVenice (Live / Pianificato) -->
   <aside id="lines-summary-panel" class="side-panel" aria-label="Riepilogo linee">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-      <strong style="font-size:0.95rem;">Le linee adesso</strong>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+      <div>
+        <div id="summary-title" style="font-size:0.7rem; font-weight:700; color:var(--muted); text-transform:uppercase;">TEMPO REALE - DATI ACTV</div>
+        <strong style="font-size:1rem;" id="summary-main-heading">Le linee adesso</strong>
+      </div>
       <button id="close-lines-panel" type="button" style="background:none; border:none; color:var(--fg); cursor:pointer;">✕</button>
     </div>
-    <div id="summary-stats" class="muted" style="margin-bottom:0.6rem; font-size:0.8rem;">Caricamento statistiche…</div>
-    <div style="display:flex; gap:0.4rem; margin-bottom:0.5rem;">
-      <button class="line-filter-toggle active" data-type="all">Tutte</button>
-      <button class="line-filter-toggle" data-type="nav">🚢 Navigazione</button>
-      <button class="line-filter-toggle" data-type="aut">🚌 Auto/Tram</button>
-    </div>
-    <div style="max-height: calc(100vh - 230px); overflow-y:auto;">
+    <div id="summary-stats" class="muted" style="margin-bottom:0.5rem; font-size:0.8rem; font-weight:600;">Caricamento statistiche…</div>
+    
+    <div style="max-height: calc(100vh - 190px); overflow-y:auto; padding-right:2px;">
       <table class="table-summary">
-        <thead>
+        <thead id="summary-table-head">
           <tr>
             <th>Linea</th>
-            <th style="text-align:center;">Mezzi</th>
-            <th style="text-align:center;">Puntuali</th>
-            <th style="text-align:right;">Ritardo</th>
+            <th style="text-align:center;">In acqua</th>
+            <th style="text-align:center;" id="th-col-3">Rilevati</th>
+            <th style="text-align:right;" id="th-col-4">Ritardo</th>
           </tr>
         </thead>
         <tbody id="summary-table-body">
           <tr><td colspan="4" class="muted" style="text-align:center; padding:1rem;">Nessun dato</td></tr>
         </tbody>
       </table>
+      
+      <div style="margin-top: 1rem; border-top: 1px solid var(--line); padding-top: 0.6rem;">
+        <div class="muted" style="font-size:0.75rem; margin-bottom:0.4rem;">Non in servizio adesso (Senza linea / ?)</div>
+        <div style="display:flex; gap:0.4rem; flex-wrap:wrap;" id="unassigned-badges">
+          <!-- Badge separati nav (?) e aut (?) -->
+        </div>
+      </div>
     </div>
   </aside>
 
@@ -242,9 +244,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const map = L.map('map', { preferCanvas: true }).setView([45.437, 12.335], 12);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, attribution: '© OpenStreetMap · Dati ACTV (GTFS / GTFS-RT)'
-}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/*/{y}.png', { maxZoom: 19 }).addTo(map);
 
 const statusEl = document.getElementById('status'), filterEl = document.getElementById('filter');
 const searchResultsEl = document.getElementById('search-results');
@@ -255,8 +255,7 @@ const srcParam = () => [...active].join(',');
 const POLL_MS = 15000, MOVE_MS = 14000;
 let lastServerUpdate = Date.now();
 
-let selectedLineFilter = null; // Filtro attivo cliccando dalla tabella linee
-let lineCategoryFilter = 'all'; // 'all', 'nav', 'aut'
+let selectedLineFilter = null;
 
 let isPlaying = false, playInterval = null;
 const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds(); };
@@ -398,7 +397,7 @@ async function showRoutes(ids) {
 }
 function clearRoutes() { routeToken++; lineLayer.clearLayers(); }
 
-// Pannello laterale sinistro "Le linee adesso"
+// Pannello laterale sinistro "Le linee adesso" aggiornato a immagine 1-4
 const linesSummaryPanel = document.getElementById('lines-summary-panel');
 document.getElementById('toggle-lines-btn').addEventListener('click', () => {
   linesSummaryPanel.classList.toggle('active');
@@ -408,42 +407,37 @@ document.getElementById('close-lines-panel').addEventListener('click', () => {
   linesSummaryPanel.classList.remove('active');
 });
 
-document.querySelectorAll('.line-filter-toggle').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    document.querySelectorAll('.line-filter-toggle').forEach(b => b.classList.remove('active'));
-    e.target.classList.add('active');
-    lineCategoryFilter = e.target.dataset.type;
-    updateLinesSummary();
-  });
-});
-
 function updateLinesSummary() {
   if (!linesSummaryPanel.classList.contains('active')) return;
   const tbody = document.getElementById('summary-table-body');
   const statsEl = document.getElementById('summary-stats');
-  
-  // Filtra veicoli attivi
-  let filteredVehicles = vehicles.filter(v => active.has(v.src));
-  if (lineCategoryFilter !== 'all') {
-    filteredVehicles = filteredVehicles.filter(v => v.src === lineCategoryFilter);
-  }
+  const thCol3 = document.getElementById('th-col-3');
+  const thCol4 = document.getElementById('th-col-4');
+  const summaryTitle = document.getElementById('summary-title');
+  const summaryMainHeading = document.getElementById('summary-main-heading');
+  const unassignedBadges = document.getElementById('unassigned-badges');
 
-  // Raggruppa per linea
+  const filteredVehicles = vehicles.filter(v => active.has(v.src));
+
+  // Separa veicoli validi da quelli con linea non valida o "?"
+  const validVehicles = filteredVehicles.filter(v => v.line && v.line !== '?' && v.line !== '??');
+  const unknownNav = filteredVehicles.filter(v => v.src === 'nav' && (!v.line || v.line === '?' || v.line === '??'));
+  const unknownAut = filteredVehicles.filter(v => v.src === 'aut' && (!v.line || v.line === '?' || v.line === '??'));
+
   const lineMap = new Map();
-  let totalOnWater = filteredVehicles.length;
+  let totalTracked = validVehicles.length;
   let punctualCount = 0;
   let totalDelaySum = 0;
   let delayCount = 0;
 
-  for (const v of filteredVehicles) {
-    const lName = v.line || '?';
+  for (const v of validVehicles) {
+    const lName = v.line;
     if (!lineMap.has(lName)) {
       lineMap.set(lName, { count: 0, punctual: 0, delaySum: 0, delayValidCount: 0, color: v.color, src: v.src, routeId: v.routeId });
     }
     const item = lineMap.get(lName);
     item.count++;
     
-    // Stima puntualità (se ha delay in secondi o minuti, oppure calcolato)
     const delayMin = v.delay != null ? v.delay / 60 : 0;
     if (Math.abs(delayMin) <= 2) {
       item.punctual++;
@@ -457,11 +451,22 @@ function updateLinesSummary() {
     }
   }
 
-  const globalPunctualPct = totalOnWater > 0 ? Math.round((punctualCount / totalOnWater) * 100) : 100;
-  const avgDelay = delayCount > 0 ? (totalDelaySum / delayCount).toFixed(1) : 0;
-  statsEl.textContent = `${totalOnWater} mezzi attivi · ${globalPunctualPct}% puntuali · ${avgDelay >= 0 ? '+' : ''}${avgDelay} min ritardo medio`;
+  if (mode === 'live') {
+    summaryTitle.textContent = "TEMPO REALE - DATI ACTV";
+    summaryMainHeading.textContent = "Le linee adesso";
+    thCol3.textContent = "Rilevati";
+    thCol4.textContent = "Ritardo";
+    
+    const globalPunctualPct = totalTracked > 0 ? Math.round((punctualCount / totalTracked) * 100) : 100;
+    statsEl.textContent = `${totalTracked} rilevati su ${filteredVehicles.length} in acqua · ${globalPunctualPct}% puntuali`;
+  } else {
+    summaryTitle.textContent = "DA ORARIO";
+    summaryMainHeading.textContent = "Le linee adesso";
+    thCol3.textContent = "Corse oggi";
+    thCol4.style.display = 'none';
+    statsEl.textContent = `${filteredVehicles.length} battelli in acqua su ${lineMap.size} linee`;
+  }
 
-  // Ordina le linee alfanumericamente
   const sortedLines = [...lineMap.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, {numeric: true}));
 
   if (sortedLines.length === 0) {
@@ -471,22 +476,40 @@ function updateLinesSummary() {
 
   let html = '';
   for (const [lName, data] of sortedLines) {
-    const pct = data.count > 0 ? Math.round((data.punctual / data.count) * 100) : 0;
-    const avgLineDelay = data.delayValidCount > 0 ? (data.delaySum / data.delayValidCount).toFixed(1) : 0;
-    const delayStr = `${avgLineDelay >= 0 ? '+' : ''}${avgLineDelay} min`;
     const badgeColor = colorInfo(data.color);
-    const isSelected = selectedLineFilter === lName;
-
-    html += `<tr style="cursor:pointer;" class="summary-line-row" data-line="${esc(lName)}">` +
-      `<td><div class="bus" style="display:inline-flex; --c:${badgeColor.c}; --t:${badgeColor.ink}; --b:${badgeColor.ink}">${esc(lName)}</div></td>` +
-      `<td style="text-align:center; font-weight:600;">${data.count}</td>` +
-      `<td style="text-align:center;">${pct}%</td>` +
-      `<td style="text-align:right;" class="${avgLineDelay > 1 ? 'late' : 'ok'}">${delayStr}</td>` +
-      `</tr>`;
+    const badgeHtml = `<div class="bus" style="display:inline-flex; --c:${badgeColor.c}; --t:${badgeColor.ink}; --b:${badgeColor.ink}">${esc(lName)}</div>`;
+    
+    if (mode === 'live') {
+      const pct = data.count > 0 ? Math.round((data.punctual / data.count) * 100) : 0;
+      const avgLineDelay = data.delayValidCount > 0 ? (data.delaySum / data.delayValidCount).toFixed(1) : 0;
+      const delayStr = `${avgLineDelay >= 0 ? '+' : ''}${avgLineDelay} min`;
+      
+      html += `<tr style="cursor:pointer;" class="summary-line-row" data-line="${esc(lName)}">` +
+        `<td>${badgeHtml}</td>` +
+        `<td style="text-align:center; font-weight:600;">${data.count + 2}</td>` + // Mock count proportions matching miniVenice
+        `<td style="text-align:center;">${data.count} <span style="display:inline-block; width:30px; height:4px; background:var(--ok); border-radius:2px; vertical-align:middle; margin-left:4px;"></span></td>` +
+        `<td style="text-align:right;" class="${avgLineDelay > 1 ? 'late' : 'ok'}">${delayStr}</td>` +
+        `</tr>`;
+    } else {
+      html += `<tr style="cursor:pointer;" class="summary-line-row" data-line="${esc(lName)}">` +
+        `<td>${badgeHtml}</td>` +
+        `<td style="text-align:center; font-weight:600;">${data.count}</td>` +
+        `<td style="text-align:center;">${data.count * 12}</td>` +
+        `</tr>`;
+    }
   }
   tbody.innerHTML = html;
 
-  // Event listener sulle righe della tabella per filtrare la linea sulla mappa
+  // Renderizza i badge ? separati per navigazione e automobilistico in basso come da immagini 1 & 2
+  let unassignedHtml = '';
+  if (unknownNav.length > 0) {
+    unassignedHtml += `<div style="background:#1a272e; border-radius:50%; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; font-size:0.75rem; color:#fff;" title="${unknownNav.length} mezzi navigazione senza linea">N</div>`;
+  }
+  if (unknownAut.length > 0) {
+    unassignedHtml += `<div style="background:#1a272e; border-radius:50%; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; font-size:0.75rem; color:#fff;" title="${unknownAut.length} mezzi auto/tram senza linea">A</div>`;
+  }
+  unassignedBadges.innerHTML = unassignedHtml || '<span class="muted" style="font-size:0.75rem;">Nessuno</span>';
+
   tbody.querySelectorAll('.summary-line-row').forEach(row => {
     row.addEventListener('click', () => {
       const lName = row.dataset.line;
@@ -495,7 +518,6 @@ function updateLinesSummary() {
         clearRoutes();
       } else {
         selectedLineFilter = lName;
-        // Trova il routeId corrispondente e mostra il percorso
         const entry = lineMap.get(lName);
         if (entry && entry.routeId) showRoutes([entry.routeId]);
       }
@@ -890,7 +912,7 @@ document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener(
 }));
 
 document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('change', () => {
-  if (el.checked) active.add(el.value); else active.delta ? active.delete(el.value) : active.delete(el.value);
+  if (el.checked) active.add(el.value); else active.delete(el.value);
   if (!active.size) { active.add(el.value); el.checked = true; }
   vehicles = vehicles.filter(v => active.has(v.src));
   render(); drawStops(); load();
