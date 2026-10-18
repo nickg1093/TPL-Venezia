@@ -6,159 +6,243 @@
 <title>Venezia TPL live</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-  :root { --bg:#f7f9fa; --fg:#14232b; --muted:#5d6f78; --line:#cfd9de; --accent:#0a6c8c; --late:#c0392b; --ok:#1e8449; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#10191e; --fg:#e6eef1; --muted:#93a6af; --line:#2a3b44; --accent:#4cc2e6; --late:#ff7b6b; --ok:#5fd08a; }
+  :root {
+    --bg: #0d1317;
+    --fg: #f0f4f8;
+    --muted: #8a9ba8;
+    --line: rgba(255, 255, 255, 0.08);
+    --accent: #38bdf8;
+    --late: #f87171;
+    --ok: #4ade80;
+    --bg-glass: rgba(15, 23, 42, 0.75);
+    --bg-glass-solid: #0f172a;
   }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f8fafc;
+      --fg: #0f172a;
+      --muted: #64748b;
+      --line: rgba(0, 0, 0, 0.08);
+      --accent: #0284c7;
+      --late: #dc2626;
+      --ok: #16a34a;
+      --bg-glass: rgba(255, 255, 255, 0.85);
+      --bg-glass-solid: #ffffff;
+    }
+  }
+
   * { box-sizing: border-box; }
-  html, body { height:100%; margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
-  body { display:flex; flex-direction:column; }
+  html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); overflow: hidden; }
+  body { display: flex; flex-direction: column; }
   
-  header { display:flex; flex-wrap:wrap; gap:.75rem 1rem; align-items:center; padding:.6rem .9rem; border-bottom:1px solid var(--line); background:var(--bg); z-index:1000; }
+  /* Header Minimal Fluttuante */
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.75rem 1.25rem;
+    background: var(--bg-glass);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--line);
+    z-index: 1000;
+  }
   
-  .search-wrapper { position: relative; display: inline-block; }
-  input[type="search"] { font:inherit; padding:.35rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); width:18rem; }
-  input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .search-wrapper { position: relative; display: inline-block; flex: 1; min-width: 200px; max-width: 320px; }
+  input[type="search"] {
+    font: inherit;
+    padding: 0.45rem 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    background: color-mix(in srgb, var(--bg) 50%, transparent);
+    color: var(--fg);
+    width: 100%;
+    transition: all 0.2s ease;
+  }
+  input[type="search"]:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+  }
   
   #search-results {
-    position: absolute; top: calc(100% + 4px); left: 0; width: 22rem; max-height: 22rem; overflow-y: auto;
-    background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-    z-index: 1200; display: none;
+    position: absolute; top: calc(100% + 8px); left: 0; width: 100%; min-width: 260px; max-height: 20rem; overflow-y: auto;
+    background: var(--bg-glass-solid); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+    z-index: 1200; display: none; backdrop-filter: blur(16px);
   }
   #search-results.active { display: block; }
-  .search-category { font-size: 0.75rem; font-weight: 700; color: var(--muted); padding: 0.4rem 0.8rem; background: color-mix(in srgb, var(--line) 25%, transparent); text-transform: uppercase; letter-spacing: 0.5px; }
-  .search-item { padding: 0.5rem 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 0.6rem; font-size: 0.9rem; border-bottom: 1px solid color-mix(in srgb, var(--line) 20%, transparent); }
-  .search-item:hover { background: color-mix(in srgb, var(--line) 40%, transparent); }
+  .search-category { font-size: 0.7rem; font-weight: 700; color: var(--muted); padding: 0.5rem 1rem; background: var(--line); text-transform: uppercase; letter-spacing: 0.5px; }
+  .search-item { padding: 0.6rem 1rem; cursor: pointer; display: flex; align-items: center; gap: 0.7rem; font-size: 0.85rem; border-bottom: 1px solid var(--line); transition: background 0.15s; }
+  .search-item:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 
-  #status { margin-left:auto; font-size:.85rem; color:var(--muted); }
-  #status.err { color:var(--late); }
+  #status { margin-left: auto; font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+  #status.err { color: var(--late); }
   
-  #wrap { position:relative; flex:1; min-height:0; }
-  #map { position:absolute; inset:0; }
+  #wrap { position: relative; flex: 1; min-height: 0; }
+  #map { position: absolute; inset: 0; }
   
-  button { font:inherit; padding:.35rem .7rem; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); cursor:pointer; }
-  button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  button, .seg label {
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 0.4rem 0.8rem;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    background: color-mix(in srgb, var(--bg) 50%, transparent);
+    color: var(--fg);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    justify-content: center;
+    user-select: none;
+  }
+  button:hover, .seg label:hover {
+    background: color-mix(in srgb, var(--fg) 8%, transparent);
+    border-color: color-mix(in srgb, var(--fg) 15%, transparent);
+  }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   
-  .hint { position:absolute; left:10px; bottom:85px; z-index:900; padding:.3rem .6rem; border-radius:6px; background:var(--bg); color:var(--muted);
-          border:1px solid var(--line); font-size:.8rem; pointer-events:none; }
+  .hint {
+    position: absolute; left: 16px; bottom: 90px; z-index: 900; padding: 0.4rem 0.8rem; border-radius: 99px;
+    background: var(--bg-glass-solid); color: var(--muted); border: 1px solid var(--line); font-size: 0.75rem;
+    pointer-events: none; backdrop-filter: blur(12px); box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
           
-  .side-panel { position:absolute; z-index:1100; top:12px; bottom:85px; width:340px; max-width:calc(100% - 24px); overflow-y:auto;
-                background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,.3); }
-  #panel { right:12px; padding:0; }
-  
-  .ph { position:sticky; top:0; z-index:2; background:var(--bg); padding:.8rem .8rem .5rem; margin:0; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:.5rem; align-items:flex-start; }
-  .ph strong { font-size:1.05rem; }
-  .muted { color:var(--muted); font-size:.8rem; }
-  #plist { padding:.3rem .8rem .8rem; }
-  
-  .dep { display:grid; grid-template-columns:auto 1fr auto; gap:.6rem; align-items:center; padding:.5rem 0; border-bottom:1px solid var(--line); }
-  .dm { min-width:0; } .dh { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .dn { font-size:.8rem; color:var(--muted); } .dn.late, .dn.ok { font-weight:600; }
-  .dt { text-align:right; } .dt strong { font-size:1.1rem; font-variant-numeric:tabular-nums; }
-  .cx { opacity:.6; } .cx .dh { text-decoration:line-through; }
-  @media (max-width:640px) { .side-panel { top:auto; left:8px; right:8px; bottom:85px; width:auto; max-width:none; max-height:50%; } }
-
-  .bus { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-width:30px; border-radius:50%;
-         background:var(--c,#0a6c8c); color:var(--t,#fff); font:700 12px/1 system-ui,sans-serif; border:2px solid var(--b,#fff);
-         box-shadow:0 1px 3px rgba(0,0,0,.45); white-space:nowrap; cursor:pointer; }
-  .bus.aut { border-radius:6px; width:auto; min-width:28px; height:24px; padding:0 6px; }
-  .bus.sched { border-style:dashed; opacity:.9; }
-  .bus.sel { outline:3px solid #f5a623; outline-offset:1px; }
-
-  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
-  .seg label { padding:.35rem .7rem; cursor:pointer; font-size:1rem; user-select:none; display:flex; align-items:center; gap:0.4rem; justify-content:center; }
-  .seg input { position:absolute; opacity:0; pointer-events:none; }
-  .seg label:has(input:checked) { background:var(--accent); color:var(--bg); font-weight:600; }
-  .seg label:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:-2px; }
-  
-  .late { color:var(--late); font-weight:600; } .ok { color:var(--ok); font-weight:600; }
-
-  .st { display:grid; grid-template-columns:26px 1fr auto; gap:.5rem; min-height:46px; cursor:pointer; border-radius:6px; }
-  .st:hover { background:color-mix(in srgb, var(--line) 35%, transparent); }
-  .rail { position:relative; }
-  
-  .rail::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:4px; margin-left:-2px; background:var(--line); }
-  .st.passed .rail::before, .st.passed-line .rail::before { background:var(--rc); }
-  .st.first .rail::before { top: 23px; bottom: 0; } 
-  .st.last .rail::before { top: 0; bottom: calc(100% - 23px); }
-
-  .dot { position:absolute; left:50%; top:23px; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; background:var(--bg);
-         border:3px solid var(--rc); display:flex; align-items:center; justify-content:center; font-size:.7rem; z-index:2; }
-  .st.passed .dot { border-color:var(--rc); background:var(--rc); color: var(--rc) === '#ffffff' || var(--rc) === '#fff' ? #14232b : #fff; font-size:9px; font-weight:bold; }
-  
-  @keyframes blink-dot-next {
-    0% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--rc) 70%, transparent); }
-    50% { transform: scale(1.3); opacity: 0.6; box-shadow: 0 0 0 6px color-mix(in srgb, var(--rc) 0%, transparent); }
-    100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--rc) 70%, transparent); }
+  /* Pannello laterale moderno in stile Sheet/Drawer */
+  .side-panel {
+    position: absolute; z-index: 1100; top: 16px; bottom: 90px; width: 380px; max-width: calc(100% - 32px); overflow-y: auto;
+    background: var(--bg-glass-solid); color: var(--fg); border: 1px solid var(--line); border-radius: 20px;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.3); backdrop-filter: blur(20px);
   }
-  .st.next .dot { box-shadow: 0 0 0 4px color-mix(in srgb, var(--rc) 30%, transparent); animation: blink-dot-next 1.2s infinite ease-in-out; }
+  #panel { right: 16px; padding: 0; }
   
-  .sn { padding:.5rem 0; min-width:0; } .nm { font-weight:600; }
-  .st.next .nm { font-size:1.02rem; }
-  .st.passed .nm, .st.passed .tm, .st.passed .muted { opacity:0.4; }
+  .ph { position: sticky; top: 0; z-index: 2; background: var(--bg-glass-solid); padding: 1rem 1rem 0.75rem; margin: 0; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start; backdrop-filter: blur(12px); }
+  .ph strong { font-size: 1rem; font-weight: 600; }
+  .muted { color: var(--muted); font-size: 0.75rem; }
+  #plist { padding: 0.5rem 1rem 1rem; }
   
-  .tm { text-align:right; padding:.5rem 0; } .tm strong { font-variant-numeric:tabular-nums; }
-  .banner { margin:.4rem 0; padding:.4rem .6rem; border-radius:6px; border:1px solid var(--late); color:var(--late); font-weight:600; }
-  .tl { position:relative; z-index:0; padding-top:.2rem; }
-  .trav { position:absolute; left:11px; top:23px; width:4px; height:0; background:var(--rc); z-index:1; transition:height 14s linear; }
-  .veh { position:absolute; left:0; top:23px; width:26px; height:26px; margin-top:-13px; border-radius:50%; background:var(--rc);
-         border:3px solid var(--bg); box-shadow:0 1px 4px rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center;
-         font-size:.95rem; z-index:3; transition:top 14s linear; }
+  .dep { display: grid; grid-template-columns: auto 1fr auto; gap: 0.75rem; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+  .dm { min-width: 0; }
+  .dh { font-weight: 600; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dn { font-size: 0.75rem; color: var(--muted); }
+  .dn.late, .dn.ok { font-weight: 600; }
+  .dt { text-align: right; }
+  .dt strong { font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+  .cx { opacity: 0.5; }
+  .cx .dh { text-decoration: line-through; }
+
+  /* Marker dei mezzi minimal */
+  .bus {
+    display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; min-width: 32px; border-radius: 50%;
+    background: var(--c, #0a6c8c); color: var(--t, #fff); font: 700 11px/1 system-ui, sans-serif; border: 2px solid var(--b, #fff);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3); white-space: nowrap; cursor: pointer; transition: transform 0.2s;
+  }
+  .bus:hover { transform: scale(1.1); }
+  .bus.aut { border-radius: 8px; width: auto; min-width: 30px; height: 24px; padding: 0 6px; }
+  .bus.sched { border-style: dashed; opacity: 0.85; }
+  .bus.sel { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; overflow: hidden; background: color-mix(in srgb, var(--bg) 30%, transparent); }
+  .seg label { border: none; border-radius: 0; background: transparent; padding: 0.35rem 0.75rem; }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg label:has(input:checked) { background: var(--accent); color: var(--bg); font-weight: 600; }
+  
+  .late { color: var(--late); font-weight: 600; }
+  .ok { color: var(--ok); font-weight: 600; }
+
+  .st { display: grid; grid-template-columns: 24px 1fr auto; gap: 0.6rem; min-height: 42px; cursor: pointer; border-radius: 8px; font-size: 0.85rem; }
+  .st:hover { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+  .rail { position: relative; }
+  
+  .rail::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; background: var(--line); }
+  .st.passed .rail::before, .st.passed-line .rail::before { background: var(--rc); }
+  .st.first .rail::before { top: 21px; bottom: 0; } 
+  .st.last .rail::before { top: 0; bottom: calc(100% - 21px); }
+
+  .dot { position: absolute; left: 50%; top: 21px; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--bg); border: 2.5px solid var(--rc); z-index: 2; }
+  .st.passed .dot { border-color: var(--rc); background: var(--rc); }
+  
+  @keyframes pulse-dot {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 color-mix(in srgb, var(--rc) 70%, transparent); }
+    70% { transform: scale(1.2); box-shadow: 0 0 0 6px color-mix(in srgb, var(--rc) 0%, transparent); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 color-mix(in srgb, var(--rc) 70%, transparent); }
+  }
+  .st.next .dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--rc) 30%, transparent); animation: pulse-dot 1.5s infinite ease-in-out; }
+  
+  .sn { padding: 0.4rem 0; min-width: 0; }
+  .nm { font-weight: 500; }
+  .st.next .nm { font-weight: 600; color: var(--accent); }
+  .st.passed .nm, .st.passed .tm, .st.passed .muted { opacity: 0.35; }
+  
+  .tm { text-align: right; padding: 0.4rem 0; }
+  .tm strong { font-variant-numeric: tabular-nums; font-size: 0.85rem; }
+  .banner { margin: 0.4rem 0; padding: 0.5rem; border-radius: 8px; border: 1px solid var(--late); color: var(--late); font-weight: 600; font-size: 0.8rem; background: color-mix(in srgb, var(--late) 10%, transparent); }
+  .tl { position: relative; z-index: 0; padding-top: 0.2rem; }
+  .trav { position: absolute; left: 10.5px; top: 21px; width: 3px; height: 0; background: var(--rc); z-index: 1; transition: height 14s linear; }
+  .veh { position: absolute; left: -2px; top: 21px; width: 24px; height: 24px; margin-top: -12px; border-radius: 50%; background: var(--rc); border: 2px solid var(--bg); box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; z-index: 3; transition: top 14s linear; }
          
-  #follow { pointer-events:auto; bottom:85px; cursor:pointer; font:inherit; font-size:.8rem; color:var(--fg); }
-  .dep.go { cursor:pointer; border-radius:6px; }
-  .dep.go:hover, .dep.go:focus-visible { background:color-mix(in srgb, var(--line) 35%, transparent); outline:none; }
-  #pback { color:var(--accent); text-decoration:none; font-weight:600; }
+  #follow { pointer-events: auto; bottom: 85px; cursor: pointer; font-size: 0.75rem; background: var(--bg-glass-solid); backdrop-filter: blur(12px); }
+  .dep.go { cursor: pointer; border-radius: 8px; padding: 0.4rem 0.5rem; transition: background 0.15s; }
+  .dep.go:hover { background: color-mix(in srgb, var(--fg) 5%, transparent); }
+  #pback { color: var(--accent); text-decoration: none; font-weight: 600; }
   
-  @keyframes blink-dot {
-    0% { transform: scale(0.95); opacity: 0.4; box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); }
-    70% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 0 6px rgba(46, 204, 113, 0); }
-    100% { transform: scale(0.95); opacity: 0.4; box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
+  @keyframes blink-live {
+    0% { opacity: 0.3; transform: scale(0.9); }
+    50% { opacity: 1; transform: scale(1.1); }
+    100% { opacity: 0.3; transform: scale(0.9); }
   }
-  .live-indicator {
-    display: inline-block; width: 9px; height: 9px; background-color: #2ecc71; border-radius: 50%; animation: blink-dot 1.5s infinite; margin-right: 4px;
-  }
+  .live-indicator { display: inline-block; width: 7px; height: 7px; background-color: var(--ok); border-radius: 50%; animation: blink-live 2s infinite ease-in-out; margin-right: 4px; }
 
+  /* Barre Inferiori Fluttuanti (Floating Docks) in stile Minimal */
   .bottom-bar {
-    position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); z-index: 900;
-    background: #10191e; color: #e6eef1; border: 1px solid #2a3b44; border-radius: 28px; padding: 0.5rem 1rem;
-    display: flex; align-items: center; gap: 0.8rem; box-shadow: 0 6px 24px rgba(0,0,0,0.4); font-size: 0.85rem;
-    white-space: nowrap; max-width: 95vw;
+    position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 900;
+    background: var(--bg-glass); color: var(--fg); border: 1px solid var(--line); border-radius: 99px;
+    padding: 0.5rem 1.25rem; display: flex; align-items: center; gap: 0.8rem;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25); font-size: 0.8rem; white-space: nowrap; max-width: calc(100vw - 32px);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   }
-  .time-display { font-weight: 700; font-size: 1.05rem; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 0.2rem; }
-  .time-display small { font-size: 0.75rem; font-weight: 400; opacity: 0.8; }
+  .time-display { font-weight: 600; font-size: 0.95rem; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 0.2rem; }
+  .time-display small { font-size: 0.7rem; font-weight: 400; opacity: 0.7; }
 
   .ora-btn {
-    background: #1e8449; color: #fff; border: none; border-radius: 6px; padding: 0.25rem 0.6rem;
-    font-weight: 700; font-size: 0.8rem; cursor: pointer; text-transform: uppercase;
+    background: var(--ok); color: #000; border: none; border-radius: 99px; padding: 0.25rem 0.6rem;
+    font-weight: 700; font-size: 0.7rem; cursor: pointer; text-transform: uppercase;
   }
-  .ora-btn:hover { background: #239b56; }
+  .ora-btn:hover { filter: brightness(1.1); }
 
   #timeline-bar { display: none; }
   #timeline-bar.active { display: flex; }
   
   #tl-play {
-    background: #2a3b44; border: none; border-radius: 50%; width: 32px; height: 32px;
-    display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; font-size: 0.9rem; padding: 0;
+    background: color-mix(in srgb, var(--fg) 10%); border: none; border-radius: 50%; width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center; color: var(--fg); cursor: pointer; font-size: 0.8rem; padding: 0;
   }
-  #tl-play:hover { background: #3a4b54; }
+  #tl-play:hover { background: color-mix(in srgb, var(--fg) 20%); }
 
-  #tl-date {
-    background: #1a272e; color: #e6eef1; border: 1px solid #2a3b44; border-radius: 8px; padding: 0.3rem 0.5rem; font: inherit; font-size: 0.85rem; cursor: pointer;
+  #tl-date, #tl-speed {
+    background: color-mix(in srgb, var(--bg) 50%); color: var(--fg); border: 1px solid var(--line); border-radius: 99px; padding: 0.25rem 0.5rem; font: inherit; font-size: 0.75rem; cursor: pointer;
   }
-  #tl-speed {
-    background: #1a272e; color: #e6eef1; border: 1px solid #2a3b44; border-radius: 8px; padding: 0.3rem 0.5rem; font: inherit; font-size: 0.85rem; cursor: pointer;
-  }
-  #tl-range {
-    flex: 1; accent-color: #4cc2e6; cursor: pointer; min-width: 150px;
+  #tl-range { flex: 1; accent-color: var(--accent); cursor: pointer; min-width: 120px; }
+
+  /* Media Queries per la massima Responsività su Mobile */
+  @media (max-width: 640px) {
+    header { padding: 0.5rem; gap: 0.5rem; justify-content: space-between; }
+    .search-wrapper { max-width: none; order: 3; width: 100%; flex-basis: 100%; }
+    #status { display: none; }
+    .bottom-bar { bottom: 12px; left: 12px; right: 12px; transform: none; border-radius: 16px; justify-content: space-between; flex-wrap: wrap; padding: 0.6rem 0.8rem; }
+    .side-panel { top: auto; left: 8px; right: 8px; bottom: 80px; width: auto; max-width: none; max-height: 60vh; border-radius: 20px 20px 0 0; }
+    .hint { bottom: 80px; left: 12px; }
   }
 </style>
 </head>
 <body>
 <header>
   <div class="seg" role="radiogroup" aria-label="Modalità">
-    <label title="Live"><input type="radio" name="mode" value="live" checked><span class="live-indicator"></span>📡 Live</label>
-    <label title="Orario programmato"><input type="radio" name="mode" value="sched">🕒 Pianificato</label>
+    <label title="Live"><input type="radio" name="mode" value="live" checked><span class="live-indicator"></span>Live</label>
+    <label title="Orario programmato"><input type="radio" name="mode" value="sched">Pianificato</label>
   </div>
   <div class="seg" role="group" aria-label="Servizi">
     <label title="Navigazione"><input type="checkbox" name="src" value="nav" checked>🚢</label>
@@ -167,7 +251,7 @@
   <button id="locate" type="button" title="Mostra la mia posizione">📍</button>
 
   <div class="search-wrapper">
-    <input id="filter" type="search" placeholder="🔍 Cerca fermata o linea..." autocomplete="off" aria-label="Cerca fermata o linea">
+    <input id="filter" type="search" placeholder="Cerca fermata o linea..." autocomplete="off" aria-label="Cerca fermata o linea">
     <div id="search-results"></div>
   </div>
 
@@ -176,17 +260,17 @@
 
 <div id="wrap">
   <div id="map"></div>
-  <div id="hint" class="hint">Avvicina lo zoom per vedere le fermate</div>
-  <button id="follow" class="hint" type="button" hidden>📍 Seguo il mezzo · tocca per smettere</button>
+  <div id="hint" class="hint">Avvicina lo zoom per le fermate</div>
+  <button id="follow" class="hint" type="button" hidden>📍 Seguo il mezzo</button>
 
   <div id="clock-bar" class="bottom-bar">
-    <span class="live-indicator" style="width: 7px; height: 7px;"></span>
+    <span class="live-indicator" style="width: 6px; height: 6px;"></span>
     <div class="time-display" id="clock-time">00:00:<small>00</small></div>
     <span style="color: var(--muted);" id="updated-ago">· aggiornato ora</span>
   </div>
 
   <div id="timeline-bar" class="bottom-bar">
-    <button id="tl-play" type="button" title="Play / Pausa">▶️</button>
+    <button id="tl-play" type="button" title="Play / Pausa">▶</button>
     <div class="time-display" id="tl-time">12:00:00</div>
     <button id="tl-now" type="button" class="ora-btn">ORA</button>
     <input id="tl-date" type="date" title="Seleziona data">
@@ -196,14 +280,14 @@
       <option value="15">15x</option>
       <option value="60">60x</option>
     </select>
-    <span id="tl-count" class="muted" style="font-size: 0.8rem;">0 in navigazione</span>
+    <span id="tl-count" class="muted" style="font-size: 0.75rem;">0 in navigazione</span>
     <input id="tl-range" type="range" min="0" max="86400" value="43200" step="1" title="Timeline">
   </div>
 
   <aside id="panel" class="side-panel" hidden aria-label="Transiti alla fermata">
     <div class="ph">
       <div><strong id="pname"></strong><div id="psub" class="muted"></div></div>
-      <button id="pclose" type="button" aria-label="Chiudi">✕</button>
+      <button id="pclose" type="button" aria-label="Chiudi" style="padding: 0.2rem 0.5rem; min-height: auto;">✕</button>
     </div>
     <div id="plist"></div>
   </aside>
@@ -211,9 +295,11 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const map = L.map('map', { preferCanvas: true }).setView([45.437, 12.335], 12);
+const map = L.map('map', { preferCanvas: true, zoomControl: false }).setView([45.437, 12.335], 12);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, attribution: '© OpenStreetMap · Dati ACTV (GTFS / GTFS-RT)'
+  maxZoom: 19, attribution: '© OpenStreetMap · ACTV (GTFS-RT)'
 }).addTo(map);
 
 const statusEl = document.getElementById('status'), filterEl = document.getElementById('filter');
@@ -226,7 +312,6 @@ const POLL_MS = 15000, MOVE_MS = 14000;
 let lastServerUpdate = Date.now();
 
 let selectedLineFilter = null;
-
 let isPlaying = false, playInterval = null;
 const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds(); };
 const formatSecs = s => {
@@ -247,7 +332,7 @@ function updateClock() {
     const s = String(now.getSeconds()).padStart(2, '0');
     document.getElementById('clock-time').innerHTML = `${h}:${m}:<small>${s}</small>`;
     const diffSec = Math.floor((Date.now() - lastServerUpdate) / 1000);
-    document.getElementById('updated-ago').textContent = diffSec <= 2 ? '· aggiornato ora' : `· aggiornato ${diffSec}s fa`;
+    document.getElementById('updated-ago').textContent = diffSec <= 2 ? '· aggiornato ora' : `· ${diffSec}s fa`;
   }
 }
 setInterval(updateClock, 1000);
@@ -266,7 +351,7 @@ function applyTimelineTime(secs, forceLoad = false) {
 
 document.getElementById('tl-play').addEventListener('click', () => {
   isPlaying = !isPlaying;
-  document.getElementById('tl-play').textContent = isPlaying ? '⏸️' : '▶️';
+  document.getElementById('tl-play').textContent = isPlaying ? '⏸' : '▶';
   if (isPlaying) {
     playInterval = setInterval(() => {
       const range = document.getElementById('tl-range');
@@ -281,7 +366,7 @@ document.getElementById('tl-play').addEventListener('click', () => {
 });
 
 document.getElementById('tl-now').addEventListener('click', () => {
-  if (isPlaying) { isPlaying = false; clearInterval(playInterval); document.getElementById('tl-play').textContent = '▶️'; }
+  if (isPlaying) { isPlaying = false; clearInterval(playInterval); document.getElementById('tl-play').textContent = '▶'; }
   const curSecs = nowSecs();
   document.getElementById('tl-date').valueAsDate = new Date();
   applyTimelineTime(curSecs, true);
@@ -535,7 +620,7 @@ function drawStops() {
   for (const [id, name, lat, lon, src] of stops) {
     if (!active.has(src) || !b.contains([lat, lon])) continue;
     if (++n > 2500) break;
-    L.circleMarker([lat, lon], { radius: 6, weight: 2, color: '#14232b', fillColor: id === openStop ? '#f5a623' : '#ffffff', fillOpacity: 1 })
+    L.circleMarker([lat, lon], { radius: 5, weight: 1.5, color: '#0f172a', fillColor: id === openStop ? '#f5a623' : '#ffffff', fillOpacity: 0.9 })
       .bindTooltip(`${iconMap[src]} ${esc(name)}`).on('click', () => openPanel(id, name, src)).addTo(stopLayer);
   }
 }
@@ -588,17 +673,17 @@ async function loadDepartures() {
 function renderDepartures() {
   if (!lastDeps || !openStop) return;
   const live = mode === 'live';
-  psub.textContent = (live ? `Previsioni live · feed delle ${new Date(lastDeps.liveUpdated).toLocaleTimeString('it-IT')}` : 'Orario programmato (da timeline)') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
+  psub.textContent = (live ? `Previsioni live · ${new Date(lastDeps.liveUpdated).toLocaleTimeString('it-IT')}` : 'Orario programmato') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
   const rows = lastDeps.departures.map(x => ({ ...x, tIn: live ? x.expIn : x.schedIn }))
     .filter(x => x.tIn >= -30 && x.tIn <= 120 && active.has(x.src || openSrc)).sort((a, b) => a.tIn - b.tIn).slice(0, 30);
   const html = rows.map(x => {
     let cls = '', note = '';
     const lineSrc = x.src || openSrc;
-    if (x.cancel) { cls = 'late'; note = x.cancel === 'trip' ? 'Corsa soppressa' : 'Fermata non servita'; }
+    if (x.cancel) { cls = 'late'; note = x.cancel === 'trip' ? 'Corsa soppressa' : 'Fermata saltata'; }
     else if (live) {
       if (!x.live) note = 'da orario';
-      else if (x.delay >= 1) { cls = 'late'; note = `+${x.delay} min (prog. ${x.sched})`; }
-      else if (x.delay <= -1) { cls = 'ok'; note = `${x.delay} min (prog. ${x.sched})`; }
+      else if (x.delay >= 1) { cls = 'late'; note = `+${x.delay} min`; }
+      else if (x.delay <= -1) { cls = 'ok'; note = `${x.delay} min`; }
       else { cls = 'ok'; note = 'in orario'; }
     }
     if (live && x.vehicle) note += (note ? ' · ' : '') + vehName(lineSrc, x.vehicle);
@@ -606,9 +691,9 @@ function renderDepartures() {
     const t = live ? x.exp : x.sched;
     return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(lineSrc)}" role="button" tabindex="0" title="Segui il mezzo">${busHtml({ line: x.line, color: x.color, src: lineSrc })}` +
       `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${esc(note)}</div></div>` +
-      `<div class="dt"><strong>${esc(t)}</strong><div class="muted">${x.tIn <= 0 ? 'adesso' : x.tIn + ' min'}</div></div></div>`;
+      `<div class="dt"><strong>${esc(t)}</strong><div class="muted">${x.tIn <= 0 ? 'adesso' : x.tIn + 'm'}</div></div></div>`;
   }).join('');
-  plist.innerHTML = html ? html + '<p class="muted">Tocca un passaggio per seguire il mezzo.</p>' : '<p class="muted">Nessun passaggio nell\'orario selezionato.</p>';
+  plist.innerHTML = html ? html + '<p class="muted" style="margin-top:0.75rem; text-align:center;">Tocca un passaggio per seguire il mezzo.</p>' : '<p class="muted">Nessun passaggio nell\'orario selezionato.</p>';
 }
 
 function openTripPanel(v, back = null) {
@@ -626,7 +711,7 @@ function openTripPanel(v, back = null) {
   psub.textContent = v.headsign ? '→ ' + v.headsign : '';
   render(); drawStops();
   if (!v.tripId) {
-    plist.innerHTML = '<p class="muted">Per questo mezzo il feed non indica la corsa.</p>';
+    plist.innerHTML = '<p class="muted">Dati corsa non disponibili per questo mezzo.</p>';
     showRoutes([v.routeId]); return;
   }
   plist.innerHTML = '<p class="muted">Caricamento…</p>';
@@ -651,12 +736,12 @@ function tripHtml(d) {
     let time, sub = '';
     if (live && s.delay != null) {
       time = `<strong class="${s.delay >= 1 ? 'late' : 'ok'}">${esc(s.exp)}</strong>`;
-      sub = s.delay === 0 ? 'in orario' : `prog. ${esc(s.sched)} (${s.delay > 0 ? '+' : ''}${s.delay} min)`;
+      sub = s.delay === 0 ? 'in orario' : `prog. ${esc(s.sched)} (${s.delay > 0 ? '+' : ''}${s.delay}m)`;
     } else { time = `<strong>${esc(s.sched)}</strong>`; sub = live ? 'da orario' : ''; }
     
     let meta = '';
-    if (s.skipped) meta = 'Fermata non servita';
-    else if (s.state === 'next') meta = s.inMin <= 0 ? 'Prossima fermata · in arrivo' : `Prossima fermata · tra ${s.inMin} min`;
+    if (s.skipped) meta = 'Fermata saltata';
+    else if (s.state === 'next') meta = s.inMin <= 0 ? 'In arrivo' : `Tra ${s.inMin} min`;
 
     const dotContent = s.state === 'passed' ? '✓' : '';
 
@@ -674,23 +759,23 @@ function placeVehicle(d, first) {
   const rows = tl.querySelectorAll('.st'), a = d.progress && rows[d.progress.from], b = d.progress && rows[d.progress.from + 1];
   if (!a) { veh.style.display = 'none'; trav.style.display = 'none'; return; }
   
-  const ca = a.offsetTop + 23, cb = b ? b.offsetTop + 23 : ca;
+  const ca = a.offsetTop + 21, cb = b ? b.offsetTop + 21 : ca;
   const y = ca + (cb - ca) * (b ? d.progress.frac : 0);
   const from = !first && vehMemo.trip === openTrip.tripId ? vehMemo.y : y;
   
   veh.style.transition = trav.style.transition = 'none';
   veh.style.top = from + 'px'; 
-  trav.style.height = Math.max(0, from - 23) + 'px';
+  trav.style.height = Math.max(0, from - 21) + 'px';
   void veh.offsetHeight;
   
   veh.style.transition = trav.style.transition = '';
   veh.style.top = y + 'px'; 
-  trav.style.height = Math.max(0, y - 23) + 'px';
+  trav.style.height = Math.max(0, y - 21) + 'px';
   vehMemo = { trip: openTrip.tripId, y };
 }
 function renderTrip(first) {
   const d = lastTrip; if (!d || !openTrip) return;
-  const dl = d.delayNow == null ? '' : d.delayNow >= 1 ? `<span class="late">+${d.delayNow} min</span>` : '<span class="ok">in orario</span>';
+  const dl = d.delayNow == null ? '' : d.delayNow >= 1 ? `<span class="late">+${d.delayNow}m</span>` : '<span class="ok">in orario</span>';
   const lab = d.trip.vehicle || openTrip.label;
   const vehicleNameStr = vehName(d.trip.src, lab);
   
@@ -700,19 +785,19 @@ function renderTrip(first) {
   pname.innerHTML = `${badgeHtml} ${vehicleNameStr ? vehicleNameStr : ''}`;
   
   psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '') + [d.trip.headsign && '→ ' + esc(d.trip.headsign),
-    d.live ? dl || (d.stops.some(s => s.delay != null) ? 'ritardo non disponibile' : 'nessun dato live') : 'orario programmato'].filter(Boolean).join(' · ') +
+    d.live ? dl || (d.stops.some(s => s.delay != null) ? 'ritardo n.d.' : 'live attivo') : 'programmato'].filter(Boolean).join(' · ') +
     (d.note ? `<br>${esc(d.note)}` : '');
-  const footer = d.live && d.historyKnown ? '<p class="muted">Fermate già passate: ultima previsione registrata prima del passaggio.</p>' : '';
+  const footer = d.live && d.historyKnown ? '<p class="muted" style="margin-top:0.75rem;">Fermate passate: ultima stima nota.</p>' : '';
   plist.innerHTML = (d.cancelled ? '<div class="banner">Corsa soppressa</div>' : '') + tripHtml(d) + footer;
   placeVehicle(d, first);
   if (!first) return;
   routeToken++; lineLayer.clearLayers(); tripLayer.clearLayers();
   
-  if (d.shape?.length) L.polyline(d.shape, { color: k.rail, weight: 5, opacity: .85 }).addTo(lineLayer);
+  if (d.shape?.length) L.polyline(d.shape, { color: k.rail, weight: 4, opacity: 0.8 }).addTo(lineLayer);
   else showRoutes([openTrip.routeId]);
   
   for (const s of d.stops) if (s.lat != null)
-    L.circleMarker([s.lat, s.lon], { radius: 5, weight: 2, color: '#14232b', fillColor: '#fff', fillOpacity: 1 }).bindTooltip(esc(s.name)).addTo(tripLayer);
+    L.circleMarker([s.lat, s.lon], { radius: 4, weight: 1.5, color: '#0f172a', fillColor: '#fff', fillOpacity: 0.9 }).bindTooltip(esc(s.name)).addTo(tripLayer);
   const focus = plist.querySelector('.veh'), row = focus && focus.style.display !== 'none' ? focus : plist.querySelector('.st.next');
   if (row) row.scrollIntoView({ block: 'center' });
 }
@@ -755,9 +840,9 @@ let me = null;
 document.getElementById('locate').addEventListener('click', () => map.locate({ setView: true, maxZoom: 16 }));
 map.on('locationfound', e => {
   if (me) me.remove();
-  me = L.circleMarker(e.latlng, { radius: 8, color: '#fff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 }).addTo(map);
+  me = L.circleMarker(e.latlng, { radius: 7, color: '#fff', weight: 2, fillColor: '#0284c7', fillOpacity: 1 }).addTo(map);
 });
-map.on('locationerror', e => { statusEl.className = 'err'; statusEl.textContent = 'Posizione non disponibile: ' + e.message; });
+map.on('locationerror', e => { statusEl.className = 'err'; statusEl.textContent = 'Posizione non disponibile'; });
 
 document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener('change', () => {
   mode = el.value;
@@ -769,7 +854,7 @@ document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener(
   } else {
     document.getElementById('timeline-bar').classList.remove('active');
     document.getElementById('clock-bar').style.display = 'flex';
-    if (isPlaying) { isPlaying = false; clearInterval(playInterval); document.getElementById('tl-play').textContent = '▶️'; }
+    if (isPlaying) { isPlaying = false; clearInterval(playInterval); document.getElementById('tl-play').textContent = '▶'; }
     load();
   }
   render(); renderDepartures();
