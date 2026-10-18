@@ -60,10 +60,11 @@
   .cx { opacity:.6; } .cx .dh { text-decoration:line-through; }
   @media (max-width:640px) { .side-panel { top:auto; left:8px; right:8px; bottom:85px; width:auto; max-width:none; max-height:50%; } }
 
-  .bus { display:flex; align-items:center; justify-content:center; min-width:28px; height:22px; padding:0 6px; border-radius:11px;
+  /* Diametro cerchio fisso e uniforme per tutte le linee */
+  .bus { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-width:30px; border-radius:50%;
          background:var(--c,#0a6c8c); color:var(--t,#fff); font:700 12px/1 system-ui,sans-serif; border:2px solid var(--b,#fff);
          box-shadow:0 1px 3px rgba(0,0,0,.45); white-space:nowrap; cursor:pointer; }
-  .bus.aut { border-radius:6px; }
+  .bus.aut { border-radius:6px; width:auto; min-width:28px; height:22px; padding:0 6px; }
   .bus.sched { border-style:dashed; opacity:.9; }
   .bus.sel { outline:3px solid #f5a623; outline-offset:1px; }
 
@@ -768,7 +769,13 @@ function openTripPanel(v, back = null) {
   selVeh = v.id;
   openTrip = { src: v.src, tripId: v.tripId, routeId: v.routeId, line: v.line, label: v.label, back, drawn: false };
   panel.hidden = false;
-  pname.textContent = `${getVehicleIcon(v.src, v.label)} Linea ${v.line}${v.label ? ' · ' + vehName(v.src, v.label) : ''}`;
+  
+  // Impostazione iniziale pulita con il badge circolare uniforme e la dicitura M/B o M/S
+  const kInit = colorInfo(v.color);
+  const badgeInit = `<div class="bus" style="display:inline-flex; vertical-align:middle; margin-right:8px; --c:${kInit.c}; --t:${kInit.ink}; --b:${kInit.ink}">${esc(v.line)}</div>`;
+  const vehicleNameStr = vehName(v.src, v.label);
+  pname.innerHTML = `${badgeInit} ${vehicleNameStr ? vehicleNameStr : ''}`;
+  
   psub.textContent = v.headsign ? '→ ' + v.headsign : '';
   render(); drawStops();
   if (!v.tripId) {
@@ -839,8 +846,15 @@ function renderTrip(first) {
   const d = lastTrip; if (!d || !openTrip) return;
   const dl = d.delayNow == null ? '' : d.delayNow >= 1 ? `<span class="late">+${d.delayNow} min</span>` : '<span class="ok">in orario</span>';
   const lab = d.trip.vehicle || openTrip.label;
-  const vehicleIcon = getVehicleIcon(d.trip.src, lab);
-  pname.textContent = `${vehicleIcon} Linea ${d.trip.line}${lab ? ' · ' + vehName(d.trip.src, lab) : ''}`;
+  const vehicleNameStr = vehName(d.trip.src, lab);
+  
+  // Generazione del cerchio con diametro uniforme e inserimento del numero della linea all'interno
+  const k = colorInfo(d.trip.color);
+  const badgeHtml = `<div class="bus" style="display:inline-flex; vertical-align:middle; margin-right:8px; --c:${k.c}; --t:${k.ink}; --b:${k.ink}">${esc(d.trip.line)}</div>`;
+  
+  // Sostituisce il testo "Linea" con il cerchio colorato e la dicitura M/B o M/S
+  pname.innerHTML = `${badgeHtml} ${vehicleNameStr ? vehicleNameStr : ''}`;
+  
   psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '') + [d.trip.headsign && '→ ' + esc(d.trip.headsign),
     d.live ? dl || (d.stops.some(s => s.delay != null) ? 'ritardo non disponibile' : 'nessun dato live') : 'orario programmato'].filter(Boolean).join(' · ') +
     (d.note ? `<br>${esc(d.note)}` : '');
@@ -849,9 +863,10 @@ function renderTrip(first) {
   placeVehicle(d, first);
   if (!first) return;
   routeToken++; lineLayer.clearLayers(); tripLayer.clearLayers();
-  const k = colorInfo(d.trip.color);
+  
   if (d.shape?.length) L.polyline(d.shape, { color: k.rail, weight: 5, opacity: .85 }).addTo(lineLayer);
   else showRoutes([openTrip.routeId]);
+  
   for (const s of d.stops) if (s.lat != null)
     L.circleMarker([s.lat, s.lon], { radius: 5, weight: 2, color: '#14232b', fillColor: '#fff', fillOpacity: 1 }).bindTooltip(esc(s.name)).addTo(tripLayer);
   const focus = plist.querySelector('.veh'), row = focus && focus.style.display !== 'none' ? focus : plist.querySelector('.st.next');
