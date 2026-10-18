@@ -135,14 +135,14 @@
   .cx { opacity: 0.5; }
   .cx .dh { text-decoration: line-through; }
 
-  /* Marker dei mezzi minimal con font ingrandito (13px) */
+  /* Marker dei mezzi minimal */
   .bus {
-    display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; min-width: 36px; border-radius: 50%;
-    background: var(--c, #0a6c8c); color: var(--t, #fff); font: 800 13px/1 system-ui, sans-serif; border: 2.5px solid var(--b, #fff);
-    box-shadow: 0 4px 14px rgba(0,0,0,0.35); white-space: nowrap; cursor: pointer; transition: transform 0.2s;
+    display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; min-width: 32px; border-radius: 50%;
+    background: var(--c, #0a6c8c); color: var(--t, #fff); font: 700 11px/1 system-ui, sans-serif; border: 2px solid var(--b, #fff);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3); white-space: nowrap; cursor: pointer; transition: transform 0.2s;
   }
-  .bus:hover { transform: scale(1.15); }
-  .bus.aut { border-radius: 10px; width: auto; min-width: 34px; height: 26px; padding: 0 8px; font-size: 12px; }
+  .bus:hover { transform: scale(1.1); }
+  .bus.aut { border-radius: 8px; width: auto; min-width: 30px; height: 24px; padding: 0 6px; }
   .bus.sched { border-style: dashed; opacity: 0.85; }
   .bus.sel { outline: 3px solid var(--accent); outline-offset: 2px; }
 
@@ -551,18 +551,6 @@ map.on('click', () => { if (!openTrip && !filterEl.value) clearRoutes(); });
 
 const markers = new Map();
 let vehicles = [];
-
-// Calcola il raggio in pixel del marker del mezzo in base allo zoom della mappa
-function getVehicleRadius() {
-  const z = map.getZoom();
-  if (z <= 12) return 12;
-  if (z === 13) return 14;
-  if (z === 14) return 16;
-  if (z === 15) return 19;
-  if (z === 16) return 22;
-  return 26; // per zoom >= 17
-}
-
 function render() {
   let shown = vehicles.filter(v => active.has(v.src));
   if (selectedLineFilter) {
@@ -570,77 +558,31 @@ function render() {
   }
 
   const keep = new Set();
-  const currentRadius = getVehicleRadius();
-
   for (const v of shown) {
     if (!Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
     keep.add(v.id);
     try {
-      const k = colorInfo(v.color, v.line);
-      const isSelected = v.id === selVeh;
-      
+      const html = busHtml(v);
       let e = markers.get(v.id);
       if (!e) {
-        // Uso di L.circleMarker per scalare dinamicamente con lo zoom
-        const m = L.circleMarker([v.lat, v.lon], {
-          radius: currentRadius,
-          weight: isSelected ? 3 : 2,
-          color: isSelected ? '#38bdf8' : k.ink,
-          fillColor: k.c,
-          fillOpacity: 1
-        }).bindTooltip(tip(v), { direction: 'top', offset: [0, -10] }).addTo(map);
-
-        // Aggiungiamo il testo del numero della linea al centro del cerchio tramite SVG/DivOverlay o Tooltip permanente
-        // Per semplicità e perfetta pulizia visiva, sfruttiamo un bindTooltip permanente o una classe con tag HTML custom
-        const iconHtml = `<div class="bus${v.src === 'aut' ? ' aut' : ''}${mode === 'sched' || v.estimated ? ' sched' : ''}" style="--c:${k.c};--t:${k.ink};--b:${k.ink}; width:auto; height:auto; padding:2px 6px; border:none; box-shadow:none; background:transparent;">${esc(v.line)}</div>`;
-        
-        const textMarker = L.marker([v.lat, v.lon], {
-          icon: L.divIcon({ className: '', iconSize: null, html: iconHtml })
-        }).addTo(map);
-
+        const m = L.marker([v.lat, v.lon], { icon: L.divIcon({ className: '', iconSize: null, html }) })
+          .bindTooltip(tip(v), { direction: 'top', offset: [0, -12] }).addTo(map);
         const id = v.id;
         m.on('click', () => { const c = vehicles.find(x => x.id === id); if (c) openTripPanel(c); });
-        textMarker.on('click', () => { const c = vehicles.find(x => x.id === id); if (c) openTripPanel(c); });
-
-        markers.set(v.id, e = { m, textMarker, from: null, to: [v.lat, v.lon], t0: 0, radius: currentRadius });
+        markers.set(v.id, e = { m, html, from: null, to: [v.lat, v.lon], t0: 0 });
         continue;
       }
-
-      // Aggiornamento raggio se lo zoom è cambiato
-      if (e.radius !== currentRadius) {
-        e.m.setRadius(currentRadius);
-        e.radius = currentRadius;
-      }
-
-      e.m.setStyle({
-        weight: isSelected ? 3 : 2,
-        color: isSelected ? '#38bdf8' : k.ink,
-        fillColor: k.c
-      });
+      if (e.html !== html) { e.m.setIcon(L.divIcon({ className: '', iconSize: null, html })); e.html = html; }
       e.m.setTooltipContent(tip(v));
-
       if (e.to[0] !== v.lat || e.to[1] !== v.lon) {
         const cur = e.m.getLatLng();
-        if (Math.abs(cur.lat - v.lat) + Math.abs(cur.lng - v.lon) > 0.02) {
-          e.m.setLatLng([v.lat, v.lon]);
-          e.textMarker.setLatLng([v.lat, v.lon]);
-          e.from = null;
-        } else {
-          e.from = [cur.lat, cur.lng];
-          e.t0 = performance.now();
-        }
+        if (Math.abs(cur.lat - v.lat) + Math.abs(cur.lng - v.lon) > 0.02) { e.m.setLatLng([v.lat, v.lon]); e.from = null; }
+        else { e.from = [cur.lat, cur.lng]; e.t0 = performance.now(); }
         e.to = [v.lat, v.lon];
       }
     } catch (err) { console.warn('Mezzo non disegnato', v.id, err.message); }
   }
-
-  for (const [id, e] of markers) {
-    if (!keep.has(id)) {
-      e.m.remove();
-      e.textMarker.remove();
-      markers.delete(id);
-    }
-  }
+  for (const [id, e] of markers) if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
   
   const navCount = vehicles.filter(v => active.has('nav') && v.src === 'nav').length;
   const autCount = vehicles.filter(v => active.has('aut') && v.src === 'aut').length;
@@ -650,18 +592,11 @@ function render() {
   return shown.length;
 }
 
-map.on('zoomend', () => {
-  render();
-});
-
 function tick(now) {
   for (const e of markers.values()) {
     if (!e.from) continue;
     const p = Math.min(1, (now - e.t0) / MOVE_MS);
-    const lat = e.from[0] + (e.to[0] - e.from[0]) * p;
-    const lon = e.from[1] + (e.to[1] - e.from[1]) * p;
-    e.m.setLatLng([lat, lon]);
-    e.textMarker.setLatLng([lat, lon]);
+    e.m.setLatLng([e.from[0] + (e.to[0] - e.from[0]) * p, e.from[1] + (e.to[1] - e.from[1]) * p]);
     if (p >= 1) e.from = null;
   }
   requestAnimationFrame(tick);
