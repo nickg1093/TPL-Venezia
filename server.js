@@ -1,61 +1,82 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { transit_realtime } = require('gtfs-realtime-bindings');
+const zlib = require('zlib');
+const protobuf = require('protobufjs');
 const gtfs = require('./gtfs');
 const schedule = require('./schedule');
-const { secsOfDayRome } = schedule;
+const { secsOfDayRome, hhmm } = schedule;
 
 const PORT = process.env.PORT || 3000;
 const REFRESH_MS = 15000;
 const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/aut/GTFSRT/' };
 const IDS = Object.keys(RT);
+const NOTES = { approx: 'data fuori dal calendario GTFS: orari indicativi' };
 
-const emptyData = () => ({ routes: {}, trips: {}, stops: {}, stopLoc: {}, stopIndex: {}, routeShapes: {}, shapePts: {},
-  calendar: {}, exceptions: {}, stopTimes: new Map(), exByDate: {}, byStart: {}, tripPrefixes: [] });
-const D = {}, S = {};
+// Sottoinsieme dello schema GTFS-Realtime: basta per posizioni, ritardi e soppressioni
+const Feed = protobuf.parse(`syntax = "proto2";
+message FeedMessage { repeated FeedEntity entity = 2; }
+message FeedEntity { optional string id = 1; optional TripUpdate trip_update = 3; optional VehiclePosition vehicle = 4; }
+message TripUpdate { optional TripDescriptor trip = 1; repeated StopTimeUpdate stop_time_update = 2; optional int32 delay = 5; }
+message StopTimeEvent { optional int32 delay = 1; optional int64 time = 2; }
+message StopTimeUpdate { optional uint32 stop_sequence = 1; optional StopTimeEvent arrival = 2; optional StopTimeEvent departure = 3; optional string stop_id = 4; optional int32 schedule_relationship = 5; }
+message TripDescriptor { optional string trip_id = 1; optional string start_time = 2; optional int32 schedule_relationship = 4; optional string route_id = 5; optional uint32 direction_id = 6; }
+message VehicleDescriptor { optional string id = 1; optional string label = 2; }
+message Position { optional float latitude = 1; optional float longitude = 2; }
+message VehiclePosition { optional TripDescriptor trip = 1; optional Position position = 2; optional VehicleDescriptor vehicle = 8; }
+`).root.lookupType('FeedMessage');
+
+const D = {}, S = {}, ready = {};
 for (const id of IDS) {
-  D[id] = emptyData();
-  S[id] = { updated: 0, error: null, vehicles: [], live: {}, diag: null, raw: {}, n: 0, hist: new Map(), sched: { ts: 0, vehicles: [], error: null } };
+  D[id] = gtfs.empty(); ready[id] = false;
+  S[id] = { updated: 0, error: null, vehicles: [], live: {}, hist: new Map() };
 }
-let stopsBody = null;
+let stopsBody = null, version = 0;
 
-let version = 0;
-const ready = Object.fromEntries(IDS.map(i => [i, false]));
 async function loadStatic() {
   for (const id of IDS) {
-    try { D[id] = await gtfs.load(id); S[id].sched.ts = 0; ready[id] = true; if (RT[id]) refresh(id); }
-    catch (e) { console.error(`GTFS statico [${id}]:`, e.message); }
-    stopsBody = null; version++;
+    try {
+      const g = await gtfs.load(id);   // null = ZIP invariato, niente da rileggere
+      if (!g) continue;
+      D[id] = g; S[id].hist.clear(); ready[id] = true; stopsBody = null; version++;
+      refresh(id);
+    } catch (e) { console.error(`GTFS statico [${id}]:`, e.message); }
   }
 }
-loadStatic();
-setInterval(loadStatic, 24 * 3600 * 1000);
 
 const has = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
 const wrap = x => ((x + 43200) % 86400 + 86400) % 86400 - 43200;
 const delayOf = (ev, sched) => {
   if (!ev) return null;
   if (has(ev, 'delay')) return Number(ev.delay);
-  if (has(ev, 'time') && Number(ev.time) > 0) return wrap(secsOfDayRome(Number(ev.time) * 1000) - sched % 86400);
+  if (has(ev, 'time') && ev.time > 0) return wrap(secsOfDayRome(ev.time * 1000) - sched % 86400);
   return null;
 };
 
-function resolveTrip(G, td, dg) {
+// Indice (linea, partenza) -> corse: serve solo se il feed usa ID diversi dal GTFS, quindi si costruisce al bisogno
+function byStart(G) {
+  if (G._bs) return G._bs;
+  const bs = (G._bs = {});
+  for (const [tid, st] of G.stopTimes) {
+    const t = G.trips[tid]; if (!t) continue;
+    (bs[`${t.route}||${st.start}`] ||= []).push(tid);
+    if (t.dir != null) (bs[`${t.route}|${t.dir}|${st.start}`] ||= []).push(tid);
+  }
+  return bs;
+}
+function resolveTrip(G, td) {
   if (!td) return null;
   const id = td.tripId;
-  const hit = (how, tid) => { if (dg) dg.resolved[how] = (dg.resolved[how] || 0) + 1; return { id: tid, how }; };
-  if (id && G.stopTimes.has(id)) return hit('byId', id);
+  if (id && G.stopTimes.has(id)) return id;
   if (id) {
     const body = id.replace(/^[A-Za-z]+_/, '');
-    for (const p of G.tripPrefixes || []) if (G.stopTimes.has(p + body)) return hit('byPrefix', p + body);
+    for (const p of G.tripPrefixes) if (G.stopTimes.has(p + body)) return p + body;
   }
   if (td.routeId && td.startTime) {
-    const t = td.startTime.split(':'), secs = +t[0] * 3600 + +t[1] * 60 + +(t[2] || 0);
-    const keys = (has(td, 'directionId') ? [`${td.routeId}|${td.directionId}|${secs}`] : []).concat(`${td.routeId}||${secs}`);
-    for (const k of keys) {
-      const c = G.byStart?.[k];
-      if (c?.length) return hit('byRouteAndStart', c.find(x => schedule.isActiveToday(G, x)) || c[0]);
+    const [h, m, s = 0] = td.startTime.split(':').map(Number), secs = h * 3600 + m * 60 + s, bs = byStart(G);
+    for (const k of [has(td, 'directionId') ? `${td.routeId}|${td.directionId}|${secs}` : null, `${td.routeId}||${secs}`]) {
+      const c = k && bs[k];
+      if (c?.length) return c.find(x => schedule.isActiveToday(G, x)) || c[0];
     }
   }
   return null;
@@ -64,32 +85,26 @@ function resolveTrip(G, td, dg) {
 async function pull(base, name) {
   const res = await fetch(base + name, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
-  return transit_realtime.FeedMessage.decode(new Uint8Array(await res.arrayBuffer()));
+  const msg = Feed.decode(new Uint8Array(await res.arrayBuffer()));
+  return Feed.toObject(msg, { longs: Number }).entity || [];
 }
 
 async function refresh(id) {
-  const st8 = S[id];
+  const s8 = S[id];
   try {
     const [pos, upd] = await Promise.all([pull(RT[id], 'vehiclePositions'), pull(RT[id], 'tripUpdates')]);
-    const G = D[id], delays = {}, nextStop = {}, lv = {};
-    const dg = { entities: 0, withTripId: 0, tripKnown: 0, updates: 0, matchedByStopId: 0, matchedBySeq: 0, unmatched: 0,
-                 updatesWithDelayOrTime: 0, tripsWithDelay: 0, cancelled: 0, resolved: {}, unknownTripIds: [], unmatchedStops: [] };
-    for (const e of upd.entity) {
-      const tu = e.tripUpdate; if (!tu) continue;
-      dg.entities++;
-      if (!tu.trip?.tripId) continue;
-      dg.withTripId++;
-      const rs = resolveTrip(G, tu.trip, dg);
-      if (!rs) continue;
-      const tid = rs.id, st = G.stopTimes.get(tid);
-      dg.tripKnown++;
-      const n = st.s.length, explicit = new Array(n), skipped = new Set(); let cur = 0, firstJ = -1;
+    const G = D[id], live = {}, now = Date.now();
+    for (const e of upd) {
+      const tu = e.tripUpdate;
+      if (!tu?.trip?.tripId) continue;
+      const tid = resolveTrip(G, tu.trip); if (!tid) continue;
+      const st = G.stopTimes.get(tid), n = st.s.length, explicit = new Array(n), skipped = new Set();
+      let cur = 0, firstJ = -1;
       for (const u of tu.stopTimeUpdate || []) {
-        dg.updates++;
-        if (u.scheduleRelationship === 2) continue;
+        if (u.scheduleRelationship === 2) continue;   // NO_DATA
         let j = -1;
         if (u.stopId) { j = st.s.indexOf(u.stopId, cur); if (j < 0) j = st.s.indexOf(u.stopId); }
-        if (j < 0 && has(u, 'stopSequence')) j = st.q.indexOf(Number(u.stopSequence));
+        if (j < 0 && has(u, 'stopSequence')) j = st.q.indexOf(u.stopSequence);
         if (j < 0) continue;
         cur = j + 1;
         if (firstJ < 0) firstJ = j;
@@ -98,213 +113,146 @@ async function refresh(id) {
         if (dly != null) explicit[j] = dly;
       }
       let c = has(tu, 'delay') ? Number(tu.delay) : null;
-      const arr = [];
-      for (let k = 0; k < n; k++) { if (explicit[k] != null) c = explicit[k]; arr.push(c); }
-      const cancelled = tu.trip.scheduleRelationship === 3;
-      if (cancelled) dg.cancelled++;
-      lv[tid] = { delays: arr, cancelled, skipped, firstJ };
-      let h = st8.hist.get(tid); if (!h) st8.hist.set(tid, h = { delays: new Array(n).fill(null), seen: 0 });
+      const delays = [];
+      for (let k = 0; k < n; k++) { if (explicit[k] != null) c = explicit[k]; delays.push(c); }
+      live[tid] = { delays, cancelled: tu.trip.scheduleRelationship === 3, skipped, firstJ };
+      let h = s8.hist.get(tid); if (!h) s8.hist.set(tid, h = { delays: new Array(n).fill(null), seen: 0 });
       for (let k = 0; k < n; k++) if (explicit[k] != null) h.delays[k] = explicit[k];
-      h.seen = Date.now();
-      if (firstJ >= 0 && G.stops[st.s[firstJ]]) nextStop[tid] = G.stops[st.s[firstJ]];
-      const first = arr.find(x => x != null);
-      if (first != null) delays[tid] = first;
+      h.seen = now;
     }
-    st8.diag = { at: new Date().toISOString(), ...dg };
-    st8.live = lv;
-    st8.vehicles = pos.entity
-      .filter(e => e.vehicle?.position && Number.isFinite(e.vehicle.position.latitude) && Number.isFinite(e.vehicle.position.longitude))
+    for (const [k, h] of s8.hist) if (now - h.seen > 3 * 3600 * 1000) s8.hist.delete(k);   // niente accumulo
+    s8.live = live;
+    s8.vehicles = pos.filter(e => Number.isFinite(e.vehicle?.position?.latitude) && Number.isFinite(e.vehicle.position.longitude))
       .map(e => {
-        const v = e.vehicle, rs = resolveTrip(G, v.trip), tripId = rs?.id || null, trip = G.trips[tripId] || {};
-        const routeKey = trip.route || v.trip?.routeId || null;
-        const r = G.routes[routeKey] || {};
-        return {
-          id: `${id}:${v.vehicle?.id || e.id}`, src: id, label: v.vehicle?.label || null,
-          lat: v.position.latitude, lon: v.position.longitude, bearing: v.position.bearing ?? null,
+        const v = e.vehicle, tripId = resolveTrip(G, v.trip), trip = G.trips[tripId] || {};
+        const routeKey = trip.route || v.trip?.routeId || null, r = G.routes[routeKey] || {};
+        return { id: `${id}:${v.vehicle?.id || e.id}`, src: id, label: v.vehicle?.label || null,
+          lat: +v.position.latitude.toFixed(5), lon: +v.position.longitude.toFixed(5),
           line: r.name || routeKey || '?', color: r.color || null, tripId,
-          routeId: routeKey ? `${id}:${routeKey}` : null, headsign: trip.headsign || null,
-          nextStop: nextStop[tripId] || null, delay: tripId in delays ? delays[tripId] : null, ts: v.timestamp ? Number(v.timestamp) : null
-        };
+          routeId: routeKey ? `${id}:${routeKey}` : null, headsign: trip.headsign || null };
       });
-    st8.updated = Date.now();
-    st8.error = null;
-  } catch (err) { st8.error = `${id}: ${err.message}`; }
-}
-for (const id of IDS) if (RT[id]) { refresh(id); setInterval(() => refresh(id), REFRESH_MS); }
-
-const hm = s => { s = ((s % 86400) + 86400) % 86400; return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}`; };
-
-function projectFrac(G, trip, A, B, V) {
-  const k = 0.7, pts = G.shapePts?.[trip.shape];
-  const d2 = (P, Q) => ((P[1] - Q[1]) * k) ** 2 + (P[0] - Q[0]) ** 2;
-  const clamp = x => Math.min(1, Math.max(0, x));
-  const nearest = (P, from, to) => { let bi = from, bd = Infinity; for (let i = from; i <= to; i++) { const d = d2(pts[i], P); if (d < bd) { bd = d; bi = i; } } return bi; };
-  const segProj = (P, Q) => {
-    const px = (Q[1] - P[1]) * k, py = Q[0] - P[0], vx = (V[1] - P[1]) * k, vy = V[0] - P[0], den = px * px + py * py;
-    const t = den > 0 ? clamp((vx * px + vy * py) / den) : 0, dx = vx - px * t, dy = vy - py * t;
-    return { t, d: dx * dx + dy * dy };
-  };
-  if (pts && pts.length > 1) {
-    const ia = nearest(A, 0, pts.length - 1), ib = nearest(B, ia, pts.length - 1);
-    if (ib > ia) {
-      const len = j => Math.sqrt(d2(pts[j], pts[j + 1])), pre = [0];
-      for (let j = ia; j < ib; j++) pre.push(pre[pre.length - 1] + len(j));
-      const iv = nearest(V, ia, ib); let best = null;
-      for (let s = Math.max(ia, iv - 1); s <= Math.min(ib - 1, iv); s++) {
-        const r = segProj(pts[s], pts[s + 1]); if (!best || r.d < best.d) best = { s, t: r.t, d: r.d };
-      }
-      const tot = pre[pre.length - 1];
-      if (best && tot > 0) return clamp((pre[best.s - ia] + best.t * len(best.s)) / tot);
-    }
-  }
-  const ax = (B[1] - A[1]) * k, ay = B[0] - A[0], vx = (V[1] - A[1]) * k, vy = V[0] - A[0], den = ax * ax + ay * ay;
-  return den > 0 ? clamp((vx * ax + vy * ay) / den) : 0;
+    s8.updated = now; s8.error = null;
+  } catch (err) { s8.error = `${id}: ${err.message}`; }
 }
 
 function tripDetail(i, tid, live) {
   const G = D[i], st = G.stopTimes.get(tid), trip = G.trips[tid], r = G.routes[trip.route] || {}, n = st.s.length;
-  const nowS = schedule.secsOfDayRome(Date.now());
+  const nowS = secsOfDayRome(Date.now());
   const fits = t => t >= st.start - 3600 && t <= st.end + 3600;
   const tNow = !fits(nowS) && fits(nowS + 86400) ? nowS + 86400 : nowS;
   const lv = live ? S[i].live[tid] : null, hist = live ? S[i].hist.get(tid)?.delays : null;
-  let cur;
-  if (lv && lv.firstJ >= 0) cur = lv.firstJ;
-  else { cur = st.s.findIndex((_, k) => (k === n - 1 ? st.a[k] : st.d[k]) > tNow); if (cur < 0) cur = n; }
-  
-  const stops = st.s.map((sid, k) => {
-    const ts = k === n - 1 ? st.a[k] : st.d[k];
-    let dl = null;
-    if (live) dl = k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null);
-    
-    const stopName = G.stops[sid] || sid;
+  const at = k => (k === n - 1 ? st.a[k] : st.d[k]);
+  let cur = lv && lv.firstJ >= 0 ? lv.firstJ : 0;
+  if (!(lv && lv.firstJ >= 0)) while (cur < n && at(cur) <= tNow) cur++;
 
-    return { 
-      id: sid, 
-      name: stopName, 
-      lat: G.stopLoc[sid]?.[0] ?? null, 
-      lon: G.stopLoc[sid]?.[1] ?? null,
-      sched: hm(ts), 
-      exp: dl != null ? hm(ts + dl) : null, 
-      delay: dl != null ? Math.round(dl / 60) : null,
-      inMin: Math.round((ts + (dl ?? 0) - tNow) / 60), 
-      state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'),
-      skipped: !!lv?.skipped.has(k)
-    };
+  const stops = st.s.map((sid, k) => {
+    const ts = at(k), dl = live ? (k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null)) : null;
+    return { name: G.stops[sid] || sid, lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
+      sched: hhmm(ts), exp: dl != null ? hhmm(ts + dl) : null, delay: dl != null ? Math.round(dl / 60) : null,
+      inMin: Math.round((ts + (dl ?? 0) - tNow) / 60),
+      state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'), skipped: !!lv?.skipped.has(k) };
   });
 
   const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
   const dn = lv && cur < n ? lv.delays[cur] : null;
   let progress;
-  if (cur >= n) progress = { from: n - 1, frac: 0, gps: false };
-  else if (cur === 0) progress = { from: 0, frac: 0, gps: false };
+  if (cur >= n) progress = { from: n - 1, frac: 0 };
+  else if (cur === 0) progress = { from: 0, frac: 0 };
   else {
-    const A = G.stopLoc[st.s[cur - 1]], B = G.stopLoc[st.s[cur]];
-    let frac, gps = false;
-    if (veh && A && B && Number.isFinite(veh.lat) && Number.isFinite(veh.lon)) { frac = projectFrac(G, trip, A, B, [veh.lat, veh.lon]); gps = true; }
+    const A = G.stopLoc[st.s[cur - 1]], B = G.stopLoc[st.s[cur]]; let frac;
+    if (veh && A && B) frac = schedule.fracOnShape(G, trip.shape, st.s[cur - 1], st.s[cur], A, B, [veh.lat, veh.lon]);
     else {
       const dPrev = live ? (hist?.[cur - 1] ?? lv?.delays[cur] ?? 0) : 0, dCur = live ? (lv?.delays[cur] ?? 0) : 0;
       const t0 = st.d[cur - 1] + dPrev, t1 = st.a[cur] + dCur;
       frac = t1 > t0 ? (tNow - t0) / (t1 - t0) : 0;
     }
-    progress = { from: cur - 1, frac: Math.min(1, Math.max(0, frac)), gps };
+    progress = { from: cur - 1, frac: Math.min(1, Math.max(0, frac)) };
   }
-  return { live, liveUpdated: S[i].updated, cur, progress, cancelled: !!lv?.cancelled,
-    note: (m => m === 'ok' ? null : m)(schedule.scheduleMode(G)),
+  return { live, progress, cancelled: !!lv?.cancelled, note: noteOf(G),
     delayNow: dn != null ? Math.round(dn / 60) : null,
     historyKnown: stops.some(s => s.state === 'passed' && s.delay != null),
-    trip: { id: `${i}:${tid}`, src: i, line: r.name || trip.route, color: r.color || null,
+    trip: { src: i, line: r.name || trip.route, color: r.color || null,
             headsign: trip.headsign || G.stops[st.s[n - 1]] || null, vehicle: veh?.label || null },
-    shape: G.shapePts[trip.shape] || null, stops };
+    shape: gtfs.toLL(G.shapePts[trip.shape]), stops, };
 }
 
-const send = (res, obj, cache = 'no-store', code = 200) => {
-  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': cache });
-  res.end(typeof obj === 'string' ? obj : JSON.stringify(obj));
+const noteOf = (G, date) => NOTES[schedule.scheduleMode(G, date)] || null;
+const wanted = u => (u.searchParams.get('src') || IDS.join(',')).split(',').filter(x => IDS.includes(x));
+const splitId = f => { const k = (f || '').indexOf(':'); return k < 0 ? [null, f] : [f.slice(0, k), f.slice(k + 1)]; };
+const fail = (code, msg) => Object.assign(new Error(msg), { code });
+const q = (u, k) => u.searchParams.get(k);
+
+const API = {
+  '/api/vehicles': u => {
+    const list = wanted(u), errors = list.map(i => S[i].error).filter(Boolean);
+    return { updated: Math.max(0, ...list.map(i => S[i].updated)), error: errors.join('; ') || null, version, ready,
+             vehicles: list.flatMap(i => S[i].vehicles) };
+  },
+  '/api/scheduled': u => {
+    const errors = [], vehicles = [];
+    for (const i of wanted(u)) {
+      try {
+        for (const v of schedule.positionsNow(D[i], q(u, 'secs'), q(u, 'date')))
+          vehicles.push({ ...v, tripId: v.id, id: `${i}:${v.id}`, src: i, routeId: v.routeId ? `${i}:${v.routeId}` : null });
+      } catch (e) { errors.push(`${i}: ${e.message}`); }
+    }
+    return { updated: Date.now(), error: errors.join('; ') || null, version, ready, vehicles };
+  },
+  '/api/stops': () => {
+    if (!stopsBody) {
+      const out = [];
+      for (const i of IDS) {
+        const G = D[i];
+        for (const s in G.stopIndex) { const l = G.stopLoc[s]; if (l) out.push([`${i}:${s}`, G.stops[s], l[0], l[1], i]); }
+      }
+      stopsBody = JSON.stringify(out);
+    }
+    return stopsBody;
+  },
+  '/api/stop': u => {
+    const full = q(u, 'id'), [i, sid] = splitId(full);
+    if (!D[i]) throw fail(404, 'fermata sconosciuta');
+    const labels = new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
+    return { stop: { id: full, name: D[i].stops[sid] || sid, src: i }, liveUpdated: S[i].updated, note: noteOf(D[i], q(u, 'date')),
+             departures: schedule.departures(D[i], S[i].live, sid, q(u, 'secs'), q(u, 'date'))
+               .map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) };
+  },
+  '/api/trip': u => {
+    const [i, tid] = splitId(q(u, 'id'));
+    if (!D[i] || !D[i].stopTimes.has(tid)) throw fail(404, 'corsa sconosciuta');
+    return tripDetail(i, tid, q(u, 'mode') !== 'sched');
+  },
+  '/api/routes': () => {
+    const out = {};
+    for (const i of IDS) for (const r in D[i].routes) out[`${i}:${r}`] = { ...D[i].routes[r], src: i };
+    return out;
+  },
+  '/api/shapes': u => {
+    const [i, rid] = splitId(q(u, 'id'));
+    return { shapes: (D[i]?.routeShapes[rid] || []).map(p => gtfs.toLL(p)) };
+  }
 };
 
-function schedVehicles(i, secs, date) {
-  try {
-    const vehicles = schedule.positionsNow(D[i], secs, date).filter(v => Number.isFinite(v.lat) && Number.isFinite(v.lon))
-      .map(v => ({ ...v, tripId: v.id, id: `${i}:${v.id}`, src: i, routeId: v.routeId ? `${i}:${v.routeId}` : null }));
-    return { vehicles, error: null };
-  } catch (e) {
-    return { vehicles: [], error: `${i}: ${e.message}` };
-  }
+function send(req, res, obj, code = 200) {
+  const body = Buffer.from(typeof obj === 'string' ? obj : JSON.stringify(obj));
+  const head = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', Vary: 'Accept-Encoding' };
+  if (body.length < 1024 || !/\bgzip\b/.test(req.headers['accept-encoding'] || '')) { res.writeHead(code, head); return res.end(body); }
+  zlib.gzip(body, (err, z) => { res.writeHead(code, err ? head : { ...head, 'Content-Encoding': 'gzip' }); res.end(err ? body : z); });
 }
 
-const wanted = url => (url.searchParams.get('src') || IDS.join(',')).split(',').filter(x => IDS.includes(x));
-const splitId = full => { const i = (full || '').indexOf(':'); return i < 0 ? [null, full] : [full.slice(0, i), full.slice(i + 1)]; };
+const pageFile = ['public/index.html', 'index.html'].map(f => path.join(__dirname, f)).find(f => fs.existsSync(f));
+const page = pageFile ? fs.readFileSync(pageFile) : null;
 
 http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://localhost');
-  try {
-    if (url.pathname === '/api/vehicles') {
-      const list = wanted(url), live = list.filter(i => RT[i]), noLive = list.filter(i => !RT[i]);
-      const errors = live.map(i => S[i].error).filter(Boolean);
-      const estimated = noLive.flatMap(i => schedVehicles(i, null, null).vehicles.map(v => ({ ...v, estimated: true })));
-      return send(res, { updated: Math.max(noLive.length ? Date.now() : 0, ...live.map(i => S[i].updated)),
-                         error: errors.length ? errors.join('; ') : null, version, ready,
-                         vehicles: [...live.flatMap(i => S[i].vehicles), ...estimated] });
-    }
-    if (url.pathname === '/api/scheduled') {
-      const list = wanted(url);
-      const secsParam = url.searchParams.get('secs');
-      const dateParam = url.searchParams.get('date');
-      const secs = secsParam !== null ? +secsParam : null;
-      const date = dateParam || null;
-
-      const cs = list.map(i => schedVehicles(i, secs, date));
-      const errors = cs.map(c => c.error).filter(Boolean);
-      return send(res, { updated: Date.now(), error: errors.length ? errors.join('; ') : null, version, ready,
-                         notes: list.map(i => ({ src: i, mode: schedule.scheduleMode(D[i]) })).filter(n => n.mode !== 'ok'),
-                         vehicles: cs.flatMap(c => c.vehicles) });
-    }
-    if (url.pathname === '/api/stops') {
-      if (!stopsBody) {
-        const out = [];
-        for (const i of IDS) {
-          const G = D[i], served = Object.keys(G.stopIndex).length ? s => G.stopIndex[s] : () => true;
-          for (const s of Object.keys(G.stops)) if (G.stopLoc[s] && served(s)) out.push([`${i}:${s}`, G.stops[s], G.stopLoc[s][0], G.stopLoc[s][1], i, null]);
-        }
-        stopsBody = JSON.stringify(out);
-      }
-      return send(res, stopsBody, 'no-store');
-    }
-    if (url.pathname === '/api/stop') {
-      const full = url.searchParams.get('id'), [i, sid] = splitId(full);
-      if (!D[i]) return send(res, { error: 'fermata sconosciuta' }, 'no-store', 404);
-      
-      const secsParam = url.searchParams.get('secs');
-      const dateParam = url.searchParams.get('date');
-      const secs = secsParam !== null ? +secsParam : null;
-      const date = dateParam || null;
-
-      const labels = new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
-      return send(res, { stop: { id: full, name: D[i].stops[sid] || sid, src: i }, updated: Date.now(), liveUpdated: S[i].updated,
-                         note: schedule.scheduleMode(D[i]) === 'ok' ? null : schedule.scheduleMode(D[i]),
-                         departures: schedule.departures(D[i], S[i].live, sid, secs, date).map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) });
-    }
-    if (url.pathname === '/api/trip') {
-      const full = url.searchParams.get('id'), [i, tid] = splitId(full);
-      if (!D[i] || !D[i].stopTimes.has(tid)) return send(res, { error: 'corsa sconosciuta' }, 'no-store', 404);
-      return send(res, tripDetail(i, tid, url.searchParams.get('mode') !== 'sched'));
-    }
-    if (url.pathname === '/api/routes') {
-      const out = {};
-      for (const i of IDS) for (const r in D[i].routes) out[`${i}:${r}`] = { ...D[i].routes[r], src: i };
-      return send(res, out, 'no-store');
-    }
-    if (url.pathname === '/api/shapes') {
-      const [i, rid] = splitId(url.searchParams.get('id'));
-      return send(res, { shapes: D[i]?.routeShapes[rid] || [] }, 'no-store');
-    }
-  } catch (e) {
-    return send(res, { error: e.message }, 'no-store', 500);
+  const u = new URL(req.url, 'http://localhost'), handler = API[u.pathname];
+  if (handler) {
+    try { return send(req, res, handler(u)); }
+    catch (e) { return send(req, res, { error: e.message }, e.code || 500); }
   }
-  const page = [path.join(__dirname, 'public', 'index.html'), path.join(__dirname, 'index.html')].find(f => fs.existsSync(f));
-  fs.readFile(page || '', (err, html) => {
-    if (err) { res.writeHead(500); return res.end('index.html mancante'); }
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(html);
-  });
+  res.writeHead(page ? 200 : 500, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(page || 'index.html mancante');
 }).listen(PORT, () => console.log(`http://localhost:${PORT}`));
+
+for (const id of IDS) setInterval(() => refresh(id), REFRESH_MS);
+loadStatic();
+setInterval(loadStatic, 24 * 3600 * 1000);

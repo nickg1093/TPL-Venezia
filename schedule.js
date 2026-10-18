@@ -1,119 +1,164 @@
+// Calendari, posizioni teoriche lungo il tracciato e passaggi alle fermate.
+// I tracciati sono Float32Array piatti: [lat0, lon0, lat1, lon1, ...].
 const pad = n => String(n).padStart(2, '0');
 const ymd = d => `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}`;
-const hhmm = s => { s %= 86400; return `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s % 3600 / 60))}`; };
+const hhmm = s => { s = ((s % 86400) + 86400) % 86400; return `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s % 3600 / 60))}`; };
+const DAY = 86400000;
+const dateOf = s => new Date(Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)));
+const dowOf = s => dateOf(s).getUTCDay();
 
+const FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit',
+  day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
 function romeNow(ms = Date.now()) {
-  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit',
-    day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(ms));
-  const o = {}; for (const x of p) o[x.type] = x.value;
+  const o = {}; for (const x of FMT.formatToParts(new Date(ms))) o[x.type] = x.value;
   return { d: new Date(Date.UTC(+o.year, +o.month - 1, +o.day)), secs: +o.hour * 3600 + +o.minute * 60 + +o.second };
 }
-const dayNum = d => Date.UTC(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8)) / 86400000;
-const dowOf = d => new Date(dayNum(d) * 86400000).getUTCDay();
+// Istante richiesto (secondi del giorno + data YYYYMMDD) con ritorno a "adesso" se mancano o sono invalidi
+function when(secs, date) {
+  const b = romeNow(), s = secs == null ? NaN : +secs;
+  return { secs: Number.isFinite(s) ? s : b.secs, day: /^\d{8}$/.test(date || '') ? dateOf(date) : b.d };
+}
 
+// Servizi attivi in una data. mode 'approx' = data fuori dal periodo coperto dai calendari:
+// si usa il solo giorno della settimana.
 function servicesFor(G, date) {
-  const dow = dowOf(date);
   const cache = (G._svc ||= new Map());
   let r = cache.get(date); if (r) return r;
-  const strict = new Set();
-  for (const sid in G.calendar) { const c = G.calendar[sid]; if (c.days[dow] && date >= c.start && date <= c.end) strict.add(sid); }
-  for (const [sid, type] of G.exByDate?.[date] || []) { if (type === 1) strict.add(sid); else if (type === 2) strict.delete(sid); }
+  const dow = dowOf(date), set = new Set(), ex = G.exByDate[date];
+  for (const sid in G.calendar) { const c = G.calendar[sid]; if (c.days[dow] && date >= c.start && date <= c.end) set.add(sid); }
+  for (const [sid, type] of ex || []) { if (type === 1) set.add(sid); else if (type === 2) set.delete(sid); }
   const cov = (G._cov ||= (() => {
-    const cs = Object.values(G.calendar).filter(c => c.start && c.end);
-    return { min: cs.length ? cs.map(c => c.start).sort()[0] : '99999999', max: cs.length ? cs.map(c => c.end).sort().pop() : '00000000' };
+    let min = '99999999', max = '00000000';
+    for (const sid in G.calendar) { const c = G.calendar[sid]; if (c.start && c.start < min) min = c.start; if (c.end && c.end > max) max = c.end; }
+    return { min, max };
   })());
-  const covered = (date >= cov.min && date <= cov.max) || !!G.exByDate?.[date];
-  if (strict.size || covered) r = { set: strict, mode: 'ok' };
+  if (set.size || ex || (date >= cov.min && date <= cov.max)) r = { set, mode: 'ok' };
   else {
     const loose = new Set();
     for (const sid in G.calendar) if (G.calendar[sid].days[dow]) loose.add(sid);
-    r = loose.size ? { set: loose, mode: 'ok' } : { set: new Set(), mode: 'ok' };
+    r = { set: loose, mode: 'approx' };
   }
+  if (cache.size > 60) cache.clear();
   cache.set(date, r); return r;
 }
 const serviceActive = (G, sid, date) => servicesFor(G, date).set.has(sid);
+
+// ---- geometria sui tracciati ----
+const K = 0.7;   // correzione approssimata della longitudine
+const d2 = (x0, y0, x1, y1) => ((y0 - y1) * K) ** 2 + (x0 - x1) ** 2;
 const lerp = (A, B, f) => [A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f];
-const d2 = (P, Q) => { const dx = (P[1] - Q[1]) * 0.7, dy = P[0] - Q[0]; return dx * dx + dy * dy; };
-function nearest(pts, P, from = 0) {
+const seg = (p, k) => Math.sqrt(d2(p[2 * k], p[2 * k + 1], p[2 * k + 2], p[2 * k + 3]));
+function nearest(p, P, from = 0, to = (p.length >> 1) - 1) {
   let best = from, bd = Infinity;
-  for (let i = from; i < pts.length; i++) { const d = d2(pts[i], P); if (d < bd) { bd = d; best = i; } }
+  for (let i = from; i <= to; i++) { const d = d2(p[2 * i], p[2 * i + 1], P[0], P[1]); if (d < bd) { bd = d; best = i; } }
   return best;
 }
-
-function along(G, shapeId, sidA, sidB, A, B, f) {
-  const pts = G.shapePts?.[shapeId];
-  if (!pts || pts.length < 2) return lerp(A, B, f);
+// Tratto del tracciato compreso tra due fermate (indici dei punti), con cache
+function span(G, shapeId, sidA, sidB, A, B) {
+  const p = G.shapePts[shapeId];
+  if (!p || p.length < 4) return null;
   const cache = (G._idx ||= new Map());
-  const get = (sid, P) => { const k = shapeId + '|' + sid; let i = cache.get(k); if (i === undefined) { i = nearest(pts, P); cache.set(k, i); } return i; };
+  const get = (sid, P) => { const k = shapeId + '|' + sid; let i = cache.get(k); if (i === undefined) cache.set(k, i = nearest(p, P)); return i; };
   const ia = get(sidA, A); let ib = get(sidB, B);
-  if (ib <= ia) ib = nearest(pts, B, ia);
-  if (ib <= ia) return lerp(A, B, f);
-  const seg = []; let total = 0;
-  for (let k = ia; k < ib; k++) { const l = Math.sqrt(d2(pts[k], pts[k + 1])); seg.push(l); total += l; }
+  if (ib <= ia) ib = nearest(p, B, ia);
+  return ib > ia ? { p, ia, ib } : null;
+}
+function along(G, shapeId, sidA, sidB, A, B, f) {
+  const s = span(G, shapeId, sidA, sidB, A, B);
+  if (!s) return lerp(A, B, f);
+  const { p, ia, ib } = s, lens = []; let total = 0;
+  for (let k = ia; k < ib; k++) { const l = seg(p, k); lens.push(l); total += l; }
   const target = total * f; let acc = 0;
-  for (let k = 0; k < seg.length; k++) {
-    if (acc + seg[k] >= target) return lerp(pts[ia + k], pts[ia + k + 1], seg[k] ? (target - acc) / seg[k] : 0);
-    acc += seg[k];
+  for (let k = 0; k < lens.length; k++) {
+    if (acc + lens[k] >= target) {
+      const i = ia + k;
+      return lerp([p[2 * i], p[2 * i + 1]], [p[2 * i + 2], p[2 * i + 3]], lens[k] ? (target - acc) / lens[k] : 0);
+    }
+    acc += lens[k];
   }
-  return pts[ib];
+  return [p[2 * ib], p[2 * ib + 1]];
+}
+// Frazione (0..1) del percorso A->B in cui si trova il punto V (posizione GPS)
+function fracOnShape(G, shapeId, sidA, sidB, A, B, V) {
+  const clamp = x => Math.min(1, Math.max(0, x));
+  const proj = (x0, y0, x1, y1) => {
+    const px = (y1 - y0) * K, py = x1 - x0, wx = (V[1] - y0) * K, wy = V[0] - x0, den = px * px + py * py;
+    const t = den > 0 ? clamp((wx * px + wy * py) / den) : 0, dx = wx - px * t, dy = wy - py * t;
+    return { t, d: dx * dx + dy * dy };
+  };
+  const s = span(G, shapeId, sidA, sidB, A, B);
+  if (s) {
+    const { p, ia, ib } = s, iv = nearest(p, V, ia, ib), pre = [0];
+    for (let k = ia; k < ib; k++) pre.push(pre[pre.length - 1] + seg(p, k));
+    let best = null;
+    for (let k = Math.max(ia, iv - 1); k <= Math.min(ib - 1, iv); k++) {
+      const r = proj(p[2 * k], p[2 * k + 1], p[2 * k + 2], p[2 * k + 3]);
+      if (!best || r.d < best.d) best = { k, t: r.t, d: r.d };
+    }
+    const tot = pre[pre.length - 1];
+    if (best && tot > 0) return clamp((pre[best.k - ia] + best.t * seg(p, best.k)) / tot);
+  }
+  return proj(A[0], A[1], B[0], B[1]).t;
 }
 
-function positionsNow(G, targetSecs = null, targetDate = null) {
-  const base = romeNow();
-  const secs = targetSecs !== null ? +targetSecs : base.secs;
-  const d = targetDate !== null ? new Date(Date.UTC(+targetDate.slice(0, 4), +targetDate.slice(4, 6) - 1, +targetDate.slice(6, 8))) : base.d;
+// ---- corse in viaggio a un dato istante ----
+// Le corse sono raggruppate a fasce di 10 minuti: non si scorrono tutte a ogni richiesta.
+function candidates(G, t) {
+  const bk = (G._bk ||= (() => {
+    const m = new Map();
+    for (const [id, st] of G.stopTimes)
+      for (let b = Math.floor(st.start / 600); b <= Math.floor(st.end / 600); b++) { let l = m.get(b); if (!l) m.set(b, l = []); l.push(id); }
+    return m;
+  })());
+  return bk.get(Math.floor(t / 600)) || [];
+}
 
-  const out = [], seen = new Set();
-  for (const [off, day] of [[0, d], [86400, new Date(d.getTime() - 86400000)], [-86400, new Date(d.getTime() + 86400000)]]) {
-    const t = secs + off, date = ymd(day), active = {};
-    for (const [tripId, st] of G.stopTimes || []) {
+function positionsNow(G, secsParam = null, date = null) {
+  const { secs, day } = when(secsParam, date), out = [], seen = new Set();
+  // oggi, e le corse di ieri che proseguono dopo la mezzanotte
+  for (const [off, dd] of [[0, day], [86400, new Date(day - DAY)]]) {
+    const t = secs + off, ds = ymd(dd);
+    for (const tripId of candidates(G, t)) {
+      const st = G.stopTimes.get(tripId);
       if (t < st.start || t > st.end || seen.has(tripId)) continue;
-      const trip = G.trips[tripId]; if (!trip) continue;
-      if (!(active[trip.service] ??= serviceActive(G, trip.service, date))) continue;
+      const trip = G.trips[tripId];
+      if (!trip || !serviceActive(G, trip.service, ds)) continue;
       const n = st.d.length; let i = 0;
       while (i < n && t > st.d[i]) i++;
       if (i >= n) i = n - 1;
-      let pos, at = null, ni;
-      if (t >= st.a[i]) {
-        pos = G.stopLoc[st.s[i]]; if (!pos) continue;
-        at = G.stops[st.s[i]] || null; ni = i + 1 < n ? i + 1 : null;
-      } else {
+      let pos;
+      if (t >= st.a[i]) { pos = G.stopLoc[st.s[i]]; if (!pos) continue; }
+      else {
         if (i === 0) continue;
         const A = G.stopLoc[st.s[i - 1]], B = G.stopLoc[st.s[i]]; if (!A || !B) continue;
-        const span = st.a[i] - st.d[i - 1];
-        pos = along(G, trip.shape, st.s[i - 1], st.s[i], A, B, span > 0 ? (t - st.d[i - 1]) / span : 1);
-        ni = i;
+        const span_ = st.a[i] - st.d[i - 1];
+        pos = along(G, trip.shape, st.s[i - 1], st.s[i], A, B, span_ > 0 ? (t - st.d[i - 1]) / span_ : 1);
       }
       const r = G.routes[trip.route] || {};
       seen.add(tripId);
-      out.push({ id: tripId, label: null, lat: pos[0], lon: pos[1], line: r.name || trip.route, color: r.color || null,
-        routeId: trip.route, headsign: trip.headsign, at,
-        nextStop: ni != null ? (G.stops[st.s[ni]] || null) : null,
-        nextTime: ni != null ? hhmm(st.a[ni]) : null, delay: null });
+      out.push({ id: tripId, lat: +pos[0].toFixed(5), lon: +pos[1].toFixed(5), line: r.name || trip.route,
+        color: r.color || null, routeId: trip.route, headsign: trip.headsign });
     }
   }
   return out;
 }
 
-function departures(G, live, stopId, targetSecs = null, targetDate = null) {
-  const list = G.stopIndex?.[stopId];
+// ---- passaggi a una fermata (finestra: da -3 a +120 minuti) ----
+function departures(G, live, stopId, secsParam = null, date = null) {
+  const list = G.stopIndex[stopId];
   if (!list) return [];
-  const base = romeNow();
-  const secs = targetSecs !== null ? +targetSecs : base.secs;
-  const d = targetDate !== null ? new Date(Date.UTC(+targetDate.slice(0, 4), +targetDate.slice(4, 6) - 1, +targetDate.slice(6, 8))) : base.d;
-
-  const out = [];
-  for (const [off, day] of [[0, d], [86400, new Date(d.getTime() - 86400000)], [-86400, new Date(d.getTime() + 86400000)]]) {
-    const tNow = secs + off, date = ymd(day), active = {};
+  const { secs, day } = when(secsParam, date), out = [];
+  for (const [off, dd] of [[0, day], [86400, new Date(day - DAY)], [-86400, new Date(+day + DAY)]]) {
+    const tNow = secs + off, ds = ymd(dd);
     for (let p = 0; p < list.length; p += 2) {
-      const tripId = list[p], i = list[p + 1], st = G.stopTimes.get(tripId);
+      const tripId = G.tripIds[list[p]], i = list[p + 1], st = G.stopTimes.get(tripId);
       const last = i === st.s.length - 1, ts = last ? st.a[i] : st.d[i];
       const lv = off >= 0 ? live?.[tripId] : null;
       const dl = lv ? lv.delays[i] : null;
       const sm = ts - tNow, em = ts + (dl ?? 0) - tNow;
       if ((sm < -180 || sm > 7200) && (em < -180 || em > 7200)) continue;
-      const trip = G.trips[tripId]; if (!trip) continue;
-      if (!(active[trip.service] ??= serviceActive(G, trip.service, date))) continue;
+      const trip = G.trips[tripId];
+      if (!trip || !serviceActive(G, trip.service, ds)) continue;
       const r = G.routes[trip.route] || {};
       out.push({ tripId, line: r.name || trip.route, color: r.color || null,
         headsign: trip.headsign || G.stops[st.s[st.s.length - 1]] || null,
@@ -126,11 +171,7 @@ function departures(G, live, stopId, targetSecs = null, targetDate = null) {
   return out.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn)).slice(0, 80);
 }
 
-function isActiveToday(G, tripId) {
-  const trip = G.trips[tripId]; if (!trip) return false;
-  const { d } = romeNow();
-  return serviceActive(G, trip.service, ymd(d));
-}
-const scheduleMode = G => servicesFor(G, ymd(romeNow().d)).mode;
+const isActiveToday = (G, tripId) => { const t = G.trips[tripId]; return !!t && serviceActive(G, t.service, ymd(romeNow().d)); };
+const scheduleMode = (G, date) => servicesFor(G, /^\d{8}$/.test(date || '') ? date : ymd(romeNow().d)).mode;
 const secsOfDayRome = ms => romeNow(ms).secs;
-module.exports = { positionsNow, departures, secsOfDayRome, isActiveToday, scheduleMode };
+module.exports = { positionsNow, departures, secsOfDayRome, isActiveToday, scheduleMode, fracOnShape, hhmm };
