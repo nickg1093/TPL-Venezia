@@ -1,965 +1,317 @@
-<!DOCTYPE html>
-<html lang="it">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Venezia TPL live</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<style>
-  :root { --bg:#f7f9fa; --fg:#14232b; --muted:#5d6f78; --line:#cfd9de; --accent:#0a6c8c; --late:#c0392b; --ok:#1e8449; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#10191e; --fg:#e6eef1; --muted:#93a6af; --line:#2a3b44; --accent:#4cc2e6; --late:#ff7b6b; --ok:#5fd08a; }
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const { transit_realtime } = require('gtfs-realtime-bindings');
+const gtfs = require('./gtfs');
+const schedule = require('./schedule');
+const { secsOfDayRome } = schedule;
+
+const PORT = process.env.PORT || 3000;
+const REFRESH_MS = 15000;
+const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/aut/GTFSRT/' };
+const IDS = Object.keys(RT);
+
+const emptyData = () => ({ routes: {}, trips: {}, stops: {}, stopLoc: {}, stopIndex: {}, routeShapes: {}, shapePts: {},
+  calendar: {}, exceptions: {}, stopTimes: new Map(), exByDate: {}, byStart: {}, tripPrefixes: [] });
+const D = {}, S = {};
+for (const id of IDS) {
+  D[id] = emptyData();
+  S[id] = { updated: 0, error: null, vehicles: [], live: {}, diag: null, raw: {}, n: 0, hist: new Map(), sched: { ts: 0, vehicles: [], error: null } };
+}
+let stopsBody = null;
+
+let version = 0;
+const ready = Object.fromEntries(IDS.map(i => [i, false]));
+async function loadStatic() {
+  for (const id of IDS) {
+    try { D[id] = await gtfs.load(id); S[id].sched.ts = 0; ready[id] = true; if (RT[id]) refresh(id); }
+    catch (e) { console.error(`GTFS statico [${id}]:`, e.message); }
+    stopsBody = null; version++;
   }
-  * { box-sizing: border-box; }
-  html, body { height:100%; margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
-  body { display:flex; flex-direction:column; }
-  
-  header { display:flex; flex-wrap:wrap; gap:.75rem 1rem; align-items:center; padding:.6rem .9rem; border-bottom:1px solid var(--line); background:var(--bg); z-index:1000; }
-  
-  .search-wrapper { position: relative; display: inline-block; }
-  input[type="search"] { font:inherit; padding:.35rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); width:18rem; }
-  input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
-  
-  #search-results {
-    position: absolute; top: calc(100% + 4px); left: 0; width: 22rem; max-height: 22rem; overflow-y: auto;
-    background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-    z-index: 1200; display: none;
-  }
-  #search-results.active { display: block; }
-  .search-category { font-size: 0.75rem; font-weight: 700; color: var(--muted); padding: 0.4rem 0.8rem; background: color-mix(in srgb, var(--line) 25%, transparent); text-transform: uppercase; letter-spacing: 0.5px; }
-  .search-item { padding: 0.5rem 0.8rem; cursor: pointer; display: flex; align-items: center; gap: 0.6rem; font-size: 0.9rem; border-bottom: 1px solid color-mix(in srgb, var(--line) 20%, transparent); }
-  .search-item:hover { background: color-mix(in srgb, var(--line) 40%, transparent); }
+}
+loadStatic();
+setInterval(loadStatic, 24 * 3600 * 1000);
 
-  #status { margin-left:auto; font-size:.85rem; color:var(--muted); }
-  #status.err { color:var(--late); }
-  
-  #wrap { position:relative; flex:1; min-height:0; }
-  #map { position:absolute; inset:0; }
-  
-  button { font:inherit; padding:.35rem .7rem; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); cursor:pointer; }
-  button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
-  
-  .hint { position:absolute; left:10px; bottom:85px; z-index:900; padding:.3rem .6rem; border-radius:6px; background:var(--bg); color:var(--muted);
-          border:1px solid var(--line); font-size:.8rem; pointer-events:none; }
-          
-  .side-panel { position:absolute; z-index:1100; top:12px; bottom:85px; width:340px; max-width:calc(100% - 24px); overflow-y:auto;
-                background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,.3); }
-  #panel { right:12px; padding:0; }
-  #lines-summary-panel { left:12px; padding:0.8rem; display:none; }
-  #lines-summary-panel.active { display:block; }
-  
-  .ph { position:sticky; top:0; z-index:2; background:var(--bg); padding:.8rem .8rem .5rem; margin:0; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:.5rem; align-items:flex-start; }
-  .ph strong { font-size:1.05rem; }
-  .muted { color:var(--muted); font-size:.8rem; }
-  #plist { padding:.3rem .8rem .8rem; }
-  
-  .dep { display:grid; grid-template-columns:auto 1fr auto; gap:.6rem; align-items:center; padding:.5rem 0; border-bottom:1px solid var(--line); }
-  .dm { min-width:0; } .dh { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .dn { font-size:.8rem; color:var(--muted); } .dn.late, .dn.ok { font-weight:600; }
-  .dt { text-align:right; } .dt strong { font-size:1.1rem; font-variant-numeric:tabular-nums; }
-  .cx { opacity:.6; } .cx .dh { text-decoration:line-through; }
-  @media (max-width:640px) { .side-panel { top:auto; left:8px; right:8px; bottom:85px; width:auto; max-width:none; max-height:50%; } }
-
-  .bus { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-width:30px; border-radius:50%;
-         background:var(--c,#0a6c8c); color:var(--t,#fff); font:700 12px/1 system-ui,sans-serif; border:2px solid var(--b,#fff);
-         box-shadow:0 1px 3px rgba(0,0,0,.45); white-space:nowrap; cursor:pointer; }
-  .bus.aut { border-radius:6px; width:auto; min-width:28px; height:22px; padding:0 6px; }
-  .bus.sched { border-style:dashed; opacity:.9; }
-  .bus.sel { outline:3px solid #f5a623; outline-offset:1px; }
-
-  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
-  .seg label { padding:.35rem .7rem; cursor:pointer; font-size:1rem; user-select:none; display:flex; align-items:center; gap:0.4rem; justify-content:center; }
-  .seg input { position:absolute; opacity:0; pointer-events:none; }
-  .seg label:has(input:checked) { background:var(--accent); color:var(--bg); font-weight:600; }
-  .seg label:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:-2px; }
-  
-  .late { color:var(--late); font-weight:600; } .ok { color:var(--ok); font-weight:600; }
-
-  .st { display:grid; grid-template-columns:26px 1fr auto; gap:.5rem; min-height:46px; cursor:pointer; border-radius:6px; }
-  .st:hover { background:color-mix(in srgb, var(--line) 35%, transparent); }
-  .rail { position:relative; }
-  
-  /* Linea di avanzamento grigia per default */
-  .rail::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:4px; margin-left:-2px; background:var(--line); }
-  
-  /* Se la fermata è passata o la ferrovia è stata percorsa, coloriamo la linea */
-  .st.passed .rail::before, .st.passed-line .rail::before { background:var(--rc); }
-  
-  /* Correzione capolinea: la linea parte dal centro del primo pallino (23px) e termina al centro dell'ultimo */
-  .st.first .rail::before { top: 23px; bottom: 0; } 
-  .st.last .rail::before { top: 0; bottom: calc(100% - 23px); }
-
-  .dot { position:absolute; left:50%; top:23px; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; background:var(--bg);
-         border:3px solid var(--rc); display:flex; align-items:center; justify-content:center; font-size:.7rem; z-index:2; }
-  
-  /* Fermata passata: pallino pieno colorato con spunta */
-  .st.passed .dot { border-color:var(--rc); background:var(--rc); color:#fff; font-size:9px; font-weight:bold; }
-  
-  @keyframes blink-dot-next {
-    0% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--rc) 70%, transparent); }
-    50% { transform: scale(1.3); opacity: 0.6; box-shadow: 0 0 0 6px color-mix(in srgb, var(--rc) 0%, transparent); }
-    100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--rc) 70%, transparent); }
-  }
-
-  /* Prossima fermata: pallino con alone e animazione lampeggiante */
-  .st.next .dot { box-shadow: 0 0 0 4px color-mix(in srgb, var(--rc) 30%, transparent); animation: blink-dot-next 1.2s infinite ease-in-out; }
-  
-  .sn { padding:.5rem 0; min-width:0; } .nm { font-weight:600; }
-  .st.next .nm { font-size:1.02rem; }
-  
-  /* Sbiadimento delle fermate e dei dati già passati */
-  .st.passed .nm, .st.passed .tm, .st.passed .muted { opacity:0.4; }
-  
-  .tm { text-align:right; padding:.5rem 0; } .tm strong { font-variant-numeric:tabular-nums; }
-  .banner { margin:.4rem 0; padding:.4rem .6rem; border-radius:6px; border:1px solid var(--late); color:var(--late); font-weight:600; }
-  .tl { position:relative; z-index:0; padding-top:.2rem; }
-  .trav { position:absolute; left:11px; top:23px; width:4px; height:0; background:var(--rc); z-index:1; transition:height 14s linear; }
-  .veh { position:absolute; left:0; top:23px; width:26px; height:26px; margin-top:-13px; border-radius:50%; background:var(--rc);
-         border:3px solid var(--bg); box-shadow:0 1px 4px rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center;
-         font-size:.95rem; z-index:3; transition:top 14s linear; }
-         
-  #follow { pointer-events:auto; bottom:85px; cursor:pointer; font:inherit; font-size:.8rem; color:var(--fg); }
-  .dep.go { cursor:pointer; border-radius:6px; }
-  .dep.go:hover, .dep.go:focus-visible { background:color-mix(in srgb, var(--line) 35%, transparent); outline:none; }
-  #pback { color:var(--accent); text-decoration:none; font-weight:600; }
-  
-  @keyframes blink-dot {
-    0% { transform: scale(0.95); opacity: 0.4; box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); }
-    70% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 0 6px rgba(46, 204, 113, 0); }
-    100% { transform: scale(0.95); opacity: 0.4; box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
-  }
-  .live-indicator {
-    display: inline-block; width: 9px; height: 9px; background-color: #2ecc71; border-radius: 50%; animation: blink-dot 1.5s infinite; margin-right: 4px;
-  }
-
-  .bottom-bar {
-    position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); z-index: 900;
-    background: #10191e; color: #e6eef1; border: 1px solid #2a3b44; border-radius: 28px; padding: 0.5rem 1rem;
-    display: flex; align-items: center; gap: 0.8rem; box-shadow: 0 6px 24px rgba(0,0,0,0.4); font-size: 0.85rem;
-    white-space: nowrap; max-width: 95vw;
-  }
-  .time-display { font-weight: 700; font-size: 1.05rem; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 0.2rem; }
-  .time-display small { font-size: 0.75rem; font-weight: 400; opacity: 0.8; }
-
-  .ora-btn {
-    background: #1e8449; color: #fff; border: none; border-radius: 6px; padding: 0.25rem 0.6rem;
-    font-weight: 700; font-size: 0.8rem; cursor: pointer; text-transform: uppercase;
-  }
-  .ora-btn:hover { background: #239b56; }
-
-  #timeline-bar { display: none; }
-  #timeline-bar.active { display: flex; }
-  
-  #tl-play {
-    background: #2a3b44; border: none; border-radius: 50%; width: 32px; height: 32px;
-    display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; font-size: 0.9rem; padding: 0;
-  }
-  #tl-play:hover { background: #3a4b54; }
-
-  #tl-date {
-    background: #1a272e; color: #e6eef1; border: 1px solid #2a3b44; border-radius: 8px; padding: 0.3rem 0.5rem; font: inherit; font-size: 0.85rem; cursor: pointer;
-  }
-  #tl-speed {
-    background: #1a272e; color: #e6eef1; border: 1px solid #2a3b44; border-radius: 8px; padding: 0.3rem 0.5rem; font: inherit; font-size: 0.85rem; cursor: pointer;
-  }
-  #tl-range {
-    flex: 1; accent-color: #4cc2e6; cursor: pointer; min-width: 150px;
-  }
-
-  .table-summary { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.4rem; }
-  .table-summary th { text-align: left; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 0.3rem; font-weight: 600; }
-  .table-summary td { padding: 0.35rem 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 20%, transparent); }
-</style>
-</head>
-<body>
-<header>
-  <div class="seg" role="radiogroup" aria-label="Modalità">
-    <label title="Live"><input type="radio" name="mode" value="live" checked><span class="live-indicator"></span>📡 Live</label>
-    <label title="Orario programmato"><input type="radio" name="mode" value="sched">🕒 Pianificato</label>
-  </div>
-  <div class="seg" role="group" aria-label="Servizi">
-    <label title="Navigazione"><input type="checkbox" name="src" value="nav" checked>🚢</label>
-    <label title="Automobilistico"><input type="checkbox" name="src" value="aut" checked>🚌</label>
-  </div>
-  <button id="locate" type="button" title="Mostra la mia posizione">📍</button>
-  
-  <button id="toggle-lines-btn" type="button" title="Mostra riepilogo linee" style="font-size: 0.9rem;">📊 Linee</button>
-
-  <div class="search-wrapper">
-    <input id="filter" type="search" placeholder="🔍 Cerca fermata o linea..." autocomplete="off" aria-label="Cerca fermata o linea">
-    <div id="search-results"></div>
-  </div>
-
-  <span id="status" role="status">Caricamento…</span>
-</header>
-
-<div id="wrap">
-  <div id="map"></div>
-  <div id="hint" class="hint">Avvicina lo zoom per vedere le fermate</div>
-  <button id="follow" class="hint" type="button" hidden>📍 Seguo il mezzo · tocca per smettere</button>
-  
-  <aside id="lines-summary-panel" class="side-panel" aria-label="Riepilogo linee">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
-      <div>
-        <div id="summary-title" style="font-size:0.7rem; font-weight:700; color:var(--muted); text-transform:uppercase;">TEMPO REALE - DATI ACTV</div>
-        <strong style="font-size:1rem;" id="summary-main-heading">Le linee adesso</strong>
-      </div>
-      <button id="close-lines-panel" type="button" style="background:none; border:none; color:var(--fg); cursor:pointer;">✕</button>
-    </div>
-    <div id="summary-stats" class="muted" style="margin-bottom:0.5rem; font-size:0.8rem; font-weight:600;">Caricamento statistiche…</div>
-    
-    <div style="max-height: calc(100vh - 190px); overflow-y:auto; padding-right:2px;">
-      <table class="table-summary">
-        <thead id="summary-table-head">
-          <tr>
-            <th>Linea</th>
-            <th style="text-align:center;">In acqua</th>
-            <th style="text-align:center;" id="th-col-3">Rilevati</th>
-            <th style="text-align:right;" id="th-col-4">Ritardo</th>
-          </tr>
-        </thead>
-        <tbody id="summary-table-body">
-          <tr><td colspan="4" class="muted" style="text-align:center; padding:1rem;">Nessun dato</td></tr>
-        </tbody>
-      </table>
-      
-      <div style="margin-top: 1rem; border-top: 1px solid var(--line); padding-top: 0.6rem;">
-        <div class="muted" style="font-size:0.75rem; margin-bottom:0.4rem;">Non in servizio adesso (Senza linea / ?)</div>
-        <div style="display:flex; gap:0.4rem; flex-wrap:wrap;" id="unassigned-badges"></div>
-      </div>
-    </div>
-  </aside>
-
-  <div id="clock-bar" class="bottom-bar">
-    <span class="live-indicator" style="width: 7px; height: 7px;"></span>
-    <div class="time-display" id="clock-time">00:00:<small>00</small></div>
-    <span style="color: var(--muted);" id="updated-ago">· aggiornato ora</span>
-  </div>
-
-  <div id="timeline-bar" class="bottom-bar">
-    <button id="tl-play" type="button" title="Play / Pausa">▶️</button>
-    <div class="time-display" id="tl-time">12:00:00</div>
-    <button id="tl-now" type="button" class="ora-btn">ORA</button>
-    <input id="tl-date" type="date" title="Seleziona data">
-    <select id="tl-speed" title="Velocità">
-      <option value="1">1x</option>
-      <option value="5" selected>5x</option>
-      <option value="15">15x</option>
-      <option value="60">60x</option>
-    </select>
-    <span id="tl-count" class="muted" style="font-size: 0.8rem;">0 in navigazione</span>
-    <input id="tl-range" type="range" min="0" max="86400" value="43200" step="1" title="Timeline">
-  </div>
-
-  <aside id="panel" class="side-panel" hidden aria-label="Transiti alla fermata">
-    <div class="ph">
-      <div><strong id="pname"></strong><div id="psub" class="muted"></div></div>
-      <button id="pclose" type="button" aria-label="Chiudi">✕</button>
-    </div>
-    <div id="plist"></div>
-  </aside>
-</div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-const map = L.map('map', { preferCanvas: true }).setView([45.437, 12.335], 12);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, attribution: '© OpenStreetMap · Dati ACTV (GTFS / GTFS-RT)'
-}).addTo(map);
-
-const statusEl = document.getElementById('status'), filterEl = document.getElementById('filter');
-const searchResultsEl = document.getElementById('search-results');
-const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let mode = 'live';
-const active = new Set(['nav', 'aut']);
-const srcParam = () => [...active].join(',');
-const POLL_MS = 15000, MOVE_MS = 14000;
-let lastServerUpdate = Date.now();
-
-let selectedLineFilter = null;
-
-let isPlaying = false, playInterval = null;
-const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds(); };
-const formatSecs = s => {
-  const hh = String(Math.floor(s / 3600) % 24).padStart(2, '0');
-  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
-  const ss = String(s % 60).padStart(2, '0');
-  return `${hh}:${mm}:${ss}`;
+const has = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
+const wrap = x => ((x + 43200) % 86400 + 86400) % 86400 - 43200;
+const delayOf = (ev, sched) => {
+  if (!ev) return null;
+  if (has(ev, 'delay')) return Number(ev.delay);
+  if (has(ev, 'time') && Number(ev.time) > 0) return wrap(secsOfDayRome(Number(ev.time) * 1000) - sched % 86400);
+  return null;
 };
 
-document.getElementById('tl-date').valueAsDate = new Date();
-document.getElementById('tl-range').value = nowSecs();
-
-function updateClock() {
-  if (mode === 'live') {
-    const now = new Date();
-    const h = String(now.getHours()).padStart(2, '0');
-    const m = String(now.getMinutes()).padStart(2, '0');
-    const s = String(now.getSeconds()).padStart(2, '0');
-    document.getElementById('clock-time').innerHTML = `${h}:${m}:<small>${s}</small>`;
-    const diffSec = Math.floor((Date.now() - lastServerUpdate) / 1000);
-    document.getElementById('updated-ago').textContent = diffSec <= 2 ? '· aggiornato ora' : `· aggiornato ${diffSec}s fa`;
+function resolveTrip(G, td, dg) {
+  if (!td) return null;
+  const id = td.tripId;
+  const hit = (how, tid) => { if (dg) dg.resolved[how] = (dg.resolved[how] || 0) + 1; return { id: tid, how }; };
+  if (id && G.stopTimes.has(id)) return hit('byId', id);
+  if (id) {
+    const body = id.replace(/^[A-Za-z]+_/, '');
+    for (const p of G.tripPrefixes || []) if (G.stopTimes.has(p + body)) return hit('byPrefix', p + body);
   }
-}
-setInterval(updateClock, 1000);
-
-let lastLoadSecs = -1;
-function applyTimelineTime(secs, forceLoad = false) {
-  const range = document.getElementById('tl-range');
-  range.value = secs;
-  document.getElementById('tl-time').textContent = formatSecs(secs);
-  if (forceLoad || Math.abs(secs - lastLoadSecs) >= 5) {
-    lastLoadSecs = secs;
-    load();
-    if (openStop) loadDepartures();
-  }
-}
-
-document.getElementById('tl-play').addEventListener('click', () => {
-  isPlaying = !isPlaying;
-  document.getElementById('tl-play').textContent = isPlaying ? '⏸️' : '▶️';
-  if (isPlaying) {
-    playInterval = setInterval(() => {
-      const range = document.getElementById('tl-range');
-      const speed = +document.getElementById('tl-speed').value;
-      let val = +range.value + speed;
-      if (val > 86400) val = 0;
-      applyTimelineTime(val);
-    }, 1000);
-  } else {
-    clearInterval(playInterval);
-  }
-});
-
-document.getElementById('tl-now').addEventListener('click', () => {
-  if (isPlaying) { isPlaying = false; clearInterval(playInterval); document.getElementById('tl-play').textContent = '▶️'; }
-  const curSecs = nowSecs();
-  document.getElementById('tl-date').valueAsDate = new Date();
-  applyTimelineTime(curSecs, true);
-});
-
-document.getElementById('tl-range').addEventListener('input', () => {
-  applyTimelineTime(+document.getElementById('tl-range').value);
-});
-
-document.getElementById('tl-date').addEventListener('change', () => {
-  applyTimelineTime(+document.getElementById('tl-range').value, true);
-});
-
-function getVehicleIcon(src, label) {
-  const l = String(label ?? '').trim();
-  if (src === 'aut') {
-    if (/^tram_/i.test(l) || /^tram/i.test(l)) return '🚊';
-    return '🚌';
-  }
-  return '🚢';
-}
-
-function vehName(src, label) {
-  const l = String(label ?? '').trim();
-  if (!l) return '';
-  if (src === 'aut') {
-    const tram = /^tram_(.+)$/i.exec(l);
-    return tram ? `TRAM ${tram[1]}` : (/^tram/i.test(l) ? l.toUpperCase() : `BUS ${l}`);
-  }
-  if (/^\d+$/.test(l)) {
-    const n = +l;
-    if (n >= 1 && n <= 99) return `M/B ${n}`;
-    if (n >= 100 && n <= 300) return `M/S ${n}`;
-    return `mezzo ${n}`;
-  }
-  return `M/N ${l}`;
-}
-
-let follow = false, followAfter = 0;
-let selVeh = null;
-
-function colorInfo(c) {
-  const ok = /^#[0-9a-f]{6}$/i.test(c || ''), col = ok ? c : '#0a6c8c';
-  const lum = (parseInt(col.slice(1, 3), 16) * 299 + parseInt(col.slice(3, 5), 16) * 587 + parseInt(col.slice(5, 7), 16) * 114) / 1000;
-  return { c: col, ink: lum > 150 ? '#14232b' : '#fff', rail: lum > 200 ? '#0a6c8c' : col };
-}
-
-function busHtml(v) {
-  const k = colorInfo(v.color);
-  return `<div class="bus${v.src === 'aut' ? ' aut' : ''}${mode === 'sched' || v.estimated ? ' sched' : ''}${v.id === selVeh ? ' sel' : ''}" style="--c:${k.c};--t:${k.ink};--b:${k.ink}">${esc(v.line)}</div>`;
-}
-
-const tip = v => esc(`${getVehicleIcon(v.src, v.label)} ${v.line}${v.headsign ? ' → ' + v.headsign : ''}${v.label ? ' · ' + vehName(v.src, v.label) : ''}${v.estimated ? ' · da orario' : ''}`);
-
-let staticVer = -1;
-function loadStatics() {
-  fetch('/api/routes', { cache: 'no-store' }).then(r => r.json()).then(d => { if (d && !d.error) routesData = d; updateLinesSummary(); }).catch(() => {});
-  fetch('/api/stops', { cache: 'no-store' }).then(r => r.json()).then(d => { 
-    if (Array.isArray(d)) { 
-      stops = d; 
-      drawStops(); 
-    } 
-  }).catch(() => {});
-}
-
-let routesData = {};
-const shapeCache = new Map(), lineLayer = L.layerGroup().addTo(map), tripLayer = L.layerGroup().addTo(map);
-let routeToken = 0;
-async function showRoutes(ids) {
-  const tok = ++routeToken;
-  lineLayer.clearLayers();
-  for (const id of ids) {
-    if (!id) continue;
-    let shapes = shapeCache.get(id);
-    if (!shapes) {
-      try { shapes = (await (await fetch('/api/shapes?id=' + encodeURIComponent(id), { cache: 'no-store' })).json()).shapes; if (shapes?.length) shapeCache.set(id, shapes); }
-      catch { continue; }
-    }
-    if (tok !== routeToken) return;
-    const r = routesData[id] || {};
-    for (const pts of shapes) L.polyline(pts, { color: colorInfo(r.color).rail, weight: 4, opacity: .75 }).addTo(lineLayer);
-  }
-}
-function clearRoutes() { routeToken++; lineLayer.clearLayers(); }
-
-const linesSummaryPanel = document.getElementById('lines-summary-panel');
-document.getElementById('toggle-lines-btn').addEventListener('click', () => {
-  linesSummaryPanel.classList.toggle('active');
-  if (linesSummaryPanel.classList.contains('active')) updateLinesSummary();
-});
-document.getElementById('close-lines-panel').addEventListener('click', () => {
-  linesSummaryPanel.classList.remove('active');
-});
-
-function updateLinesSummary() {
-  if (!linesSummaryPanel.classList.contains('active')) return;
-  const tbody = document.getElementById('summary-table-body');
-  const statsEl = document.getElementById('summary-stats');
-  const thCol3 = document.getElementById('th-col-3');
-  const thCol4 = document.getElementById('th-col-4');
-  const summaryTitle = document.getElementById('summary-title');
-  const summaryMainHeading = document.getElementById('summary-main-heading');
-  const unassignedBadges = document.getElementById('unassigned-badges');
-
-  const filteredVehicles = vehicles.filter(v => active.has(v.src));
-
-  const validVehicles = filteredVehicles.filter(v => v.line && v.line !== '?' && v.line !== '??');
-  const unknownNav = filteredVehicles.filter(v => v.src === 'nav' && (!v.line || v.line === '?' || v.line === '??'));
-  const unknownAut = filteredVehicles.filter(v => v.src === 'aut' && (!v.line || v.line === '?' || v.line === '??'));
-
-  const lineMap = new Map();
-  let totalTracked = validVehicles.length;
-  let punctualCount = 0;
-  let totalDelaySum = 0;
-  let delayCount = 0;
-
-  for (const v of validVehicles) {
-    const lName = v.line;
-    if (!lineMap.has(lName)) {
-      lineMap.set(lName, { count: 0, punctual: 0, delaySum: 0, delayValidCount: 0, color: v.color, src: v.src, routeId: v.routeId });
-    }
-    const item = lineMap.get(lName);
-    item.count++;
-    
-    const delayMin = v.delay != null ? v.delay / 60 : 0;
-    if (Math.abs(delayMin) <= 2) {
-      item.punctual++;
-      punctualCount++;
-    }
-    if (v.delay != null) {
-      item.delaySum += delayMin;
-      item.delayValidCount++;
-      totalDelaySum += delayMin;
-      delayCount++;
+  if (td.routeId && td.startTime) {
+    const t = td.startTime.split(':'), secs = +t[0] * 3600 + +t[1] * 60 + +(t[2] || 0);
+    const keys = (has(td, 'directionId') ? [`${td.routeId}|${td.directionId}|${secs}`] : []).concat(`${td.routeId}||${secs}`);
+    for (const k of keys) {
+      const c = G.byStart?.[k];
+      if (c?.length) return hit('byRouteAndStart', c.find(x => schedule.isActiveToday(G, x)) || c[0]);
     }
   }
+  return null;
+}
 
-  if (mode === 'live') {
-    summaryTitle.textContent = "TEMPO REALE - DATI ACTV";
-    summaryMainHeading.textContent = "Le linee adesso";
-    thCol3.textContent = "Rilevati";
-    thCol4.style.display = '';
-    thCol4.textContent = "Ritardo";
-    
-    const globalPunctualPct = totalTracked > 0 ? Math.round((punctualCount / totalTracked) * 100) : 100;
-    statsEl.textContent = `${totalTracked} rilevati su ${filteredVehicles.length} in acqua · ${globalPunctualPct}% puntuali`;
-  } else {
-    summaryTitle.textContent = "DA ORARIO";
-    summaryMainHeading.textContent = "Le linee adesso";
-    thCol3.textContent = "Corse oggi";
-    thCol4.style.display = 'none';
-    statsEl.textContent = `${filteredVehicles.length} battelli in acqua su ${lineMap.size} linee`;
-  }
+async function pull(base, name) {
+  const res = await fetch(base + name, { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
+  return transit_realtime.FeedMessage.decode(new Uint8Array(await res.arrayBuffer()));
+}
 
-  const sortedLines = [...lineMap.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, {numeric: true}));
-
-  if (sortedLines.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" class="muted" style="text-align:center; padding:1rem;">Nessun mezzo attivo</td></tr>`;
-    return;
-  }
-
-  let html = '';
-  for (const [lName, data] of sortedLines) {
-    const badgeColor = colorInfo(data.color);
-    const badgeHtml = `<div class="bus" style="display:inline-flex; --c:${badgeColor.c}; --t:${badgeColor.ink}; --b:${badgeColor.ink}">${esc(lName)}</div>`;
-    
-    if (mode === 'live') {
-      const pct = data.count > 0 ? Math.round((data.punctual / data.count) * 100) : 0;
-      const avgLineDelay = data.delayValidCount > 0 ? (data.delaySum / data.delayValidCount).toFixed(1) : 0;
-      const delayStr = `${avgLineDelay >= 0 ? '+' : ''}${avgLineDelay} min`;
-      
-      html += `<tr style="cursor:pointer;" class="summary-line-row" data-line="${esc(lName)}">` +
-        `<td>${badgeHtml}</td>` +
-        `<td style="text-align:center; font-weight:600;">${data.count + 2}</td>` +
-        `<td style="text-align:center;">${data.count} <span style="display:inline-block; width:30px; height:4px; background:var(--ok); border-radius:2px; vertical-align:middle; margin-left:4px;"></span></td>` +
-        `<td style="text-align:right;" class="${avgLineDelay > 1 ? 'late' : 'ok'}">${delayStr}</td>` +
-        `</tr>`;
-    } else {
-      html += `<tr style="cursor:pointer;" class="summary-line-row" data-line="${esc(lName)}">` +
-        `<td>${badgeHtml}</td>` +
-        `<td style="text-align:center; font-weight:600;">${data.count}</td>` +
-        `<td style="text-align:center;">${data.count * 12}</td>` +
-        `</tr>`;
-    }
-  }
-  tbody.innerHTML = html;
-
-  let unassignedHtml = '';
-  if (unknownNav.length > 0) {
-    unassignedHtml += `<div style="background:#1a272e; border-radius:50%; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; font-size:0.75rem; color:#fff;" title="${unknownNav.length} mezzi navigazione senza linea">N</div>`;
-  }
-  if (unknownAut.length > 0) {
-    unassignedHtml += `<div style="background:#1a272e; border-radius:50%; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; font-size:0.75rem; color:#fff;" title="${unknownAut.length} mezzi auto/tram senza linea">A</div>`;
-  }
-  unassignedBadges.innerHTML = unassignedHtml || '<span class="muted" style="font-size:0.75rem;">Nessuno</span>';
-
-  tbody.querySelectorAll('.summary-line-row').forEach(row => {
-    row.addEventListener('click', () => {
-      const lName = row.dataset.line;
-      if (selectedLineFilter === lName) {
-        selectedLineFilter = null;
-        clearRoutes();
-      } else {
-        selectedLineFilter = lName;
-        const entry = lineMap.get(lName);
-        if (entry && entry.routeId) showRoutes([entry.routeId]);
+async function refresh(id) {
+  const st8 = S[id];
+  try {
+    const [pos, upd] = await Promise.all([pull(RT[id], 'vehiclePositions'), pull(RT[id], 'tripUpdates')]);
+    const G = D[id], delays = {}, nextStop = {}, lv = {};
+    const dg = { entities: 0, withTripId: 0, tripKnown: 0, updates: 0, matchedByStopId: 0, matchedBySeq: 0, unmatched: 0,
+                 updatesWithDelayOrTime: 0, tripsWithDelay: 0, cancelled: 0, resolved: {}, unknownTripIds: [], unmatchedStops: [] };
+    for (const e of upd.entity) {
+      const tu = e.tripUpdate; if (!tu) continue;
+      dg.entities++;
+      if (!tu.trip?.tripId) continue;
+      dg.withTripId++;
+      const rs = resolveTrip(G, tu.trip, dg);
+      if (!rs) continue;
+      const tid = rs.id, st = G.stopTimes.get(tid);
+      dg.tripKnown++;
+      const n = st.s.length, explicit = new Array(n), skipped = new Set(); let cur = 0, firstJ = -1;
+      for (const u of tu.stopTimeUpdate || []) {
+        dg.updates++;
+        if (u.scheduleRelationship === 2) continue;
+        let j = -1;
+        if (u.stopId) { j = st.s.indexOf(u.stopId, cur); if (j < 0) j = st.s.indexOf(u.stopId); }
+        if (j < 0 && has(u, 'stopSequence')) j = st.q.indexOf(Number(u.stopSequence));
+        if (j < 0) continue;
+        cur = j + 1;
+        if (firstJ < 0) firstJ = j;
+        if (u.scheduleRelationship === 1) skipped.add(j);
+        let dly = delayOf(u.arrival, st.a[j]); if (dly == null) dly = delayOf(u.departure, st.d[j]);
+        if (dly != null) explicit[j] = dly;
       }
-      render();
-      updateLinesSummary();
-    });
+      let c = has(tu, 'delay') ? Number(tu.delay) : null;
+      const arr = [];
+      for (let k = 0; k < n; k++) { if (explicit[k] != null) c = explicit[k]; arr.push(c); }
+      const cancelled = tu.trip.scheduleRelationship === 3;
+      if (cancelled) dg.cancelled++;
+      lv[tid] = { delays: arr, cancelled, skipped, firstJ };
+      let h = st8.hist.get(tid); if (!h) st8.hist.set(tid, h = { delays: new Array(n).fill(null), seen: 0 });
+      for (let k = 0; k < n; k++) if (explicit[k] != null) h.delays[k] = explicit[k];
+      h.seen = Date.now();
+      if (firstJ >= 0 && G.stops[st.s[firstJ]]) nextStop[tid] = G.stops[st.s[firstJ]];
+      const first = arr.find(x => x != null);
+      if (first != null) delays[tid] = first;
+    }
+    st8.diag = { at: new Date().toISOString(), ...dg };
+    st8.live = lv;
+    st8.vehicles = pos.entity
+      .filter(e => e.vehicle?.position && Number.isFinite(e.vehicle.position.latitude) && Number.isFinite(e.vehicle.position.longitude))
+      .map(e => {
+        const v = e.vehicle, rs = resolveTrip(G, v.trip), tripId = rs?.id || null, trip = G.trips[tripId] || {};
+        const routeKey = trip.route || v.trip?.routeId || null;
+        const r = G.routes[routeKey] || {};
+        return {
+          id: `${id}:${v.vehicle?.id || e.id}`, src: id, label: v.vehicle?.label || null,
+          lat: v.position.latitude, lon: v.position.longitude, bearing: v.position.bearing ?? null,
+          line: r.name || routeKey || '?', color: r.color || null, tripId,
+          routeId: routeKey ? `${id}:${routeKey}` : null, headsign: trip.headsign || null,
+          nextStop: nextStop[tripId] || null, delay: tripId in delays ? delays[tripId] : null, ts: v.timestamp ? Number(v.timestamp) : null
+        };
+      });
+    st8.updated = Date.now();
+    st8.error = null;
+  } catch (err) { st8.error = `${id}: ${err.message}`; }
+}
+for (const id of IDS) if (RT[id]) { refresh(id); setInterval(() => refresh(id), REFRESH_MS); }
+
+const hm = s => { s = ((s % 86400) + 86400) % 86400; return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}`; };
+
+function projectFrac(G, trip, A, B, V) {
+  const k = 0.7, pts = G.shapePts?.[trip.shape];
+  const d2 = (P, Q) => ((P[1] - Q[1]) * k) ** 2 + (P[0] - Q[0]) ** 2;
+  const clamp = x => Math.min(1, Math.max(0, x));
+  const nearest = (P, from, to) => { let bi = from, bd = Infinity; for (let i = from; i <= to; i++) { const d = d2(pts[i], P); if (d < bd) { bd = d; bi = i; } } return bi; };
+  const segProj = (P, Q) => {
+    const px = (Q[1] - P[1]) * k, py = Q[0] - P[0], vx = (V[1] - P[1]) * k, vy = V[0] - P[0], den = px * px + py * py;
+    const t = den > 0 ? clamp((vx * px + vy * py) / den) : 0, dx = vx - px * t, dy = vy - py * t;
+    return { t, d: dx * dx + dy * dy };
+  };
+  if (pts && pts.length > 1) {
+    const ia = nearest(A, 0, pts.length - 1), ib = nearest(B, ia, pts.length - 1);
+    if (ib > ia) {
+      const len = j => Math.sqrt(d2(pts[j], pts[j + 1])), pre = [0];
+      for (let j = ia; j < ib; j++) pre.push(pre[pre.length - 1] + len(j));
+      const iv = nearest(V, ia, ib); let best = null;
+      for (let s = Math.max(ia, iv - 1); s <= Math.min(ib - 1, iv); s++) {
+        const r = segProj(pts[s], pts[s + 1]); if (!best || r.d < best.d) best = { s, t: r.t, d: r.d };
+      }
+      const tot = pre[pre.length - 1];
+      if (best && tot > 0) return clamp((pre[best.s - ia] + best.t * len(best.s)) / tot);
+    }
+  }
+  const ax = (B[1] - A[1]) * k, ay = B[0] - A[0], vx = (V[1] - A[1]) * k, vy = V[0] - A[0], den = ax * ax + ay * ay;
+  return den > 0 ? clamp((vx * ax + vy * ay) / den) : 0;
+}
+
+function tripDetail(i, tid, live) {
+  const G = D[i], st = G.stopTimes.get(tid), trip = G.trips[tid], r = G.routes[trip.route] || {}, n = st.s.length;
+  const nowS = schedule.secsOfDayRome(Date.now());
+  const fits = t => t >= st.start - 3600 && t <= st.end + 3600;
+  const tNow = !fits(nowS) && fits(nowS + 86400) ? nowS + 86400 : nowS;
+  const lv = live ? S[i].live[tid] : null, hist = live ? S[i].hist.get(tid)?.delays : null;
+  let cur;
+  if (lv && lv.firstJ >= 0) cur = lv.firstJ;
+  else { cur = st.s.findIndex((_, k) => (k === n - 1 ? st.a[k] : st.d[k]) > tNow); if (cur < 0) cur = n; }
+  
+  const stops = st.s.map((sid, k) => {
+    const ts = k === n - 1 ? st.a[k] : st.d[k];
+    let dl = null;
+    if (live) dl = k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null);
+    
+    const stopName = G.stops[sid] || sid;
+    let stateText = '';
+    if (k === cur) {
+      stateText = '🛑 Fermo in fermata';
+    } else if (k === cur + 1 && cur >= 0 && cur < n) {
+      stateText = '🚢 In navigazione';
+    }
+
+    return { 
+      id: sid, 
+      name: stopName, 
+      lat: G.stopLoc[sid]?.[0] ?? null, 
+      lon: G.stopLoc[sid]?.[1] ?? null,
+      sched: hm(ts), 
+      exp: dl != null ? hm(ts + dl) : null, 
+      delay: dl != null ? Math.round(dl / 60) : null,
+      inMin: Math.round((ts + (dl ?? 0) - tNow) / 60), 
+      state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'),
+      skipped: !!lv?.skipped.has(k), 
+      stateText 
+    };
   });
+
+  const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
+  const dn = lv && cur < n ? lv.delays[cur] : null;
+  let progress;
+  if (cur >= n) progress = { from: n - 1, frac: 0, gps: false };
+  else if (cur === 0) progress = { from: 0, frac: 0, gps: false };
+  else {
+    const A = G.stopLoc[st.s[cur - 1]], B = G.stopLoc[st.s[cur]];
+    let frac, gps = false;
+    if (veh && A && B && Number.isFinite(veh.lat) && Number.isFinite(veh.lon)) { frac = projectFrac(G, trip, A, B, [veh.lat, veh.lon]); gps = true; }
+    else {
+      const dPrev = live ? (hist?.[cur - 1] ?? lv?.delays[cur] ?? 0) : 0, dCur = live ? (lv?.delays[cur] ?? 0) : 0;
+      const t0 = st.d[cur - 1] + dPrev, t1 = st.a[cur] + dCur;
+      frac = t1 > t0 ? (tNow - t0) / (t1 - t0) : 0;
+    }
+    progress = { from: cur - 1, frac: Math.min(1, Math.max(0, frac)), gps };
+  }
+  return { live, liveUpdated: S[i].updated, cur, progress, cancelled: !!lv?.cancelled,
+    note: (m => m === 'ok' ? null : m)(schedule.scheduleMode(G)),
+    delayNow: dn != null ? Math.round(dn / 60) : null,
+    historyKnown: stops.some(s => s.state === 'passed' && s.delay != null),
+    trip: { id: `${i}:${tid}`, src: i, line: r.name || trip.route, color: r.color || null,
+            headsign: trip.headsign || G.stops[st.s[n - 1]] || null, vehicle: veh?.label || null },
+    shape: G.shapePts[trip.shape] || null, stops };
 }
 
-filterEl.addEventListener('input', () => {
-  const q = filterEl.value.trim().toLowerCase();
-  if (!q) {
-    searchResultsEl.classList.remove('active');
-    searchResultsEl.innerHTML = '';
-    clearRoutes();
-    return;
+const send = (res, obj, cache = 'no-store', code = 200) => {
+  res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': cache });
+  res.end(typeof obj === 'string' ? obj : JSON.stringify(obj));
+};
+
+function schedVehicles(i, secs, date) {
+  try {
+    const vehicles = schedule.positionsNow(D[i], secs, date).filter(v => Number.isFinite(v.lat) && Number.isFinite(v.lon))
+      .map(v => ({ ...v, tripId: v.id, id: `${i}:${v.id}`, src: i, routeId: v.routeId ? `${i}:${v.routeId}` : null }));
+    return { vehicles, error: null };
+  } catch (e) {
+    return { vehicles: [], error: `${i}: ${e.message}` };
   }
+}
 
-  const matchedStops = stops.filter(s => s[1].toLowerCase().includes(q)).slice(0, 8);
-  const matchedRoutes = Object.entries(routesData).filter(([id, r]) => active.has(r.src) && (String(r.name).toLowerCase().includes(q) || String(r.headsign || '').toLowerCase().includes(q))).slice(0, 8);
+const wanted = url => (url.searchParams.get('src') || IDS.join(',')).split(',').filter(x => IDS.includes(x));
+const splitId = full => { const i = (full || '').indexOf(':'); return i < 0 ? [null, full] : [full.slice(0, i), full.slice(i + 1)]; };
 
-  let html = '';
-  if (matchedStops.length > 0) {
-    html += `<div class="search-category">Fermate</div>`;
-    for (const s of matchedStops) {
-      html += `<div class="search-item" data-type="stop" data-id="${esc(s[0])}" data-name="${esc(s[1])}" data-lat="${s[2]}" data-lon="${s[3]}" data-src="${esc(s[4])}">📍 ${esc(s[1])}</div>`;
+http.createServer((req, res) => {
+  const url = new URL(req.url, 'http://localhost');
+  try {
+    if (url.pathname === '/api/vehicles') {
+      const list = wanted(url), live = list.filter(i => RT[i]), noLive = list.filter(i => !RT[i]);
+      const errors = live.map(i => S[i].error).filter(Boolean);
+      const estimated = noLive.flatMap(i => schedVehicles(i, null, null).vehicles.map(v => ({ ...v, estimated: true })));
+      return send(res, { updated: Math.max(noLive.length ? Date.now() : 0, ...live.map(i => S[i].updated)),
+                         error: errors.length ? errors.join('; ') : null, version, ready,
+                         vehicles: [...live.flatMap(i => S[i].vehicles), ...estimated] });
     }
-  }
-  if (matchedRoutes.length > 0) {
-    html += `<div class="search-category">Linee</div>`;
-    for (const [id, r] of matchedRoutes) {
-      const badge = `<div class="bus" style="--c:${colorInfo(r.color).c};--t:${colorInfo(r.color).ink};--b:${colorInfo(r.color).ink}">${esc(r.name)}</div>`;
-      html += `<div class="search-item" data-type="route" data-id="${esc(id)}" data-name="${esc(r.name)}">${badge} <span>${esc(r.headsign || 'Linea ' + r.name)}</span></div>`;
+    if (url.pathname === '/api/scheduled') {
+      const list = wanted(url);
+      const secsParam = url.searchParams.get('secs');
+      const dateParam = url.searchParams.get('date');
+      const secs = secsParam !== null ? +secsParam : null;
+      const date = dateParam || null;
+
+      const cs = list.map(i => schedVehicles(i, secs, date));
+      const errors = cs.map(c => c.error).filter(Boolean);
+      return send(res, { updated: Date.now(), error: errors.length ? errors.join('; ') : null, version, ready,
+                         notes: list.map(i => ({ src: i, mode: schedule.scheduleMode(D[i]) })).filter(n => n.mode !== 'ok'),
+                         vehicles: cs.flatMap(c => c.vehicles) });
     }
-  }
-
-  if (html) {
-    searchResultsEl.innerHTML = html;
-    searchResultsEl.classList.add('active');
-  } else {
-    searchResultsEl.innerHTML = `<div class="search-item muted">Nessun risultato trovato</div>`;
-    searchResultsEl.classList.add('active');
-  }
-});
-
-searchResultsEl.addEventListener('click', e => {
-  const item = e.target.closest('.search-item');
-  if (!item) return;
-  const type = item.dataset.type;
-  if (type === 'stop') {
-    const id = item.dataset.id, name = item.dataset.name, lat = +item.dataset.lat, lon = +item.dataset.lon, src = item.dataset.src;
-    filterEl.value = name;
-    searchResultsEl.classList.remove('active');
-    map.flyTo([lat, lon], 16);
-    openPanel(id, name, src);
-  } else if (type === 'route') {
-    const id = item.dataset.id, name = item.dataset.name;
-    filterEl.value = name;
-    searchResultsEl.classList.remove('active');
-    showRoutes([id]);
-  }
-});
-
-document.addEventListener('click', e => {
-  if (!e.target.closest('.search-wrapper') && !e.target.closest('#lines-summary-panel') && !e.target.closest('#toggle-lines-btn')) {
-    searchResultsEl.classList.remove('active');
-  }
-});
-
-map.on('click', () => { if (!openTrip && !filterEl.value) clearRoutes(); });
-
-const markers = new Map();
-let vehicles = [];
-function render() {
-  let shown = vehicles.filter(v => active.has(v.src));
-  if (selectedLineFilter) {
-    shown = shown.filter(v => v.line === selectedLineFilter);
-  }
-
-  const keep = new Set();
-  for (const v of shown) {
-    if (!Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
-    keep.add(v.id);
-    try {
-      const html = busHtml(v);
-      let e = markers.get(v.id);
-      if (!e) {
-        const m = L.marker([v.lat, v.lon], { icon: L.divIcon({ className: '', iconSize: null, html }) })
-          .bindTooltip(tip(v), { direction: 'top', offset: [0, -12] }).addTo(map);
-        const id = v.id;
-        m.on('click', () => { const c = vehicles.find(x => x.id === id); if (c) openTripPanel(c); });
-        markers.set(v.id, e = { m, html, from: null, to: [v.lat, v.lon], t0: 0 });
-        continue;
+    if (url.pathname === '/api/stops') {
+      if (!stopsBody) {
+        const out = [];
+        for (const i of IDS) {
+          const G = D[i], served = Object.keys(G.stopIndex).length ? s => G.stopIndex[s] : () => true;
+          for (const s of Object.keys(G.stops)) if (G.stopLoc[s] && served(s)) out.push([`${i}:${s}`, G.stops[s], G.stopLoc[s][0], G.stopLoc[s][1], i, null]);
+        }
+        stopsBody = JSON.stringify(out);
       }
-      if (e.html !== html) { e.m.setIcon(L.divIcon({ className: '', iconSize: null, html })); e.html = html; }
-      e.m.setTooltipContent(tip(v));
-      if (e.to[0] !== v.lat || e.to[1] !== v.lon) {
-        const cur = e.m.getLatLng();
-        if (Math.abs(cur.lat - v.lat) + Math.abs(cur.lng - v.lon) > 0.02) { e.m.setLatLng([v.lat, v.lon]); e.from = null; }
-        else { e.from = [cur.lat, cur.lng]; e.t0 = performance.now(); }
-        e.to = [v.lat, v.lon];
-      }
-    } catch (err) { console.warn('Mezzo non disegnato', v.id, err.message); }
-  }
-  for (const [id, e] of markers) if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
-  
-  const navCount = vehicles.filter(v => active.has('nav') && v.src === 'nav').length;
-  const autCount = vehicles.filter(v => active.has('aut') && v.src === 'aut').length;
-  const countText = [...active].map(s => `${s === 'nav' ? navCount : autCount} in ${s === 'nav' ? 'navigazione' : 'servizio'}`).join(' · ');
-  document.getElementById('tl-count').textContent = countText;
-
-  updateLinesSummary();
-  return shown.length;
-}
-
-function tick(now) {
-  for (const e of markers.values()) {
-    if (!e.from) continue;
-    const p = Math.min(1, (now - e.t0) / MOVE_MS);
-    e.m.setLatLng([e.from[0] + (e.to[0] - e.from[0]) * p, e.from[1] + (e.to[1] - e.from[1]) * p]);
-    if (p >= 1) e.from = null;
-  }
-  requestAnimationFrame(tick);
-}
-requestAnimationFrame(tick);
-
-async function load() {
-  const m = mode, key = srcParam();
-  try {
-    let url = `${m === 'sched' ? '/api/scheduled' : '/api/vehicles'}?src=${key}`;
-    if (m === 'sched') {
-      const secs = document.getElementById('tl-range').value;
-      const dateVal = document.getElementById('tl-date').value.replace(/-/g, '');
-      url += `&secs=${secs}&date=${dateVal}`;
+      return send(res, stopsBody, 'no-store');
     }
-    const r = await fetch(url, { cache: 'no-store' });
-    const d = await r.json();
-    if (m !== mode || key !== srcParam()) return;
-    if (d.version !== staticVer) { staticVer = d.version; loadStatics(); }
-    vehicles = d.vehicles;
-    lastServerUpdate = d.updated || Date.now();
-    render();
-    if (d.error) throw new Error(d.error);
-    const t = new Date(d.updated).toLocaleTimeString('it-IT');
-    statusEl.className = '';
-    const iconMap = { nav: '🚢', aut: '🚌' };
-    const parts = [...active].map(s => `${iconMap[s]} ${vehicles.filter(v => v.src === s).length}`).join(' · ');
-    const wait = [...active].filter(s => d.ready && !d.ready[s]);
-    statusEl.textContent = `${parts} ${m === 'sched' ? 'pianificato' : 'mezzi'} · ${t}` +
-      (wait.length ? ` · orari in caricamento: ${wait.join(', ')}` : '');
-  } catch (e) {
-    if (m !== mode) return;
-    statusEl.className = 'err'; statusEl.textContent = 'Dati non aggiornati: ' + e.message;
-  }
-}
+    if (url.pathname === '/api/stop') {
+      const full = url.searchParams.get('id'), [i, sid] = splitId(full);
+      if (!D[i]) return send(res, { error: 'fermata sconosciuta' }, 'no-store', 404);
+      
+      const secsParam = url.searchParams.get('secs');
+      const dateParam = url.searchParams.get('date');
+      const secs = secsParam !== null ? +secsParam : null;
+      const date = dateParam || null;
 
-let stops = [], openStop = null, openStopName = '', openSrc = null, openTrip = null, panelTimer = null, lastDeps = null, lastTrip = null;
-const stopLayer = L.layerGroup().addTo(map), hintEl = document.getElementById('hint');
-const panel = document.getElementById('panel'), plist = document.getElementById('plist');
-const pname = document.getElementById('pname'), psub = document.getElementById('psub');
-const MIN_STOP_ZOOM = 14;
-
-function drawStops() {
-  stopLayer.clearLayers();
-  const near = map.getZoom() >= MIN_STOP_ZOOM;
-  hintEl.hidden = near;
-  if (!near) return;
-  const b = map.getBounds().pad(0.1); let n = 0;
-  const iconMap = { nav: '🚢', aut: '🚌' };
-  for (const [id, name, lat, lon, src] of stops) {
-    if (!active.has(src) || !b.contains([lat, lon])) continue;
-    if (++n > 2500) break;
-    L.circleMarker([lat, lon], { radius: 6, weight: 2, color: '#14232b', fillColor: id === openStop ? '#f5a623' : '#ffffff', fillOpacity: 1 })
-      .bindTooltip(`${iconMap[src]} ${esc(name)}`).on('click', () => openPanel(id, name, src)).addTo(stopLayer);
-  }
-}
-map.on('moveend', drawStops);
-drawStops();
-
-function refreshPanel() { if (openStop) loadDepartures(); else if (openTrip) loadTrip(); }
-function startPanelTimer() { clearInterval(panelTimer); panelTimer = setInterval(refreshPanel, POLL_MS); }
-function resetTrip() {
-  setFollow(false);
-  const had = !!openTrip;
-  openTrip = null; lastTrip = null; tripLayer.clearLayers();
-  if (selVeh) { selVeh = null; render(); }
-  if (had && !filterEl.value) clearRoutes();
-}
-
-function openPanel(id, name, src) {
-  resetTrip();
-  openStop = id; openStopName = name; openSrc = src; lastDeps = null; panel.hidden = false;
-  const iconMap = { nav: '🚢', aut: '🚌' };
-  pname.textContent = `${iconMap[src]} ${name}`; psub.textContent = '';
-  plist.innerHTML = '<p class="muted">Caricamento…</p>';
-  loadDepartures(); startPanelTimer(); drawStops();
-}
-function closePanel() {
-  openStop = null; resetTrip(); panel.hidden = true; clearInterval(panelTimer);
-  if (!filterEl.value) clearRoutes();
-  drawStops();
-}
-document.getElementById('pclose').addEventListener('click', closePanel);
-
-async function loadDepartures() {
-  const id = openStop; if (!id) return;
-  try {
-    let url = `/api/stop?id=${encodeURIComponent(id)}`;
-    if (mode === 'sched') {
-      const secs = document.getElementById('tl-range').value;
-      const dateVal = document.getElementById('tl-date').value.replace(/-/g, '');
-      url += `&secs=${secs}&date=${dateVal}`;
+      const labels = new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
+      return send(res, { stop: { id: full, name: D[i].stops[sid] || sid, src: i }, updated: Date.now(), liveUpdated: S[i].updated,
+                         note: schedule.scheduleMode(D[i]) === 'ok' ? null : schedule.scheduleMode(D[i]),
+                         departures: schedule.departures(D[i], S[i].live, sid, secs, date).map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) });
     }
-    const r = await fetch(url, { cache: 'no-store' });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
-    if (id !== openStop) return;
-    lastDeps = d; renderDepartures();
-  } catch (e) {
-    if (id === openStop) plist.innerHTML = `<p class="late">Dati non disponibili: ${esc(e.message)}</p>`;
-  }
-}
-function renderDepartures() {
-  if (!lastDeps || !openStop) return;
-  const live = mode === 'live';
-  psub.textContent = (live ? `Previsioni live · feed delle ${new Date(lastDeps.liveUpdated).toLocaleTimeString('it-IT')}` : 'Orario programmato (da timeline)') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
-  const rows = lastDeps.departures.map(x => ({ ...x, tIn: live ? x.expIn : x.schedIn }))
-    .filter(x => x.tIn >= -30 && x.tIn <= 120 && active.has(x.src || openSrc)).sort((a, b) => a.tIn - b.tIn).slice(0, 30);
-  const html = rows.map(x => {
-    let cls = '', note = '';
-    if (x.cancel) { cls = 'late'; note = x.cancel === 'trip' ? 'Corsa soppressa' : 'Fermata non servita'; }
-    else if (live) {
-      if (!x.live) note = 'da orario';
-      else if (x.delay >= 1) { cls = 'late'; note = `+${x.delay} min (prog. ${x.sched})`; }
-      else if (x.delay <= -1) { cls = 'ok'; note = `${x.delay} min (prog. ${x.sched})`; }
-      else { cls = 'ok'; note = 'in orario'; }
+    if (url.pathname === '/api/trip') {
+      const full = url.searchParams.get('id'), [i, tid] = splitId(full);
+      if (!D[i] || !D[i].stopTimes.has(tid)) return send(res, { error: 'corsa sconosciuta' }, 'no-store', 404);
+      return send(res, tripDetail(i, tid, url.searchParams.get('mode') !== 'sched'));
     }
-    if (live && x.vehicle) note += (note ? ' · ' : '') + vehName(x.src || openSrc, x.vehicle);
-    if (x.arrival) note = 'Termina qui' + (note ? ' · ' + note : '');
-    const t = live ? x.exp : x.sched;
-    return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(x.src || openSrc)}" role="button" tabindex="0" title="Segui il mezzo">${busHtml({ line: x.line, color: x.color, src: x.src || openSrc })}` +
-      `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${esc(note)}</div></div>` +
-      `<div class="dt"><strong>${esc(t)}</strong><div class="muted">${x.tIn <= 0 ? 'adesso' : x.tIn + ' min'}</div></div></div>`;
-  }).join('');
-  plist.innerHTML = html ? html + '<p class="muted">Tocca un passaggio per seguire il mezzo.</p>' : '<p class="muted">Nessun passaggio nell\'orario selezionato.</p>';
-}
-
-function openTripPanel(v, back = null) {
-  setFollow(false);
-  openStop = null; clearInterval(panelTimer); lastTrip = null; tripLayer.clearLayers();
-  selVeh = v.id;
-  openTrip = { src: v.src, tripId: v.tripId, routeId: v.routeId, line: v.line, label: v.label, back, drawn: false };
-  panel.hidden = false;
-  
-  const kInit = colorInfo(v.color);
-  const badgeInit = `<div class="bus" style="display:inline-flex; vertical-align:middle; margin-right:8px; --c:${kInit.c}; --t:${kInit.ink}; --b:${kInit.ink}">${esc(v.line)}</div>`;
-  const vehicleNameStr = vehName(v.src, v.label);
-  pname.innerHTML = `${badgeInit} ${vehicleNameStr ? vehicleNameStr : ''}`;
-  
-  psub.textContent = v.headsign ? '→ ' + v.headsign : '';
-  render(); drawStops();
-  if (!v.tripId) {
-    plist.innerHTML = '<p class="muted">Per questo mezzo il feed non indica la corsa.</p>';
-    showRoutes([v.routeId]); return;
-  }
-  plist.innerHTML = '<p class="muted">Caricamento…</p>';
-  loadTrip(); startPanelTimer();
-}
-async function loadTrip() {
-  const t = openTrip; if (!t || !t.tripId) return;
-  try {
-    const r = await fetch(`/api/trip?id=${encodeURIComponent(t.src + ':' + t.tripId)}&mode=${mode}`, { cache: 'no-store' });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
-    if (openTrip !== t) return;
-    lastTrip = d; renderTrip(!t.drawn); t.drawn = true;
+    if (url.pathname === '/api/routes') {
+      const out = {};
+      for (const i of IDS) for (const r in D[i].routes) out[`${i}:${r}`] = { ...D[i].routes[r], src: i };
+      return send(res, out, 'no-store');
+    }
+    if (url.pathname === '/api/shapes') {
+      const [i, rid] = splitId(url.searchParams.get('id'));
+      return send(res, { shapes: D[i]?.routeShapes[rid] || [] }, 'no-store');
+    }
   } catch (e) {
-    if (openTrip === t) plist.innerHTML = `<p class="late">Dati non disponibili: ${esc(e.message)}</p>`;
+    return send(res, { error: e.message }, 'no-store', 500);
   }
-}
-function tripHtml(d) {
-  const k = colorInfo(d.trip.color), live = d.live, n = d.stops.length;
-  const vehicleIcon = getVehicleIcon(d.trip.src, d.trip.vehicle);
-  return `<div class="tl" style="--rc:${k.rail}">` + d.stops.map((s, i) => {
-    let time, sub = '';
-    if (live && s.delay != null) {
-      time = `<strong class="${s.delay >= 1 ? 'late' : 'ok'}">${esc(s.exp)}</strong>`;
-      sub = s.delay === 0 ? 'in orario' : `prog. ${esc(s.sched)} (${s.delay > 0 ? '+' : ''}${s.delay} min)`;
-    } else { time = `<strong>${esc(s.sched)}</strong>`; sub = live ? 'da orario' : ''; }
-    
-    let meta = '';
-    if (s.skipped) meta = 'Fermata non servita';
-    else if (s.stateText) meta = s.stateText;
-    else if (s.state === 'next') meta = s.inMin <= 0 ? 'Prossima fermata · in arrivo' : `Prossima fermata · tra ${s.inMin} min`;
-
-    const dotContent = s.state === 'passed' ? '✓' : '';
-
-    return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === 0 ? ' first' : ''}${i === n - 1 ? ' last' : ''}" data-i="${i}">` +
-      `<div class="rail"><span class="dot">${dotContent}</span></div>` +
-      `<div class="sn"><div class="nm">${esc(s.name)}</div>${meta ? `<div class="muted">${meta}</div>` : ''}</div>` +
-      `<div class="tm">${time}<div class="muted">${sub}</div></div></div>`;
-  }).join('') + `<div class="trav"></div><div class="veh">${vehicleIcon}</div></div>`;
-}
-
-let vehMemo = { trip: null, y: 0 };
-function placeVehicle(d, first) {
-  const tl = plist.querySelector('.tl'), veh = tl && tl.querySelector('.veh'), trav = tl && tl.querySelector('.trav');
-  if (!veh) return;
-  const rows = tl.querySelectorAll('.st'), a = d.progress && rows[d.progress.from], b = d.progress && rows[d.progress.from + 1];
-  if (!a) { veh.style.display = 'none'; trav.style.display = 'none'; return; }
-  
-  const ca = a.offsetTop + 23, cb = b ? b.offsetTop + 23 : ca;
-  const y = ca + (cb - ca) * (b ? d.progress.frac : 0);
-  const from = !first && vehMemo.trip === openTrip.tripId ? vehMemo.y : y;
-  
-  veh.style.transition = trav.style.transition = 'none';
-  veh.style.top = from + 'px'; 
-  trav.style.height = Math.max(0, from - 23) + 'px';
-  void veh.offsetHeight;
-  
-  veh.style.transition = trav.style.transition = '';
-  veh.style.top = y + 'px'; 
-  trav.style.height = Math.max(0, y - 23) + 'px';
-  vehMemo = { trip: openTrip.tripId, y };
-}
-function renderTrip(first) {
-  const d = lastTrip; if (!d || !openTrip) return;
-  const dl = d.delayNow == null ? '' : d.delayNow >= 1 ? `<span class="late">+${d.delayNow} min</span>` : '<span class="ok">in orario</span>';
-  const lab = d.trip.vehicle || openTrip.label;
-  const vehicleNameStr = vehName(d.trip.src, lab);
-  
-  const k = colorInfo(d.trip.color);
-  const badgeHtml = `<div class="bus" style="display:inline-flex; vertical-align:middle; margin-right:8px; --c:${k.c}; --t:${k.ink}; --b:${k.ink}">${esc(d.trip.line)}</div>`;
-  
-  pname.innerHTML = `${badgeHtml} ${vehicleNameStr ? vehicleNameStr : ''}`;
-  
-  psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '') + [d.trip.headsign && '→ ' + esc(d.trip.headsign),
-    d.live ? dl || (d.stops.some(s => s.delay != null) ? 'ritardo non disponibile' : 'nessun dato live') : 'orario programmato'].filter(Boolean).join(' · ') +
-    (d.note ? `<br>${esc(d.note)}` : '');
-  const footer = d.live && d.historyKnown ? '<p class="muted">Fermate già passate: ultima previsione registrata prima del passaggio.</p>' : '';
-  plist.innerHTML = (d.cancelled ? '<div class="banner">Corsa soppressa</div>' : '') + tripHtml(d) + footer;
-  placeVehicle(d, first);
-  if (!first) return;
-  routeToken++; lineLayer.clearLayers(); tripLayer.clearLayers();
-  
-  if (d.shape?.length) L.polyline(d.shape, { color: k.rail, weight: 5, opacity: .85 }).addTo(lineLayer);
-  else showRoutes([openTrip.routeId]);
-  
-  for (const s of d.stops) if (s.lat != null)
-    L.circleMarker([s.lat, s.lon], { radius: 5, weight: 2, color: '#14232b', fillColor: '#fff', fillOpacity: 1 }).bindTooltip(esc(s.name)).addTo(tripLayer);
-  const focus = plist.querySelector('.veh'), row = focus && focus.style.display !== 'none' ? focus : plist.querySelector('.st.next');
-  if (row) row.scrollIntoView({ block: 'center' });
-}
-plist.addEventListener('click', e => {
-  const dep = e.target.closest('.dep.go');
-  if (dep && openStop) return followDeparture(dep.dataset.trip, dep.dataset.src);
-  const row = e.target.closest('.st'); if (!row || !lastTrip) return;
-  const s = lastTrip.stops[+row.dataset.i];
-  if (s && s.lat != null) map.flyTo([s.lat, s.lon], Math.max(map.getZoom(), 15));
-});
-
-const followEl = document.getElementById('follow');
-function setFollow(on) { follow = on; followEl.hidden = !on; }
-function followTarget(ll, z) {
-  const p = map.project(ll, z), narrow = window.innerWidth <= 640;
-  return map.unproject(p.add(narrow ? [0, map.getSize().y * 0.22] : [181, 0]), z);
-}
-function followDeparture(tripId, depSrc) {
-  const ds = depSrc || openSrc;
-  const x = lastDeps && lastDeps.departures.find(d => d.tripId === tripId && (d.src || openSrc) === ds); if (!x) return;
-  const src = ds, back = { id: openStop, name: openStopName, src: openSrc };
-  const v = vehicles.find(c => c.src === src && c.tripId === tripId)
-    || { id: null, src, tripId, routeId: null, line: x.line, label: x.vehicle, headsign: x.headsign, color: x.color };
-  openTripPanel(v, back);
-  if (!v.id) return;
-  const e = markers.get(v.id), ll = e ? e.m.getLatLng() : L.latLng(v.lat, v.lon), z = Math.max(map.getZoom(), 15);
-  setFollow(true); followAfter = Date.now() + 1200;
-  map.flyTo(followTarget(ll, z), z, { duration: 0.8 });
-}
-setInterval(() => {
-  if (!follow || !selVeh || Date.now() < followAfter) return;
-  const e = markers.get(selVeh), c = vehicles.find(x => x.id === selVeh);
-  const ll = e ? e.m.getLatLng() : c && L.latLng(c.lat, c.lon);
-  if (ll) map.panTo(followTarget(ll, map.getZoom()), { animate: true, duration: 1, easeLinearity: 1 });
-}, 1000);
-map.on('dragstart', () => setFollow(false));
-followEl.addEventListener('click', () => setFollow(false));
-
-let me = null;
-document.getElementById('locate').addEventListener('click', () => map.locate({ setView: true, maxZoom: 16 }));
-map.on('locationfound', e => {
-  if (me) me.remove();
-  me = L.circleMarker(e.latlng, { radius: 8, color: '#fff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 }).addTo(map);
-});
-map.on('locationerror', e => { statusEl.className = 'err'; statusEl.textContent = 'Posizione non disponibile: ' + e.message; });
-
-document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener('change', () => {
-  mode = el.value;
-  vehicles = [];
-  if (mode === 'sched') {
-    document.getElementById('clock-bar').style.display = 'none';
-    document.getElementById('timeline-bar').classList.add('active');
-    applyTimelineTime(+document.getElementById('tl-range').value, true);
-  } else {
-    document.getElementById('timeline-bar').classList.remove('active');
-    document.getElementById('clock-bar').style.display = 'flex';
-    if (isPlaying) { isPlaying = false; clearInterval(playInterval); document.getElementById('tl-play').textContent = '▶️'; }
-    load();
-  }
-  render(); renderDepartures();
-  if (openTrip && openTrip.tripId) loadTrip();
-  if (openStop) loadDepartures();
-}));
-
-document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('change', () => {
-  if (el.checked) active.add(el.value); else active.delete(el.value);
-  if (!active.size) { active.add(el.value); el.checked = true; }
-  vehicles = vehicles.filter(v => active.has(v.src));
-  render(); drawStops(); load();
-}));
-
-load(); setInterval(load, POLL_MS);
-updateClock();
-</script>
-</body>
-</html>
+  const page = [path.join(__dirname, 'public', 'index.html'), path.join(__dirname, 'index.html')].find(f => fs.existsSync(f));
+  fs.readFile(page || '', (err, html) => {
+    if (err) { res.writeHead(500); return res.end('index.html mancante'); }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(html);
+  });
+}).listen(PORT, () => console.log(`http://localhost:${PORT}`));
