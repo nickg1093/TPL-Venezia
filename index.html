@@ -45,8 +45,6 @@
   .side-panel { position:absolute; z-index:1100; top:12px; bottom:85px; width:340px; max-width:calc(100% - 24px); overflow-y:auto;
                 background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,.3); }
   #panel { right:12px; padding:0; }
-  #lines-summary-panel { left:12px; padding:0.8rem; display:none; }
-  #lines-summary-panel.active { display:block; }
   
   .ph { position:sticky; top:0; z-index:2; background:var(--bg); padding:.8rem .8rem .5rem; margin:0; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:.5rem; align-items:flex-start; }
   .ph strong { font-size:1.05rem; }
@@ -79,20 +77,13 @@
   .st:hover { background:color-mix(in srgb, var(--line) 35%, transparent); }
   .rail { position:relative; }
   
-  /* Linea di avanzamento grigia per default */
   .rail::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:4px; margin-left:-2px; background:var(--line); }
-  
-  /* Se la fermata è passata o la ferrovia è stata percorsa, coloriamo la linea */
   .st.passed .rail::before, .st.passed-line .rail::before { background:var(--rc); }
-  
-  /* Correzione capolinea: la linea parte dal centro del primo pallino (23px) e termina al centro dell'ultimo */
   .st.first .rail::before { top: 23px; bottom: 0; } 
   .st.last .rail::before { top: 0; bottom: calc(100% - 23px); }
 
   .dot { position:absolute; left:50%; top:23px; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; background:var(--bg);
          border:3px solid var(--rc); display:flex; align-items:center; justify-content:center; font-size:.7rem; z-index:2; }
-  
-  /* Fermata passata: pallino pieno colorato con spunta (se bianco, usiamo un testo scuro per visibilità) */
   .st.passed .dot { border-color:var(--rc); background:var(--rc); color: var(--rc) === '#ffffff' || var(--rc) === '#fff' ? #14232b : #fff; font-size:9px; font-weight:bold; }
   
   @keyframes blink-dot-next {
@@ -100,14 +91,10 @@
     50% { transform: scale(1.3); opacity: 0.6; box-shadow: 0 0 0 6px color-mix(in srgb, var(--rc) 0%, transparent); }
     100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--rc) 70%, transparent); }
   }
-
-  /* Prossima fermata: pallino con alone e animazione lampeggiante */
   .st.next .dot { box-shadow: 0 0 0 4px color-mix(in srgb, var(--rc) 30%, transparent); animation: blink-dot-next 1.2s infinite ease-in-out; }
   
   .sn { padding:.5rem 0; min-width:0; } .nm { font-weight:600; }
   .st.next .nm { font-size:1.02rem; }
-  
-  /* Sbiadimento delle fermate e dei dati già passati */
   .st.passed .nm, .st.passed .tm, .st.passed .muted { opacity:0.4; }
   
   .tm { text-align:right; padding:.5rem 0; } .tm strong { font-variant-numeric:tabular-nums; }
@@ -165,10 +152,6 @@
   #tl-range {
     flex: 1; accent-color: #4cc2e6; cursor: pointer; min-width: 150px;
   }
-
-  .table-summary { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.4rem; }
-  .table-summary th { text-align: left; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 0.3rem; font-weight: 600; }
-  .table-summary td { padding: 0.35rem 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 20%, transparent); }
 </style>
 </head>
 <body>
@@ -182,8 +165,6 @@
     <label title="Automobilistico"><input type="checkbox" name="src" value="aut" checked>🚌</label>
   </div>
   <button id="locate" type="button" title="Mostra la mia posizione">📍</button>
-  
-  <button id="toggle-lines-btn" type="button" title="Mostra riepilogo linee" style="font-size: 0.9rem;">📊 Linee</button>
 
   <div class="search-wrapper">
     <input id="filter" type="search" placeholder="🔍 Cerca fermata o linea..." autocomplete="off" aria-label="Cerca fermata o linea">
@@ -197,38 +178,6 @@
   <div id="map"></div>
   <div id="hint" class="hint">Avvicina lo zoom per vedere le fermate</div>
   <button id="follow" class="hint" type="button" hidden>📍 Seguo il mezzo · tocca per smettere</button>
-  
-  <aside id="lines-summary-panel" class="side-panel" aria-label="Riepilogo linee">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
-      <div>
-        <div id="summary-title" style="font-size:0.7rem; font-weight:700; color:var(--muted); text-transform:uppercase;">TEMPO REALE - DATI ACTV</div>
-        <strong style="font-size:1rem;" id="summary-main-heading">Le linee adesso</strong>
-      </div>
-      <button id="close-lines-panel" type="button" style="background:none; border:none; color:var(--fg); cursor:pointer;">✕</button>
-    </div>
-    <div id="summary-stats" class="muted" style="margin-bottom:0.5rem; font-size:0.8rem; font-weight:600;">Caricamento statistiche…</div>
-    
-    <div style="max-height: calc(100vh - 190px); overflow-y:auto; padding-right:2px;">
-      <table class="table-summary">
-        <thead id="summary-table-head">
-          <tr>
-            <th>Linea</th>
-            <th style="text-align:center;">In acqua</th>
-            <th style="text-align:center;" id="th-col-3">Rilevati</th>
-            <th style="text-align:right;" id="th-col-4">Ritardo</th>
-          </tr>
-        </thead>
-        <tbody id="summary-table-body">
-          <tr><td colspan="4" class="muted" style="text-align:center; padding:1rem;">Nessun dato</td></tr>
-        </tbody>
-      </table>
-      
-      <div style="margin-top: 1rem; border-top: 1px solid var(--line); padding-top: 0.6rem;">
-        <div class="muted" style="font-size:0.75rem; margin-bottom:0.4rem;">Non in servizio adesso (Senza linea / ?)</div>
-        <div style="display:flex; gap:0.4rem; flex-wrap:wrap;" id="unassigned-badges"></div>
-      </div>
-    </div>
-  </aside>
 
   <div id="clock-bar" class="bottom-bar">
     <span class="live-indicator" style="width: 7px; height: 7px;"></span>
@@ -393,7 +342,7 @@ const tip = v => esc(`${getVehicleIcon(v.src, v.label)} ${v.line}${v.headsign ? 
 
 let staticVer = -1;
 function loadStatics() {
-  fetch('/api/routes', { cache: 'no-store' }).then(r => r.json()).then(d => { if (d && !d.error) routesData = d; updateLinesSummary(); }).catch(() => {});
+  fetch('/api/routes', { cache: 'no-store' }).then(r => r.json()).then(d => { if (d && !d.error) routesData = d; }).catch(() => {});
   fetch('/api/stops', { cache: 'no-store' }).then(r => r.json()).then(d => { 
     if (Array.isArray(d)) { 
       stops = d; 
@@ -421,134 +370,6 @@ async function showRoutes(ids) {
   }
 }
 function clearRoutes() { routeToken++; lineLayer.clearLayers(); }
-
-const linesSummaryPanel = document.getElementById('lines-summary-panel');
-document.getElementById('toggle-lines-btn').addEventListener('click', () => {
-  linesSummaryPanel.classList.toggle('active');
-  if (linesSummaryPanel.classList.contains('active')) updateLinesSummary();
-});
-document.getElementById('close-lines-panel').addEventListener('click', () => {
-  linesSummaryPanel.classList.remove('active');
-});
-
-function updateLinesSummary() {
-  if (!linesSummaryPanel.classList.contains('active')) return;
-  const tbody = document.getElementById('summary-table-body');
-  const statsEl = document.getElementById('summary-stats');
-  const thCol3 = document.getElementById('th-col-3');
-  const thCol4 = document.getElementById('th-col-4');
-  const summaryTitle = document.getElementById('summary-title');
-  const summaryMainHeading = document.getElementById('summary-main-heading');
-  const unassignedBadges = document.getElementById('unassigned-badges');
-
-  const filteredVehicles = vehicles.filter(v => active.has(v.src));
-
-  const validVehicles = filteredVehicles.filter(v => v.line && v.line !== '?' && v.line !== '??');
-  const unknownNav = filteredVehicles.filter(v => v.src === 'nav' && (!v.line || v.line === '?' || v.line === '??'));
-  const unknownAut = filteredVehicles.filter(v => v.src === 'aut' && (!v.line || v.line === '?' || v.line === '??'));
-
-  const lineMap = new Map();
-  let totalTracked = validVehicles.length;
-  let punctualCount = 0;
-  let totalDelaySum = 0;
-  let delayCount = 0;
-
-  for (const v of validVehicles) {
-    const lName = v.line;
-    if (!lineMap.has(lName)) {
-      lineMap.set(lName, { count: 0, punctual: 0, delaySum: 0, delayValidCount: 0, color: v.color, src: v.src, routeId: v.routeId });
-    }
-    const item = lineMap.get(lName);
-    item.count++;
-    
-    const delayMin = v.delay != null ? v.delay / 60 : 0;
-    if (Math.abs(delayMin) <= 2) {
-      item.punctual++;
-      punctualCount++;
-    }
-    if (v.delay != null) {
-      item.delaySum += delayMin;
-      item.delayValidCount++;
-      totalDelaySum += delayMin;
-      delayCount++;
-    }
-  }
-
-  if (mode === 'live') {
-    summaryTitle.textContent = "TEMPO REALE - DATI ACTV";
-    summaryMainHeading.textContent = "Le linee adesso";
-    thCol3.textContent = "Rilevati";
-    thCol4.style.display = '';
-    thCol4.textContent = "Ritardo";
-    
-    const globalPunctualPct = totalTracked > 0 ? Math.round((punctualCount / totalTracked) * 100) : 100;
-    statsEl.textContent = `${totalTracked} rilevati su ${filteredVehicles.length} in acqua · ${globalPunctualPct}% puntuali`;
-  } else {
-    summaryTitle.textContent = "DA ORARIO";
-    summaryMainHeading.textContent = "Le linee adesso";
-    thCol3.textContent = "Corse oggi";
-    thCol4.style.display = 'none';
-    statsEl.textContent = `${filteredVehicles.length} battelli in acqua su ${lineMap.size} linee`;
-  }
-
-  const sortedLines = [...lineMap.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, {numeric: true}));
-
-  if (sortedLines.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" class="muted" style="text-align:center; padding:1rem;">Nessun mezzo attivo</td></tr>`;
-    return;
-  }
-
-  let html = '';
-  for (const [lName, data] of sortedLines) {
-    const badgeColor = colorInfo(data.color, lName);
-    const badgeHtml = `<div class="bus${data.src === 'aut' ? ' aut' : ''}" style="display:inline-flex; --c:${badgeColor.c}; --t:${badgeColor.ink}; --b:${badgeColor.ink}">${esc(lName)}</div>`;
-    
-    if (mode === 'live') {
-      const pct = data.count > 0 ? Math.round((data.punctual / data.count) * 100) : 0;
-      const avgLineDelay = data.delayValidCount > 0 ? (data.delaySum / data.delayValidCount).toFixed(1) : 0;
-      const delayStr = `${avgLineDelay >= 0 ? '+' : ''}${avgLineDelay} min`;
-      
-      html += `<tr style="cursor:pointer;" class="summary-line-row" data-line="${esc(lName)}">` +
-        `<td>${badgeHtml}</td>` +
-        `<td style="text-align:center; font-weight:600;">${data.count + 2}</td>` +
-        `<td style="text-align:center;">${data.count} <span style="display:inline-block; width:30px; height:4px; background:var(--ok); border-radius:2px; vertical-align:middle; margin-left:4px;"></span></td>` +
-        `<td style="text-align:right;" class="${avgLineDelay > 1 ? 'late' : 'ok'}">${delayStr}</td>` +
-        `</tr>`;
-    } else {
-      html += `<tr style="cursor:pointer;" class="summary-line-row" data-line="${esc(lName)}">` +
-        `<td>${badgeHtml}</td>` +
-        `<td style="text-align:center; font-weight:600;">${data.count}</td>` +
-        `<td style="text-align:center;">${data.count * 12}</td>` +
-        `</tr>`;
-    }
-  }
-  tbody.innerHTML = html;
-
-  let unassignedHtml = '';
-  if (unknownNav.length > 0) {
-    unassignedHtml += `<div style="background:#1a272e; border-radius:50%; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; font-size:0.75rem; color:#fff;" title="${unknownNav.length} mezzi navigazione senza linea">N</div>`;
-  }
-  if (unknownAut.length > 0) {
-    unassignedHtml += `<div style="background:#1a272e; border-radius:6px; width:28px; height:22px; display:inline-flex; align-items:center; justify-content:center; font-size:0.75rem; color:#fff;" title="${unknownAut.length} mezzi auto/tram senza linea">A</div>`;
-  }
-  unassignedBadges.innerHTML = unassignedHtml || '<span class="muted" style="font-size:0.75rem;">Nessuno</span>';
-
-  tbody.querySelectorAll('.summary-line-row').forEach(row => {
-    row.addEventListener('click', () => {
-      const lName = row.dataset.line;
-      if (selectedLineFilter === lName) {
-        selectedLineFilter = null;
-        clearRoutes();
-      } else {
-        selectedLineFilter = lName;
-        const entry = lineMap.get(lName);
-        if (entry && entry.routeId) showRoutes([entry.routeId]);
-      }
-      render();
-      updateLinesSummary();
-    });
-  });
-}
 
 filterEl.addEventListener('input', () => {
   const q = filterEl.value.trim().toLowerCase();
@@ -607,7 +428,7 @@ searchResultsEl.addEventListener('click', e => {
 });
 
 document.addEventListener('click', e => {
-  if (!e.target.closest('.search-wrapper') && !e.target.closest('#lines-summary-panel') && !e.target.closest('#toggle-lines-btn')) {
+  if (!e.target.closest('.search-wrapper')) {
     searchResultsEl.classList.remove('active');
   }
 });
@@ -654,7 +475,6 @@ function render() {
   const countText = [...active].map(s => `${s === 'nav' ? navCount : autCount} in ${s === 'nav' ? 'navigazione' : 'servizio'}`).join(' · ');
   document.getElementById('tl-count').textContent = countText;
 
-  updateLinesSummary();
   return shown.length;
 }
 
