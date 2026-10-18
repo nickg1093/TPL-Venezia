@@ -82,11 +82,12 @@
   /* Linea di avanzamento grigia per default (fermate da effettuare) */
   .rail::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:4px; margin-left:-2px; background:var(--line); }
   
-  /* Se la fermata è passata o la ferrovia è stata percorsa, coloriamo la linea di avanzamento con il colore della linea (--rc) */
+  /* Se la fermata è passata o la ferrovia è stata percorsa, coloriamo la linea */
   .st.passed .rail::before, .st.passed-line .rail::before { background:var(--rc); }
   
-  .st.first .rail::before { top:50%; } 
-  .st.last .rail::before { bottom:50%; }
+  /* Correzione capolinea: la barra parte e termina esattamente al centro del rispettivo pallino */
+  .st.first .rail::before { top: 50%; bottom: 0; } 
+  .st.last .rail::before { top: 0; bottom: 50%; }
 
   .dot { position:absolute; left:50%; top:50%; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; background:var(--bg);
          border:3px solid var(--rc); display:flex; align-items:center; justify-content:center; font-size:.7rem; z-index:2; }
@@ -831,7 +832,6 @@ function tripHtml(d) {
     else if (s.stateText) meta = s.stateText;
     else if (s.state === 'next') meta = s.inMin <= 0 ? 'Prossima fermata · in arrivo' : `Prossima fermata · tra ${s.inMin} min`;
 
-    // Inserisce la spunta ✓ nel pallino per le fermate passate
     const dotContent = s.state === 'passed' ? '✓' : '';
 
     return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === 0 ? ' first' : ''}${i === n - 1 ? ' last' : ''}" data-i="${i}">` +
