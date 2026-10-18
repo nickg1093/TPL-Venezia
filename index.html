@@ -42,9 +42,13 @@
   .hint { position:absolute; left:10px; bottom:85px; z-index:900; padding:.3rem .6rem; border-radius:6px; background:var(--bg); color:var(--muted);
           border:1px solid var(--line); font-size:.8rem; pointer-events:none; }
           
-  #panel { position:absolute; z-index:1100; top:12px; right:12px; bottom:90px; width:350px; max-width:calc(100% - 24px); overflow-y:auto;
-           background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,.3); padding:0; }
-  #panel[hidden] { display:none; }
+  /* Pannelli laterali (destra: dettagli/statistiche linee, sinistra: filtri rapidi) */
+  .side-panel { position:absolute; z-index:1100; top:12px; bottom:85px; width:330px; max-width:calc(100% - 24px); overflow-y:auto;
+                background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,.3); }
+  #panel { right:12px; padding:0; }
+  #lines-summary-panel { left:12px; padding:0.8rem; display:none; }
+  #lines-summary-panel.active { display:block; }
+  
   .ph { position:sticky; top:0; z-index:2; background:var(--bg); padding:.8rem .8rem .5rem; margin:0; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:.5rem; align-items:flex-start; }
   .ph strong { font-size:1.05rem; }
   .muted { color:var(--muted); font-size:.8rem; }
@@ -55,11 +59,11 @@
   .dn { font-size:.8rem; color:var(--muted); } .dn.late, .dn.ok { font-weight:600; }
   .dt { text-align:right; } .dt strong { font-size:1.1rem; font-variant-numeric:tabular-nums; }
   .cx { opacity:.6; } .cx .dh { text-decoration:line-through; }
-  @media (max-width:640px) { #panel { top:auto; left:8px; right:8px; bottom:90px; width:auto; max-width:none; max-height:55%; } }
+  @media (max-width:640px) { .side-panel { top:auto; left:8px; right:8px; bottom:85px; width:auto; max-width:none; max-height:50%; } }
 
   .bus { display:flex; align-items:center; justify-content:center; min-width:28px; height:22px; padding:0 6px; border-radius:11px;
          background:var(--c,#0a6c8c); color:var(--t,#fff); font:700 12px/1 system-ui,sans-serif; border:2px solid var(--b,#fff);
-         box-shadow:0 1px 3px rgba(0,0,0,.45); white-space:nowrap; }
+         box-shadow:0 1px 3px rgba(0,0,0,.45); white-space:nowrap; cursor:pointer; }
   .bus.aut { border-radius:6px; }
   .bus.sched { border-style:dashed; opacity:.9; }
   .bus.sel { outline:3px solid #f5a623; outline-offset:1px; }
@@ -140,6 +144,13 @@
   #tl-range {
     flex: 1; accent-color: #4cc2e6; cursor: pointer; min-width: 150px;
   }
+
+  /* Stili tabella linee stile miniVenice */
+  .table-summary { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.5rem; }
+  .table-summary th { text-align: left; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 0.3rem; font-weight: 600; }
+  .table-summary td { padding: 0.35rem 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 20%, transparent); }
+  .line-filter-toggle { background: none; border: 1px solid var(--line); border-radius: 6px; padding: 0.2rem 0.5rem; color: var(--fg); cursor: pointer; font-size: 0.8rem; }
+  .line-filter-toggle.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -154,6 +165,8 @@
   </div>
   <button id="locate" type="button" title="Mostra la mia posizione">📍</button>
   
+  <button id="toggle-lines-btn" type="button" title="Mostra riepilogo linee" style="font-size: 0.9rem;">📊 Linee</button>
+
   <div class="search-wrapper">
     <input id="filter" type="search" placeholder="🔍 Cerca fermata o linea..." autocomplete="off" aria-label="Cerca fermata o linea">
     <div id="search-results"></div>
@@ -167,6 +180,35 @@
   <div id="hint" class="hint">Avvicina lo zoom per vedere le fermate</div>
   <button id="follow" class="hint" type="button" hidden>📍 Seguo il mezzo · tocca per smettere</button>
   
+  <!-- Pannello laterale sinistro: Riepilogo e statistiche linee stile miniVenice -->
+  <aside id="lines-summary-panel" class="side-panel" aria-label="Riepilogo linee">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+      <strong style="font-size:0.95rem;">Le linee adesso</strong>
+      <button id="close-lines-panel" type="button" style="background:none; border:none; color:var(--fg); cursor:pointer;">✕</button>
+    </div>
+    <div id="summary-stats" class="muted" style="margin-bottom:0.6rem; font-size:0.8rem;">Caricamento statistiche…</div>
+    <div style="display:flex; gap:0.4rem; margin-bottom:0.5rem;">
+      <button class="line-filter-toggle active" data-type="all">Tutte</button>
+      <button class="line-filter-toggle" data-type="nav">🚢 Navigazione</button>
+      <button class="line-filter-toggle" data-type="aut">🚌 Auto/Tram</button>
+    </div>
+    <div style="max-height: calc(100vh - 230px); overflow-y:auto;">
+      <table class="table-summary">
+        <thead>
+          <tr>
+            <th>Linea</th>
+            <th style="text-align:center;">Mezzi</th>
+            <th style="text-align:center;">Puntuali</th>
+            <th style="text-align:right;">Ritardo</th>
+          </tr>
+        </thead>
+        <tbody id="summary-table-body">
+          <tr><td colspan="4" class="muted" style="text-align:center; padding:1rem;">Nessun dato</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </aside>
+
   <div id="clock-bar" class="bottom-bar">
     <span class="live-indicator" style="width: 7px; height: 7px;"></span>
     <div class="time-display" id="clock-time">00:00:<small>00</small></div>
@@ -188,7 +230,7 @@
     <input id="tl-range" type="range" min="0" max="86400" value="43200" step="1" title="Timeline">
   </div>
 
-  <aside id="panel" hidden aria-label="Transiti alla fermata">
+  <aside id="panel" class="side-panel" hidden aria-label="Transiti alla fermata">
     <div class="ph">
       <div><strong id="pname"></strong><div id="psub" class="muted"></div></div>
       <button id="pclose" type="button" aria-label="Chiudi">✕</button>
@@ -212,6 +254,9 @@ const active = new Set(['nav', 'aut']);
 const srcParam = () => [...active].join(',');
 const POLL_MS = 15000, MOVE_MS = 14000;
 let lastServerUpdate = Date.now();
+
+let selectedLineFilter = null; // Filtro attivo cliccando dalla tabella linee
+let lineCategoryFilter = 'all'; // 'all', 'nav', 'aut'
 
 let isPlaying = false, playInterval = null;
 const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds(); };
@@ -238,14 +283,11 @@ function updateClock() {
 }
 setInterval(updateClock, 1000);
 
-// Gestione fluida e indipendente della timeline programmata
 let lastLoadSecs = -1;
 function applyTimelineTime(secs, forceLoad = false) {
   const range = document.getElementById('tl-range');
   range.value = secs;
   document.getElementById('tl-time').textContent = formatSecs(secs);
-  
-  // Ricarica i dati se cambiano i secondi o se forzato
   if (forceLoad || Math.abs(secs - lastLoadSecs) >= 5) {
     lastLoadSecs = secs;
     load();
@@ -317,15 +359,17 @@ function colorInfo(c) {
   const lum = (parseInt(col.slice(1, 3), 16) * 299 + parseInt(col.slice(3, 5), 16) * 587 + parseInt(col.slice(5, 7), 16) * 114) / 1000;
   return { c: col, ink: lum > 150 ? '#14232b' : '#fff', rail: lum > 200 ? '#0a6c8c' : col };
 }
+
 function busHtml(v) {
   const k = colorInfo(v.color);
   return `<div class="bus${v.src === 'aut' ? ' aut' : ''}${mode === 'sched' || v.estimated ? ' sched' : ''}${v.id === selVeh ? ' sel' : ''}" style="--c:${k.c};--t:${k.ink};--b:${k.ink}">${esc(v.line)}</div>`;
 }
+
 const tip = v => esc(`${getVehicleIcon(v.src, v.label)} ${v.line}${v.headsign ? ' → ' + v.headsign : ''}${v.label ? ' · ' + vehName(v.src, v.label) : ''}${v.estimated ? ' · da orario' : ''}`);
 
 let staticVer = -1;
 function loadStatics() {
-  fetch('/api/routes', { cache: 'no-store' }).then(r => r.json()).then(d => { if (d && !d.error) routesData = d; }).catch(() => {});
+  fetch('/api/routes', { cache: 'no-store' }).then(r => r.json()).then(d => { if (d && !d.error) routesData = d; updateLinesSummary(); }).catch(() => {});
   fetch('/api/stops', { cache: 'no-store' }).then(r => r.json()).then(d => { 
     if (Array.isArray(d)) { 
       stops = d; 
@@ -353,6 +397,113 @@ async function showRoutes(ids) {
   }
 }
 function clearRoutes() { routeToken++; lineLayer.clearLayers(); }
+
+// Pannello laterale sinistro "Le linee adesso"
+const linesSummaryPanel = document.getElementById('lines-summary-panel');
+document.getElementById('toggle-lines-btn').addEventListener('click', () => {
+  linesSummaryPanel.classList.toggle('active');
+  if (linesSummaryPanel.classList.contains('active')) updateLinesSummary();
+});
+document.getElementById('close-lines-panel').addEventListener('click', () => {
+  linesSummaryPanel.classList.remove('active');
+});
+
+document.querySelectorAll('.line-filter-toggle').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    document.querySelectorAll('.line-filter-toggle').forEach(b => b.classList.remove('active'));
+    e.target.classList.add('active');
+    lineCategoryFilter = e.target.dataset.type;
+    updateLinesSummary();
+  });
+});
+
+function updateLinesSummary() {
+  if (!linesSummaryPanel.classList.contains('active')) return;
+  const tbody = document.getElementById('summary-table-body');
+  const statsEl = document.getElementById('summary-stats');
+  
+  // Filtra veicoli attivi
+  let filteredVehicles = vehicles.filter(v => active.has(v.src));
+  if (lineCategoryFilter !== 'all') {
+    filteredVehicles = filteredVehicles.filter(v => v.src === lineCategoryFilter);
+  }
+
+  // Raggruppa per linea
+  const lineMap = new Map();
+  let totalOnWater = filteredVehicles.length;
+  let punctualCount = 0;
+  let totalDelaySum = 0;
+  let delayCount = 0;
+
+  for (const v of filteredVehicles) {
+    const lName = v.line || '?';
+    if (!lineMap.has(lName)) {
+      lineMap.set(lName, { count: 0, punctual: 0, delaySum: 0, delayValidCount: 0, color: v.color, src: v.src, routeId: v.routeId });
+    }
+    const item = lineMap.get(lName);
+    item.count++;
+    
+    // Stima puntualità (se ha delay in secondi o minuti, oppure calcolato)
+    const delayMin = v.delay != null ? v.delay / 60 : 0;
+    if (Math.abs(delayMin) <= 2) {
+      item.punctual++;
+      punctualCount++;
+    }
+    if (v.delay != null) {
+      item.delaySum += delayMin;
+      item.delayValidCount++;
+      totalDelaySum += delayMin;
+      delayCount++;
+    }
+  }
+
+  const globalPunctualPct = totalOnWater > 0 ? Math.round((punctualCount / totalOnWater) * 100) : 100;
+  const avgDelay = delayCount > 0 ? (totalDelaySum / delayCount).toFixed(1) : 0;
+  statsEl.textContent = `${totalOnWater} mezzi attivi · ${globalPunctualPct}% puntuali · ${avgDelay >= 0 ? '+' : ''}${avgDelay} min ritardo medio`;
+
+  // Ordina le linee alfanumericamente
+  const sortedLines = [...lineMap.entries()].sort((a, b) => a[0].localeCompare(b[0], undefined, {numeric: true}));
+
+  if (sortedLines.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" class="muted" style="text-align:center; padding:1rem;">Nessun mezzo attivo</td></tr>`;
+    return;
+  }
+
+  let html = '';
+  for (const [lName, data] of sortedLines) {
+    const pct = data.count > 0 ? Math.round((data.punctual / data.count) * 100) : 0;
+    const avgLineDelay = data.delayValidCount > 0 ? (data.delaySum / data.delayValidCount).toFixed(1) : 0;
+    const delayStr = `${avgLineDelay >= 0 ? '+' : ''}${avgLineDelay} min`;
+    const badgeColor = colorInfo(data.color);
+    const isSelected = selectedLineFilter === lName;
+
+    html += `<tr style="cursor:pointer;" class="summary-line-row" data-line="${esc(lName)}">` +
+      `<td><div class="bus" style="display:inline-flex; --c:${badgeColor.c}; --t:${badgeColor.ink}; --b:${badgeColor.ink}">${esc(lName)}</div></td>` +
+      `<td style="text-align:center; font-weight:600;">${data.count}</td>` +
+      `<td style="text-align:center;">${pct}%</td>` +
+      `<td style="text-align:right;" class="${avgLineDelay > 1 ? 'late' : 'ok'}">${delayStr}</td>` +
+      `</tr>`;
+  }
+  tbody.innerHTML = html;
+
+  // Event listener sulle righe della tabella per filtrare la linea sulla mappa
+  tbody.querySelectorAll('.summary-line-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const lName = row.dataset.line;
+      if (selectedLineFilter === lName) {
+        selectedLineFilter = null;
+        clearRoutes();
+      } else {
+        selectedLineFilter = lName;
+        // Trova il routeId corrispondente e mostra il percorso
+        const entry = lineMap.get(lName);
+        if (entry && entry.routeId) showRoutes([entry.routeId]);
+      }
+      render();
+      updateLinesSummary();
+    });
+  });
+}
 
 filterEl.addEventListener('input', () => {
   const q = filterEl.value.trim().toLowerCase();
@@ -409,7 +560,7 @@ searchResultsEl.addEventListener('click', e => {
 });
 
 document.addEventListener('click', e => {
-  if (!e.target.closest('.search-wrapper')) {
+  if (!e.target.closest('.search-wrapper') && !e.target.closest('#lines-summary-panel') && !e.target.closest('#toggle-lines-btn')) {
     searchResultsEl.classList.remove('active');
   }
 });
@@ -419,7 +570,11 @@ map.on('click', () => { if (!openTrip && !filterEl.value) clearRoutes(); });
 const markers = new Map();
 let vehicles = [];
 function render() {
-  const shown = vehicles.filter(v => active.has(v.src));
+  let shown = vehicles.filter(v => active.has(v.src));
+  if (selectedLineFilter) {
+    shown = shown.filter(v => v.line === selectedLineFilter);
+  }
+
   const keep = new Set();
   for (const v of shown) {
     if (!Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
@@ -447,11 +602,12 @@ function render() {
   }
   for (const [id, e] of markers) if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
   
-  const navCount = shown.filter(v => v.src === 'nav').length;
-  const autCount = shown.filter(v => v.src === 'aut').length;
+  const navCount = vehicles.filter(v => active.has('nav') && v.src === 'nav').length;
+  const autCount = vehicles.filter(v => active.has('aut') && v.src === 'aut').length;
   const countText = [...active].map(s => `${s === 'nav' ? navCount : autCount} in ${s === 'nav' ? 'navigazione' : 'servizio'}`).join(' · ');
   document.getElementById('tl-count').textContent = countText;
 
+  updateLinesSummary();
   return shown.length;
 }
 
@@ -734,7 +890,7 @@ document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener(
 }));
 
 document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('change', () => {
-  if (el.checked) active.add(el.value); else active.delete(el.value);
+  if (el.checked) active.add(el.value); else active.delta ? active.delete(el.value) : active.delete(el.value);
   if (!active.size) { active.add(el.value); el.checked = true; }
   vehicles = vehicles.filter(v => active.has(v.src));
   render(); drawStops(); load();
