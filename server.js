@@ -1,4 +1,3 @@
-// Proxy leggero ACTV: navigazione + automobilistico (GTFS statico + GTFS-RT) esposti come JSON.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -8,11 +7,10 @@ const schedule = require('./schedule');
 const { secsOfDayRome } = schedule;
 
 const PORT = process.env.PORT || 3000;
-const REFRESH_MS = 15000; // non scendere sotto i 10s: rispetta il server ACTV
-const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/aut/GTFSRT/', ali: null };   // ali (Alilaguna): solo orari, nessun feed realtime
+const REFRESH_MS = 15000;
+const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/aut/GTFSRT/' };
 const IDS = Object.keys(RT);
 
-// Ogni servizio ha il suo dataset statico (D) e il suo stato realtime (S): gli ID non si mescolano mai.
 const emptyData = () => ({ routes: {}, trips: {}, stops: {}, stopLoc: {}, stopIndex: {}, routeShapes: {}, shapePts: {},
   calendar: {}, exceptions: {}, stopTimes: new Map(), exByDate: {}, byStart: {}, tripPrefixes: [] });
 const D = {}, S = {};
@@ -22,54 +20,19 @@ for (const id of IDS) {
 }
 let stopsBody = null;
 
-// Alilaguna usa quasi tutti i pontili ACTV: le sue fermate che coincidono (per nome o per posizione) con una fermata ACTV non si disegnano
-// due volte, e i suoi passaggi compaiono nel pannello della fermata ACTV. Quelle senza fermata ACTV vicina restano visibili da sole.
-const ALI_MAX_M = 200, ALI_SAME_SPOT_M = 40;
-let ALIAS = new Map(), REV = new Map(), ALIAS_REPORT = { matched: [], unmatched: [] };      // ALIAS: fermata Alilaguna → fermata ACTV; REV: l'inverso
-function buildAlias() {
-  ALIAS = new Map(); REV = new Map(); ALIAS_REPORT = { matched: [], unmatched: [] };
-  const N = D.nav, A = D.ali; if (!N || !A) return;
-  const words = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').split(' ')
-    .filter(w => w.length > 2 && !['san', 'santa', 'sant', 'del', 'della', 'dei', 'delle', 'venezia'].includes(w));
-  const meters = (p, q) => Math.hypot((p[1] - q[1]) * 111320 * Math.cos(p[0] * Math.PI / 180), (p[0] - q[0]) * 110540);
-  const nServed = Object.keys(N.stopIndex).length > 0, aServed = Object.keys(A.stopIndex).length > 0;
-  const navStops = Object.keys(N.stops).filter(s => N.stopLoc[s] && (!nServed || N.stopIndex[s])).map(s => ({ id: s, w: words(N.stops[s]) }));
-  for (const aid of Object.keys(A.stops)) {
-    if (!A.stopLoc[aid] || (aServed && !A.stopIndex[aid])) continue;
-    const aw = words(A.stops[aid]);
-    const c = navStops.map(n => {
-      const common = aw.filter(w => n.w.includes(w)).length;
-      return { id: n.id, m: meters(A.stopLoc[aid], N.stopLoc[n.id]), score: aw.length && n.w.length ? common / Math.min(aw.length, n.w.length) : 0 };
-    }).filter(x => x.m <= ALI_MAX_M);
-    const byName = c.filter(x => x.score >= 0.5).sort((x, y) => y.score - x.score || x.m - y.m)[0];     // stesso nome entro 200 m
-    const near = c.filter(x => x.m <= ALI_SAME_SPOT_M).sort((x, y) => x.m - y.m)[0];                      // oppure stessa posizione entro 40 m
-    const hit = byName || near;
-    if (hit) {
-      ALIAS.set(aid, hit.id);
-      if (!REV.has(hit.id)) REV.set(hit.id, []);
-      REV.get(hit.id).push(aid);
-      ALIAS_REPORT.matched.push(`${A.stops[aid]} → ${N.stops[hit.id]} (${Math.round(hit.m)} m, ${byName ? 'stesso nome' : 'stessa posizione'})`);
-    } else {
-      const nearest = c.slice().sort((x, y) => x.m - y.m)[0];
-      ALIAS_REPORT.unmatched.push(`${A.stops[aid]}${nearest ? ` (la più vicina: ${N.stops[nearest.id]}, ${Math.round(nearest.m)} m)` : ''}`);
-    }
-  }
-  console.log(`Fermate Alilaguna: ${ALIAS.size} agganciate a fermate ACTV, ${ALIAS_REPORT.unmatched.length} restano visibili da sole`);
-}
-
-let version = 0;                       // cambia ogni volta che un GTFS statico è stato (ri)letto: il browser ricarica fermate e linee
+let version = 0;
 const ready = Object.fromEntries(IDS.map(i => [i, false]));
 async function loadStatic() {
   for (const id of IDS) {
-    try { D[id] = await gtfs.load(id); S[id].sched.ts = 0; ready[id] = true; if (RT[id]) refresh(id); } // riallinea subito i mezzi live
+    try { D[id] = await gtfs.load(id); S[id].sched.ts = 0; ready[id] = true; if (RT[id]) refresh(id); }
     catch (e) { console.error(`GTFS statico [${id}]:`, e.message); }
-    buildAlias(); stopsBody = null; version++;
+    stopsBody = null; version++;
   }
 }
 loadStatic();
 setInterval(loadStatic, 24 * 3600 * 1000);
 
-const has = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k); // i campi assenti valgono 0 nel prototipo
+const has = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
 const wrap = x => ((x + 43200) % 86400 + 86400) % 86400 - 43200;
 const delayOf = (ev, sched) => {
   if (!ev) return null;
@@ -78,8 +41,6 @@ const delayOf = (ev, sched) => {
   return null;
 };
 
-// Collega una corsa del feed realtime a una corsa del GTFS statico (dello stesso servizio).
-// 1) stesso trip_id  2) stesso numero con prefisso diverso (AUT_ ↔ NAV_)  3) stessa linea + direzione + ora di partenza
 function resolveTrip(G, td, dg) {
   if (!td) return null;
   const id = td.tripId;
@@ -129,13 +90,13 @@ async function refresh(id) {
       const n = st.s.length, explicit = new Array(n), skipped = new Set(); let cur = 0, firstJ = -1;
       for (const u of tu.stopTimeUpdate || []) {
         dg.updates++;
-        if (u.scheduleRelationship === 2) continue;             // NO_DATA
+        if (u.scheduleRelationship === 2) continue;
         let j = -1;
-        if (u.stopId) {                                         // 1) per stop_id
+        if (u.stopId) {
           j = st.s.indexOf(u.stopId, cur); if (j < 0) j = st.s.indexOf(u.stopId);
           if (j >= 0) dg.matchedByStopId++;
         }
-        if (j < 0 && has(u, 'stopSequence')) {                  // 2) per stop_sequence
+        if (j < 0 && has(u, 'stopSequence')) {
           j = st.q.indexOf(Number(u.stopSequence));
           if (j >= 0) dg.matchedBySeq++;
         }
@@ -147,11 +108,11 @@ async function refresh(id) {
         }
         cur = j + 1;
         if (firstJ < 0) firstJ = j;
-        if (u.scheduleRelationship === 1) skipped.add(j);       // SKIPPED
+        if (u.scheduleRelationship === 1) skipped.add(j);
         let dly = delayOf(u.arrival, st.a[j]); if (dly == null) dly = delayOf(u.departure, st.d[j]);
         if (dly != null) { explicit[j] = dly; dg.updatesWithDelayOrTime++; }
       }
-      let c = has(tu, 'delay') ? Number(tu.delay) : null;       // ritardo a livello di corsa
+      let c = has(tu, 'delay') ? Number(tu.delay) : null;
       const arr = [];
       for (let k = 0; k < n; k++) { if (explicit[k] != null) c = explicit[k]; arr.push(c); }
       const cancelled = tu.trip.scheduleRelationship === 3;
@@ -159,7 +120,7 @@ async function refresh(id) {
       if (arr.some(x => x != null)) dg.tripsWithDelay++;
       lv[tid] = { delays: arr, cancelled, skipped, firstJ };
       let h = st8.hist.get(tid); if (!h) st8.hist.set(tid, h = { delays: new Array(n).fill(null), seen: 0 });
-      for (let k = 0; k < n; k++) if (explicit[k] != null) h.delays[k] = explicit[k];   // ultima previsione nota
+      for (let k = 0; k < n; k++) if (explicit[k] != null) h.delays[k] = explicit[k];
       h.seen = Date.now();
       if (firstJ >= 0 && G.stops[st.s[firstJ]]) nextStop[tid] = G.stops[st.s[firstJ]];
       const first = arr.find(x => x != null);
@@ -167,16 +128,6 @@ async function refresh(id) {
     }
     for (const [k, h] of st8.hist) if (Date.now() - h.seen > 4 * 3600e3) st8.hist.delete(k);
     st8.diag = { at: new Date().toISOString(), ...dg };
-    if (st8.n++ % 20 === 0)
-      console.log(`Live [${id}]: ${dg.entities} corse nel feed, ${dg.tripKnown} riconosciute nel GTFS, ${dg.tripsWithDelay} con ritardo ` +
-                  `(aggiornamenti: ${dg.updates}, per stop_id ${dg.matchedByStopId}, per sequence ${dg.matchedBySeq}, non associati ${dg.unmatched})` +
-                  ` · collegamento corse: ${JSON.stringify(dg.resolved)}`);
-    try {
-      const cut = e => { const o = transit_realtime.FeedEntity.toObject(e, { longs: String, enums: String });
-                         if (o.tripUpdate?.stopTimeUpdate) o.tripUpdate.stopTimeUpdate = o.tripUpdate.stopTimeUpdate.slice(0, 3); return o; };
-      st8.raw = { tripUpdate: upd.entity.length ? cut(upd.entity.find(e => e.tripUpdate?.stopTimeUpdate?.length) || upd.entity[0]) : null,
-                  vehicle: pos.entity.length ? transit_realtime.FeedEntity.toObject(pos.entity[0], { longs: String, enums: String }) : null };
-    } catch (e) { st8.raw = { error: e.message }; }
     st8.live = lv;
     st8.vehicles = pos.entity
       .filter(e => e.vehicle?.position && Number.isFinite(e.vehicle.position.latitude) && Number.isFinite(e.vehicle.position.longitude))
@@ -197,7 +148,7 @@ async function refresh(id) {
           routeId: routeKey ? `${id}:${routeKey}` : null,
           headsign: trip.headsign || null,
           nextStop: nextStop[tripId] || null,
-          delay: tripId in delays ? delays[tripId] : null, // secondi
+          delay: tripId in delays ? delays[tripId] : null,
           ts: v.timestamp ? Number(v.timestamp) : null
         };
       });
@@ -211,9 +162,9 @@ async function refresh(id) {
 for (const id of IDS) if (RT[id]) { refresh(id); setInterval(() => refresh(id), REFRESH_MS); }
 
 const hm = s => { s = ((s % 86400) + 86400) % 86400; return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}`; };
-// Quanta strada del tratto A→B il mezzo ha già fatto (0..1): lo proietto sul tracciato della corsa
+
 function projectFrac(G, trip, A, B, V) {
-  const k = 0.7, pts = G.shapePts?.[trip.shape];            // 0.7 ≈ cos(latitudine) per il Veneto
+  const k = 0.7, pts = G.shapePts?.[trip.shape];
   const d2 = (P, Q) => ((P[1] - Q[1]) * k) ** 2 + (P[0] - Q[0]) ** 2;
   const clamp = x => Math.min(1, Math.max(0, x));
   const nearest = (P, from, to) => { let bi = from, bd = Infinity; for (let i = from; i <= to; i++) { const d = d2(pts[i], P); if (d < bd) { bd = d; bi = i; } } return bi; };
@@ -235,21 +186,22 @@ function projectFrac(G, trip, A, B, V) {
       if (best && tot > 0) return clamp((pre[best.s - ia] + best.t * len(best.s)) / tot);
     }
   }
-  const ax = (B[1] - A[1]) * k, ay = B[0] - A[0], vx = (V[1] - A[1]) * k, vy = V[0] - A[0], den = ax * ax + ay * ay;   // senza tracciato: retta A→B
+  const ax = (B[1] - A[1]) * k, ay = B[0] - A[0], vx = (V[1] - A[1]) * k, vy = V[0] - A[0], den = ax * ax + ay * ay;
   return den > 0 ? clamp((vx * ax + vy * ay) / den) : 0;
 }
+
 function tripDetail(i, tid, live) {
   const G = D[i], st = G.stopTimes.get(tid), trip = G.trips[tid], r = G.routes[trip.route] || {}, n = st.s.length;
   const nowS = schedule.secsOfDayRome(Date.now());
   const fits = t => t >= st.start - 3600 && t <= st.end + 3600;
-  const tNow = !fits(nowS) && fits(nowS + 86400) ? nowS + 86400 : nowS;           // corse che passano la mezzanotte
+  const tNow = !fits(nowS) && fits(nowS + 86400) ? nowS + 86400 : nowS;
   const lv = live ? S[i].live[tid] : null, hist = live ? S[i].hist.get(tid)?.delays : null;
-  let cur;                                                                          // indice della prossima fermata
+  let cur;
   if (lv && lv.firstJ >= 0) cur = lv.firstJ;
   else { cur = st.s.findIndex((_, k) => (k === n - 1 ? st.a[k] : st.d[k]) > tNow); if (cur < 0) cur = n; }
   const stops = st.s.map((sid, k) => {
     const ts = k === n - 1 ? st.a[k] : st.d[k];
-    let dl = null;                                                                   // ritardo in secondi
+    let dl = null;
     if (live) dl = k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null);
     return { id: sid, name: G.stops[sid] || sid, lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
       sched: hm(ts), exp: dl != null ? hm(ts + dl) : null, delay: dl != null ? Math.round(dl / 60) : null,
@@ -258,14 +210,14 @@ function tripDetail(i, tid, live) {
   });
   const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
   const dn = lv && cur < n ? lv.delays[cur] : null;
-  let progress;                                                                     // dove si trova il mezzo tra una fermata e la successiva
+  let progress;
   if (cur >= n) progress = { from: n - 1, frac: 0, gps: false };
   else if (cur === 0) progress = { from: 0, frac: 0, gps: false };
   else {
     const A = G.stopLoc[st.s[cur - 1]], B = G.stopLoc[st.s[cur]];
     let frac, gps = false;
     if (veh && A && B && Number.isFinite(veh.lat) && Number.isFinite(veh.lon)) { frac = projectFrac(G, trip, A, B, [veh.lat, veh.lon]); gps = true; }
-    else {                                                                          // senza posizione: stima dagli orari
+    else {
       const dPrev = live ? (hist?.[cur - 1] ?? lv?.delays[cur] ?? 0) : 0, dCur = live ? (lv?.delays[cur] ?? 0) : 0;
       const t0 = st.d[cur - 1] + dPrev, t1 = st.a[cur] + dCur;
       frac = t1 > t0 ? (tNow - t0) / (t1 - t0) : 0;
@@ -285,7 +237,7 @@ const send = (res, obj, cache = 'no-store', code = 200) => {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': cache });
   res.end(typeof obj === 'string' ? obj : JSON.stringify(obj));
 };
-// Posizioni teoriche da orario (cache 10 s) per un servizio
+
 function schedVehicles(i) {
   const c = S[i].sched;
   if (Date.now() - c.ts <= 10000) return c;
@@ -293,12 +245,12 @@ function schedVehicles(i) {
     const t0 = Date.now();
     c.vehicles = schedule.positionsNow(D[i]).filter(v => Number.isFinite(v.lat) && Number.isFinite(v.lon))
       .map(v => ({ ...v, tripId: v.id, id: `${i}:${v.id}`, src: i, routeId: v.routeId ? `${i}:${v.routeId}` : null }));
-    if (!c.logged || Date.now() - t0 > 1500) { console.log(`Orario programmato [${i}]: ${c.vehicles.length} corse in servizio (${Date.now() - t0} ms)`); c.logged = true; }
     c.error = null;
-  } catch (e) { console.error(`Orario programmato [${i}]:`, e); c.vehicles = []; c.error = `${i}: ${e.message}`; }
+  } catch (e) { c.vehicles = []; c.error = `${i}: ${e.message}`; }
   c.ts = Date.now();
   return c;
 }
+
 const wanted = url => (url.searchParams.get('src') || IDS.join(',')).split(',').filter(x => IDS.includes(x));
 const splitId = full => { const i = (full || '').indexOf(':'); return i < 0 ? [null, full] : [full.slice(0, i), full.slice(i + 1)]; };
 
@@ -308,7 +260,7 @@ http.createServer((req, res) => {
     if (url.pathname === '/api/vehicles') {
       const list = wanted(url), live = list.filter(i => RT[i]), noLive = list.filter(i => !RT[i]);
       const errors = live.map(i => S[i].error).filter(Boolean);
-      const estimated = noLive.flatMap(i => schedVehicles(i).vehicles.map(v => ({ ...v, estimated: true })));   // senza feed live: posizione stimata
+      const estimated = noLive.flatMap(i => schedVehicles(i).vehicles.map(v => ({ ...v, estimated: true })));
       return send(res, { updated: Math.max(noLive.length ? Date.now() : 0, ...live.map(i => S[i].updated)),
                          error: errors.length ? errors.join('; ') : null, version, ready,
                          vehicles: [...live.flatMap(i => S[i].vehicles), ...estimated] });
@@ -324,7 +276,7 @@ http.createServer((req, res) => {
         const out = [];
         for (const i of IDS) {
           const G = D[i], served = Object.keys(G.stopIndex).length ? s => G.stopIndex[s] : () => true;
-          for (const s of Object.keys(G.stops)) if (G.stopLoc[s] && served(s) && !(i === 'ali' && ALIAS.has(s))) out.push([`${i}:${s}`, G.stops[s], G.stopLoc[s][0], G.stopLoc[s][1], i, i === 'nav' && REV.has(s) ? 'ali' : null]);
+          for (const s of Object.keys(G.stops)) if (G.stopLoc[s] && served(s)) out.push([`${i}:${s}`, G.stops[s], G.stopLoc[s][0], G.stopLoc[s][1], i, null]);
         }
         stopsBody = JSON.stringify(out);
       }
@@ -333,18 +285,17 @@ http.createServer((req, res) => {
     if (url.pathname === '/api/stop') {
       const full = url.searchParams.get('id'), [i, sid] = splitId(full);
       if (!D[i]) return send(res, { error: 'fermata sconosciuta' }, 'no-store', 404);
-      const labels = new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));   // numero del mezzo per corsa
-      const extra = i === 'nav' ? (REV.get(sid) || []).flatMap(a => schedule.departures(D.ali, S.ali.live, a).map(x => ({ ...x, src: 'ali', vehicle: null }))) : [];   // passaggi Alilaguna allo stesso pontile
+      const labels = new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
       return send(res, { stop: { id: full, name: D[i].stops[sid] || sid, src: i }, updated: Date.now(), liveUpdated: S[i].updated,
-                         note: [schedule.scheduleMode(D[i]), extra.length ? schedule.scheduleMode(D.ali) : 'ok'].map((m, k) => m === 'ok' ? null : (k ? '🛥️ ' : '') + m).filter(Boolean).join(' · ') || null,
-                         departures: [...schedule.departures(D[i], S[i].live, sid).map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })), ...extra] });
+                         note: schedule.scheduleMode(D[i]) === 'ok' ? null : schedule.scheduleMode(D[i]),
+                         departures: schedule.departures(D[i], S[i].live, sid).map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) });
     }
     if (url.pathname === '/api/trip') {
       const full = url.searchParams.get('id'), [i, tid] = splitId(full);
       if (!D[i] || !D[i].stopTimes.has(tid)) return send(res, { error: 'corsa sconosciuta' }, 'no-store', 404);
       return send(res, tripDetail(i, tid, url.searchParams.get('mode') !== 'sched'));
     }
-    if (url.pathname === '/api/routes') {          // solo nome/colore: i tracciati si chiedono a richiesta
+    if (url.pathname === '/api/routes') {
       const out = {};
       for (const i of IDS) for (const r in D[i].routes) out[`${i}:${r}`] = { ...D[i].routes[r], src: i };
       return send(res, out, 'no-store');
@@ -365,7 +316,6 @@ http.createServer((req, res) => {
                    schedule: (() => { try { return schedule.diagnose(G); } catch (e) { return { error: e.message }; } })(),
                    ready: ready[i], stopsCount: Object.keys(G.stops).length, scheduledNow: S[i].sched.vehicles.length };
       }
-      out.stopAlias = ALIAS_REPORT;
       return res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }), res.end(JSON.stringify(out, null, 2));
     }
   } catch (e) {
@@ -374,7 +324,7 @@ http.createServer((req, res) => {
   }
   const page = [path.join(__dirname, 'public', 'index.html'), path.join(__dirname, 'index.html')].find(f => fs.existsSync(f));
   fs.readFile(page || '', (err, html) => {
-    if (err) { res.writeHead(500); return res.end('index.html mancante: mettilo in public/ oppure accanto a server.js'); }
+    if (err) { res.writeHead(500); return res.end('index.html mancante'); }
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(html);
   });
