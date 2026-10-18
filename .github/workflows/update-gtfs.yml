@@ -1,0 +1,29 @@
+name: Aggiorna GTFS ACTV
+
+on:
+  schedule:
+    # Esegue l'azione ogni lunedì alle 3:00 di notte (puoi cambiarlo)
+    - cron: '0 3 * * 1'
+  workflow_dispatch: # Ti permette di avviarlo manualmente quando vuoi con un click
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scarica repository
+        uses: actions/checkout@v4
+
+      - name: Scarica i file ZIP aggiornati da ACTV e Alilaguna
+        run: |
+          mkdir -p data
+          curl -L "https://actv.avmspa.it/sites/default/files/attachments/opendata/navigazione/actv_nav.zip" -o "data/actv_nav.zip"
+          curl -L "https://actv.avmspa.it/sites/default/files/attachments/opendata/automobilistico/actv_aut.zip" -o "data/actv_aut.zip"
+          curl -L "https://alilaguna.it/attuale/alilaguna.zip" -o "data/alilaguna.zip"
+
+      - name: Salva e carica le modifiche su GitHub se ci sono aggiornamenti
+        run: |
+          git config --global user.name "Bot Aggiornamento GTFS"
+          git config --global user.email "bot@actions.github.io"
+          git add data/*.zip
+          git diff --quiet && git diff --cached --quiet || git commit -m "Aggiornamento automatico file GTFS ACTV"
+          git push
