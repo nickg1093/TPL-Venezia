@@ -128,7 +128,8 @@
   .dm { min-width: 0; }
   .dh { font-weight: 600; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dn { font-size: 0.75rem; color: var(--muted); }
-  .dn.late, .dn.ok { font-weight: 600; }
+  .dn.late, .dn.ok, .dn.early { font-weight: 600; }
+  .dn.early { color: var(--accent); }
   .dt { text-align: right; }
   .dt strong { font-size: 0.95rem; font-variant-numeric: tabular-nums; }
   .cx { opacity: 0.5; }
@@ -152,6 +153,7 @@
   
   .late { color: var(--late); font-weight: 600; }
   .ok { color: var(--ok); font-weight: 600; }
+  .early { color: var(--accent); font-weight: 600; }
 
   .st { display: grid; grid-template-columns: 24px 1fr auto; gap: 0.6rem; min-height: 42px; cursor: pointer; border-radius: 8px; font-size: 0.85rem; }
   .st:hover { background: color-mix(in srgb, var(--fg) 4%, transparent); }
@@ -408,7 +410,6 @@ function vehName(src, label) {
     return tram ? `TRAM ${tram[1]}` : (/^tram/i.test(l) ? l.toUpperCase() : `BUS ${l}`);
   }
   
-  // Controllo per i traghetti N/T (linee 17 e 11)
   const lowerLabel = l.toLowerCase();
   const ntVessels = ['lido di venezia', 'ammiana', 'san nicolo', 'san nicolò', 'metamauco', 'marco polo', 'pellestrina'];
   if (ntVessels.some(v => lowerLabel.includes(v))) {
@@ -710,9 +711,9 @@ function renderDepartures() {
     if (x.cancel) { cls = 'late'; note = x.cancel === 'trip' ? 'Corsa soppressa' : 'Fermata saltata'; }
     else if (live) {
       if (!x.live) note = 'da orario';
-      else if (x.delay >= 1) { cls = 'late'; note = `+${x.delay} min`; }
-      else if (x.delay <= -1) { cls = 'ok'; note = `${x.delay} min`; }
-      else { cls = 'ok'; note = 'in orario'; }
+      else if (x.delay >= 1) { cls = 'late'; note = `in ritardo di ${x.delay} min (prog. ${x.sched})`; }
+      else if (x.delay <= -1) { cls = 'early'; note = `in anticipo di ${Math.abs(x.delay)} min (prog. ${x.sched})`; }
+      else { cls = 'ok'; note = `in orario (prog. ${x.sched})`; }
     }
     if (live && x.vehicle) note += (note ? ' · ' : '') + vehName(lineSrc, x.vehicle);
     if (x.arrival) note = 'Termina qui' + (note ? ' · ' + note : '');
@@ -763,8 +764,16 @@ function tripHtml(d) {
   return `<div class="tl" style="--rc:${k.rail}; --check-fg:${k.contrast};">` + d.stops.map((s, i) => {
     let time, sub = '';
     if (live && s.delay != null) {
-      time = `<strong class="${s.delay >= 1 ? 'late' : 'ok'}">${esc(s.exp)}</strong>`;
-      sub = s.delay === 0 ? 'in orario' : `prog. ${esc(s.sched)} (${s.delay > 0 ? '+' : ''}${s.delay}m)`;
+      if (s.delay >= 1) {
+        time = `<strong class="late">${esc(s.exp)}</strong>`;
+        sub = `in ritardo di ${s.delay}m (prog. ${esc(s.sched)})`;
+      } else if (s.delay <= -1) {
+        time = `<strong class="early">${esc(s.exp)}</strong>`;
+        sub = `in anticipo di ${Math.abs(s.delay)}m (prog. ${esc(s.sched)})`;
+      } else {
+        time = `<strong class="ok">${esc(s.exp)}</strong>`;
+        sub = `in orario (prog. ${esc(s.sched)})`;
+      }
     } else { time = `<strong>${esc(s.sched)}</strong>`; sub = live ? 'da orario' : ''; }
     
     let meta = '';
@@ -803,7 +812,17 @@ function placeVehicle(d, first) {
 }
 function renderTrip(first) {
   const d = lastTrip; if (!d || !openTrip) return;
-  const dl = d.delayNow == null ? '' : d.delayNow >= 1 ? `<span class="late">+${d.delayNow}m</span>` : '<span class="ok">in orario</span>';
+  
+  let statusText = 'in orario';
+  if (d.live) {
+    if (d.delayNow == null) statusText = 'live attivo';
+    else if (d.delayNow >= 1) statusText = `<span class="late">in ritardo di ${d.delayNow} min</span>`;
+    else if (d.delayNow <= -1) statusText = `<span class="early">in anticipo di ${Math.abs(d.delayNow)} min</span>`;
+    else statusText = '<span class="ok">in orario</span>';
+  } else {
+    statusText = 'programmato';
+  }
+
   const lab = d.trip.vehicle || openTrip.label;
   const vehicleNameStr = vehName(d.trip.src, lab);
   
@@ -812,9 +831,10 @@ function renderTrip(first) {
   
   pname.innerHTML = `${badgeHtml} ${vehicleNameStr ? vehicleNameStr : ''}`;
   
-  psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '') + [d.trip.headsign && '→ ' + esc(d.trip.headsign),
-    d.live ? dl || (d.stops.some(s => s.delay != null) ? 'ritardo n.d.' : 'live attivo') : 'programmato'].filter(Boolean).join(' · ') +
+  psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '') + 
+    [d.trip.headsign && '→ ' + esc(d.trip.headsign), statusText].filter(Boolean).join(' · ') +
     (d.note ? `<br>${esc(d.note)}` : '');
+    
   const footer = d.live && d.historyKnown ? '<p class="muted" style="margin-top:0.75rem;">Fermate passate: ultima stima nota.</p>' : '';
   plist.innerHTML = (d.cancelled ? '<div class="banner">Corsa soppressa</div>' : '') + tripHtml(d) + footer;
   placeVehicle(d, first);
