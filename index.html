@@ -15,7 +15,7 @@
   body { display:flex; flex-direction:column; }
   header { display:flex; flex-wrap:wrap; gap:.75rem 1rem; align-items:center; padding:.6rem .9rem; border-bottom:1px solid var(--line); background:var(--bg); z-index:1000; }
   
-  /* Stile contenitore ricerca stile miniVenice */
+  /* Contenitore e tendina di ricerca stile miniVenice */
   .search-wrapper { position: relative; display: inline-block; }
   input[type="search"] { font:inherit; padding:.35rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); width:18rem; }
   input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
@@ -129,7 +129,7 @@
   </div>
   <button id="locate" type="button" title="Mostra la mia posizione">📍</button>
   
-  <!-- Contenitore di ricerca stile miniVenice -->
+  <!-- Barra di ricerca con menu a tendina personalizzato stile miniVenice -->
   <div class="search-wrapper">
     <input id="filter" type="search" placeholder="🔍 Cerca fermata o linea..." autocomplete="off" aria-label="Cerca fermata o linea">
     <div id="search-results"></div>
@@ -314,20 +314,19 @@ async function showRoutes(ids) {
 }
 function clearRoutes() { routeToken++; lineLayer.clearLayers(); }
 
-// Gestione del menu a tendina stile miniVenice durante la digitazione
+// Gestione della tendina dei risultati durante la digitazione (fermate e linee)
 filterEl.addEventListener('input', () => {
   const q = filterEl.value.trim().toLowerCase();
   if (!q) {
     searchResultsEl.classList.remove('active');
     searchResultsEl.innerHTML = '';
-    render();
     clearRoutes();
     return;
   }
 
-  // Filtra fermate (massimo 8 risultati)
+  // Filtra fermate corrispondenti
   const matchedStops = stops.filter(s => s[1].toLowerCase().includes(q)).slice(0, 8);
-  // Filtra linee (massimo 8 risultati unici per nome linea)
+  // Filtra linee corrispondenti
   const matchedRoutes = Object.entries(routesData).filter(([id, r]) => active.has(r.src) && (String(r.name).toLowerCase().includes(q) || String(r.headsign || '').toLowerCase().includes(q))).slice(0, 8);
 
   let html = '';
@@ -352,10 +351,9 @@ filterEl.addEventListener('input', () => {
     searchResultsEl.innerHTML = `<div class="search-item muted">Nessun risultato trovato</div>`;
     searchResultsEl.classList.add('active');
   }
-  render();
 });
 
-// Gestione click sui risultati della ricerca stile miniVenice
+// Click su un elemento del menu a tendina
 searchResultsEl.addEventListener('click', e => {
   const item = e.target.closest('.search-item');
   if (!item) return;
@@ -371,11 +369,10 @@ searchResultsEl.addEventListener('click', e => {
     filterEl.value = name;
     searchResultsEl.classList.remove('active');
     showRoutes([id]);
-    render();
   }
 });
 
-// Chiudi i risultati se si clicca fuori
+// Chiudi la tendina cliccando fuori
 document.addEventListener('click', e => {
   if (!e.target.closest('.search-wrapper')) {
     searchResultsEl.classList.remove('active');
@@ -387,9 +384,8 @@ map.on('click', () => { if (!openTrip && !filterEl.value) clearRoutes(); });
 const markers = new Map();
 let vehicles = [];
 function render() {
-  const q = filterEl.value.trim().toLowerCase();
-  // Filtra i mezzi in mappa se l'utente ha cercato una linea specifica
-  const shown = vehicles.filter(v => active.has(v.src) && (!q || String(v.line).toLowerCase() === q));
+  // Mostra SEMPRE tutti i mezzi attivi sulla mappa (senza nasconderli quando digiti)
+  const shown = vehicles.filter(v => active.has(v.src));
   const keep = new Set();
   for (const v of shown) {
     if (!Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
