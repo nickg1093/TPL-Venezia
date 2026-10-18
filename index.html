@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ACTV live</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg:#f7f9fa; --fg:#14232b; --muted:#5d6f78; --line:#cfd9de; --accent:#0a6c8c; --late:#c0392b; --ok:#1e8449; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#10191e; --fg:#e6eef1; --muted:#93a6af; --line:#2a3b44; --accent:#4cc2e6; --late:#ff7b6b; --ok:#5fd08a; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height:100%; margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
+  body { display:flex; flex-direction:column; }
+  header { display:flex; flex-wrap:wrap; gap:.75rem 1rem; align-items:center; padding:.6rem .9rem; border-bottom:1px solid var(--line); }
+  h1 { font-size:1.05rem; margin:0; font-weight:650; }
+  input { font:inherit; padding:.35rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); width:11rem; }
+  input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  #status { margin-left:auto; font-size:.85rem; color:var(--muted); }
+  #status.err { color:var(--late); }
+  #wrap { position:relative; flex:1; min-height:0; }
+  #map { position:absolute; inset:0; }
+  button { font:inherit; padding:.35rem .7rem; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); cursor:pointer; }
+  button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  .hint { position:absolute; left:10px; bottom:26px; z-index:900; padding:.3rem .6rem; border-radius:6px; background:var(--bg); color:var(--muted);
+          border:1px solid var(--line); font-size:.8rem; pointer-events:none; }
+  #panel { position:absolute; z-index:1100; top:12px; right:12px; bottom:12px; width:350px; max-width:calc(100% - 24px); overflow-y:auto;
+           background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,.3); padding:.8rem; }
+  #panel[hidden] { display:none; }
+  .ph { display:flex; justify-content:space-between; gap:.5rem; align-items:flex-start; margin-bottom:.4rem; }
+  .ph strong { font-size:1.05rem; }
+  .muted { color:var(--muted); font-size:.8rem; }
+  .dep { display:grid; grid-template-columns:auto 1fr auto; gap:.6rem; align-items:center; padding:.5rem 0; border-bottom:1px solid var(--line); }
+  .dm { min-width:0; } .dh { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dn { font-size:.8rem; color:var(--muted); } .dn.late, .dn.ok { font-weight:600; }
+  .dt { text-align:right; } .dt strong { font-size:1.1rem; font-variant-numeric:tabular-nums; }
+  .cx { opacity:.6; } .cx .dh { text-decoration:line-through; }
+  @media (max-width:640px) { #panel { top:auto; left:8px; right:8px; bottom:8px; width:auto; max-width:none; max-height:55%; } }
+  .bus { display:flex; align-items:center; justify-content:center; min-width:28px; height:22px; padding:0 6px; border-radius:11px;
+         background:var(--c,#0a6c8c); color:var(--t,#fff); font:700 12px/1 system-ui,sans-serif; border:2px solid var(--b,#fff);
+         box-shadow:0 1px 3px rgba(0,0,0,.45); white-space:nowrap; }
+  .bus.aut { border-radius:6px; }
+  .bus.sched { border-style:dashed; opacity:.9; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg label { padding:.35rem .7rem; cursor:pointer; font-size:.9rem; user-select:none; }
+  .seg input { position:absolute; opacity:0; pointer-events:none; }
+  .seg label:has(input:checked) { background:var(--accent); color:var(--bg); font-weight:600; }
+  .seg label:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:-2px; }
+  .late { color:var(--late); font-weight:600; } .ok { color:var(--ok); font-weight:600; }
+  /* pannello corsa (stile Google Transit) */
+  #panel { padding:0; }
+  .ph { position:sticky; top:0; z-index:2; background:var(--bg); padding:.8rem .8rem .5rem; margin:0; border-bottom:1px solid var(--line); }
+  #plist { padding:.3rem .8rem .8rem; }
+  .bus.sel { outline:3px solid #f5a623; outline-offset:1px; }
+  .st { display:grid; grid-template-columns:26px 1fr auto; gap:.5rem; min-height:46px; cursor:pointer; border-radius:6px; }
+  .st:hover { background:color-mix(in srgb, var(--line) 35%, transparent); }
+  .rail { position:relative; }
+  .rail::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:4px; margin-left:-2px; background:var(--rc); }
+  .st.first .rail::before { top:50%; } .st.last .rail::before { bottom:50%; }
+  .st.passed .rail::before { background:var(--line); }
+  .dot { position:absolute; left:50%; top:50%; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; background:var(--bg);
+         border:3px solid var(--rc); display:flex; align-items:center; justify-content:center; font-size:.7rem; z-index:2; }
+  .st.passed .dot { border-color:var(--line); background:var(--line); }
+  .st.next .dot { box-shadow:0 0 0 4px color-mix(in srgb, var(--rc) 30%, transparent); }
+  .sn { padding:.5rem 0; min-width:0; } .nm { font-weight:600; }
+  .st.next .nm { font-size:1.02rem; }
+  .st.passed .nm, .st.passed .tm { opacity:.55; }
+  .tm { text-align:right; padding:.5rem 0; } .tm strong { font-variant-numeric:tabular-nums; }
+  .banner { margin:.4rem 0; padding:.4rem .6rem; border-radius:6px; border:1px solid var(--late); color:var(--late); font-weight:600; }
+  .tl { position:relative; z-index:0; padding-top:.2rem; }
+  .trav { position:absolute; left:11px; top:0; width:4px; height:0; background:var(--line); z-index:1; transition:height 14s linear; }
+  .veh { position:absolute; left:0; top:0; width:26px; height:26px; margin-top:-13px; border-radius:50%; background:var(--rc);
+         border:3px solid var(--bg); box-shadow:0 1px 4px rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center;
+         font-size:.95rem; z-index:3; transition:top 14s linear; }
+  #follow { pointer-events:auto; bottom:62px; cursor:pointer; font:inherit; font-size:.8rem; color:var(--fg); }
+  .dep.go { cursor:pointer; border-radius:6px; }
+  .dep.go:hover, .dep.go:focus-visible { background:color-mix(in srgb, var(--line) 35%, transparent); outline:none; }
+  #pback { color:var(--accent); text-decoration:none; font-weight:600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ACTV</h1>
+  <div class="seg" role="radiogroup" aria-label="Modalità">
+    <label><input type="radio" name="mode" value="live" checked>Live</label>
+    <label><input type="radio" name="mode" value="sched">Orario programmato</label>
+  </div>
+  <div class="seg" role="group" aria-label="Servizi">
+    <label><input type="checkbox" name="src" value="nav" checked>⛴ Navigazione</label>
+    <label><input type="checkbox" name="src" value="aut" checked>🚌 Automobilistico</label>
+    <label><input type="checkbox" name="src" value="ali" checked>🛥️ Alilaguna</label>
+  </div>
+  <button id="locate" type="button" title="Mostra la mia posizione">📍 Dove sono</button>
+  <input id="filter" type="search" placeholder="Filtra linea (es. 1, 5.1)" aria-label="Filtra per linea">
+  <span id="status" role="status">Caricamento…</span>
+</header>
+<div id="wrap">
+  <div id="map"></div>
+  <div id="hint" class="hint">Avvicina lo zoom per vedere le fermate</div>
+  <button id="follow" class="hint" type="button" hidden>📍 Seguo il mezzo · tocca per smettere</button>
+  <aside id="panel" hidden aria-label="Transiti alla fermata">
+    <div class="ph">
+      <div><strong id="pname"></strong><div id="psub" class="muted"></div></div>
+      <button id="pclose" type="button" aria-label="Chiudi">✕</button>
+    </div>
+    <div id="plist"></div>
+  </aside>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map = L.map('map', { preferCanvas: true }).setView([45.437, 12.335], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '© OpenStreetMap · Dati ACTV (GTFS / GTFS-RT)'
+}).addTo(map);
+
+const statusEl = document.getElementById('status'), filterEl = document.getElementById('filter');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let mode = 'live';                                  // 'live' | 'sched'
+const active = new Set(['nav', 'aut', 'ali']);             // servizi visibili
+const srcParam = () => [...active].join(',');
+const ICON = { nav: '⛴', aut: '🚌', ali: '🛥️' };
+const POLL_MS = 15000, MOVE_MS = 14000;
+// Come si chiama il mezzo: navigazione → M/B (1-99), M/S (100-300) oppure M/N + nome; automobilistico → BUS + numero
+function vehName(src, label) {
+  const l = String(label ?? '').trim();
+  if (!l) return '';
+  if (src === 'aut') {
+    const tram = /^tram_(.+)$/i.exec(l);            // es. TRAM_12 → "TRAM 12" (senza underscore, senza "BUS")
+    return tram ? `TRAM ${tram[1]}` : `BUS ${l}`;
+  }
+  if (/^\d+$/.test(l)) {
+    const n = +l;
+    if (n >= 1 && n <= 99) return `M/B ${n}`;
+    if (n >= 100 && n <= 300) return `M/S ${n}`;
+    return `mezzo ${n}`;                            // numero fuori dalle fasce previste
+  }
+  return `M/N ${l}`;
+}
+let follow = false, followAfter = 0;               // la mappa segue il mezzo selezionato
+let selVeh = null;                                  // mezzo selezionato (pannello corsa aperto)
+
+function colorInfo(c) {
+  const ok = /^#[0-9a-f]{6}$/i.test(c || ''), col = ok ? c : '#0a6c8c';
+  const lum = (parseInt(col.slice(1, 3), 16) * 299 + parseInt(col.slice(3, 5), 16) * 587 + parseInt(col.slice(5, 7), 16) * 114) / 1000;
+  return { c: col, ink: lum > 150 ? '#14232b' : '#fff', rail: lum > 200 ? '#0a6c8c' : col };
+}
+function busHtml(v) {
+  const k = colorInfo(v.color);
+  return `<div class="bus${v.src === 'aut' ? ' aut' : ''}${mode === 'sched' || v.estimated ? ' sched' : ''}${v.id === selVeh ? ' sel' : ''}" style="--c:${k.c};--t:${k.ink};--b:${k.ink}">${esc(v.line)}</div>`;
+}
+const tip = v => esc(`${ICON[v.src] || ''} ${v.line}${v.headsign ? ' → ' + v.headsign : ''}${v.label ? ' · ' + vehName(v.src, v.label) : ''}${v.estimated ? ' · da orario' : ''}`);
+
+// fermate e linee si (ri)caricano ogni volta che il server finisce di leggere un GTFS (campo "version")
+let staticVer = -1;
+function loadStatics() {
+  fetch('/api/routes', { cache: 'no-store' }).then(r => r.json()).then(d => { if (d && !d.error) routesData = d; }).catch(() => {});
+  fetch('/api/stops', { cache: 'no-store' }).then(r => r.json()).then(d => { if (Array.isArray(d)) { stops = d; drawStops(); } }).catch(() => {});
+}
+
+// ---- Tracciati delle linee (richiesti a richiesta)
+let routesData = {};
+const shapeCache = new Map(), lineLayer = L.layerGroup().addTo(map), tripLayer = L.layerGroup().addTo(map);
+let routeToken = 0;
+async function showRoutes(ids) {
+  const tok = ++routeToken;
+  lineLayer.clearLayers();
+  for (const id of ids) {
+    if (!id) continue;
+    let shapes = shapeCache.get(id);
+    if (!shapes) {
+      try { shapes = (await (await fetch('/api/shapes?id=' + encodeURIComponent(id), { cache: 'no-store' })).json()).shapes; if (shapes?.length) shapeCache.set(id, shapes); }
+      catch { continue; }
+    }
+    if (tok !== routeToken) return;
+    const r = routesData[id] || {};
+    for (const pts of shapes) L.polyline(pts, { color: colorInfo(r.color).rail, weight: 4, opacity: .75 }).addTo(lineLayer);
+  }
+}
+function clearRoutes() { routeToken++; lineLayer.clearLayers(); }
+function showFilteredRoutes() {
+  const q = filterEl.value.trim().toLowerCase();
+  if (!q) return openTrip ? null : clearRoutes();
+  showRoutes(Object.keys(routesData).filter(id => active.has(routesData[id].src) && String(routesData[id].name).toLowerCase() === q));
+}
+map.on('click', () => { if (!filterEl.value.trim() && !openTrip) clearRoutes(); });
+
+// ---- Mezzi, con movimento fluido tra un aggiornamento e l'altro
+const markers = new Map();                          // id -> { m, html, from, to, t0 }
+let vehicles = [];
+function render() {
+  const q = filterEl.value.trim().toLowerCase();
+  const shown = vehicles.filter(v => active.has(v.src) &&
+    (!q || String(v.line).toLowerCase() === q || String(v.line).toLowerCase().startsWith(q)));
+  const keep = new Set();
+  for (const v of shown) {
+    if (!Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
+    keep.add(v.id);
+    try {
+      const html = busHtml(v);
+      let e = markers.get(v.id);
+      if (!e) {
+        const m = L.marker([v.lat, v.lon], { icon: L.divIcon({ className: '', iconSize: null, html }) })
+          .bindTooltip(tip(v), { direction: 'top', offset: [0, -12] }).addTo(map);
+        const id = v.id;
+        m.on('click', () => { const c = vehicles.find(x => x.id === id); if (c) openTripPanel(c); });
+        markers.set(v.id, e = { m, html, from: null, to: [v.lat, v.lon], t0: 0 });
+        continue;
+      }
+      if (e.html !== html) { e.m.setIcon(L.divIcon({ className: '', iconSize: null, html })); e.html = html; }
+      e.m.setTooltipContent(tip(v));
+      if (e.to[0] !== v.lat || e.to[1] !== v.lon) {
+        const cur = e.m.getLatLng();
+        if (Math.abs(cur.lat - v.lat) + Math.abs(cur.lng - v.lon) > 0.02) { e.m.setLatLng([v.lat, v.lon]); e.from = null; }   // salto grande: niente animazione
+        else { e.from = [cur.lat, cur.lng]; e.t0 = performance.now(); }
+        e.to = [v.lat, v.lon];
+      }
+    } catch (err) { console.warn('Mezzo non disegnato', v.id, err.message); }
+  }
+  for (const [id, e] of markers) if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
+  return shown.length;
+}
+function tick(now) {
+  for (const e of markers.values()) {
+    if (!e.from) continue;
+    const p = Math.min(1, (now - e.t0) / MOVE_MS);
+    e.m.setLatLng([e.from[0] + (e.to[0] - e.from[0]) * p, e.from[1] + (e.to[1] - e.from[1]) * p]);
+    if (p >= 1) e.from = null;
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+async function load() {
+  const m = mode, key = srcParam();
+  try {
+    const r = await fetch(`${m === 'sched' ? '/api/scheduled' : '/api/vehicles'}?src=${key}`, { cache: 'no-store' });
+    const d = await r.json();
+    if (m !== mode || key !== srcParam()) return;
+    if (d.version !== staticVer) { staticVer = d.version; loadStatics(); }
+    vehicles = d.vehicles;
+    render();
+    if (d.error) throw new Error(d.error);
+    const t = new Date(d.updated).toLocaleTimeString('it-IT');
+    statusEl.className = '';
+    const parts = [...active].map(s => `${ICON[s]} ${vehicles.filter(v => v.src === s).length}`).join(' · ');
+    const wait = [...active].filter(s => d.ready && !d.ready[s]);
+    statusEl.textContent = `${parts} ${m === 'sched' ? 'corse in servizio (da orario)' : 'mezzi'} · ${t}` +
+      (wait.length ? ` · orari in caricamento: ${wait.join(', ')}` : '') +
+      (m === 'live' && active.has('ali') ? ' · 🛥️ da orario (nessun feed live)' : '') +
+      (m === 'sched' && d.notes?.length ? ' · ' + d.notes.map(x => `${ICON[x.src]} ${x.mode}`).join(' · ') : '');
+  } catch (e) {
+    if (m !== mode) return;
+    statusEl.className = 'err'; statusEl.textContent = 'Dati non aggiornati: ' + e.message;
+  }
+}
+
+// ---- Pannello laterale: fermata (passaggi) oppure corsa (lista fermate)
+let stops = [], openStop = null, openStopName = '', openSrc = null, openTrip = null, panelTimer = null, lastDeps = null, lastTrip = null;
+const stopLayer = L.layerGroup().addTo(map), hintEl = document.getElementById('hint');
+const panel = document.getElementById('panel'), plist = document.getElementById('plist');
+const pname = document.getElementById('pname'), psub = document.getElementById('psub');
+const MIN_STOP_ZOOM = 14;
+function drawStops() {
+  stopLayer.clearLayers();
+  const near = map.getZoom() >= MIN_STOP_ZOOM;
+  hintEl.hidden = near;
+  if (!near) return;
+  const b = map.getBounds().pad(0.1); let n = 0;
+  for (const [id, name, lat, lon, src, extra] of stops) {                  // extra: servizio che usa lo stesso pontile (Alilaguna)
+    if (!(active.has(src) || (extra && active.has(extra))) || !b.contains([lat, lon])) continue;
+    if (++n > 2500) break;
+    L.circleMarker([lat, lon], { radius: 6, weight: 2, color: '#14232b', fillColor: id === openStop ? '#f5a623' : '#ffffff', fillOpacity: 1 })
+      .bindTooltip(`${ICON[src]}${extra ? ICON[extra] : ''} ${esc(name)}`).on('click', () => openPanel(id, name, src)).addTo(stopLayer);
+  }
+}
+map.on('moveend', drawStops);
+drawStops();
+
+function refreshPanel() { if (openStop) loadDepartures(); else if (openTrip) loadTrip(); }
+function startPanelTimer() { clearInterval(panelTimer); panelTimer = setInterval(refreshPanel, POLL_MS); }
+function resetTrip() {
+  setFollow(false);
+  const had = !!openTrip;
+  openTrip = null; lastTrip = null; tripLayer.clearLayers();
+  if (selVeh) { selVeh = null; render(); }
+  if (had && !filterEl.value.trim()) clearRoutes();
+}
+
+// -- fermata
+function openPanel(id, name, src) {
+  resetTrip();
+  openStop = id; openStopName = name; openSrc = src; lastDeps = null; panel.hidden = false;
+  pname.textContent = `${ICON[src]} ${name}`; psub.textContent = '';
+  plist.innerHTML = '<p class="muted">Caricamento…</p>';
+  loadDepartures(); startPanelTimer(); drawStops();
+}
+function closePanel() {
+  openStop = null; resetTrip(); panel.hidden = true; clearInterval(panelTimer);
+  if (!filterEl.value.trim()) clearRoutes();
+  drawStops();
+}
+document.getElementById('pclose').addEventListener('click', closePanel);
+
+async function loadDepartures() {
+  const id = openStop; if (!id) return;
+  try {
+    const r = await fetch('/api/stop?id=' + encodeURIComponent(id), { cache: 'no-store' });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    if (id !== openStop) return;
+    lastDeps = d; renderDepartures();
+  } catch (e) {
+    if (id === openStop) plist.innerHTML = `<p class="late">Dati non disponibili: ${esc(e.message)}</p>`;
+  }
+}
+function renderDepartures() {
+  if (!lastDeps || !openStop) return;
+  const live = mode === 'live';
+  psub.textContent = (live ? `Previsioni live · feed delle ${new Date(lastDeps.liveUpdated).toLocaleTimeString('it-IT')}` : 'Orario programmato') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
+  const rows = lastDeps.departures.map(x => ({ ...x, tIn: live ? x.expIn : x.schedIn }))
+    .filter(x => x.tIn >= -1 && x.tIn <= 90 && active.has(x.src || openSrc)).sort((a, b) => a.tIn - b.tIn).slice(0, 25);
+  const html = rows.map(x => {
+    let cls = '', note = '';
+    if (x.cancel) { cls = 'late'; note = x.cancel === 'trip' ? 'Corsa soppressa' : 'Fermata non servita'; }
+    else if (live) {
+      if (!x.live) note = 'da orario';
+      else if (x.delay >= 1) { cls = 'late'; note = `+${x.delay} min (prog. ${x.sched})`; }
+      else if (x.delay <= -1) { cls = 'ok'; note = `${x.delay} min (prog. ${x.sched})`; }
+      else { cls = 'ok'; note = 'in orario'; }
+    }
+    if (live && x.vehicle) note += (note ? ' · ' : '') + vehName(x.src || openSrc, x.vehicle);
+    if (x.arrival) note = 'Termina qui' + (note ? ' · ' + note : '');
+    const t = live ? x.exp : x.sched;
+    return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(x.src || openSrc)}" role="button" tabindex="0" title="Segui il mezzo">${busHtml({ line: x.line, color: x.color, src: x.src || openSrc })}` +
+      `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${esc(note)}</div></div>` +
+      `<div class="dt"><strong>${esc(t)}</strong><div class="muted">${x.tIn <= 0 ? 'adesso' : x.tIn + ' min'}</div></div></div>`;
+  }).join('');
+  plist.innerHTML = html ? html + '<p class="muted">Tocca un passaggio per seguire il mezzo.</p>' : '<p class="muted">Nessun passaggio nei prossimi 90 minuti.</p>';
+}
+
+// -- corsa (clic su un mezzo)
+function openTripPanel(v, back = null) {
+  setFollow(false);
+  openStop = null; clearInterval(panelTimer); lastTrip = null; tripLayer.clearLayers();
+  selVeh = v.id;
+  openTrip = { src: v.src, tripId: v.tripId, routeId: v.routeId, line: v.line, label: v.label, back, drawn: false };
+  panel.hidden = false;
+  pname.textContent = `${ICON[v.src]} Linea ${v.line}${v.label ? ' · ' + vehName(v.src, v.label) : ''}`;
+  psub.textContent = v.headsign ? '→ ' + v.headsign : '';
+  render(); drawStops();
+  if (!v.tripId) {
+    plist.innerHTML = '<p class="muted">Per questo mezzo il feed non indica la corsa: non posso mostrare la lista delle fermate.</p>';
+    showRoutes([v.routeId]); return;
+  }
+  plist.innerHTML = '<p class="muted">Caricamento…</p>';
+  loadTrip(); startPanelTimer();
+}
+async function loadTrip() {
+  const t = openTrip; if (!t || !t.tripId) return;
+  try {
+    const r = await fetch(`/api/trip?id=${encodeURIComponent(t.src + ':' + t.tripId)}&mode=${mode}`, { cache: 'no-store' });
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    if (openTrip !== t) return;
+    lastTrip = d; renderTrip(!t.drawn); t.drawn = true;
+  } catch (e) {
+    if (openTrip === t) plist.innerHTML = `<p class="late">Dati non disponibili: ${esc(e.message)}</p>`;
+  }
+}
+function tripHtml(d) {
+  const k = colorInfo(d.trip.color), live = d.live, n = d.stops.length;
+  return `<div class="tl" style="--rc:${k.rail}">` + d.stops.map((s, i) => {
+    let time, sub = '';
+    if (live && s.delay != null) {
+      time = `<strong class="${s.delay >= 1 ? 'late' : 'ok'}">${esc(s.exp)}</strong>`;
+      sub = s.delay === 0 ? 'in orario' : `prog. ${esc(s.sched)} (${s.delay > 0 ? '+' : ''}${s.delay} min)`;
+    } else { time = `<strong>${esc(s.sched)}</strong>`; sub = live ? 'da orario' : ''; }
+    let meta = '';
+    if (s.skipped) meta = 'Fermata non servita';
+    else if (s.state === 'next') meta = s.inMin <= 0 ? 'Prossima fermata · in arrivo' : `Prossima fermata · tra ${s.inMin} min`;
+    return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === 0 ? ' first' : ''}${i === n - 1 ? ' last' : ''}" data-i="${i}">` +
+      `<div class="rail"><span class="dot"></span></div>` +
+      `<div class="sn"><div class="nm">${esc(s.name)}</div>${meta ? `<div class="muted">${meta}</div>` : ''}</div>` +
+      `<div class="tm">${time}<div class="muted">${sub}</div></div></div>`;
+  }).join('') + `<div class="trav"></div><div class="veh">${ICON[d.trip.src]}</div></div>`;
+}
+// Il segnalino del mezzo sta tra due fermate in base a quanta strada ha fatto, e scorre piano fino alla nuova posizione
+let vehMemo = { trip: null, y: 0 };
+function placeVehicle(d, first) {
+  const tl = plist.querySelector('.tl'), veh = tl && tl.querySelector('.veh'), trav = tl && tl.querySelector('.trav');
+  if (!veh) return;
+  const rows = tl.querySelectorAll('.st'), a = d.progress && rows[d.progress.from], b = d.progress && rows[d.progress.from + 1];
+  if (!a) { veh.style.display = 'none'; trav.style.display = 'none'; return; }
+  const ca = a.offsetTop + a.offsetHeight / 2, cb = b ? b.offsetTop + b.offsetHeight / 2 : ca;
+  const y = ca + (cb - ca) * (b ? d.progress.frac : 0);
+  const from = !first && vehMemo.trip === openTrip.tripId ? vehMemo.y : y;     // riparte da dove era nell'aggiornamento precedente
+  veh.style.transition = trav.style.transition = 'none';
+  veh.style.top = from + 'px'; trav.style.height = from + 'px';
+  void veh.offsetHeight;                                                        // applica la posizione di partenza
+  veh.style.transition = trav.style.transition = '';
+  veh.style.top = y + 'px'; trav.style.height = y + 'px';
+  vehMemo = { trip: openTrip.tripId, y };
+}
+function renderTrip(first) {
+  const d = lastTrip; if (!d || !openTrip) return;
+  const dl = d.delayNow == null ? '' : d.delayNow >= 1 ? `<span class="late">+${d.delayNow} min</span>` : '<span class="ok">in orario</span>';
+  const lab = d.trip.vehicle || openTrip.label;
+  pname.textContent = `${ICON[d.trip.src]} Linea ${d.trip.line}${lab ? ' · ' + vehName(d.trip.src, lab) : ''}`;
+  psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '') + [d.trip.headsign && '→ ' + esc(d.trip.headsign),
+    d.live ? dl || (d.stops.some(s => s.delay != null) ? 'ritardo non disponibile' : 'nessun dato live: orario programmato') : 'orario programmato (posizione stimata)'].filter(Boolean).join(' · ') +
+    (d.note ? `<br>${esc(d.note)}` : '');
+  const footer = d.live && d.historyKnown ? '<p class="muted">Fermate già passate: ultima previsione registrata prima del passaggio.</p>' : '';
+  plist.innerHTML = (d.cancelled ? '<div class="banner">Corsa soppressa</div>' : '') + tripHtml(d) + footer;
+  placeVehicle(d, first);
+  if (!first) return;
+  routeToken++; lineLayer.clearLayers(); tripLayer.clearLayers();                 // tracciato e fermate della corsa sulla mappa
+  const k = colorInfo(d.trip.color);
+  if (d.shape?.length) L.polyline(d.shape, { color: k.rail, weight: 5, opacity: .85 }).addTo(lineLayer);
+  else showRoutes([openTrip.routeId]);
+  for (const s of d.stops) if (s.lat != null)
+    L.circleMarker([s.lat, s.lon], { radius: 5, weight: 2, color: '#14232b', fillColor: '#fff', fillOpacity: 1 }).bindTooltip(esc(s.name)).addTo(tripLayer);
+  const focus = plist.querySelector('.veh'), row = focus && focus.style.display !== 'none' ? focus : plist.querySelector('.st.next');
+  if (row) row.scrollIntoView({ block: 'center' });
+}
+plist.addEventListener('click', e => {                // clic su un passaggio: segui il mezzo; clic su una fermata della corsa: la mappa si sposta lì
+  const dep = e.target.closest('.dep.go');
+  if (dep && openStop) return followDeparture(dep.dataset.trip, dep.dataset.src);
+  const row = e.target.closest('.st'); if (!row || !lastTrip) return;
+  const s = lastTrip.stops[+row.dataset.i];
+  if (s && s.lat != null) map.flyTo([s.lat, s.lon], Math.max(map.getZoom(), 15));
+});
+
+plist.addEventListener('keydown', e => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('go') && openStop) { e.preventDefault(); followDeparture(e.target.dataset.trip, e.target.dataset.src); }
+});
+psub.addEventListener('click', e => {                   // "← nome fermata": torna ai passaggi della fermata
+  if (e.target.id !== 'pback') return;
+  e.preventDefault();
+  const b = openTrip && openTrip.back; if (b) openPanel(b.id, b.name, b.src);
+});
+
+// ---- Segui il mezzo (dal pannello di una fermata)
+const followEl = document.getElementById('follow');
+function setFollow(on) { follow = on; followEl.hidden = !on; }
+function followTarget(ll, z) {                          // il mezzo resta al centro della parte di mappa non coperta dal pannello
+  const p = map.project(ll, z), narrow = window.innerWidth <= 640;
+  return map.unproject(p.add(narrow ? [0, map.getSize().y * 0.22] : [181, 0]), z);
+}
+function followDeparture(tripId, depSrc) {
+  const ds = depSrc || openSrc;                           // il passaggio può essere di un altro servizio (Alilaguna al pontile ACTV)
+  const x = lastDeps && lastDeps.departures.find(d => d.tripId === tripId && (d.src || openSrc) === ds); if (!x) return;
+  const src = ds, back = { id: openStop, name: openStopName, src: openSrc };
+  const v = vehicles.find(c => c.src === src && c.tripId === tripId)
+    || { id: null, src, tripId, routeId: null, line: x.line, label: x.vehicle, headsign: x.headsign, color: x.color };   // nessun mezzo sulla mappa: solo la lista fermate
+  openTripPanel(v, back);
+  if (!v.id) return;
+  const e = markers.get(v.id), ll = e ? e.m.getLatLng() : L.latLng(v.lat, v.lon), z = Math.max(map.getZoom(), 15);
+  setFollow(true); followAfter = Date.now() + 1200;
+  map.flyTo(followTarget(ll, z), z, { duration: 0.8 });
+}
+setInterval(() => {                                     // ogni secondo riporta il mezzo al centro (si ferma se trascini la mappa)
+  if (!follow || !selVeh || Date.now() < followAfter) return;
+  const e = markers.get(selVeh), c = vehicles.find(x => x.id === selVeh);
+  const ll = e ? e.m.getLatLng() : c && L.latLng(c.lat, c.lon);
+  if (ll) map.panTo(followTarget(ll, map.getZoom()), { animate: true, duration: 1, easeLinearity: 1 });
+}, 1000);
+map.on('dragstart', () => setFollow(false));
+followEl.addEventListener('click', () => setFollow(false));
+
+// ---- La mia posizione
+let me = null;
+document.getElementById('locate').addEventListener('click', () => map.locate({ setView: true, maxZoom: 16 }));
+map.on('locationfound', e => {
+  if (me) me.remove();
+  me = L.circleMarker(e.latlng, { radius: 8, color: '#fff', weight: 3, fillColor: '#1a73e8', fillOpacity: 1 }).addTo(map);
+});
+map.on('locationerror', e => { statusEl.className = 'err'; statusEl.textContent = 'Posizione non disponibile: ' + e.message; });
+
+// ---- Controlli: Live / Orario programmato, Navigazione / Automobilistico, filtro linea
+document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener('change', () => {
+  mode = el.value; vehicles = []; render(); renderDepartures();
+  if (openTrip && openTrip.tripId) loadTrip();
+  statusEl.className = ''; statusEl.textContent = 'Caricamento…'; load();
+}));
+document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('change', () => {
+  if (el.checked) active.add(el.value); else active.delete(el.value);
+  if (!active.size) { active.add(el.value); el.checked = true; }          // almeno un servizio resta attivo
+  vehicles = vehicles.filter(v => active.has(v.src));
+  render(); drawStops(); showFilteredRoutes(); load();
+}));
+filterEl.addEventListener('input', () => { showFilteredRoutes(); render(); });
+load(); setInterval(load, POLL_MS);
+</script>
+</body>
+</html>
