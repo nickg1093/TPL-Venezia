@@ -862,4 +862,80 @@ function renderTrip(first) {
   else showRoutes([openTrip.routeId]);
   
   for (const s of d.stops) if (s.lat != null)
-    L.circleMarker([s.lat, s.lon], { radius: 4, weight: 1.5, color: '#0f172a', fillColor: '#fff', fillOpacity: 0.9 }).bindTooltip(esc(s
+    L.circleMarker([s.lat, s.lon], { radius: 4, weight: 1.5, color: '#0f172a', fillColor: '#fff', fillOpacity: 0.9 }).bindTooltip(esc(s.name)).addTo(tripLayer);
+  const focus = plist.querySelector('.veh'), row = focus && focus.style.display !== 'none' ? focus : plist.querySelector('.st.next');
+  if (row) row.scrollIntoView({ block: 'center' });
+}
+plist.addEventListener('click', e => {
+  const dep = e.target.closest('.dep.go');
+  if (dep && openStop) return followDeparture(dep.dataset.trip, dep.dataset.src);
+  const row = e.target.closest('.st'); if (!row || !lastTrip) return;
+  const s = lastTrip.stops[+row.dataset.i];
+  if (s && s.lat != null) map.flyTo([s.lat, s.lon], Math.max(map.getZoom(), 15));
+});
+
+const followEl = document.getElementById('follow');
+function setFollow(on) { follow = on; followEl.hidden = !on; }
+function followTarget(ll, z) {
+  const p = map.project(ll, z), narrow = window.innerWidth <= 640;
+  return map.unproject(p.add(narrow ? [0, map.getSize().y * 0.22] : [181, 0]), z);
+}
+function followDeparture(tripId, depSrc) {
+  const ds = depSrc || openSrc;
+  const x = lastDeps && lastDeps.departures.find(d => d.tripId === tripId && (d.src || openSrc) === ds); if (!x) return;
+  const src = ds, back = { id: openStop, name: openStopName, src: openSrc };
+  const v = vehicles.find(c => c.src === src && c.tripId === tripId)
+    || { id: null, src, tripId, routeId: null, line: x.line, label: x.vehicle, headsign: x.headsign, color: x.color };
+  openTripPanel(v, back);
+  if (!v.id) return;
+  const e = markers.get(v.id), ll = e ? e.m.getLatLng() : L.latLng(v.lat, v.lon), z = Math.max(map.getZoom(), 15);
+  setFollow(true); followAfter = Date.now() + 1200;
+  map.flyTo(followTarget(ll, z), z, { duration: 0.8 });
+}
+setInterval(() => {
+  if (!follow || !selVeh || Date.now() < followAfter) return;
+  const e = markers.get(selVeh), c = vehicles.find(x => x.id === selVeh);
+  const ll = e ? e.m.getLatLng() : c && L.latLng(c.lat, c.lon);
+  if (ll) map.panTo(followTarget(ll, map.getZoom()), { animate: true, duration: 1, easeLinearity: 1 });
+}, 1000);
+map.on('dragstart', () => setFollow(false));
+followEl.addEventListener('click', () => setFollow(false));
+
+let me = null;
+document.getElementById('locate').addEventListener('click', () => map.locate({ setView: true, maxZoom: 16 }));
+map.on('locationfound', e => {
+  if (me) me.remove();
+  me = L.circleMarker(e.latlng, { radius: 7, color: '#fff', weight: 2, fillColor: '#0284c7', fillOpacity: 1 }).addTo(map);
+});
+map.on('locationerror', e => { statusEl.className = 'err'; statusEl.textContent = 'Posizione non disponibile'; });
+
+document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener('change', () => {
+  mode = el.value;
+  vehicles = [];
+  if (mode === 'sched') {
+    document.getElementById('clock-bar').style.display = 'none';
+    document.getElementById('timeline-bar').classList.add('active');
+    applyTimelineTime(+document.getElementById('tl-range').value, true);
+  } else {
+    document.getElementById('timeline-bar').classList.remove('active');
+    document.getElementById('clock-bar').style.display = 'flex';
+    if (isPlaying) { isPlaying = false; clearInterval(playInterval); document.getElementById('tl-play').textContent = '▶'; }
+    load();
+  }
+  render(); renderDepartures();
+  if (openTrip && openTrip.tripId) loadTrip();
+  if (openStop) loadDepartures();
+}));
+
+document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('change', () => {
+  if (el.checked) active.add(el.value); else active.delete(el.value);
+  if (!active.size) { active.add(el.value); el.checked = true; }
+  vehicles = vehicles.filter(v => active.has(v.src));
+  render(); drawStops(); load();
+}));
+
+load(); setInterval(load, POLL_MS);
+updateClock();
+</script>
+</body>
+</html>
