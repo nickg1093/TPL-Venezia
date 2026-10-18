@@ -13,9 +13,9 @@
   * { box-sizing: border-box; }
   html, body { height:100%; margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
   body { display:flex; flex-direction:column; }
+  
   header { display:flex; flex-wrap:wrap; gap:.75rem 1rem; align-items:center; padding:.6rem .9rem; border-bottom:1px solid var(--line); background:var(--bg); z-index:1000; }
   
-  /* Contenitore e tendina di ricerca stile miniVenice */
   .search-wrapper { position: relative; display: inline-block; }
   input[type="search"] { font:inherit; padding:.35rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); width:18rem; }
   input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
@@ -32,39 +32,46 @@
 
   #status { margin-left:auto; font-size:.85rem; color:var(--muted); }
   #status.err { color:var(--late); }
+  
   #wrap { position:relative; flex:1; min-height:0; }
   #map { position:absolute; inset:0; }
+  
   button { font:inherit; padding:.35rem .7rem; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); cursor:pointer; }
   button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
-  .hint { position:absolute; left:10px; bottom:70px; z-index:900; padding:.3rem .6rem; border-radius:6px; background:var(--bg); color:var(--muted);
+  
+  .hint { position:absolute; left:10px; bottom:75px; z-index:900; padding:.3rem .6rem; border-radius:6px; background:var(--bg); color:var(--muted);
           border:1px solid var(--line); font-size:.8rem; pointer-events:none; }
+          
   #panel { position:absolute; z-index:1100; top:12px; right:12px; bottom:80px; width:350px; max-width:calc(100% - 24px); overflow-y:auto;
-           background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,.3); padding:.8rem; }
+           background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,.3); padding:0; }
   #panel[hidden] { display:none; }
-  .ph { display:flex; justify-content:space-between; gap:.5rem; align-items:flex-start; margin-bottom:.4rem; }
+  .ph { position:sticky; top:0; z-index:2; background:var(--bg); padding:.8rem .8rem .5rem; margin:0; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:.5rem; align-items:flex-start; }
   .ph strong { font-size:1.05rem; }
   .muted { color:var(--muted); font-size:.8rem; }
+  #plist { padding:.3rem .8rem .8rem; }
+  
   .dep { display:grid; grid-template-columns:auto 1fr auto; gap:.6rem; align-items:center; padding:.5rem 0; border-bottom:1px solid var(--line); }
   .dm { min-width:0; } .dh { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .dn { font-size:.8rem; color:var(--muted); } .dn.late, .dn.ok { font-weight:600; }
   .dt { text-align:right; } .dt strong { font-size:1.1rem; font-variant-numeric:tabular-nums; }
   .cx { opacity:.6; } .cx .dh { text-decoration:line-through; }
   @media (max-width:640px) { #panel { top:auto; left:8px; right:8px; bottom:80px; width:auto; max-width:none; max-height:55%; } }
+
   .bus { display:flex; align-items:center; justify-content:center; min-width:28px; height:22px; padding:0 6px; border-radius:11px;
          background:var(--c,#0a6c8c); color:var(--t,#fff); font:700 12px/1 system-ui,sans-serif; border:2px solid var(--b,#fff);
          box-shadow:0 1px 3px rgba(0,0,0,.45); white-space:nowrap; }
   .bus.aut { border-radius:6px; }
   .bus.sched { border-style:dashed; opacity:.9; }
+  .bus.sel { outline:3px solid #f5a623; outline-offset:1px; }
+
   .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
   .seg label { padding:.35rem .7rem; cursor:pointer; font-size:1rem; user-select:none; display:flex; align-items:center; gap:0.4rem; justify-content:center; }
   .seg input { position:absolute; opacity:0; pointer-events:none; }
   .seg label:has(input:checked) { background:var(--accent); color:var(--bg); font-weight:600; }
   .seg label:has(input:focus-visible) { outline:2px solid var(--accent); outline-offset:-2px; }
+  
   .late { color:var(--late); font-weight:600; } .ok { color:var(--ok); font-weight:600; }
-  #panel { padding:0; }
-  .ph { position:sticky; top:0; z-index:2; background:var(--bg); padding:.8rem .8rem .5rem; margin:0; border-bottom:1px solid var(--line); }
-  #plist { padding:.3rem .8rem .8rem; }
-  .bus.sel { outline:3px solid #f5a623; outline-offset:1px; }
+
   .st { display:grid; grid-template-columns:26px 1fr auto; gap:.5rem; min-height:46px; cursor:pointer; border-radius:6px; }
   .st:hover { background:color-mix(in srgb, var(--line) 35%, transparent); }
   .rail { position:relative; }
@@ -85,7 +92,8 @@
   .veh { position:absolute; left:0; top:0; width:26px; height:26px; margin-top:-13px; border-radius:50%; background:var(--rc);
          border:3px solid var(--bg); box-shadow:0 1px 4px rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center;
          font-size:.95rem; z-index:3; transition:top 14s linear; }
-  #follow { pointer-events:auto; bottom:70px; cursor:pointer; font:inherit; font-size:.8rem; color:var(--fg); }
+         
+  #follow { pointer-events:auto; bottom:75px; cursor:pointer; font:inherit; font-size:.8rem; color:var(--fg); }
   .dep.go { cursor:pointer; border-radius:6px; }
   .dep.go:hover, .dep.go:focus-visible { background:color-mix(in srgb, var(--line) 35%, transparent); outline:none; }
   #pback { color:var(--accent); text-decoration:none; font-weight:600; }
@@ -99,22 +107,21 @@
     display: inline-block; width: 9px; height: 9px; background-color: #2ecc71; border-radius: 50%; animation: blink-dot 1.5s infinite; margin-right: 4px;
   }
 
-  #clock-bar {
+  /* Barra inferiore in stile miniVenice (condivisa tra live e pianificato) */
+  .bottom-bar {
     position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); z-index: 900;
-    background: var(--bg); border: 1px solid var(--line); border-radius: 24px; padding: 0.4rem 1.2rem;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 24px; padding: 0.4rem 1rem;
     display: flex; align-items: center; gap: 0.8rem; box-shadow: 0 4px 16px rgba(0,0,0,0.25); font-size: 0.85rem;
+    white-space: nowrap;
   }
-  .time-display { font-weight: 700; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+  .time-display { font-weight: 700; font-size: 1.1rem; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 0.3rem; }
   .time-display small { font-size: 0.75rem; font-weight: 400; opacity: 0.8; }
 
-  #timeline-bar {
-    position: absolute; bottom: 12px; left: 15px; right: 15px; z-index: 950;
-    background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 0.6rem 1rem;
-    display: none; align-items: center; gap: 1rem; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-  }
+  #timeline-bar { display: none; }
   #timeline-bar.active { display: flex; }
-  #timeline-bar input[type="range"] { flex: 1; accent-color: var(--accent); cursor: pointer; }
-  #timeline-bar input[type="date"] { font: inherit; padding: 0.2rem 0.4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  #timeline-bar input[type="range"] { accent-color: var(--accent); cursor: pointer; width: 140px; }
+  #timeline-bar input[type="date"] { font: inherit; padding: 0.1rem 0.3rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font-size: 0.8rem; }
+  #timeline-bar select { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 0.1rem 0.3rem; font-size: 0.8rem; }
 </style>
 </head>
 <body>
@@ -129,7 +136,6 @@
   </div>
   <button id="locate" type="button" title="Mostra la mia posizione">📍</button>
   
-  <!-- Barra di ricerca con menu a tendina personalizzato stile miniVenice -->
   <div class="search-wrapper">
     <input id="filter" type="search" placeholder="🔍 Cerca fermata o linea..." autocomplete="off" aria-label="Cerca fermata o linea">
     <div id="search-results"></div>
@@ -143,23 +149,25 @@
   <div id="hint" class="hint">Avvicina lo zoom per vedere le fermate</div>
   <button id="follow" class="hint" type="button" hidden>📍 Seguo il mezzo · tocca per smettere</button>
   
-  <div id="clock-bar">
+  <!-- Barra inferiore Live -->
+  <div id="clock-bar" class="bottom-bar">
     <span class="live-indicator" style="width: 7px; height: 7px;"></span>
     <div class="time-display" id="clock-time">00:00:<small>00</small></div>
     <span style="color: var(--muted);" id="updated-ago">· aggiornato ora</span>
   </div>
 
-  <div id="timeline-bar">
-    <button id="tl-play" type="button" title="Play / Pausa">▶️</button>
+  <!-- Barra inferiore Pianificato (stile coerente miniVenice) -->
+  <div id="timeline-bar" class="bottom-bar">
+    <button id="tl-play" type="button" title="Play / Pausa" style="background:none; border:none; padding:0; cursor:pointer; font-size:1rem;">▶️</button>
     <div class="time-display" id="tl-time">12:00</div>
-    <input id="tl-date" type="date">
-    <select id="tl-speed" style="font:inherit; background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:0.2rem;">
+    <input id="tl-date" type="date" title="Data">
+    <select id="tl-speed" title="Velocità riproduzione">
       <option value="1">1x</option>
       <option value="5" selected>5x</option>
       <option value="15">15x</option>
       <option value="60">60x</option>
     </select>
-    <input id="tl-range" type="range" min="0" max="86400" value="43200" step="30">
+    <input id="tl-range" type="range" min="0" max="86400" value="43200" step="30" title="Scorri orario">
   </div>
 
   <aside id="panel" hidden aria-label="Transiti alla fermata">
@@ -314,7 +322,6 @@ async function showRoutes(ids) {
 }
 function clearRoutes() { routeToken++; lineLayer.clearLayers(); }
 
-// Gestione della tendina dei risultati durante la digitazione (fermate e linee)
 filterEl.addEventListener('input', () => {
   const q = filterEl.value.trim().toLowerCase();
   if (!q) {
@@ -324,9 +331,7 @@ filterEl.addEventListener('input', () => {
     return;
   }
 
-  // Filtra fermate corrispondenti
   const matchedStops = stops.filter(s => s[1].toLowerCase().includes(q)).slice(0, 8);
-  // Filtra linee corrispondenti
   const matchedRoutes = Object.entries(routesData).filter(([id, r]) => active.has(r.src) && (String(r.name).toLowerCase().includes(q) || String(r.headsign || '').toLowerCase().includes(q))).slice(0, 8);
 
   let html = '';
@@ -353,7 +358,6 @@ filterEl.addEventListener('input', () => {
   }
 });
 
-// Click su un elemento del menu a tendina
 searchResultsEl.addEventListener('click', e => {
   const item = e.target.closest('.search-item');
   if (!item) return;
@@ -372,7 +376,6 @@ searchResultsEl.addEventListener('click', e => {
   }
 });
 
-// Chiudi la tendina cliccando fuori
 document.addEventListener('click', e => {
   if (!e.target.closest('.search-wrapper')) {
     searchResultsEl.classList.remove('active');
@@ -384,7 +387,6 @@ map.on('click', () => { if (!openTrip && !filterEl.value) clearRoutes(); });
 const markers = new Map();
 let vehicles = [];
 function render() {
-  // Mostra SEMPRE tutti i mezzi attivi sulla mappa (senza nasconderli quando digiti)
   const shown = vehicles.filter(v => active.has(v.src));
   const keep = new Set();
   for (const v of shown) {
