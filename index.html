@@ -86,7 +86,7 @@
     display: inline-block; width: 9px; height: 9px; background-color: #2ecc71; border-radius: 50%; animation: blink-dot 1.5s infinite; margin-right: 4px;
   }
 
-  /* Barra orologio / Timeline in basso */
+  /* Orologio Live standard */
   #clock-bar {
     position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); z-index: 900;
     background: var(--bg); border: 1px solid var(--line); border-radius: 24px; padding: 0.4rem 1.2rem;
@@ -126,14 +126,12 @@
   <div id="hint" class="hint">Avvicina lo zoom per vedere le fermate</div>
   <button id="follow" class="hint" type="button" hidden>📍 Seguo il mezzo · tocca per smettere</button>
   
-  <!-- Orologio Live standard -->
   <div id="clock-bar">
     <span class="live-indicator" style="width: 7px; height: 7px;"></span>
     <div class="time-display" id="clock-time">00:00:<small>00</small></div>
     <span style="color: var(--muted);" id="updated-ago">· aggiornato ora</span>
   </div>
 
-  <!-- Barra Timeline Pianificato (stile miniVenice) -->
   <div id="timeline-bar">
     <button id="tl-play" type="button" title="Play / Pausa">▶️</button>
     <div class="time-display" id="tl-time">12:00</div>
@@ -171,7 +169,6 @@ const srcParam = () => [...active].join(',');
 const POLL_MS = 15000, MOVE_MS = 14000;
 let lastServerUpdate = Date.now();
 
-// Gestione Timeline Pianificato
 let isPlaying = false, playInterval = null;
 const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds(); };
 const formatSecs = s => {
@@ -200,7 +197,6 @@ function updateClock() {
 }
 setInterval(updateClock, 1000);
 
-// Play/Pause Timeline
 document.getElementById('tl-play').addEventListener('click', () => {
   isPlaying = !isPlaying;
   document.getElementById('tl-play').textContent = isPlaying ? '⏸️' : '▶️';
@@ -212,6 +208,7 @@ document.getElementById('tl-play').addEventListener('click', () => {
       if (val > 86400) val = 0;
       r.value = val;
       load();
+      if (openStop) loadDepartures();
     }, 1000);
   } else {
     clearInterval(playInterval);
@@ -221,9 +218,14 @@ document.getElementById('tl-play').addEventListener('click', () => {
 document.getElementById('tl-range').addEventListener('input', () => {
   document.getElementById('tl-time').textContent = formatSecs(+document.getElementById('tl-range').value).slice(0, 5);
   load();
+  if (openStop) loadDepartures();
 });
 
-// Simbolo per navigazione e bus/tram
+document.getElementById('tl-date').addEventListener('change', () => {
+  load();
+  if (openStop) loadDepartures();
+});
+
 function getVehicleIcon(src, label) {
   const l = String(label ?? '').trim();
   if (src === 'aut') {
@@ -289,7 +291,6 @@ async function showRoutes(ids) {
 }
 function clearRoutes() { routeToken++; lineLayer.clearLayers(); }
 
-// Ricerca avanzata: Linea o Fermata
 filterEl.addEventListener('input', () => {
   const q = filterEl.value.trim().toLowerCase();
   render();
@@ -426,7 +427,13 @@ document.getElementById('pclose').addEventListener('click', closePanel);
 async function loadDepartures() {
   const id = openStop; if (!id) return;
   try {
-    const r = await fetch('/api/stop?id=' + encodeURIComponent(id), { cache: 'no-store' });
+    let url = `/api/stop?id=${encodeURIComponent(id)}`;
+    if (mode === 'sched') {
+      const secs = document.getElementById('tl-range').value;
+      const dateVal = document.getElementById('tl-date').value.replace(/-/g, '');
+      url += `&secs=${secs}&date=${dateVal}`;
+    }
+    const r = await fetch(url, { cache: 'no-store' });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     if (id !== openStop) return;
@@ -438,9 +445,9 @@ async function loadDepartures() {
 function renderDepartures() {
   if (!lastDeps || !openStop) return;
   const live = mode === 'live';
-  psub.textContent = (live ? `Previsioni live · feed delle ${new Date(lastDeps.liveUpdated).toLocaleTimeString('it-IT')}` : 'Orario programmato') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
+  psub.textContent = (live ? `Previsioni live · feed delle ${new Date(lastDeps.liveUpdated).toLocaleTimeString('it-IT')}` : 'Orario programmato (da timeline)') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
   const rows = lastDeps.departures.map(x => ({ ...x, tIn: live ? x.expIn : x.schedIn }))
-    .filter(x => x.tIn >= -1 && x.tIn <= 90 && active.has(x.src || openSrc)).sort((a, b) => a.tIn - b.tIn).slice(0, 25);
+    .filter(x => x.tIn >= -30 && x.tIn <= 120 && active.has(x.src || openSrc)).sort((a, b) => a.tIn - b.tIn).slice(0, 30);
   const html = rows.map(x => {
     let cls = '', note = '';
     if (x.cancel) { cls = 'late'; note = x.cancel === 'trip' ? 'Corsa soppressa' : 'Fermata non servita'; }
@@ -457,7 +464,7 @@ function renderDepartures() {
       `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${esc(note)}</div></div>` +
       `<div class="dt"><strong>${esc(t)}</strong><div class="muted">${x.tIn <= 0 ? 'adesso' : x.tIn + ' min'}</div></div></div>`;
   }).join('');
-  plist.innerHTML = html ? html + '<p class="muted">Tocca un passaggio per seguire il mezzo.</p>' : '<p class="muted">Nessun passaggio nei prossimi 90 minuti.</p>';
+  plist.innerHTML = html ? html + '<p class="muted">Tocca un passaggio per seguire il mezzo.</p>' : '<p class="muted">Nessun passaggio nell\'orario selezionato.</p>';
 }
 
 function openTripPanel(v, back = null) {
@@ -588,7 +595,6 @@ map.on('locationfound', e => {
 });
 map.on('locationerror', e => { statusEl.className = 'err'; statusEl.textContent = 'Posizione non disponibile: ' + e.message; });
 
-// Gestione Cambio Modalità (Live / Pianificato)
 document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener('change', () => {
   mode = el.value;
   vehicles = [];
@@ -603,6 +609,7 @@ document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener(
   render(); renderDepartures();
   if (openTrip && openTrip.tripId) loadTrip();
   load();
+  if (openStop) loadDepartures();
 }));
 
 document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('change', () => {
