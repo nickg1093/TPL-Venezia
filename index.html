@@ -835,14 +835,11 @@ function renderTrip(first) {
   const lab = d.trip.vehicle || openTrip.label;
   const vehicleNameStr = vehName(d.trip.src, lab);
   
-  // Capolinea di destinazione in alto grande
   pname.textContent = d.trip.headsign ? d.trip.headsign : `Linea ${d.trip.line}`;
   
-  // Capolinea di partenza (prima fermata) e orario di partenza sotto in piccolo
   const originStop = d.stops && d.stops.length > 0 ? d.stops[0] : null;
   const originName = originStop ? originStop.name : '';
   const originTime = originStop ? originStop.sched : '';
-  
   const originSubText = originName ? `da ${originName}${originTime ? ', partita alle ' + originTime : ''}` : '';
   
   psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '') + 
@@ -855,6 +852,7 @@ function renderTrip(first) {
   if (!first) return;
   routeToken++; lineLayer.clearLayers(); tripLayer.clearLayers();
   
+  const k = colorInfo(d.trip.color, d.trip.line);
   if (d.shape?.length) L.polyline(d.shape, { color: k.rail, weight: 4, opacity: 0.8 }).addTo(lineLayer);
   else showRoutes([openTrip.routeId]);
   
