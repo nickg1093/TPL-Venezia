@@ -407,20 +407,20 @@ function vehName(src, label) {
     const tram = /^tram_(.+)$/i.exec(l);
     return tram ? `TRAM ${tram[1]}` : (/^tram/i.test(l) ? l.toUpperCase() : `BUS ${l}`);
   }
+  
+  // Controllo per i traghetti N/T (linee 17 e 11)
+  const lowerLabel = l.toLowerCase();
+  const ntVessels = ['lido di venezia', 'ammiana', 'san nicolo', 'san nicolò', 'metamauco', 'marco polo', 'pellestrina'];
+  if (ntVessels.some(v => lowerLabel.includes(v))) {
+    return `N/T ${l.toUpperCase()}`;
+  }
+
   if (/^\d+$/.test(l)) {
     const n = +l;
     if (n >= 1 && n <= 99) return `M/B ${n}`;
     if (n >= 100 && n <= 300) return `M/S ${n}`;
     return `mezzo ${n}`;
   }
-  
-  // Controllo per i mezzi N/T (Navigazione Linea 11 e 17)
-  const lowerLabel = l.toLowerCase();
-  const ntFerryNames = ['lido di venezia', 'ammiana', 'san nicolò', 'metamauco', 'marco polo', 'pellestrina'];
-  if (ntFerryNames.some(ferry => lowerLabel.includes(ferry))) {
-    return `N/T ${l}`;
-  }
-
   return `M/N ${l}`;
 }
 
