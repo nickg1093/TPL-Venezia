@@ -79,17 +79,17 @@
   .st:hover { background:color-mix(in srgb, var(--line) 35%, transparent); }
   .rail { position:relative; }
   
-  /* Linea di avanzamento grigia per default (fermate da effettuare) */
+  /* Linea di avanzamento grigia per default */
   .rail::before { content:''; position:absolute; left:50%; top:0; bottom:0; width:4px; margin-left:-2px; background:var(--line); }
   
   /* Se la fermata è passata o la ferrovia è stata percorsa, coloriamo la linea */
   .st.passed .rail::before, .st.passed-line .rail::before { background:var(--rc); }
   
-  /* Correzione capolinea: la barra parte e termina esattamente al centro del rispettivo pallino */
-  .st.first .rail::before { top: 50%; bottom: 0; } 
-  .st.last .rail::before { top: 0; bottom: 50%; }
+  /* Correzione capolinea: la linea parte dal centro del primo pallino (23px) e termina al centro dell'ultimo */
+  .st.first .rail::before { top: 23px; bottom: 0; } 
+  .st.last .rail::before { top: 0; bottom: calc(100% - 23px); }
 
-  .dot { position:absolute; left:50%; top:50%; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; background:var(--bg);
+  .dot { position:absolute; left:50%; top:23px; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; background:var(--bg);
          border:3px solid var(--rc); display:flex; align-items:center; justify-content:center; font-size:.7rem; z-index:2; }
   
   /* Fermata passata: pallino pieno colorato con spunta */
@@ -113,8 +113,8 @@
   .tm { text-align:right; padding:.5rem 0; } .tm strong { font-variant-numeric:tabular-nums; }
   .banner { margin:.4rem 0; padding:.4rem .6rem; border-radius:6px; border:1px solid var(--late); color:var(--late); font-weight:600; }
   .tl { position:relative; z-index:0; padding-top:.2rem; }
-  .trav { position:absolute; left:11px; top:0; width:4px; height:0; background:var(--rc); z-index:1; transition:height 14s linear; }
-  .veh { position:absolute; left:0; top:0; width:26px; height:26px; margin-top:-13px; border-radius:50%; background:var(--rc);
+  .trav { position:absolute; left:11px; top:23px; width:4px; height:0; background:var(--rc); z-index:1; transition:height 14s linear; }
+  .veh { position:absolute; left:0; top:23px; width:26px; height:26px; margin-top:-13px; border-radius:50%; background:var(--rc);
          border:3px solid var(--bg); box-shadow:0 1px 4px rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center;
          font-size:.95rem; z-index:3; transition:top 14s linear; }
          
@@ -847,14 +847,19 @@ function placeVehicle(d, first) {
   if (!veh) return;
   const rows = tl.querySelectorAll('.st'), a = d.progress && rows[d.progress.from], b = d.progress && rows[d.progress.from + 1];
   if (!a) { veh.style.display = 'none'; trav.style.display = 'none'; return; }
-  const ca = a.offsetTop + a.offsetHeight / 2, cb = b ? b.offsetTop + b.offsetHeight / 2 : ca;
+  
+  const ca = a.offsetTop + 23, cb = b ? b.offsetTop + 23 : ca;
   const y = ca + (cb - ca) * (b ? d.progress.frac : 0);
   const from = !first && vehMemo.trip === openTrip.tripId ? vehMemo.y : y;
+  
   veh.style.transition = trav.style.transition = 'none';
-  veh.style.top = from + 'px'; trav.style.height = from + 'px';
+  veh.style.top = from + 'px'; 
+  trav.style.height = Math.max(0, from - 23) + 'px';
   void veh.offsetHeight;
+  
   veh.style.transition = trav.style.transition = '';
-  veh.style.top = y + 'px'; trav.style.height = y + 'px';
+  veh.style.top = y + 'px'; 
+  trav.style.height = Math.max(0, y - 23) + 'px';
   vehMemo = { trip: openTrip.tripId, y };
 }
 function renderTrip(first) {
