@@ -4,10 +4,9 @@ const path = require('path');
 const AdmZip = require('adm-zip');
 
 const BASE_URL = 'https://actv.avmspa.it/sites/default/files/attachments/opendata/';
-const SOURCES = {
+const SOURCES = {   // puoi anche copiare gli ZIP a mano in data/
   nav: { url: BASE_URL + 'navigazione/actv_nav.zip', cache: path.join(__dirname, 'data', 'actv_nav.zip') },
-  aut: { url: BASE_URL + 'automobilistico/actv_aut.zip', cache: path.join(__dirname, 'data', 'actv_aut.zip') },
-  ali: { url: 'https://alilaguna.it/attuale/alilaguna.zip', cache: path.join(__dirname, 'data', 'alilaguna.zip') }
+  aut: { url: BASE_URL + 'automobilistico/actv_aut.zip', cache: path.join(__dirname, 'data', 'actv_aut.zip') }
 };
 const MAX_AGE_MS = 24 * 3600 * 1000;
 
@@ -23,10 +22,8 @@ function splitLine(line) {
   out.push(cur);
   return out;
 }
-
 const tick = () => new Promise(r => setImmediate(r));
 
-// Legge un CSV selezionando solo le colonne necessarie per consumare meno RAM
 async function eachRowFields(buf, fields, fn) {
   if (!buf || !buf.length) return;
   let nl = buf.indexOf(10); if (nl < 0) nl = buf.length;
@@ -111,18 +108,15 @@ async function load(srcId) {
   await eachRowFields(read('routes.txt'), ['route_id', 'route_short_name', 'route_long_name', 'route_color'], r => {
     routes[r.route_id] = { name: r.route_short_name || r.route_long_name || r.route_id, color: r.route_color ? '#' + r.route_color : null };
   });
-
   await eachRowFields(read('stops.txt'), ['stop_id', 'stop_name', 'stop_lat', 'stop_lon'], s => {
     stops[s.stop_id] = s.stop_name;
     if (s.stop_lat && s.stop_lon && isFinite(+s.stop_lat) && isFinite(+s.stop_lon)) stopLoc[s.stop_id] = [+s.stop_lat, +s.stop_lon];
   });
-
   await eachRowFields(read('trips.txt'), ['trip_id', 'route_id', 'trip_headsign', 'service_id', 'shape_id', 'direction_id'], t => {
     trips[t.trip_id] = { route: t.route_id, headsign: t.trip_headsign || null, service: (t.service_id || '').trim(), shape: t.shape_id || null,
       dir: (t.direction_id === undefined || t.direction_id === '') ? null : t.direction_id };
     if (t.shape_id) (shapesByRoute[t.route_id] ||= new Set()).add(t.shape_id);
   });
-
   log(`${Object.keys(routes).length} linee, ${Object.keys(trips).length} viaggi, ${Object.keys(stops).length} fermate: leggo i tracciati`);
   const raw = {};
   await eachRowFields(read('shapes.txt'), ['shape_id', 'shape_pt_sequence', 'shape_pt_lat', 'shape_pt_lon'], p =>
@@ -131,16 +125,11 @@ async function load(srcId) {
 
   const calendar = {}, exByDate = {};
   const ymd = x => String(x || '').replace(/\D/g, '').slice(0, 8);
-  
   await eachRowFields(read('calendar.txt'), ['service_id', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'start_date', 'end_date'], c => {
     calendar[(c.service_id || '').trim()] = { days: [c.sunday, c.monday, c.tuesday, c.wednesday, c.thursday, c.friday, c.saturday].map(x => String(x).trim() === '1'),
                                               start: ymd(c.start_date), end: ymd(c.end_date) };
   });
-
-  await eachRowFields(read('calendar_dates.txt'), ['date', 'service_id', 'exception_type'], c => { 
-    (exByDate[ymd(c.date)] ||= []).push([(c.service_id || '').trim(), +c.exception_type]); 
-  });
-
+  await eachRowFields(read('calendar_dates.txt'), ['date', 'service_id', 'exception_type'], c => { (exByDate[ymd(c.date)] ||= []).push([(c.service_id || '').trim(), +c.exception_type]); });
   log('leggo gli orari (stop_times)');
   const stopTimes = await readStopTimes(read('stop_times.txt'));
   await tick();
@@ -163,5 +152,4 @@ async function load(srcId) {
   log(`PRONTO: ${Object.keys(routes).length} linee, ${Object.keys(trips).length} viaggi, ${Object.keys(stops).length} fermate, ${stopTimes.size} corse con orari`);
   return { routes, trips, stops, stopLoc, routeShapes, shapePts, calendar, exByDate, stopTimes, stopIndex, byStart, tripPrefixes };
 }
-
 module.exports = { load };
