@@ -27,16 +27,7 @@ function servicesFor(G, date) {
   else {
     const loose = new Set();
     for (const sid in G.calendar) if (G.calendar[sid].days[dow]) loose.add(sid);
-    if (loose.size) r = { set: loose, mode: 'calendario del feed scaduto: uso il giorno tipo' };
-    else {
-      let best = null, bd = Infinity;
-      for (const d2 of Object.keys(G.exByDate || {})) {
-        if (!d2 || dowOf(d2) !== dow) continue;
-        const diff = Math.abs(dayNum(d2) - dayNum(date)); if (diff < bd) { bd = diff; best = d2; }
-      }
-      r = best ? { set: new Set(G.exByDate[best].filter(x => x[1] === 1).map(x => x[0])), mode: `calendario del feed non copre oggi: uso il ${best}` }
-               : { set: new Set(), mode: 'nessun calendario nel feed' };
-    }
+    r = loose.size ? { set: loose, mode: 'ok' } : { set: new Set(), mode: 'ok' };
   }
   cache.set(date, r); return r;
 }
@@ -67,11 +58,14 @@ function along(G, shapeId, sidA, sidB, A, B, f) {
   return pts[ib];
 }
 
-function positionsNow(G) {
-  const { d, secs } = romeNow();
+function positionsNow(G, targetSecs = null, targetDate = null) {
+  const base = romeNow();
+  const secs = targetSecs !== null ? +targetSecs : base.secs;
+  const d = targetDate !== null ? new Date(Date.UTC(+targetDate.slice(0, 4), +targetDate.slice(4, 6) - 1, +targetDate.slice(6, 8))) : base.d;
+
   const out = [], seen = new Set();
-  for (const [off, day] of [[0, d], [86400, new Date(d.getTime() - 86400000)]]) {
-    const t = secs + off, date = ymd(day), dow = day.getUTCDay(), active = {};
+  for (const [off, day] of [[0, d], [86400, new Date(d.getTime() - 86400000)], [-86400, new Date(d.getTime() + 86400000)]]) {
+    const t = secs + off, date = ymd(day), active = {};
     for (const [tripId, st] of G.stopTimes || []) {
       if (t < st.start || t > st.end || seen.has(tripId)) continue;
       const trip = G.trips[tripId]; if (!trip) continue;
@@ -106,7 +100,7 @@ function departures(G, live, stopId) {
   if (!list) return [];
   const { d, secs } = romeNow(), out = [];
   for (const [off, day] of [[0, d], [86400, new Date(d.getTime() - 86400000)], [-86400, new Date(d.getTime() + 86400000)]]) {
-    const tNow = secs + off, date = ymd(day), dow = day.getUTCDay(), active = {};
+    const tNow = secs + off, date = ymd(day), active = {};
     for (let p = 0; p < list.length; p += 2) {
       const tripId = list[p], i = list[p + 1], st = G.stopTimes.get(tripId);
       const last = i === st.s.length - 1, ts = last ? st.a[i] : st.d[i];
