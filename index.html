@@ -220,6 +220,7 @@ function updateClock() {
 }
 setInterval(updateClock, 1000);
 
+// Gestione Play / Pausa timeline corretta e diretta
 document.getElementById('tl-play').addEventListener('click', () => {
   isPlaying = !isPlaying;
   document.getElementById('tl-play').textContent = isPlaying ? '⏸️' : '▶️';
@@ -230,8 +231,10 @@ document.getElementById('tl-play').addEventListener('click', () => {
       let val = +r.value + speed;
       if (val > 86400) val = 0;
       r.value = val;
-      // Forza l'evento input per aggiornare orario e dati sulla mappa
-      r.dispatchEvent(new Event('input'));
+      // Aggiorna direttamente il testo dell'orario e ricarica i dati senza dipendere da eventi esterni
+      document.getElementById('tl-time').textContent = formatSecs(val).slice(0, 5);
+      load();
+      if (openStop) loadDepartures();
     }, 1000);
   } else {
     clearInterval(playInterval);
