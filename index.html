@@ -413,6 +413,14 @@ function vehName(src, label) {
     if (n >= 100 && n <= 300) return `M/S ${n}`;
     return `mezzo ${n}`;
   }
+  
+  // Controllo per i mezzi N/T (Navigazione Linea 11 e 17)
+  const lowerLabel = l.toLowerCase();
+  const ntFerryNames = ['lido di venezia', 'ammiana', 'san nicolò', 'metamauco', 'marco polo', 'pellestrina'];
+  if (ntFerryNames.some(ferry => lowerLabel.includes(ferry))) {
+    return `N/T ${l}`;
+  }
+
   return `M/N ${l}`;
 }
 
