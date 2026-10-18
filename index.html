@@ -120,10 +120,10 @@
   #panel { right: 16px; padding: 0; }
   
   .ph { position: sticky; top: 0; z-index: 2; background: var(--bg-glass-solid); padding: 1rem 1rem 0.75rem; margin: 0; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start; backdrop-filter: blur(12px); }
-  .ph-content { display: flex; align-items: flex-start; gap: 0.75rem; min-width: 0; flex: 1; }
-  .ph-col-left { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; flex-shrink: 0; }
-  .ph-info { min-width: 0; flex: 1; }
-  .ph strong { font-size: 1rem; font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ph-content { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; flex: 1; }
+  .ph-top { display: flex; align-items: center; gap: 0.75rem; min-width: 0; }
+  .ph-top strong { font-size: 1rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ph-status { font-size: 0.8rem; }
   .muted { color: var(--muted); font-size: 0.75rem; }
   #plist { padding: 0.5rem 1rem 1rem; }
   
@@ -303,13 +303,12 @@
   <aside id="panel" class="side-panel" hidden aria-label="Transiti alla fermata">
     <div class="ph">
       <div class="ph-content">
-        <div class="ph-col-left">
+        <div class="ph-top">
           <div id="pbadge"></div>
-        </div>
-        <div class="ph-info">
           <strong id="pname"></strong>
-          <div id="psub" class="muted"></div>
         </div>
+        <div id="psub" class="muted"></div>
+        <div id="pstatus" class="ph-status"></div>
       </div>
       <button id="pclose" type="button" aria-label="Chiudi" style="padding: 0.2rem 0.5rem; min-height: auto;">✕</button>
     </div>
@@ -649,6 +648,7 @@ const stopLayer = L.layerGroup().addTo(map), hintEl = document.getElementById('h
 const panel = document.getElementById('panel'), plist = document.getElementById('plist');
 const pbadgeEl = document.getElementById('pbadge');
 const pname = document.getElementById('pname'), psub = document.getElementById('psub');
+const pstatusEl = document.getElementById('pstatus');
 const MIN_STOP_ZOOM = 14;
 
 function drawStops() {
@@ -683,7 +683,9 @@ function openPanel(id, name, src) {
   openStop = id; openStopName = name; openSrc = src; lastDeps = null; panel.hidden = false;
   const iconMap = { nav: '🚢', aut: '🚌' };
   pbadgeEl.innerHTML = '';
-  pname.textContent = `${iconMap[src]} ${name}`; psub.textContent = '';
+  pname.textContent = `${iconMap[src]} ${name}`; 
+  psub.textContent = '';
+  if (pstatusEl) pstatusEl.textContent = '';
   plist.innerHTML = '<p class="muted">Caricamento…</p>';
   loadDepartures(); startPanelTimer(); drawStops();
 }
@@ -749,6 +751,7 @@ function openTripPanel(v, back = null) {
   pbadgeEl.innerHTML = `<div class="bus${v.src === 'aut' ? ' aut' : ''}" style="--c:${kInit.c}; --t:${kInit.ink}; --b:${kInit.ink}">${esc(v.line)}</div>`;
   pname.textContent = v.headsign ? `→ ${v.headsign}` : `→ Linea ${v.line}`;
   psub.textContent = 'Caricamento dettagli corsa…';
+  if (pstatusEl) pstatusEl.textContent = '';
   
   render(); drawStops();
   if (!v.tripId) {
@@ -841,15 +844,19 @@ function renderTrip(first) {
   // Capolinea di destinazione con freccia in alto
   pname.textContent = d.trip.headsign ? `→ ${d.trip.headsign}` : `→ Linea ${d.trip.line}`;
   
-  // Provenienza/partenza in piccolo sotto
+  // Provenienza/partenza in piccolo (seconda riga)
   const originStop = d.stops && d.stops.length > 0 ? d.stops[0] : null;
   const originName = originStop ? originStop.name : '';
   const originTime = originStop ? originStop.sched : '';
   const originSubText = originName ? `da ${originName}${originTime ? ', partita alle ' + originTime : ''}` : '';
   
   psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '') + 
-    [originSubText, `${statusText} · ${vehicleNameStr}`].filter(Boolean).join('<br>') +
-    (d.note ? `<br>${esc(d.note)}` : '');
+    originSubText + (d.note ? `<br>${esc(d.note)}` : '');
+
+  // Terza riga: stato e nome mezzo, allineata tutta a sinistra
+  if (pstatusEl) {
+    pstatusEl.innerHTML = `${statusText} · ${vehicleNameStr}`;
+  }
     
   const footer = d.live && d.historyKnown ? '<p class="muted" style="margin-top:0.75rem;">Fermate passate: ultima stima nota.</p>' : '';
   plist.innerHTML = (d.cancelled ? '<div class="banner">Corsa soppressa</div>' : '') + tripHtml(d) + footer;
