@@ -14,7 +14,7 @@
   html, body { height:100%; margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
   body { display:flex; flex-direction:column; }
   header { display:flex; flex-wrap:wrap; gap:.75rem 1rem; align-items:center; padding:.6rem .9rem; border-bottom:1px solid var(--line); background:var(--bg); z-index:1000; }
-  input[type="search"] { font:inherit; padding:.35rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); width:14rem; }
+  input[type="search"] { font:inherit; padding:.35rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); width:16rem; }
   input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
   #status { margin-left:auto; font-size:.85rem; color:var(--muted); }
   #status.err { color:var(--late); }
@@ -76,7 +76,6 @@
   .dep.go:hover, .dep.go:focus-visible { background:color-mix(in srgb, var(--line) 35%, transparent); outline:none; }
   #pback { color:var(--accent); text-decoration:none; font-weight:600; }
   
-  /* Indicatore Live con pallino verde lampeggiante */
   @keyframes blink-dot {
     0% { transform: scale(0.95); opacity: 0.4; box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.7); }
     70% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 0 6px rgba(46, 204, 113, 0); }
@@ -86,7 +85,6 @@
     display: inline-block; width: 9px; height: 9px; background-color: #2ecc71; border-radius: 50%; animation: blink-dot 1.5s infinite; margin-right: 4px;
   }
 
-  /* Orologio Live standard */
   #clock-bar {
     position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); z-index: 900;
     background: var(--bg); border: 1px solid var(--line); border-radius: 24px; padding: 0.4rem 1.2rem;
@@ -95,7 +93,6 @@
   .time-display { font-weight: 700; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
   .time-display small { font-size: 0.75rem; font-weight: 400; opacity: 0.8; }
 
-  /* Barra timeline estesa per modalità pianificata */
   #timeline-bar {
     position: absolute; bottom: 12px; left: 15px; right: 15px; z-index: 950;
     background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 0.6rem 1rem;
@@ -117,7 +114,11 @@
     <label title="Automobilistico"><input type="checkbox" name="src" value="aut" checked>🚌</label>
   </div>
   <button id="locate" type="button" title="Mostra la mia posizione">📍</button>
-  <input id="filter" type="search" placeholder="🔍 Cerca fermata o linea..." aria-label="Cerca fermata o linea">
+  
+  <!-- Campo di ricerca con collegamento alla datalist dei nomi fermate -->
+  <input id="filter" type="search" placeholder="🔍 Cerca fermata o linea..." list="stops-list" aria-label="Cerca fermata o linea">
+  <datalist id="stops-list"></datalist>
+
   <span id="status" role="status">Caricamento…</span>
 </header>
 
@@ -268,7 +269,22 @@ const tip = v => esc(`${getVehicleIcon(v.src, v.label)} ${v.line}${v.headsign ? 
 let staticVer = -1;
 function loadStatics() {
   fetch('/api/routes', { cache: 'no-store' }).then(r => r.json()).then(d => { if (d && !d.error) routesData = d; }).catch(() => {});
-  fetch('/api/stops', { cache: 'no-store' }).then(r => r.json()).then(d => { if (Array.isArray(d)) { stops = d; drawStops(); } }).catch(() => {});
+  fetch('/api/stops', { cache: 'no-store' }).then(r => r.json()).then(d => { 
+    if (Array.isArray(d)) { 
+      stops = d; 
+      drawStops(); 
+      populateStopsDatalist(); 
+    } 
+  }).catch(() => {});
+}
+
+// Funzione per popolare la tendina di autocompletamento con i nomi unici delle fermate
+function populateStopsDatalist() {
+  const dl = document.getElementById('stops-list');
+  if (!dl) return;
+  // Estrae i nomi unici delle fermate dal dataset caricato
+  const uniqueNames = [...new Set(stops.map(s => s[1]))].sort();
+  dl.innerHTML = uniqueNames.map(name => `<option value="${esc(name)}">`).join('');
 }
 
 let routesData = {};
@@ -291,12 +307,19 @@ async function showRoutes(ids) {
 }
 function clearRoutes() { routeToken++; lineLayer.clearLayers(); }
 
+// Gestione ricerca e selezione automatica della fermata dalla tendina
 filterEl.addEventListener('input', () => {
   const q = filterEl.value.trim().toLowerCase();
   render();
   if (q.length >= 2) {
-    const found = stops.find(s => s[1].toLowerCase().includes(q));
-    if (found) map.flyTo([found[2], found[3]], 16);
+    const found = stops.find(s => s[1].toLowerCase() === q || s[1].toLowerCase().includes(q));
+    if (found) {
+      map.flyTo([found[2], found[3]], 16);
+      // Se l'utente seleziona o digita esattamente il nome di una fermata, apre direttamente il pannello transiti
+      if (found[1].toLowerCase() === q) {
+        openPanel(found[0], found[1], found[4]);
+      }
+    }
   }
 });
 map.on('click', () => { if (!filterEl.value.trim() && !openTrip) clearRoutes(); });
