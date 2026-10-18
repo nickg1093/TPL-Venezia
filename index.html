@@ -115,7 +115,8 @@
   </div>
   <button id="locate" type="button" title="Mostra la mia posizione">📍</button>
   
-  <input id="filter" type="search" placeholder="🔍 Cerca fermata o linea..." list="stops-list" aria-label="Cerca fermata o linea">
+  <!-- Barra di ricerca unificata con supporto datalist fermate -->
+  <input id="filter" type="search" placeholder="🔍 Cerca linea (es. 1) o fermata..." list="stops-list" aria-label="Cerca fermata o linea">
   <datalist id="stops-list"></datalist>
 
   <span id="status" role="status">Caricamento…</span>
@@ -304,26 +305,45 @@ async function showRoutes(ids) {
 }
 function clearRoutes() { routeToken++; lineLayer.clearLayers(); }
 
-// Gestione ricerca fermata senza nascondere i mezzi in mappa
+// Gestione intelligente della barra di ricerca:
+// - Se corrisponde a una fermata: sposta la mappa e apre il pannello transiti.
+// - Se corrisponde a una linea: filtra i mezzi visibili in mappa e ne traccia il percorso.
 filterEl.addEventListener('input', () => {
   const q = filterEl.value.trim().toLowerCase();
-  if (q.length >= 2) {
-    const found = stops.find(s => s[1].toLowerCase() === q || s[1].toLowerCase().includes(q));
-    if (found) {
-      map.flyTo([found[2], found[3]], 16);
-      if (found[1].toLowerCase() === q) {
-        openPanel(found[0], found[1], found[4]);
-      }
+  
+  // 1. Controlla se è una fermata
+  const foundStop = stops.find(s => s[1].toLowerCase() === q);
+  if (foundStop) {
+    map.flyTo([foundStop[2], foundStop[3]], 16);
+    openPanel(foundStop[0], foundStop[1], foundstop[4] = foundStop[4]);
+  } else {
+    // Altrimenti controlla se è una ricerca parziale di fermata per spostare la mappa
+    const partialStop = stops.find(s => s[1].toLowerCase().includes(q) && q.length >= 3);
+    if (partialStop && !vehicles.some(v => String(v.line).toLowerCase() === q)) {
+      map.flyTo([partialStop[2], partialStop[3]], 15);
     }
   }
+  
+  render();
+  showFilteredRoutes();
 });
-map.on('click', () => { if (!openTrip) clearRoutes(); });
+
+function showFilteredRoutes() {
+  const q = filterEl.value.trim().toLowerCase();
+  if (!q) return openTrip ? null : clearRoutes();
+  showRoutes(Object.keys(routesData).filter(id => active.has(routesData[id].src) && String(routesData[id].name).toLowerCase() === q));
+}
+
+map.on('click', () => { if (!filterEl.value.trim() && !openTrip) clearRoutes(); });
 
 const markers = new Map();
 let vehicles = [];
 function render() {
-  // Mostra TUTTI i mezzi attivi senza filtrare via il testo digitato nella ricerca fermate
-  const shown = vehicles.filter(v => active.has(v.src));
+  const q = filterEl.value.trim().toLowerCase();
+  // Filtra i mezzi in base alla linea digitata (se il testo corrisponde o inizia per la linea)
+  const shown = vehicles.filter(v => active.has(v.src) &&
+    (!q || String(v.line).toLowerCase() === q || String(v.line).toLowerCase().startsWith(q)));
+  
   const keep = new Set();
   for (const v of shown) {
     if (!Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
@@ -352,6 +372,7 @@ function render() {
   for (const [id, e] of markers) if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
   return shown.length;
 }
+
 function tick(now) {
   for (const e of markers.values()) {
     if (!e.from) continue;
@@ -423,7 +444,7 @@ function resetTrip() {
   const had = !!openTrip;
   openTrip = null; lastTrip = null; tripLayer.clearLayers();
   if (selVeh) { selVeh = null; render(); }
-  if (had) clearRoutes();
+  if (had && !filterEl.value.trim()) clearRoutes();
 }
 
 function openPanel(id, name, src) {
@@ -436,7 +457,7 @@ function openPanel(id, name, src) {
 }
 function closePanel() {
   openStop = null; resetTrip(); panel.hidden = true; clearInterval(panelTimer);
-  clearRoutes();
+  if (!filterEl.value.trim()) clearRoutes();
   drawStops();
 }
 document.getElementById('pclose').addEventListener('click', closePanel);
@@ -633,9 +654,10 @@ document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('
   if (el.checked) active.add(el.value); else active.delete(el.value);
   if (!active.size) { active.add(el.value); el.checked = true; }
   vehicles = vehicles.filter(v => active.has(v.src));
-  render(); drawStops(); load();
+  render(); drawStops(); showFilteredRoutes(); load();
 }));
 
+filterEl.addEventListener('input', () => { showFilteredRoutes(); render(); });
 load(); setInterval(load, POLL_MS);
 updateClock();
 </script>
