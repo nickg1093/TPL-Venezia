@@ -177,20 +177,27 @@ function tripDetail(i, tid, live) {
     if (live) dl = k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null);
     
     const stopName = G.stops[sid] || sid;
-    let stateText = 'da orario';
+    let stateText = '';
     if (k === cur) {
       stateText = `in sosta a ${stopName}`;
     } else if (k === cur + 1 && cur >= 0 && cur < n) {
       const prevName = G.stops[st.s[cur]] || st.s[cur];
       stateText = `fra ${prevName} e ${stopName}`;
-    } else if (k < cur) {
-      stateText = 'effettuata';
     }
 
-    return { id: sid, name: stopName, lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
-      sched: hm(ts), exp: dl != null ? hm(ts + dl) : null, delay: dl != null ? Math.round(dl / 60) : null,
-      inMin: Math.round((ts + (dl ?? 0) - tNow) / 60), state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'),
-      skipped: !!lv?.skipped.has(k), stateText };
+    return { 
+      id: sid, 
+      name: stopName, 
+      lat: G.stopLoc[sid]?.[0] ?? null, 
+      lon: G.stopLoc[sid]?.[1] ?? null,
+      sched: hm(ts), 
+      exp: dl != null ? hm(ts + dl) : null, 
+      delay: dl != null ? Math.round(dl / 60) : null,
+      inMin: Math.round((ts + (dl ?? 0) - tNow) / 60), 
+      state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'),
+      skipped: !!lv?.skipped.has(k), 
+      stateText 
+    };
   });
 
   const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
