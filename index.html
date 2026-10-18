@@ -791,21 +791,31 @@ async function loadTrip() {
   }
 }
 function tripHtml(d) {
-  const k = colorInfo(d.trip.color), live = d.live, n = d.stops.length;
+  const k = colorInfo(d.trip.color), live = d.live;
   const vehicleIcon = getVehicleIcon(d.trip.src, d.trip.vehicle);
+  
   return `<div class="tl" style="--rc:${k.rail}">` + d.stops.map((s, i) => {
-    let time, sub = '';
+    let statusLabel = s.stateText || (s.state === 'next' ? 'Prossima fermata' : 'da orario');
+    let delayBadge = '';
+    
     if (live && s.delay != null) {
-      time = `<strong class="${s.delay >= 1 ? 'late' : 'ok'}">${esc(s.exp)}</strong>`;
-      sub = s.delay === 0 ? 'in orario' : `prog. ${esc(s.sched)} (${s.delay > 0 ? '+' : ''}${s.delay} min)`;
-    } else { time = `<strong>${esc(s.sched)}</strong>`; sub = live ? 'da orario' : ''; }
-    let meta = '';
-    if (s.skipped) meta = 'Fermata non servita';
-    else if (s.state === 'next') meta = s.inMin <= 0 ? 'Prossima fermata · in arrivo' : `Prossima fermata · tra ${s.inMin} min`;
-    return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === 0 ? ' first' : ''}${i === n - 1 ? ' last' : ''}" data-i="${i}">` +
+      const isLate = s.delay >= 1;
+      const isEarly = s.delay <= -1;
+      delayBadge = `<span class="${isLate ? 'late' : (isEarly ? 'ok' : 'muted')}">` +
+        `${s.delay === 0 ? 'in orario' : (s.delay > 0 ? `+${s.delay} min` : `${s.delay} min`)}</span>`;
+    } else {
+      delayBadge = `<span class="muted">da orario</span>`;
+    }
+
+    return `<div class="st ${s.state || ''}" data-i="${i}">` +
       `<div class="rail"><span class="dot"></span></div>` +
-      `<div class="sn"><div class="nm">${esc(s.name)}</div>${meta ? `<div class="muted">${meta}</div>` : ''}</div>` +
-      `<div class="tm">${time}<div class="muted">${sub}</div></div></div>`;
+      `<div class="sn">` +
+        `<div class="nm" style="font-size:0.9rem; font-weight:500;">${esc(statusLabel)}</div>` +
+      `</div>` +
+      `<div class="tm" style="text-align:right;">` +
+        `<div style="font-size:0.85rem;">${delayBadge}</div>` +
+      `</div>` +
+    `</div>`;
   }).join('') + `<div class="trav"></div><div class="veh">${vehicleIcon}</div></div>`;
 }
 
