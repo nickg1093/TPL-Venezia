@@ -829,7 +829,6 @@ function tripHtml(d) {
     
     let meta = '';
     if (s.skipped) meta = 'Fermata non servita';
-    else if (s.stateText) meta = s.stateText;
     else if (s.state === 'next') meta = s.inMin <= 0 ? 'Prossima fermata · in arrivo' : `Prossima fermata · tra ${s.inMin} min`;
 
     const dotContent = s.state === 'passed' ? '✓' : '';
