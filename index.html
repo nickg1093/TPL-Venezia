@@ -115,7 +115,6 @@
   </div>
   <button id="locate" type="button" title="Mostra la mia posizione">📍</button>
   
-  <!-- Campo di ricerca con collegamento alla datalist dei nomi fermate -->
   <input id="filter" type="search" placeholder="🔍 Cerca fermata o linea..." list="stops-list" aria-label="Cerca fermata o linea">
   <datalist id="stops-list"></datalist>
 
@@ -278,11 +277,9 @@ function loadStatics() {
   }).catch(() => {});
 }
 
-// Funzione per popolare la tendina di autocompletamento con i nomi unici delle fermate
 function populateStopsDatalist() {
   const dl = document.getElementById('stops-list');
   if (!dl) return;
-  // Estrae i nomi unici delle fermate dal dataset caricato
   const uniqueNames = [...new Set(stops.map(s => s[1]))].sort();
   dl.innerHTML = uniqueNames.map(name => `<option value="${esc(name)}">`).join('');
 }
@@ -307,29 +304,26 @@ async function showRoutes(ids) {
 }
 function clearRoutes() { routeToken++; lineLayer.clearLayers(); }
 
-// Gestione ricerca e selezione automatica della fermata dalla tendina
+// Gestione ricerca fermata senza nascondere i mezzi in mappa
 filterEl.addEventListener('input', () => {
   const q = filterEl.value.trim().toLowerCase();
-  render();
   if (q.length >= 2) {
     const found = stops.find(s => s[1].toLowerCase() === q || s[1].toLowerCase().includes(q));
     if (found) {
       map.flyTo([found[2], found[3]], 16);
-      // Se l'utente seleziona o digita esattamente il nome di una fermata, apre direttamente il pannello transiti
       if (found[1].toLowerCase() === q) {
         openPanel(found[0], found[1], found[4]);
       }
     }
   }
 });
-map.on('click', () => { if (!filterEl.value.trim() && !openTrip) clearRoutes(); });
+map.on('click', () => { if (!openTrip) clearRoutes(); });
 
 const markers = new Map();
 let vehicles = [];
 function render() {
-  const q = filterEl.value.trim().toLowerCase();
-  const shown = vehicles.filter(v => active.has(v.src) &&
-    (!q || String(v.line).toLowerCase() === q || String(v.line).toLowerCase().startsWith(q)));
+  // Mostra TUTTI i mezzi attivi senza filtrare via il testo digitato nella ricerca fermate
+  const shown = vehicles.filter(v => active.has(v.src));
   const keep = new Set();
   for (const v of shown) {
     if (!Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
@@ -429,7 +423,7 @@ function resetTrip() {
   const had = !!openTrip;
   openTrip = null; lastTrip = null; tripLayer.clearLayers();
   if (selVeh) { selVeh = null; render(); }
-  if (had && !filterEl.value.trim()) clearRoutes();
+  if (had) clearRoutes();
 }
 
 function openPanel(id, name, src) {
@@ -442,7 +436,7 @@ function openPanel(id, name, src) {
 }
 function closePanel() {
   openStop = null; resetTrip(); panel.hidden = true; clearInterval(panelTimer);
-  if (!filterEl.value.trim()) clearRoutes();
+  clearRoutes();
   drawStops();
 }
 document.getElementById('pclose').addEventListener('click', closePanel);
@@ -639,10 +633,9 @@ document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('
   if (el.checked) active.add(el.value); else active.delete(el.value);
   if (!active.size) { active.add(el.value); el.checked = true; }
   vehicles = vehicles.filter(v => active.has(v.src));
-  render(); drawStops(); showFilteredRoutes(); load();
+  render(); drawStops(); load();
 }));
 
-filterEl.addEventListener('input', () => { showFilteredRoutes(); render(); });
 load(); setInterval(load, POLL_MS);
 updateClock();
 </script>
