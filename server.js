@@ -80,11 +80,7 @@ async function refresh(id) {
       if (!tu.trip?.tripId) continue;
       dg.withTripId++;
       const rs = resolveTrip(G, tu.trip, dg);
-      if (!rs) {
-        if (dg.unknownTripIds.length < 5) dg.unknownTripIds.push({ tripId: tu.trip.tripId, routeId: tu.trip.routeId,
-          startTime: tu.trip.startTime, directionId: has(tu.trip, 'directionId') ? tu.trip.directionId : null });
-        continue;
-      }
+      if (!rs) continue;
       const tid = rs.id, st = G.stopTimes.get(tid);
       dg.tripKnown++;
       const n = st.s.length, explicit = new Array(n), skipped = new Set(); let cur = 0, firstJ = -1;
@@ -92,32 +88,20 @@ async function refresh(id) {
         dg.updates++;
         if (u.scheduleRelationship === 2) continue;
         let j = -1;
-        if (u.stopId) {
-          j = st.s.indexOf(u.stopId, cur); if (j < 0) j = st.s.indexOf(u.stopId);
-          if (j >= 0) dg.matchedByStopId++;
-        }
-        if (j < 0 && has(u, 'stopSequence')) {
-          j = st.q.indexOf(Number(u.stopSequence));
-          if (j >= 0) dg.matchedBySeq++;
-        }
-        if (j < 0) {
-          dg.unmatched++;
-          if (dg.unmatchedStops.length < 5) dg.unmatchedStops.push({ trip: tid, stopId: u.stopId || null,
-            stopSequence: has(u, 'stopSequence') ? Number(u.stopSequence) : null, staticStops: st.s.slice(0, 4), staticSeq: st.q.slice(0, 4) });
-          continue;
-        }
+        if (u.stopId) { j = st.s.indexOf(u.stopId, cur); if (j < 0) j = st.s.indexOf(u.stopId); }
+        if (j < 0 && has(u, 'stopSequence')) j = st.q.indexOf(Number(u.stopSequence));
+        if (j < 0) continue;
         cur = j + 1;
         if (firstJ < 0) firstJ = j;
         if (u.scheduleRelationship === 1) skipped.add(j);
         let dly = delayOf(u.arrival, st.a[j]); if (dly == null) dly = delayOf(u.departure, st.d[j]);
-        if (dly != null) { explicit[j] = dly; dg.updatesWithDelayOrTime++; }
+        if (dly != null) explicit[j] = dly;
       }
       let c = has(tu, 'delay') ? Number(tu.delay) : null;
       const arr = [];
       for (let k = 0; k < n; k++) { if (explicit[k] != null) c = explicit[k]; arr.push(c); }
       const cancelled = tu.trip.scheduleRelationship === 3;
       if (cancelled) dg.cancelled++;
-      if (arr.some(x => x != null)) dg.tripsWithDelay++;
       lv[tid] = { delays: arr, cancelled, skipped, firstJ };
       let h = st8.hist.get(tid); if (!h) st8.hist.set(tid, h = { delays: new Array(n).fill(null), seen: 0 });
       for (let k = 0; k < n; k++) if (explicit[k] != null) h.delays[k] = explicit[k];
@@ -126,7 +110,6 @@ async function refresh(id) {
       const first = arr.find(x => x != null);
       if (first != null) delays[tid] = first;
     }
-    for (const [k, h] of st8.hist) if (Date.now() - h.seen > 4 * 3600e3) st8.hist.delete(k);
     st8.diag = { at: new Date().toISOString(), ...dg };
     st8.live = lv;
     st8.vehicles = pos.entity
@@ -136,28 +119,16 @@ async function refresh(id) {
         const routeKey = trip.route || v.trip?.routeId || null;
         const r = G.routes[routeKey] || {};
         return {
-          id: `${id}:${v.vehicle?.id || e.id}`,
-          src: id,
-          label: v.vehicle?.label || null,
-          lat: v.position.latitude,
-          lon: v.position.longitude,
-          bearing: v.position.bearing ?? null,
-          line: r.name || routeKey || '?',
-          color: r.color || null,
-          tripId,
-          routeId: routeKey ? `${id}:${routeKey}` : null,
-          headsign: trip.headsign || null,
-          nextStop: nextStop[tripId] || null,
-          delay: tripId in delays ? delays[tripId] : null,
-          ts: v.timestamp ? Number(v.timestamp) : null
+          id: `${id}:${v.vehicle?.id || e.id}`, src: id, label: v.vehicle?.label || null,
+          lat: v.position.latitude, lon: v.position.longitude, bearing: v.position.bearing ?? null,
+          line: r.name || routeKey || '?', color: r.color || null, tripId,
+          routeId: routeKey ? `${id}:${routeKey}` : null, headsign: trip.headsign || null,
+          nextStop: nextStop[tripId] || null, delay: tripId in delays ? delays[tripId] : null, ts: v.timestamp ? Number(v.timestamp) : null
         };
       });
     st8.updated = Date.now();
     st8.error = null;
-  } catch (err) {
-    st8.error = `${id}: ${err.message}`;
-    console.error(`Errore aggiornamento [${id}]:`, err.message);
-  }
+  } catch (err) { st8.error = `${id}: ${err.message}`; }
 }
 for (const id of IDS) if (RT[id]) { refresh(id); setInterval(() => refresh(id), REFRESH_MS); }
 
@@ -238,17 +209,14 @@ const send = (res, obj, cache = 'no-store', code = 200) => {
   res.end(typeof obj === 'string' ? obj : JSON.stringify(obj));
 };
 
-function schedVehicles(i) {
-  const c = S[i].sched;
-  if (Date.now() - c.ts <= 10000) return c;
+function schedVehicles(i, secs, date) {
   try {
-    const t0 = Date.now();
-    c.vehicles = schedule.positionsNow(D[i]).filter(v => Number.isFinite(v.lat) && Number.isFinite(v.lon))
+    const vehicles = schedule.positionsNow(D[i], secs, date).filter(v => Number.isFinite(v.lat) && Number.isFinite(v.lon))
       .map(v => ({ ...v, tripId: v.id, id: `${i}:${v.id}`, src: i, routeId: v.routeId ? `${i}:${v.routeId}` : null }));
-    c.error = null;
-  } catch (e) { c.vehicles = []; c.error = `${i}: ${e.message}`; }
-  c.ts = Date.now();
-  return c;
+    return { vehicles, error: null };
+  } catch (e) {
+    return { vehicles: [], error: `${i}: ${e.message}` };
+  }
 }
 
 const wanted = url => (url.searchParams.get('src') || IDS.join(',')).split(',').filter(x => IDS.includes(x));
@@ -260,13 +228,20 @@ http.createServer((req, res) => {
     if (url.pathname === '/api/vehicles') {
       const list = wanted(url), live = list.filter(i => RT[i]), noLive = list.filter(i => !RT[i]);
       const errors = live.map(i => S[i].error).filter(Boolean);
-      const estimated = noLive.flatMap(i => schedVehicles(i).vehicles.map(v => ({ ...v, estimated: true })));
+      const estimated = noLive.flatMap(i => schedVehicles(i, null, null).vehicles.map(v => ({ ...v, estimated: true })));
       return send(res, { updated: Math.max(noLive.length ? Date.now() : 0, ...live.map(i => S[i].updated)),
                          error: errors.length ? errors.join('; ') : null, version, ready,
                          vehicles: [...live.flatMap(i => S[i].vehicles), ...estimated] });
     }
     if (url.pathname === '/api/scheduled') {
-      const list = wanted(url), cs = list.map(i => schedVehicles(i)), errors = cs.map(c => c.error).filter(Boolean);
+      const list = wanted(url);
+      const secsParam = url.searchParams.get('secs');
+      const dateParam = url.searchParams.get('date');
+      const secs = secsParam !== null ? +secsParam : null;
+      const date = dateParam || null;
+
+      const cs = list.map(i => schedVehicles(i, secs, date));
+      const errors = cs.map(c => c.error).filter(Boolean);
       return send(res, { updated: Date.now(), error: errors.length ? errors.join('; ') : null, version, ready,
                          notes: list.map(i => ({ src: i, mode: schedule.scheduleMode(D[i]) })).filter(n => n.mode !== 'ok'),
                          vehicles: cs.flatMap(c => c.vehicles) });
@@ -304,22 +279,7 @@ http.createServer((req, res) => {
       const [i, rid] = splitId(url.searchParams.get('id'));
       return send(res, { shapes: D[i]?.routeShapes[rid] || [] }, 'no-store');
     }
-    if (url.pathname === '/api/debug') {
-      const out = {};
-      for (const i of IDS) {
-        const G = D[i], ids = [...G.stopTimes.keys()], vs = S[i].vehicles;
-        out[i] = { static: { trips: Object.keys(G.trips).length, tripsWithStopTimes: ids.length, sampleTripIds: ids.slice(0, 5),
-                             sampleStopIds: Object.keys(G.stops).slice(0, 5) },
-                   tripUpdates: S[i].diag,
-                   vehicles: { total: vs.length, withTripId: vs.filter(v => v.tripId).length, sampleTripIds: vs.slice(0, 5).map(v => v.tripId) },
-                   rawFeedSamples: S[i].raw, lastError: S[i].error,
-                   schedule: (() => { try { return schedule.diagnose(G); } catch (e) { return { error: e.message }; } })(),
-                   ready: ready[i], stopsCount: Object.keys(G.stops).length, scheduledNow: S[i].sched.vehicles.length };
-      }
-      return res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }), res.end(JSON.stringify(out, null, 2));
-    }
   } catch (e) {
-    console.error('Errore API:', e);
     return send(res, { error: e.message }, 'no-store', 500);
   }
   const page = [path.join(__dirname, 'public', 'index.html'), path.join(__dirname, 'index.html')].find(f => fs.existsSync(f));
