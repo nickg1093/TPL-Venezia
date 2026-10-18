@@ -95,10 +95,14 @@ function positionsNow(G, targetSecs = null, targetDate = null) {
   return out;
 }
 
-function departures(G, live, stopId) {
+function departures(G, live, stopId, targetSecs = null, targetDate = null) {
   const list = G.stopIndex?.[stopId];
   if (!list) return [];
-  const { d, secs } = romeNow(), out = [];
+  const base = romeNow();
+  const secs = targetSecs !== null ? +targetSecs : base.secs;
+  const d = targetDate !== null ? new Date(Date.UTC(+targetDate.slice(0, 4), +targetDate.slice(4, 6) - 1, +targetDate.slice(6, 8))) : base.d;
+
+  const out = [];
   for (const [off, day] of [[0, d], [86400, new Date(d.getTime() - 86400000)], [-86400, new Date(d.getTime() + 86400000)]]) {
     const tNow = secs + off, date = ymd(day), active = {};
     for (let p = 0; p < list.length; p += 2) {
@@ -107,7 +111,7 @@ function departures(G, live, stopId) {
       const lv = off >= 0 ? live?.[tripId] : null;
       const dl = lv ? lv.delays[i] : null;
       const sm = ts - tNow, em = ts + (dl ?? 0) - tNow;
-      if ((sm < -60 || sm > 5400) && (em < -60 || em > 5400)) continue;
+      if ((sm < -180 || sm > 7200) && (em < -180 || em > 7200)) continue;
       const trip = G.trips[tripId]; if (!trip) continue;
       if (!(active[trip.service] ??= serviceActive(G, trip.service, date))) continue;
       const r = G.routes[trip.route] || {};
