@@ -179,10 +179,9 @@ function tripDetail(i, tid, live) {
     const stopName = G.stops[sid] || sid;
     let stateText = '';
     if (k === cur) {
-      stateText = `in sosta a ${stopName}`;
+      stateText = '🛑 Fermo in fermata';
     } else if (k === cur + 1 && cur >= 0 && cur < n) {
-      const prevName = G.stops[st.s[cur]] || st.s[cur];
-      stateText = `fra ${prevName} e ${stopName}`;
+      stateText = '🚢 In navigazione';
     }
 
     return { 
