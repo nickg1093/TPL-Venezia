@@ -63,7 +63,7 @@
   .bus { display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; min-width:30px; border-radius:50%;
          background:var(--c,#0a6c8c); color:var(--t,#fff); font:700 12px/1 system-ui,sans-serif; border:2px solid var(--b,#fff);
          box-shadow:0 1px 3px rgba(0,0,0,.45); white-space:nowrap; cursor:pointer; }
-  .bus.aut { border-radius:6px; width:auto; min-width:28px; height:22px; padding:0 6px; }
+  .bus.aut { border-radius:6px; width:auto; min-width:28px; height:24px; padding:0 6px; }
   .bus.sched { border-style:dashed; opacity:.9; }
   .bus.sel { outline:3px solid #f5a623; outline-offset:1px; }
 
@@ -374,14 +374,18 @@ function vehName(src, label) {
 let follow = false, followAfter = 0;
 let selVeh = null;
 
-function colorInfo(c) {
+function colorInfo(c, lineName = '') {
+  const isLine1Nav = String(lineName).trim() === '1';
+  if (isLine1Nav) {
+    return { c: '#ffffff', ink: '#14232b', rail: '#ffffff' };
+  }
   const ok = /^#[0-9a-f]{6}$/i.test(c || ''), col = ok ? c : '#0a6c8c';
   const lum = (parseInt(col.slice(1, 3), 16) * 299 + parseInt(col.slice(3, 5), 16) * 587 + parseInt(col.slice(5, 7), 16) * 114) / 1000;
   return { c: col, ink: lum > 150 ? '#14232b' : '#fff', rail: lum > 200 ? '#0a6c8c' : col };
 }
 
 function busHtml(v) {
-  const k = colorInfo(v.color);
+  const k = colorInfo(v.color, v.line);
   return `<div class="bus${v.src === 'aut' ? ' aut' : ''}${mode === 'sched' || v.estimated ? ' sched' : ''}${v.id === selVeh ? ' sel' : ''}" style="--c:${k.c};--t:${k.ink};--b:${k.ink}">${esc(v.line)}</div>`;
 }
 
@@ -413,7 +417,7 @@ async function showRoutes(ids) {
     }
     if (tok !== routeToken) return;
     const r = routesData[id] || {};
-    for (const pts of shapes) L.polyline(pts, { color: colorInfo(r.color).rail, weight: 4, opacity: .75 }).addTo(lineLayer);
+    for (const pts of shapes) L.polyline(pts, { color: colorInfo(r.color, r.name).rail, weight: 4, opacity: .75 }).addTo(lineLayer);
   }
 }
 function clearRoutes() { routeToken++; lineLayer.clearLayers(); }
@@ -496,8 +500,8 @@ function updateLinesSummary() {
 
   let html = '';
   for (const [lName, data] of sortedLines) {
-    const badgeColor = colorInfo(data.color);
-    const badgeHtml = `<div class="bus" style="display:inline-flex; --c:${badgeColor.c}; --t:${badgeColor.ink}; --b:${badgeColor.ink}">${esc(lName)}</div>`;
+    const badgeColor = colorInfo(data.color, lName);
+    const badgeHtml = `<div class="bus${data.src === 'aut' ? ' aut' : ''}" style="display:inline-flex; --c:${badgeColor.c}; --t:${badgeColor.ink}; --b:${badgeColor.ink}">${esc(lName)}</div>`;
     
     if (mode === 'live') {
       const pct = data.count > 0 ? Math.round((data.punctual / data.count) * 100) : 0;
@@ -525,7 +529,7 @@ function updateLinesSummary() {
     unassignedHtml += `<div style="background:#1a272e; border-radius:50%; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; font-size:0.75rem; color:#fff;" title="${unknownNav.length} mezzi navigazione senza linea">N</div>`;
   }
   if (unknownAut.length > 0) {
-    unassignedHtml += `<div style="background:#1a272e; border-radius:50%; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; font-size:0.75rem; color:#fff;" title="${unknownAut.length} mezzi auto/tram senza linea">A</div>`;
+    unassignedHtml += `<div style="background:#1a272e; border-radius:6px; width:28px; height:22px; display:inline-flex; align-items:center; justify-content:center; font-size:0.75rem; color:#fff;" title="${unknownAut.length} mezzi auto/tram senza linea">A</div>`;
   }
   unassignedBadges.innerHTML = unassignedHtml || '<span class="muted" style="font-size:0.75rem;">Nessuno</span>';
 
@@ -568,7 +572,9 @@ filterEl.addEventListener('input', () => {
   if (matchedRoutes.length > 0) {
     html += `<div class="search-category">Linee</div>`;
     for (const [id, r] of matchedRoutes) {
-      const badge = `<div class="bus" style="--c:${colorInfo(r.color).c};--t:${colorInfo(r.color).ink};--b:${colorInfo(r.color).ink}">${esc(r.name)}</div>`;
+      const kInfo = colorInfo(r.color, r.name);
+      const isAut = r.src === 'aut';
+      const badge = `<div class="bus${isAut ? ' aut' : ''}" style="--c:${kInfo.c};--t:${kInfo.ink};--b:${kInfo.ink}">${esc(r.name)}</div>`;
       html += `<div class="search-item" data-type="route" data-id="${esc(id)}" data-name="${esc(r.name)}">${badge} <span>${esc(r.headsign || 'Linea ' + r.name)}</span></div>`;
     }
   }
@@ -767,6 +773,7 @@ function renderDepartures() {
     .filter(x => x.tIn >= -30 && x.tIn <= 120 && active.has(x.src || openSrc)).sort((a, b) => a.tIn - b.tIn).slice(0, 30);
   const html = rows.map(x => {
     let cls = '', note = '';
+    const lineSrc = x.src || openSrc;
     if (x.cancel) { cls = 'late'; note = x.cancel === 'trip' ? 'Corsa soppressa' : 'Fermata non servita'; }
     else if (live) {
       if (!x.live) note = 'da orario';
@@ -774,10 +781,10 @@ function renderDepartures() {
       else if (x.delay <= -1) { cls = 'ok'; note = `${x.delay} min (prog. ${x.sched})`; }
       else { cls = 'ok'; note = 'in orario'; }
     }
-    if (live && x.vehicle) note += (note ? ' · ' : '') + vehName(x.src || openSrc, x.vehicle);
+    if (live && x.vehicle) note += (note ? ' · ' : '') + vehName(lineSrc, x.vehicle);
     if (x.arrival) note = 'Termina qui' + (note ? ' · ' + note : '');
     const t = live ? x.exp : x.sched;
-    return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(x.src || openSrc)}" role="button" tabindex="0" title="Segui il mezzo">${busHtml({ line: x.line, color: x.color, src: x.src || openSrc })}` +
+    return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(lineSrc)}" role="button" tabindex="0" title="Segui il mezzo">${busHtml({ line: x.line, color: x.color, src: lineSrc })}` +
       `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${esc(note)}</div></div>` +
       `<div class="dt"><strong>${esc(t)}</strong><div class="muted">${x.tIn <= 0 ? 'adesso' : x.tIn + ' min'}</div></div></div>`;
   }).join('');
@@ -791,8 +798,8 @@ function openTripPanel(v, back = null) {
   openTrip = { src: v.src, tripId: v.tripId, routeId: v.routeId, line: v.line, label: v.label, back, drawn: false };
   panel.hidden = false;
   
-  const kInit = colorInfo(v.color);
-  const badgeInit = `<div class="bus" style="display:inline-flex; vertical-align:middle; margin-right:8px; --c:${kInit.c}; --t:${kInit.ink}; --b:${kInit.ink}">${esc(v.line)}</div>`;
+  const kInit = colorInfo(v.color, v.line);
+  const badgeInit = `<div class="bus${v.src === 'aut' ? ' aut' : ''}" style="display:inline-flex; vertical-align:middle; margin-right:8px; --c:${kInit.c}; --t:${kInit.ink}; --b:${kInit.ink}">${esc(v.line)}</div>`;
   const vehicleNameStr = vehName(v.src, v.label);
   pname.innerHTML = `${badgeInit} ${vehicleNameStr ? vehicleNameStr : ''}`;
   
@@ -818,7 +825,7 @@ async function loadTrip() {
   }
 }
 function tripHtml(d) {
-  const k = colorInfo(d.trip.color), live = d.live, n = d.stops.length;
+  const k = colorInfo(d.trip.color, d.trip.line), live = d.live, n = d.stops.length;
   const vehicleIcon = getVehicleIcon(d.trip.src, d.trip.vehicle);
   return `<div class="tl" style="--rc:${k.rail}">` + d.stops.map((s, i) => {
     let time, sub = '';
@@ -867,8 +874,8 @@ function renderTrip(first) {
   const lab = d.trip.vehicle || openTrip.label;
   const vehicleNameStr = vehName(d.trip.src, lab);
   
-  const k = colorInfo(d.trip.color);
-  const badgeHtml = `<div class="bus" style="display:inline-flex; vertical-align:middle; margin-right:8px; --c:${k.c}; --t:${k.ink}; --b:${k.ink}">${esc(d.trip.line)}</div>`;
+  const k = colorInfo(d.trip.color, d.trip.line);
+  const badgeHtml = `<div class="bus${d.trip.src === 'aut' ? ' aut' : ''}" style="display:inline-flex; vertical-align:middle; margin-right:8px; --c:${k.c}; --t:${k.ink}; --b:${k.ink}">${esc(d.trip.line)}</div>`;
   
   pname.innerHTML = `${badgeHtml} ${vehicleNameStr ? vehicleNameStr : ''}`;
   
