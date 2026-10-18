@@ -39,10 +39,10 @@
   button { font:inherit; padding:.35rem .7rem; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); cursor:pointer; }
   button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
   
-  .hint { position:absolute; left:10px; bottom:75px; z-index:900; padding:.3rem .6rem; border-radius:6px; background:var(--bg); color:var(--muted);
+  .hint { position:absolute; left:10px; bottom:85px; z-index:900; padding:.3rem .6rem; border-radius:6px; background:var(--bg); color:var(--muted);
           border:1px solid var(--line); font-size:.8rem; pointer-events:none; }
           
-  #panel { position:absolute; z-index:1100; top:12px; right:12px; bottom:80px; width:350px; max-width:calc(100% - 24px); overflow-y:auto;
+  #panel { position:absolute; z-index:1100; top:12px; right:12px; bottom:90px; width:350px; max-width:calc(100% - 24px); overflow-y:auto;
            background:var(--bg); color:var(--fg); border:1px solid var(--line); border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,.3); padding:0; }
   #panel[hidden] { display:none; }
   .ph { position:sticky; top:0; z-index:2; background:var(--bg); padding:.8rem .8rem .5rem; margin:0; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:.5rem; align-items:flex-start; }
@@ -55,7 +55,7 @@
   .dn { font-size:.8rem; color:var(--muted); } .dn.late, .dn.ok { font-weight:600; }
   .dt { text-align:right; } .dt strong { font-size:1.1rem; font-variant-numeric:tabular-nums; }
   .cx { opacity:.6; } .cx .dh { text-decoration:line-through; }
-  @media (max-width:640px) { #panel { top:auto; left:8px; right:8px; bottom:80px; width:auto; max-width:none; max-height:55%; } }
+  @media (max-width:640px) { #panel { top:auto; left:8px; right:8px; bottom:90px; width:auto; max-width:none; max-height:55%; } }
 
   .bus { display:flex; align-items:center; justify-content:center; min-width:28px; height:22px; padding:0 6px; border-radius:11px;
          background:var(--c,#0a6c8c); color:var(--t,#fff); font:700 12px/1 system-ui,sans-serif; border:2px solid var(--b,#fff);
@@ -93,7 +93,7 @@
          border:3px solid var(--bg); box-shadow:0 1px 4px rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center;
          font-size:.95rem; z-index:3; transition:top 14s linear; }
          
-  #follow { pointer-events:auto; bottom:75px; cursor:pointer; font:inherit; font-size:.8rem; color:var(--fg); }
+  #follow { pointer-events:auto; bottom:85px; cursor:pointer; font:inherit; font-size:.8rem; color:var(--fg); }
   .dep.go { cursor:pointer; border-radius:6px; }
   .dep.go:hover, .dep.go:focus-visible { background:color-mix(in srgb, var(--line) 35%, transparent); outline:none; }
   #pback { color:var(--accent); text-decoration:none; font-weight:600; }
@@ -107,20 +107,41 @@
     display: inline-block; width: 9px; height: 9px; background-color: #2ecc71; border-radius: 50%; animation: blink-dot 1.5s infinite; margin-right: 4px;
   }
 
+  /* Stile comune barra inferiore stile miniVenice */
   .bottom-bar {
     position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); z-index: 900;
-    background: var(--bg); border: 1px solid var(--line); border-radius: 24px; padding: 0.4rem 1rem;
-    display: flex; align-items: center; gap: 0.8rem; box-shadow: 0 4px 16px rgba(0,0,0,0.25); font-size: 0.85rem;
-    white-space: nowrap;
+    background: #10191e; color: #e6eef1; border: 1px solid #2a3b44; border-radius: 28px; padding: 0.5rem 1rem;
+    display: flex; align-items: center; gap: 0.8rem; box-shadow: 0 6px 24px rgba(0,0,0,0.4); font-size: 0.85rem;
+    white-space: nowrap; max-width: 95vw;
   }
-  .time-display { font-weight: 700; font-size: 1.1rem; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 0.3rem; }
+  .time-display { font-weight: 700; font-size: 1.05rem; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 0.2rem; }
   .time-display small { font-size: 0.75rem; font-weight: 400; opacity: 0.8; }
+
+  /* Pulsante ORA in stile miniVenice */
+  .ora-btn {
+    background: #1e8449; color: #fff; border: none; border-radius: 6px; padding: 0.25rem 0.6rem;
+    font-weight: 700; font-size: 0.8rem; cursor: pointer; text-transform: uppercase;
+  }
+  .ora-btn:hover { background: #239b56; }
 
   #timeline-bar { display: none; }
   #timeline-bar.active { display: flex; }
-  #timeline-bar input[type="range"] { accent-color: var(--accent); cursor: pointer; width: 140px; }
-  #timeline-bar input[type="date"] { font: inherit; padding: 0.1rem 0.3rem; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font-size: 0.8rem; }
-  #timeline-bar select { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 0.1rem 0.3rem; font-size: 0.8rem; }
+  
+  #tl-play {
+    background: #2a3b44; border: none; border-radius: 50%; width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center; color: #fff; cursor: pointer; font-size: 0.9rem; padding: 0;
+  }
+  #tl-play:hover { background: #3a4b54; }
+
+  #tl-date {
+    background: #1a272e; color: #e6eef1; border: 1px solid #2a3b44; border-radius: 8px; padding: 0.3rem 0.5rem; font: inherit; font-size: 0.85rem; cursor: pointer;
+  }
+  #tl-speed {
+    background: #1a272e; color: #e6eef1; border: 1px solid #2a3b44; border-radius: 8px; padding: 0.3rem 0.5rem; font: inherit; font-size: 0.85rem; cursor: pointer;
+  }
+  #tl-range {
+    flex: 1; accent-color: #4cc2e6; cursor: pointer; min-width: 150px;
+  }
 </style>
 </head>
 <body>
@@ -148,23 +169,27 @@
   <div id="hint" class="hint">Avvicina lo zoom per vedere le fermate</div>
   <button id="follow" class="hint" type="button" hidden>📍 Seguo il mezzo · tocca per smettere</button>
   
+  <!-- Barra inferiore Live -->
   <div id="clock-bar" class="bottom-bar">
     <span class="live-indicator" style="width: 7px; height: 7px;"></span>
     <div class="time-display" id="clock-time">00:00:<small>00</small></div>
     <span style="color: var(--muted);" id="updated-ago">· aggiornato ora</span>
   </div>
 
+  <!-- Barra inferiore Pianificato stile miniVenice -->
   <div id="timeline-bar" class="bottom-bar">
-    <button id="tl-play" type="button" title="Play / Pausa" style="background:none; border:none; padding:0; cursor:pointer; font-size:1rem;">▶️</button>
-    <div class="time-display" id="tl-time">12:00</div>
-    <input id="tl-date" type="date" title="Data">
-    <select id="tl-speed" title="Velocità riproduzione">
+    <button id="tl-play" type="button" title="Play / Pausa">▶️</button>
+    <div class="time-display" id="tl-time">12:00:00</div>
+    <button id="tl-now" type="button" class="ora-btn">ORA</button>
+    <input id="tl-date" type="date" title="Seleziona data">
+    <select id="tl-speed" title="Velocità">
       <option value="1">1x</option>
       <option value="5" selected>5x</option>
       <option value="15">15x</option>
       <option value="60">60x</option>
     </select>
-    <input id="tl-range" type="range" min="0" max="86400" value="43200" step="30" title="Scorri orario">
+    <span id="tl-count" class="muted" style="font-size: 0.8rem;">0 in navigazione</span>
+    <input id="tl-range" type="range" min="0" max="86400" value="43200" step="30" title="Timeline">
   </div>
 
   <aside id="panel" hidden aria-label="Transiti alla fermata">
@@ -215,12 +240,12 @@ function updateClock() {
     document.getElementById('updated-ago').textContent = diffSec <= 2 ? '· aggiornato ora' : `· aggiornato ${diffSec}s fa`;
   } else {
     const secs = +document.getElementById('tl-range').value;
-    document.getElementById('tl-time').textContent = formatSecs(secs).slice(0, 5);
+    document.getElementById('tl-time').textContent = formatSecs(secs);
   }
 }
 setInterval(updateClock, 1000);
 
-// Gestione Play / Pausa timeline corretta e diretta
+// Gestione Play / Pausa timeline
 document.getElementById('tl-play').addEventListener('click', () => {
   isPlaying = !isPlaying;
   document.getElementById('tl-play').textContent = isPlaying ? '⏸️' : '▶️';
@@ -231,8 +256,7 @@ document.getElementById('tl-play').addEventListener('click', () => {
       let val = +r.value + speed;
       if (val > 86400) val = 0;
       r.value = val;
-      // Aggiorna direttamente il testo dell'orario e ricarica i dati senza dipendere da eventi esterni
-      document.getElementById('tl-time').textContent = formatSecs(val).slice(0, 5);
+      document.getElementById('tl-time').textContent = formatSecs(val);
       load();
       if (openStop) loadDepartures();
     }, 1000);
@@ -241,8 +265,18 @@ document.getElementById('tl-play').addEventListener('click', () => {
   }
 });
 
+// Pulsante ORA per tornare all'orario attuale in modalità pianificato
+document.getElementById('tl-now').addEventListener('click', () => {
+  const curSecs = nowSecs();
+  document.getElementById('tl-range').value = curSecs;
+  document.getElementById('tl-date').valueAsDate = new Date();
+  document.getElementById('tl-time').textContent = formatSecs(curSecs);
+  load();
+  if (openStop) loadDepartures();
+});
+
 document.getElementById('tl-range').addEventListener('input', () => {
-  document.getElementById('tl-time').textContent = formatSecs(+document.getElementById('tl-range').value).slice(0, 5);
+  document.getElementById('tl-time').textContent = formatSecs(+document.getElementById('tl-range').value);
   load();
   if (openStop) loadDepartures();
 });
@@ -414,6 +448,13 @@ function render() {
     } catch (err) { console.warn('Mezzo non disegnato', v.id, err.message); }
   }
   for (const [id, e] of markers) if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
+  
+  // Aggiorna contatore veicoli nella barra inferiore pianificato
+  const navCount = shown.filter(v => v.src === 'nav').length;
+  const autCount = shown.filter(v => v.src === 'aut').length;
+  const countText = [...active].map(s => `${s === 'nav' ? navCount : autCount} in ${s === 'nav' ? 'navigazione' : 'servizio'}`).join(' · ');
+  document.getElementById('tl-count').textContent = countText;
+
   return shown.length;
 }
 
