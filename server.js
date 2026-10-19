@@ -218,7 +218,7 @@ const API = {
                .map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) };
   },
   '/api/zone': u => {   // passaggi di più fermate insieme (pontili della stessa zona)
-    const ids = (q(u, 'ids') || '').split(',').slice(0, 16), out = [], lab = {};
+    const ids = (q(u, 'ids') || '').split(',').slice(0, 24), out = [], lab = {};
     if (!ids.some(f => D[splitId(f)[0]])) throw fail(404, 'zona sconosciuta');
     let note = null, liveUpdated = 0;
     for (const full of ids) {
@@ -229,7 +229,7 @@ const API = {
       note = noteOf(D[i], q(u, 'date')); liveUpdated = Math.max(liveUpdated, S[i].updated);
     }
     out.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn));
-    return { liveUpdated, note, departures: out.slice(0, 150) };
+    return { liveUpdated, note, departures: out.slice(0, 300) };
   },
   '/api/trip': u => {
     const [i, tid] = splitId(q(u, 'id'));
