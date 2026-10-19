@@ -271,7 +271,10 @@ const PAL = ['#3b82f6', '#a855f7', '#14b8a6', '#f59e0b', '#22c55e', '#ec4899', '
 const hue = l => /^[A-Za-z]/.test(l) ? PAL[(l.toUpperCase().charCodeAt(0) - 65) % 7] : /^\d+$/.test(l) ? PAL[(+l - 1) % 7] : '#64748b';
 const ptHtml = (l, sm, src) => `<span class="pt${sm ? ' sm' : ''}" style="--h:${hue(l || '')}" title="${l ? (src === 'nav' ? 'Pontile ' : 'Fermata ') + esc(l) : 'Altro'}">${esc(l || '·')}</span>`;
 const norm = s => s.toLowerCase().replace(/"/g, '').replace(/f\.te\b/g, 'fondamente').replace(/p\.le\b/g, 'piazzale').replace(/\bs\.\s*/g, 'san ').replace(/\s+/g, ' ').trim();
-const LETTER = /^(.*?)\s*(?:"([^"]+)"|\bCORSIA\s+([A-Z0-9]+))\s*$/i;   // F.te Nove "A"  /  VENEZIA CORSIA C
+// Codice nel nome: F.te Nove "A"  /  VENEZIA CORSIA C  /  Stazione MESTRE FS C4  /  MESTRE CENTRO B2
+const LETTER = /^(.*?)\s*(?:"([^"]+)"|\bCORSIA\s+([A-Z0-9]+)|\s([A-Z]\d{1,2}))\s*$/i;
+const ALIAS = { 'favretti mestre fs': 'stazione mestre fs' };   // nomi diversi che appartengono alla stessa zona
+const nice = n => n === n.toUpperCase() && /[A-Z]/.test(n) ? n.toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_, a, b) => a + b.toUpperCase()) : n;
 const ZONE_M = 300;   // oltre questa distanza, due fermate con lo stesso nome sono luoghi diversi
 const meters = (a, b) => Math.hypot((a.lat - b.lat) * 111000, (a.lon - b.lon) * 78000);
 const unitOf = z => z.src === 'nav' ? ['Pontile', 'pontili'] : ['Fermata', 'fermate'];
@@ -280,10 +283,19 @@ function buildZones() {
   const byName = new Map(); snorm = new Map();
   for (const [id, name, lat, lon, src] of stops) {
     snorm.set(id, norm(name));
-    const m = LETTER.exec(name), base = (m ? m[1] : name).replace(/\s+A RICHIEST\w*\s*$/i, '').trim(), key = src + '|' + norm(base);
+    const strip = x => x.replace(/\s+A RICHIEST\w*\s*$/i, '').trim(), m = LETTER.exec(name), base = strip(m ? m[1] : name), n = norm(base), key = src + '|' + (ALIAS[n] || n);
     let l = byName.get(key); if (!l) byName.set(key, l = []);
-    l.push({ id, name: base, src, letter: m ? (m[2] || m[3]).toUpperCase() : '', lat, lon });
+    l.push({ id, name: base, full: strip(name), src, letter: m ? (m[2] || m[3] || m[4]).toUpperCase() : '', lat, lon });
   }
+  const cmp = (a, b) => (!a) - (!b) || a.localeCompare(b, 'it', { numeric: true });
+  // etichette: il codice del nome (C2, B1, "A", CORSIA C) se c'è; altrimenti un numero per posizione
+  // (stessa posizione = stesso numero), salvo una sola posizione senza codice (resta "·", es. Ferrovia)
+  const assign = (c, codes) => {
+    const pk = i => i.lat.toFixed(5) + ',' + i.lon.toFixed(5), places = new Map();
+    for (const i of c) if (!(codes && i.letter) && !places.has(pk(i))) places.set(pk(i), String(places.size + 1));
+    for (const i of c) i.label = (codes && i.letter) || (places.size >= 2 ? places.get(pk(i)) : '');
+    return [...new Set(c.map(i => i.label))].sort(cmp);
+  };
   zones = new Map(); zoneOf = new Map();
   for (const items of byName.values()) {
     const cl = [];   // gruppi di fermate collegate a catena entro ZONE_M
@@ -295,16 +307,13 @@ function buildZones() {
     for (const c of cl) {
       if (c.length < 2) continue;
       c.sort((a, b) => a.id.localeCompare(b.id, 'it', { numeric: true }));
-      // etichetta: la lettera/corsia se c'è; altrimenti un numero per posizione (stessa posizione = stesso numero),
-      // salvo che ci sia una sola posizione senza lettera (resta "·", es. Ferrovia)
-      const pk = i => i.lat.toFixed(5) + ',' + i.lon.toFixed(5), places = new Map();
-      for (const i of c) if (!i.letter && !places.has(pk(i))) places.set(pk(i), String(places.size + 1));
-      for (const i of c) i.label = i.letter || (places.size >= 2 ? places.get(pk(i)) : '');
-      const letters = [...new Set(c.map(i => i.label))].sort((a, b) => (!a) - (!b) || a.localeCompare(b, 'it', { numeric: true }));
+      let letters = assign(c, true), name = c[0].name;
+      if (letters.length < 2) { letters = assign(c, false); name = c[0].full; }   // stesso codice su tutte (es. Park P14): conta il nome intero
       if (letters.length < 2) continue;
-      const z = { key: c[0].id, name: c[0].name, src: c[0].src, norm: norm(c[0].name), items: c, pick: '*', letters,
+      const z = { key: c[0].id, name: nice(name), src: c[0].src, items: c, pick: '*', letters,
         letterOf: new Map(c.map(i => [i.id, i.label])),
         center: [c.reduce((s, i) => s + i.lat, 0) / c.length, c.reduce((s, i) => s + i.lon, 0) / c.length] };
+      z.norm = norm(z.name);
       zones.set(z.key, z); for (const i of c) zoneOf.set(i.id, z);
     }
   }
