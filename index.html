@@ -616,25 +616,42 @@ function tripHtml(d) {
 /* Posizionamento geometrico preciso calcolato sull'asse x dei pallini */
 function placeVehicle(d, first) {
   const tl = plist.querySelector('.tl'), veh = tl && tl.querySelector('.veh'), trav = tl && tl.querySelector('.trav');
-  if (!veh) return;
+  if (!tl || !veh || !trav) return;
+
   const rows = tl.querySelectorAll('.st'), a = rows[d.progress.from], b = rows[d.progress.from + 1];
   if (!a) { veh.style.display = 'none'; trav.style.display = 'none'; return; }
+  veh.style.display = '';
+  trav.style.display = '';
 
-  // Allineamento orizzontale automatico calcolato direttamente dal centro del pallino
-  const firstDot = tl.querySelector('.dot');
-  if (firstDot) {
-    const xCenter = firstDot.offsetLeft + firstDot.offsetWidth / 2;
-    veh.style.left = xCenter + 'px';
-    trav.style.left = xCenter + 'px';
-  }
+  // Ricava le coordinate reali dei centri dei pallini rispetto alla timeline.
+  // offsetLeft/offsetTop da soli sono relativi all'offsetParent e possono disallineare la linea.
+  const tlRect = tl.getBoundingClientRect();
+  const dotCenter = row => {
+    const dot = row.querySelector('.dot');
+    const r = dot.getBoundingClientRect();
+    return {
+      x: r.left - tlRect.left + r.width / 2,
+      y: r.top - tlRect.top + r.height / 2
+    };
+  };
 
-  const ca = a.offsetTop + 21, cb = b ? b.offsetTop + 21 : ca, y = ca + (cb - ca) * (b ? d.progress.frac : 0);
+  const firstCenter = dotCenter(rows[0]);
+  const ca = dotCenter(a).y;
+  const cb = b ? dotCenter(b).y : ca;
+  const y = ca + (cb - ca) * (b ? d.progress.frac : 0);
+
+  veh.style.left = firstCenter.x + 'px';
+  trav.style.left = firstCenter.x + 'px';
+  trav.style.top = firstCenter.y + 'px';
+
   const from = !first && vehMemo.trip === openTrip.tripId ? vehMemo.y : y;
   veh.style.transition = trav.style.transition = 'none';
-  veh.style.top = from + 'px'; trav.style.height = Math.max(0, from - 21) + 'px';
+  veh.style.top = from + 'px';
+  trav.style.height = Math.max(0, from - firstCenter.y) + 'px';
   void veh.offsetHeight;
   veh.style.transition = trav.style.transition = '';
-  veh.style.top = y + 'px'; trav.style.height = Math.max(0, y - 21) + 'px';
+  veh.style.top = y + 'px';
+  trav.style.height = Math.max(0, y - firstCenter.y) + 'px';
   vehMemo = { trip: openTrip.tripId, y };
 }
 
