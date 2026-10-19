@@ -62,9 +62,13 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 #pback{color:var(--accent);text-decoration:none;font-weight:600}
 
 /* Passaggi e fermate con altezza fissa rigorosa */
-.dep,.st{display:grid;grid-template-columns:22px 1fr auto;gap:.5rem;align-items:center;height:42px;padding:0 0.3rem;border-bottom:1px solid var(--line);border-radius:6px;transition:background .15s}
-.dep.go,.st{cursor:pointer}
-.dep.go:hover,.st:hover{background:color-mix(in srgb,var(--fg) 5%,transparent)}
+.dep{display:grid;grid-template-columns:auto 1fr auto;gap:.5rem;align-items:center;height:42px;padding:0 0.3rem;border-bottom:1px solid var(--line);border-radius:6px;transition:background .15s}
+.dep.go{cursor:pointer}
+.dep.go:hover{background:color-mix(in srgb,var(--fg) 5%,transparent)}
+
+.st{display:grid;grid-template-columns:24px 1fr auto;gap:.4rem;align-items:center;height:42px;padding:0 0.3rem;border-bottom:1px solid var(--line);border-radius:6px;cursor:pointer;transition:background .15s}
+.st:hover{background:color-mix(in srgb,var(--fg) 5%,transparent)}
+
 .dm,.sn{min-width:0;display:flex;flex-direction:column;gap:0}
 .dh,.nm{font-weight:600;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dn,.sn .muted{font-size:.7rem;color:var(--muted);display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;line-height:1.1}
@@ -79,10 +83,10 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 /* Timeline grafica nel dettaglio corsa allineata correttamente */
 .tl{position:relative;z-index:0;padding-top:.1rem}
 .rail{position:absolute;left:11px;top:0;bottom:0;width:2.5px;background:var(--line);z-index:1}
-.st.passed .rail::before{background:var(--rc)}
-.dot{position:absolute;left:6px;top:50%;transform:translateY(-50%);width:10px;height:10px;border-radius:50%;background:var(--bg);border:2px solid var(--rc);z-index:2;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:800}
+.st .rail-cell{position:relative;height:100%;display:flex;align-items:center;justify-content:center}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--bg);border:2px solid var(--rc);z-index:2;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:800}
 .st.passed .dot{background:var(--rc);color:var(--check-fg,#fff)}
-@keyframes pulse-dot{0%{transform:translateY(-50%) scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 70%,transparent)}70%{transform:translateY(-50%) scale(1.2);box-shadow:0 0 0 5px color-mix(in srgb,var(--rc) 0%,transparent)}100%{transform:translateY(-50%) scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 70%,transparent)}}
+@keyframes pulse-dot{0%{transform:scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 70%,transparent)}70%{transform:scale(1.2);box-shadow:0 0 0 5px color-mix(in srgb,var(--rc) 0%,transparent)}100%{transform:scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 70%,transparent)}}
 .st.next .dot{box-shadow:0 0 0 2.5px color-mix(in srgb,var(--rc) 30%,transparent);animation:pulse-dot 1.5s infinite ease-in-out}
 .st.passed .nm,.st.passed .tm,.st.passed .muted{opacity:.35}
 .trav{position:absolute;left:10.5px;top:21px;width:2.5px;height:0;background:var(--rc);z-index:1;transition:height 14s linear}
@@ -595,7 +599,7 @@ function tripHtml(d) {
     }
     const meta = s.skipped ? 'Fermata saltata' : s.state === 'next' ? (s.inMin <= 0 ? 'In arrivo' : `tra ${s.inMin} min`) : '';
     return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === 0 ? ' first' : ''}${i === n - 1 ? ' last' : ''}" data-i="${i}">`
-      + `<div class="rail"></div><span class="dot">${s.state === 'passed' ? '✓' : ''}</span>`
+      + `<div class="rail-cell"><div class="rail"></div><span class="dot">${s.state === 'passed' ? '✓' : ''}</span></div>`
       + `<div class="sn"><div class="nm">${esc(s.name)}</div>${meta ? `<div class="muted">${meta}</div>` : ''}</div>`
       + `<div class="tm">${timeHtml}<div class="muted">${sub}</div></div></div>`;
   }).join('');
@@ -606,13 +610,13 @@ function placeVehicle(d, first) {
   if (!veh) return;
   const rows = tl.querySelectorAll('.st'), a = rows[d.progress.from], b = rows[d.progress.from + 1];
   if (!a) { veh.style.display = 'none'; trav.style.display = 'none'; return; }
-  const ca = a.offsetTop + 17, cb = b ? b.offsetTop + 17 : ca, y = ca + (cb - ca) * (b ? d.progress.frac : 0);
+  const ca = a.offsetTop + 21, cb = b ? b.offsetTop + 21 : ca, y = ca + (cb - ca) * (b ? d.progress.frac : 0);
   const from = !first && vehMemo.trip === openTrip.tripId ? vehMemo.y : y;
   veh.style.transition = trav.style.transition = 'none';
-  veh.style.top = from + 'px'; trav.style.height = Math.max(0, from - 17) + 'px';
+  veh.style.top = from + 'px'; trav.style.height = Math.max(0, from - 21) + 'px';
   void veh.offsetHeight;
   veh.style.transition = trav.style.transition = '';
-  veh.style.top = y + 'px'; trav.style.height = Math.max(0, y - 17) + 'px';
+  veh.style.top = y + 'px'; trav.style.height = Math.max(0, y - 21) + 'px';
   vehMemo = { trip: openTrip.tripId, y };
 }
 function renderTrip(first) {
