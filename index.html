@@ -53,7 +53,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inline-flex;align-items:center;gap:.25rem}
 .chip.on,.chip.on:hover{background:var(--accent);color:var(--bg);border-color:transparent;font-weight:700}
 
-/* Finestra passaggi dimensionata esattamente per 4 elementi ultra-compatti */
+/* Finestra passaggi e dettagli corsa dimensionata esattamente per 4 elementi */
 #plist{padding:.2rem .6rem .6rem;overflow-y:auto;flex:none;height:calc(4 * 44px + 0.8rem);min-height:0}
 
 .late,.ok,.early{font-weight:600}
@@ -61,20 +61,32 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .banner{margin:.3rem 0;padding:.3rem;border-radius:6px;border:1px solid var(--late);color:var(--late);font-weight:600;font-size:.7rem;background:color-mix(in srgb,var(--late) 10%,transparent)}
 #pback{color:var(--accent);text-decoration:none;font-weight:600}
 
-/* Passaggi con altezza fissa rigorosa e bloccata a 42px */
-.dep{display:grid;grid-template-columns:auto 1fr auto;gap:.5rem;align-items:center;height:42px;padding:0 0.3rem;border-bottom:1px solid var(--line);border-radius:6px;transition:background .15s}
-.dep.go{cursor:pointer}
-.dep.go:hover{background:color-mix(in srgb,var(--fg) 5%,transparent)}
-.dm{min-width:0;display:flex;flex-direction:column;gap:0}
-.dh{font-weight:600;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dn{font-size:.7rem;color:var(--muted);display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;line-height:1.1}
-.dt{text-align:right;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;height:100%}
-.dt-time-wrap{display:flex;align-items:center;gap:.3rem;line-height:1}
-.dt strong{font-size:.85rem;font-variant-numeric:tabular-nums;font-weight:700}
-.dt .in-min{font-size:.65rem;font-weight:600;color:var(--muted);line-height:1.1}
-.cx{opacity:.5}.cx .dh{text-decoration:line-through}
+/* Passaggi e fermate con altezza fissa rigorosa */
+.dep,.st{display:grid;grid-template-columns:auto 1fr auto;gap:.5rem;align-items:center;height:42px;padding:0 0.3rem;border-bottom:1px solid var(--line);border-radius:6px;transition:background .15s}
+.dep.go,.st{cursor:pointer}
+.dep.go:hover,.st:hover{background:color-mix(in srgb,var(--fg) 5%,transparent)}
+.dm,.sn{min-width:0;display:flex;flex-direction:column;gap:0}
+.dh,.nm{font-weight:600;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dn,.sn .muted{font-size:.7rem;color:var(--muted);display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;line-height:1.1}
+.dt,.tm{text-align:right;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;height:100%}
+.dt-time-wrap,.tm-time-wrap{display:flex;align-items:center;gap:.3rem;line-height:1}
+.dt strong,.tm strong{font-size:.85rem;font-variant-numeric:tabular-nums;font-weight:700}
+.dt .in-min,.tm .muted{font-size:.65rem;font-weight:600;color:var(--muted);line-height:1.1}
+.cx{opacity:.5}.cx .dh,.cx .nm{text-decoration:line-through}
 .dn.late{color:var(--late)}.dn.ok,.dn.early{color:var(--ok)}
 .sched-crossed{text-decoration:line-through;opacity:0.6;font-size:.7rem;font-weight:normal}
+
+/* Timeline grafica nel dettaglio corsa */
+.tl{position:relative;z-index:0;padding-top:.1rem}
+.rail{position:absolute;left:11px;top:0;bottom:0;width:2.5px;background:var(--line);z-index:1}
+.st.passed .rail::before{background:var(--rc)}
+.dot{position:absolute;left:6px;top:50%;transform:translateY(-50%);width:10px;height:10px;border-radius:50%;background:var(--bg);border:2px solid var(--rc);z-index:2;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:800}
+.st.passed .dot{background:var(--rc);color:var(--check-fg,#fff)}
+@keyframes pulse-dot{0%{transform:translateY(-50%) scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 70%,transparent)}70%{transform:translateY(-50%) scale(1.2);box-shadow:0 0 0 5px color-mix(in srgb,var(--rc) 0%,transparent)}100%{transform:translateY(-50%) scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 70%,transparent)}}
+.st.next .dot{box-shadow:0 0 0 2.5px color-mix(in srgb,var(--rc) 30%,transparent);animation:pulse-dot 1.5s infinite ease-in-out}
+.st.passed .nm,.st.passed .tm,.st.passed .muted{opacity:.35}
+.trav{position:absolute;left:10.5px;top:21px;width:2.5px;height:0;background:var(--rc);z-index:1;transition:height 14s linear}
+.veh{position:absolute;left:-2px;top:21px;width:22px;height:22px;margin-top:-11px;border-radius:50%;background:var(--rc);border:2px solid var(--bg);box-shadow:0 2px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:.65rem;z-index:3;transition:top 14s linear}
 
 /* Quadrato Giallo Pontile compatto */
 .pt{width:16px;height:16px;min-width:16px;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex:none;background:var(--yellow);color:#000;box-shadow:0 1px 2px rgba(0,0,0,0.2)}
@@ -87,28 +99,6 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .bus.aut{border-radius:5px;width:auto;min-width:22px;height:18px;padding:0 3px}
 .bus.sched{border-style:dashed;opacity:.85}
 .bus.sel{outline:2px solid var(--accent);outline-offset:2px}
-
-/* elenco fermate della corsa */
-.st{display:grid;grid-template-columns:22px 1fr auto;gap:.4rem;min-height:34px;cursor:pointer;border-radius:6px;font-size:.78rem}
-.st:hover{background:color-mix(in srgb,var(--fg) 4%,transparent)}
-.rail{position:relative}
-.rail::before{content:'';position:absolute;left:50%;top:0;bottom:0;width:2.5px;margin-left:-1.25px;background:var(--line)}
-.st.passed .rail::before{background:var(--rc)}
-.st.first .rail::before{top:17px}
-.st.last .rail::before{bottom:calc(100% - 17px)}
-.dot{position:absolute;left:50%;top:17px;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:var(--bg);border:2px solid var(--rc);z-index:2;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:800;line-height:1}
-.st.passed .dot{background:var(--rc);color:var(--check-fg,#fff)}
-@keyframes pulse-dot{0%{transform:scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 70%,transparent)}70%{transform:scale(1.2);box-shadow:0 0 0 5px color-mix(in srgb,var(--rc) 0%,transparent)}100%{transform:scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 70%,transparent)}}
-.st.next .dot{box-shadow:0 0 0 2.5px color-mix(in srgb,var(--rc) 30%,transparent);animation:pulse-dot 1.5s infinite ease-in-out}
-.sn{padding:.25rem 0;min-width:0}
-.nm{font-weight:500}
-.st.next .nm{font-weight:600;color:var(--accent)}
-.st.passed .nm,.st.passed .tm,.st.passed .muted{opacity:.35}
-.tm{text-align:right;padding:.25rem 0}
-.tm strong{font-variant-numeric:tabular-nums;font-size:.78rem}
-.tl{position:relative;z-index:0;padding-top:.1rem}
-.trav{position:absolute;left:9.5px;top:17px;width:2.5px;height:0;background:var(--rc);z-index:1;transition:height 14s linear}
-.veh{position:absolute;left:-3px;top:17px;width:22px;height:22px;margin-top:-11px;border-radius:50%;background:var(--rc);border:2px solid var(--bg);box-shadow:0 2px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:.65rem;z-index:3;transition:top 14s linear}
 
 @keyframes blink-live{0%{opacity:.3;transform:scale(.9)}50%{opacity:1;transform:scale(1.1)}100%{opacity:.3;transform:scale(.9)}}
 .live-indicator{display:inline-block;width:6px;height:6px;background:var(--ok);border-radius:50%;animation:blink-live 2s infinite ease-in-out;margin-right:3px}
@@ -592,16 +582,22 @@ async function loadTrip() {
 function tripHtml(d) {
   const k = colorInfo(d.trip.color, d.trip.line), n = d.stops.length;
   const rows = d.stops.map((s, i) => {
-    let time, sub = '';
+    let timeHtml = '', sub = '';
     if (d.live && s.delay != null) {
-      const [c, t] = [s.delay >= 1 ? 'late' : s.delay <= -1 ? 'early' : 'ok', s.delay >= 1 ? `in ritardo di ${s.delay}m` : s.delay <= -1 ? `in anticipo di ${-s.delay}m` : 'in orario'];
-      time = `<strong class="${c}">${esc(s.exp)}</strong>`; sub = t;
-    } else { time = `<strong>${esc(s.sched)}</strong>`; sub = d.live ? 'da orario' : ''; }
+      const [c, t] = [s.delay >= 1 ? 'late' : s.delay <= -1 ? 'early' : 'ok', s.delay >= 1 ? `in ritardo di ${s.delay} min` : s.delay <= -1 ? `in anticipo di ${-s.delay} min` : 'in orario'];
+      sub = t;
+      timeHtml = (Math.abs(s.delay) >= 1)
+        ? `<div class="tm-time-wrap"><span class="sched-crossed">${esc(s.sched)}</span><strong class="${c}">${esc(s.exp)}</strong></div>`
+        : `<div class="tm-time-wrap"><strong class="${c}">${esc(s.exp)}</strong></div>`;
+    } else {
+      sub = d.live ? 'da orario' : '';
+      timeHtml = `<div class="tm-time-wrap"><strong>${esc(s.sched)}</strong></div>`;
+    }
     const meta = s.skipped ? 'Fermata saltata' : s.state === 'next' ? (s.inMin <= 0 ? 'In arrivo' : `tra ${s.inMin} min`) : '';
     return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === 0 ? ' first' : ''}${i === n - 1 ? ' last' : ''}" data-i="${i}">`
       + `<div class="rail"><span class="dot">${s.state === 'passed' ? '✓' : ''}</span></div>`
       + `<div class="sn"><div class="nm">${esc(s.name)}</div>${meta ? `<div class="muted">${meta}</div>` : ''}</div>`
-      + `<div class="tm">${time}<div class="muted">${sub}</div></div></div>`;
+      + `<div class="tm">${timeHtml}<div class="muted">${sub}</div></div></div>`;
   }).join('');
   return `<div class="tl" style="--rc:${k.rail};--check-fg:${k.contrast}">${rows}<div class="trav"></div><div class="veh">${vehIcon(d.trip.src, d.trip.vehicle)}</div></div>`;
 }
@@ -622,15 +618,15 @@ function placeVehicle(d, first) {
 function renderTrip(first) {
   const d = lastTrip; if (!d || !openTrip) return;
   let status = 'programmato';
-  if (d.live) status = d.delayNow == null ? 'live' : d.delayNow >= 1 ? `<span class="late">+${d.delayNow}m</span>`
-    : d.delayNow <= -1 ? `<span class="early">-${Math.abs(d.delayNow)}m</span>` : '<span class="ok">in orario</span>';
+  if (d.live) status = d.delayNow == null ? 'live' : d.delayNow >= 1 ? `<span class="late">in ritardo di ${d.delayNow} min</span>`
+    : d.delayNow <= -1 ? `<span class="early">in anticipo di ${Math.abs(d.delayNow)} min</span>` : '<span class="ok">in orario</span>';
   pname.textContent = d.trip.headsign ? `→ ${d.trip.headsign}` : `→ Linea ${d.trip.line}`;
   const o = d.stops[0];
   psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '')
     + (o ? `da ${esc(o.name)}${o.sched ? ', ' + o.sched : ''}` : '') + (d.note ? `<br>${esc(d.note)}` : '');
   pstatus.innerHTML = `${status} · ${vehName(d.trip.src, d.trip.vehicle || openTrip.label)}`;
   plist.innerHTML = (d.cancelled ? '<div class="banner">Corsa soppressa</div>' : '') + tripHtml(d)
-    + (d.live && d.historyKnown ? '<p class="muted" style="margin-top:.4rem">Fermate passate: ultima stima.</p>':'');
+    + (d.live && d.historyKnown ? '<p class="muted" style="margin-top:.4rem">Fermate passate: ultima stima.</p>' : '');
   placeVehicle(d, first);
   if (!first) return;
   routeToken++; lineLayer.clearLayers(); tripLayer.clearLayers();
