@@ -61,6 +61,15 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .dt{text-align:right}
 .dt strong{font-size:.95rem;font-variant-numeric:tabular-nums}
 .cx{opacity:.5}.cx .dh{text-decoration:line-through}
+.dn.late{color:var(--late)}.dn.ok,.dn.early{color:var(--ok)}
+.dn.z{display:flex;align-items:center;gap:.4rem}
+.pt{--h:#64748b;min-width:22px;height:22px;padding:0 5px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:none;background:color-mix(in srgb,var(--h) 22%,transparent);color:var(--h);border:1px solid color-mix(in srgb,var(--h) 45%,transparent)}
+.pt.sm{min-width:18px;height:18px;font-size:11px;padding:0 4px}
+.chips{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;padding:.5rem 0 .3rem}
+button.chip{padding:.2rem .65rem;font-size:.8rem}
+.chip small{font-size:.7rem;opacity:.7}
+.chip.on,.chip.on:hover{background:var(--accent);color:var(--bg);border-color:transparent;font-weight:600}
+.search-item>.muted{margin-left:auto}
 
 /* mezzi */
 .bus{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;min-width:28px;border-radius:50%;background:var(--c,#0a6c8c);color:var(--t,#fff);font:700 12px/1 system-ui,sans-serif;border:2px solid var(--b,#fff);box-shadow:0 3px 10px rgba(0,0,0,.3);white-space:nowrap;cursor:pointer;transition:transform .2s}
@@ -190,7 +199,7 @@ const range = $('tl-range'), dateEl = $('tl-date');
 let mode = 'live', staticVer = -1, lastUpdate = Date.now(), lastLoadSecs = -1, isPlaying = false, playTimer = null;
 const active = new Set(['nav', 'aut']);
 let routesData = {}, stops = [], vehicles = [];
-let openStop = null, openStopName = '', openSrc = null, openTrip = null, panelTimer = null, lastDeps = null, lastTrip = null;
+let openStop = null, openStopName = '', openSrc = null, openTrip = null, panelTimer = null, lastDeps = null, lastTrip = null, openZone = null;
 let selVeh = null, follow = false, followAfter = 0, routeToken = 0, vehMemo = { trip: null, y: 0 };
 
 dateEl.value = localDate();
@@ -257,12 +266,39 @@ const tip = v => esc(`${vehIcon(v.src, v.label)} ${v.line}${v.headsign ? ' → '
 const delayInfo = (dl, sched, unit) => dl >= 1 ? ['late', `in ritardo di ${dl}${unit} (prog. ${sched})`]
   : dl <= -1 ? ['early', `in anticipo di ${-dl}${unit} (prog. ${sched})`] : ['ok', `in orario (prog. ${sched})`];
 
+/* ---- zone con più pontili: la lettera è nel nome (F.te Nove "A") ---- */
+const HUES = { A: '#3b82f6', B: '#a855f7', C: '#14b8a6', D: '#f59e0b', E: '#22c55e', F: '#ec4899', G: '#ef4444' };
+const ptHtml = (l, sm) => `<span class="pt${sm ? ' sm' : ''}" style="--h:${HUES[(l || '')[0]?.toUpperCase()] || '#64748b'}" title="${l ? 'Pontile ' + esc(l) : 'Altro'}">${esc(l || '·')}</span>`;
+const norm = s => s.toLowerCase().replace(/"/g, '').replace(/f\.te\b/g, 'fondamente').replace(/p\.le\b/g, 'piazzale').replace(/\bs\.\s*/g, 'san ').replace(/\s+/g, ' ').trim();
+const LETTER = /^(.*?)\s*"([^"]+)"\s*$/;
+let zones = new Map(), zoneOf = new Map(), snorm = new Map();
+function buildZones() {
+  const g = new Map(); snorm = new Map();
+  for (const [id, name, lat, lon, src] of stops) {
+    snorm.set(id, norm(name));
+    const m = LETTER.exec(name), base = (m ? m[1] : name).replace(/\s+A RICHIEST\w*\s*$/i, '').trim(), key = src + '|' + norm(base);
+    let z = g.get(key); if (!z) g.set(key, z = { key, name: base, src, norm: norm(base), items: [], pick: '*' });
+    z.items.push({ id, letter: m ? m[2] : '', lat, lon });
+  }
+  zones = new Map(); zoneOf = new Map();
+  for (const z of g.values()) {
+    const ls = [...new Set(z.items.map(i => i.letter))].sort((a, b) => (!a) - (!b) || a.localeCompare(b, 'it', { numeric: true }));
+    if (ls.filter(Boolean).length < 2) continue;
+    z.letters = ls; z.letterOf = new Map(z.items.map(i => [i.id, i.letter]));
+    z.center = [z.items.reduce((s, i) => s + i.lat, 0) / z.items.length, z.items.reduce((s, i) => s + i.lon, 0) / z.items.length];
+    zones.set(z.key, z); for (const i of z.items) zoneOf.set(i.id, z);
+  }
+}
+const isOpen = id => openZone ? zoneOf.get(id) === openZone : id === openStop;
+const openStopOrZone = (id, name, src) => { const z = zoneOf.get(id); z ? openZonePanel(z, z.letterOf.get(id) || '*') : openPanel(id, name, src); };
+const zoneItem = z => `<div class="search-item" data-type="zone" data-key="${esc(z.key)}" data-name="${esc(z.name)}">${ICON[z.src]} <span>${esc(z.name)}</span><span class="muted">${z.letters.filter(Boolean).length} pontili</span></div>`;
+
 /* ---- dati statici, linee e ricerca ---- */
 const shapeCache = new Map();
 function loadStatics() {
   shapeCache.clear();
   fetch('/api/routes', { cache: 'no-store' }).then(r => r.json()).then(d => { if (d && !d.error) routesData = d; }).catch(() => {});
-  fetch('/api/stops', { cache: 'no-store' }).then(r => r.json()).then(d => { if (Array.isArray(d)) { stops = d; drawStops(); } }).catch(() => {});
+  fetch('/api/stops', { cache: 'no-store' }).then(r => r.json()).then(d => { if (Array.isArray(d)) { stops = d; buildZones(); drawStops(); } }).catch(() => {});
 }
 async function showRoutes(ids) {
   const tok = ++routeToken;
@@ -282,12 +318,13 @@ async function showRoutes(ids) {
 const clearRoutes = () => { routeToken++; lineLayer.clearLayers(); };
 
 filterEl.addEventListener('input', () => {
-  const q = filterEl.value.trim().toLowerCase();
+  const q = filterEl.value.trim().toLowerCase(), qn = norm(q);
   if (!q) { resultsEl.classList.remove('active'); resultsEl.innerHTML = ''; clearRoutes(); return; }
-  const ms = stops.filter(s => active.has(s[4]) && s[1].toLowerCase().includes(q)).slice(0, 8);
+  const mzAll = [...zones.values()].filter(z => active.has(z.src) && z.norm.includes(qn)), mz = mzAll.slice(0, 5);
+  const ms = stops.filter(s => active.has(s[4]) && snorm.get(s[0])?.includes(qn) && !mzAll.includes(zoneOf.get(s[0]))).slice(0, 8);
   const mr = Object.entries(routesData).filter(([, r]) => active.has(r.src) && String(r.name).toLowerCase().includes(q)).slice(0, 8);
   let html = '';
-  if (ms.length) html += '<div class="search-category">Fermate</div>' + ms.map(s =>
+  if (mz.length || ms.length) html += '<div class="search-category">Fermate</div>' + mz.map(zoneItem).join('') + ms.map(s =>
     `<div class="search-item" data-type="stop" data-id="${esc(s[0])}" data-name="${esc(s[1])}" data-lat="${s[2]}" data-lon="${s[3]}" data-src="${esc(s[4])}">📍 ${esc(s[1])}</div>`).join('');
   if (mr.length) html += '<div class="search-category">Linee</div>' + mr.map(([id, r]) =>
     `<div class="search-item" data-type="route" data-id="${esc(id)}" data-name="${esc(r.name)}">${badge(r.name, r.color, r.src)} <span>Linea ${esc(r.name)}</span></div>`).join('');
@@ -298,7 +335,8 @@ resultsEl.addEventListener('click', e => {
   const it = e.target.closest('.search-item');
   if (!it || !it.dataset.type) return;
   filterEl.value = it.dataset.name; resultsEl.classList.remove('active');
-  if (it.dataset.type === 'stop') { map.flyTo([+it.dataset.lat, +it.dataset.lon], 16); openPanel(it.dataset.id, it.dataset.name, it.dataset.src); }
+  if (it.dataset.type === 'zone') { const z = zones.get(it.dataset.key); if (z) { map.flyTo(z.center, 16); openZonePanel(z); } }
+  else if (it.dataset.type === 'stop') { map.flyTo([+it.dataset.lat, +it.dataset.lon], 16); openStopOrZone(it.dataset.id, it.dataset.name, it.dataset.src); }
   else showRoutes([it.dataset.id]);
 });
 document.addEventListener('click', e => { if (!e.target.closest('.search-wrapper')) resultsEl.classList.remove('active'); });
@@ -366,8 +404,8 @@ function drawStops() {
   for (const [id, name, lat, lon, src] of stops) {
     if (!active.has(src) || !b.contains([lat, lon])) continue;
     if (++n > 2500) break;
-    L.circleMarker([lat, lon], { radius: 5, weight: 1.5, color: '#0f172a', fillColor: id === openStop ? '#f5a623' : '#ffffff', fillOpacity: .9 })
-      .bindTooltip(`${ICON[src]} ${esc(name)}`).on('click', () => openPanel(id, name, src)).addTo(stopLayer);
+    L.circleMarker([lat, lon], { radius: 5, weight: 1.5, color: '#0f172a', fillColor: isOpen(id) ? '#f5a623' : '#ffffff', fillOpacity: .9 })
+      .bindTooltip(`${ICON[src]} ${esc(name)}`).on('click', () => openStopOrZone(id, name, src)).addTo(stopLayer);
   }
 }
 map.on('moveend', drawStops);
@@ -383,13 +421,20 @@ function resetTrip() {
 }
 function openPanel(id, name, src) {
   resetTrip();
-  openStop = id; openStopName = name; openSrc = src; lastDeps = null; panel.hidden = false;
+  openZone = null; openStop = id; openStopName = name; openSrc = src; lastDeps = null; panel.hidden = false;
   pbadge.innerHTML = ''; pname.textContent = `${ICON[src]} ${name}`; psub.textContent = ''; pstatus.textContent = '';
   plist.innerHTML = '<p class="muted">Caricamento…</p>';
   loadDepartures(); startPanelTimer(); drawStops();
 }
+function openZonePanel(z, pick = '*') {
+  resetTrip();
+  z.pick = pick; openZone = z; openStop = z.items.map(i => i.id).join(','); openStopName = z.name; openSrc = z.src; lastDeps = null; panel.hidden = false;
+  pbadge.innerHTML = ''; pname.textContent = `${ICON[z.src]} ${z.name}`; psub.textContent = ''; pstatus.textContent = '';
+  plist.innerHTML = '<p class="muted">Caricamento…</p>';
+  loadDepartures(); startPanelTimer(); drawStops();
+}
 function closePanel() {
-  openStop = null; resetTrip(); panel.hidden = true; clearInterval(panelTimer);
+  openStop = null; openZone = null; resetTrip(); panel.hidden = true; clearInterval(panelTimer);
   if (!filterEl.value) clearRoutes();
   drawStops();
 }
@@ -398,13 +443,13 @@ psub.addEventListener('click', e => {
   if (e.target.id !== 'pback') return;
   e.preventDefault();
   const b = openTrip && openTrip.back;
-  if (b) openPanel(b.id, b.name, b.src);
+  if (b) b.zone ? openZonePanel(b.zone) : openPanel(b.id, b.name, b.src);
 });
 
 async function loadDepartures() {
   const id = openStop; if (!id) return;
   try {
-    const d = await (await fetch(`/api/stop?id=${encodeURIComponent(id)}${schedQS()}`, { cache: 'no-store' })).json();
+    const d = await (await fetch(`${openZone ? '/api/zone?ids=' : '/api/stop?id='}${encodeURIComponent(id)}${schedQS()}`, { cache: 'no-store' })).json();
     if (d.error) throw new Error(d.error);
     if (id !== openStop) return;
     lastDeps = d; renderDepartures();
@@ -412,10 +457,15 @@ async function loadDepartures() {
 }
 function renderDepartures() {
   if (!lastDeps || !openStop) return;
-  const live = mode === 'live';
-  psub.textContent = (live ? `Previsioni live · ${new Date(lastDeps.liveUpdated).toLocaleTimeString('it-IT')}` : 'Orario programmato') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
-  const rows = lastDeps.departures.map(x => ({ ...x, tIn: live ? x.expIn : x.schedIn }))
-    .filter(x => x.tIn >= -30 && x.tIn <= 120 && active.has(x.src || openSrc)).sort((a, b) => a.tIn - b.tIn).slice(0, 30);
+  const live = mode === 'live', z = openZone;
+  psub.textContent = (z ? `${z.letters.filter(Boolean).length} pontili · ` : '') + (live ? `Previsioni live · ${new Date(lastDeps.liveUpdated).toLocaleTimeString('it-IT')}` : 'Orario programmato') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
+  const base = lastDeps.departures.map(x => ({ ...x, tIn: live ? x.expIn : x.schedIn }))
+    .filter(x => x.tIn >= -30 && x.tIn <= 120 && active.has(x.src || openSrc));
+  const rows = base.filter(x => !z || z.pick === '*' || z.letterOf.get(x.stop) === z.pick).sort((a, b) => a.tIn - b.tIn).slice(0, z ? 60 : 30);
+  const chips = z ? '<div class="chips"><span class="muted">Pontile</span>'
+    + `<button class="chip${z.pick === '*' ? ' on' : ''}" data-p="*">Tutti <small>${base.length}</small></button>`
+    + z.letters.map(l => `<button class="chip${z.pick === l ? ' on' : ''}" data-p="${esc(l)}">${ptHtml(l, true)}<small>${base.filter(x => z.letterOf.get(x.stop) === l).length}</small></button>`).join('')
+    + '</div>' : '';
   const html = rows.map(x => {
     let cls = '', note = '';
     const src = x.src || openSrc;
@@ -423,17 +473,17 @@ function renderDepartures() {
     else if (live) { if (!x.live) note = 'da orario'; else [cls, note] = delayInfo(x.delay, x.sched, ' min'); }
     if (live && x.vehicle) note += (note ? ' · ' : '') + vehName(src, x.vehicle);
     if (x.arrival) note = 'Termina qui' + (note ? ' · ' + note : '');
-    return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" role="button" tabindex="0" title="Segui il mezzo">${badge(x.line, x.color, src)}`
-      + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${esc(note)}</div></div>`
+    return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" role="button" tabindex="0" title="Segui il mezzo">${badge(x.line, x.color, src)}`
+      + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}${z ? ' z' : ''}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}<span>${esc(note)}</span></div></div>`
       + `<div class="dt"><strong>${esc(live ? x.exp : x.sched)}</strong><div class="muted">${x.tIn <= 0 ? 'adesso' : x.tIn + 'm'}</div></div></div>`;
   }).join('');
-  plist.innerHTML = html ? html + '<p class="muted" style="margin-top:.75rem;text-align:center">Tocca un passaggio per seguire il mezzo.</p>' : '<p class="muted">Nessun passaggio nell\'orario selezionato.</p>';
+  plist.innerHTML = chips + (html ? html + '<p class="muted" style="margin-top:.75rem;text-align:center">Tocca un passaggio per seguire il mezzo.</p>' : '<p class="muted">Nessun passaggio nell\'orario selezionato.</p>');
 }
 
 /* ---- dettaglio corsa ---- */
 function openTripPanel(v, back = null) {
   setFollow(false);
-  openStop = null; clearInterval(panelTimer); lastTrip = null; tripLayer.clearLayers();
+  openStop = null; openZone = null; clearInterval(panelTimer); lastTrip = null; tripLayer.clearLayers();
   selVeh = v.id;
   openTrip = { src: v.src, tripId: v.tripId, routeId: v.routeId, line: v.line, label: v.label, back, drawn: false };
   panel.hidden = false;
@@ -506,8 +556,10 @@ function renderTrip(first) {
   if (row) row.scrollIntoView({ block: 'center' });
 }
 plist.addEventListener('click', e => {
+  const chip = e.target.closest('.chip');
+  if (chip && openZone) { openZone.pick = chip.dataset.p; return renderDepartures(); }
   const dep = e.target.closest('.dep.go');
-  if (dep && openStop) return followDeparture(dep.dataset.trip, dep.dataset.src);
+  if (dep && openStop) return followDeparture(dep.dataset.trip, dep.dataset.src, dep.dataset.stop);
   const row = e.target.closest('.st'); if (!row || !lastTrip) return;
   const s = lastTrip.stops[+row.dataset.i];
   if (s && s.lat != null) map.flyTo([s.lat, s.lon], Math.max(map.getZoom(), 15));
@@ -519,10 +571,10 @@ function followTarget(ll, z) {
   const p = map.project(ll, z), narrow = window.innerWidth <= 640;
   return map.unproject(p.add(narrow ? [0, map.getSize().y * .22] : [181, 0]), z);
 }
-function followDeparture(tripId, src) {
+function followDeparture(tripId, src, stop) {
   src = src || openSrc;
-  const x = lastDeps && lastDeps.departures.find(d => d.tripId === tripId && (d.src || openSrc) === src); if (!x) return;
-  const back = { id: openStop, name: openStopName, src: openSrc };
+  const x = lastDeps && lastDeps.departures.find(d => d.tripId === tripId && (d.src || openSrc) === src && (!stop || d.stop === stop)); if (!x) return;
+  const back = { id: openStop, name: openStopName, src: openSrc, zone: openZone };
   const v = vehicles.find(c => c.src === src && c.tripId === tripId)
     || { id: null, src, tripId, routeId: null, line: x.line, label: x.vehicle, headsign: x.headsign, color: x.color };
   openTripPanel(v, back);

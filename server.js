@@ -217,6 +217,20 @@ const API = {
              departures: schedule.departures(D[i], S[i].live, sid, q(u, 'secs'), q(u, 'date'))
                .map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) };
   },
+  '/api/zone': u => {   // passaggi di più fermate insieme (pontili della stessa zona)
+    const ids = (q(u, 'ids') || '').split(',').slice(0, 16), out = [], lab = {};
+    if (!ids.some(f => D[splitId(f)[0]])) throw fail(404, 'zona sconosciuta');
+    let note = null, liveUpdated = 0;
+    for (const full of ids) {
+      const [i, sid] = splitId(full); if (!D[i]) continue;
+      lab[i] ||= new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
+      for (const x of schedule.departures(D[i], S[i].live, sid, q(u, 'secs'), q(u, 'date')))
+        out.push({ ...x, src: i, stop: full, vehicle: lab[i].get(x.tripId) || null });
+      note = noteOf(D[i], q(u, 'date')); liveUpdated = Math.max(liveUpdated, S[i].updated);
+    }
+    out.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn));
+    return { liveUpdated, note, departures: out.slice(0, 150) };
+  },
   '/api/trip': u => {
     const [i, tid] = splitId(q(u, 'id'));
     if (!D[i] || !D[i].stopTimes.has(tid)) throw fail(404, 'corsa sconosciuta');
