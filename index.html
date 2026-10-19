@@ -66,7 +66,7 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .dep.go{cursor:pointer}
 .dep.go:hover{background:color-mix(in srgb,var(--fg) 5%,transparent)}
 
-.st{display:grid;grid-template-columns:24px 1fr auto;gap:.4rem;align-items:center;height:42px;padding:0 0.3rem;border-bottom:1px solid var(--line);border-radius:6px;cursor:pointer;transition:background .15s}
+.st{display:grid;grid-template-columns:28px 1fr auto;gap:.4rem;align-items:center;height:42px;padding:0 0.3rem;border-bottom:1px solid var(--line);border-radius:6px;cursor:pointer;transition:background .15s}
 .st:hover{background:color-mix(in srgb,var(--fg) 5%,transparent)}
 
 .dm,.sn{min-width:0;display:flex;flex-direction:column;gap:0}
@@ -80,17 +80,23 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .dn.late{color:var(--late)}.dn.ok,.dn.early{color:var(--ok)}
 .sched-crossed{text-decoration:line-through;opacity:0.6;font-size:.7rem;font-weight:normal}
 
-/* Timeline grafica nel dettaglio corsa allineata correttamente */
+/* Timeline grafica nel dettaglio corsa allineata perfettamente al centro */
 .tl{position:relative;z-index:0;padding-top:.1rem}
-.rail{position:absolute;left:11px;top:0;bottom:0;width:2.5px;background:var(--line);z-index:1}
-.st .rail-cell{position:relative;height:100%;display:flex;align-items:center;justify-content:center}
-.dot{width:10px;height:10px;border-radius:50%;background:var(--bg);border:2px solid var(--rc);z-index:2;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:800}
+.rail{position:relative;width:100%;height:100%}
+.rail::before{content:'';position:absolute;left:50%;top:0;bottom:0;width:2.5px;margin-left:-1.25px;background:var(--line);z-index:1}
+.st.passed .rail::before{background:var(--rc)}
+.st.first .rail::before{top:21px}
+.st.last .rail::before{bottom:21px}
+
+.dot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:11px;height:11px;border-radius:50%;background:var(--bg);border:2px solid var(--rc);z-index:2;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:800}
 .st.passed .dot{background:var(--rc);color:var(--check-fg,#fff)}
-@keyframes pulse-dot{0%{transform:scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 70%,transparent)}70%{transform:scale(1.2);box-shadow:0 0 0 5px color-mix(in srgb,var(--rc) 0%,transparent)}100%{transform:scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 70%,transparent)}}
+
+@keyframes pulse-dot{0%{transform:translate(-50%,-50%) scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 70%,transparent)}70%{transform:translate(-50%,-50%) scale(1.2);box-shadow:0 0 0 5px color-mix(in srgb,var(--rc) 0%,transparent)}100%{transform:translate(-50%,-50%) scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 70%,transparent)}}
 .st.next .dot{box-shadow:0 0 0 2.5px color-mix(in srgb,var(--rc) 30%,transparent);animation:pulse-dot 1.5s infinite ease-in-out}
 .st.passed .nm,.st.passed .tm,.st.passed .muted{opacity:.35}
-.trav{position:absolute;left:10.5px;top:21px;width:2.5px;height:0;background:var(--rc);z-index:1;transition:height 14s linear}
-.veh{position:absolute;left:2px;top:21px;width:22px;height:22px;margin-top:-11px;border-radius:50%;background:var(--rc);border:2px solid var(--bg);box-shadow:0 2px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:.65rem;z-index:3;transition:top 14s linear}
+
+.trav{position:absolute;left:14px;top:21px;width:2.5px;height:0;margin-left:-1.25px;background:var(--rc);z-index:1;transition:height 14s linear}
+.veh{position:absolute;left:14px;top:21px;width:22px;height:22px;margin-left:-11px;margin-top:-11px;border-radius:50%;background:var(--rc);border:2px solid var(--bg);box-shadow:0 2px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:.65rem;z-index:3;transition:top 14s linear}
 
 /* Quadrato Giallo Pontile compatto */
 .pt{width:16px;height:16px;min-width:16px;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex:none;background:var(--yellow);color:#000;box-shadow:0 1px 2px rgba(0,0,0,0.2)}
@@ -598,8 +604,9 @@ function tripHtml(d) {
       timeHtml = `<div class="tm-time-wrap"><strong>${esc(s.sched)}</strong></div>`;
     }
     const meta = s.skipped ? 'Fermata saltata' : s.state === 'next' ? (s.inMin <= 0 ? 'In arrivo' : `tra ${s.inMin} min`) : '';
-    return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === 0 ? ' first' : ''}${i === n - 1 ? ' last' : ''}" data-i="${i}">`
-      + `<div class="rail-cell"><div class="rail"></div><span class="dot">${s.state === 'passed' ? '✓' : ''}</span></div>`
+    const isFirst = i === 0 ? ' first' : '', isLast = i === n - 1 ? ' last' : '';
+    return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${isFirst}${isLast}" data-i="${i}">`
+      + `<div class="rail"><span class="dot">${s.state === 'passed' ? '✓' : ''}</span></div>`
       + `<div class="sn"><div class="nm">${esc(s.name)}</div>${meta ? `<div class="muted">${meta}</div>` : ''}</div>`
       + `<div class="tm">${timeHtml}<div class="muted">${sub}</div></div></div>`;
   }).join('');
