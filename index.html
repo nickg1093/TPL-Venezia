@@ -80,7 +80,7 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .dn.late{color:var(--late)}.dn.ok,.dn.early{color:var(--ok)}
 .sched-crossed{text-decoration:line-through;opacity:0.6;font-size:.7rem;font-weight:normal}
 
-/* Timeline grafica unificata: la linea grigia e quella colorata condividono esattamente lo stesso posizionamento CSS */
+/* Timeline grafica unificata */
 .tl{position:relative;z-index:0;padding-top:.1rem}
 .rail-col{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
 .rail-line{position:absolute;left:50%;top:0;bottom:0;width:2.5px;margin-left:-1.25px;background:var(--line);z-index:1}
@@ -94,9 +94,9 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .st.next .dot{box-shadow:0 0 0 2.5px color-mix(in srgb,var(--rc) 30%,transparent);animation:pulse-dot 1.5s infinite ease-in-out}
 .st.passed .nm,.st.passed .tm,.st.passed .muted{opacity:.35}
 
-/* La linea attiva (.trav) e l'icona (.veh) usano esattamente lo stesso centro della colonna (.rail-col) */
-.trav{position:absolute;left:50%;top:21px;width:2.5px;margin-left:-1.25px;height:0;background:var(--rc);z-index:2;transition:height 14s linear}
-.veh{position:absolute;left:50%;top:21px;width:22px;height:22px;margin-left:-11px;margin-top:-11px;border-radius:50%;background:var(--rc);border:2px solid var(--bg);box-shadow:0 2px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:.65rem;z-index:4;transition:top 14s linear}
+/* La linea rossa attiva (.trav) e l'icona (.veh) usano l'asse x calcolato sul primo pallino */
+.trav{position:absolute;top:21px;width:2.5px;margin-left:-1.25px;height:0;background:var(--rc);z-index:2;transition:height 14s linear}
+.veh{position:absolute;top:21px;width:22px;height:22px;margin-left:-11px;margin-top:-11px;border-radius:50%;background:var(--rc);border:2px solid var(--bg);box-shadow:0 2px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:.65rem;z-index:4;transition:top 14s linear}
 
 /* Quadrato Giallo Pontile compatto */
 .pt{width:16px;height:16px;min-width:16px;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex:none;background:var(--yellow);color:#000;box-shadow:0 1px 2px rgba(0,0,0,0.2)}
@@ -612,11 +612,22 @@ function tripHtml(d) {
   }).join('');
   return `<div class="tl" style="--rc:${k.rail};--check-fg:${k.contrast}"><div class="trav"></div><div class="veh">${vehIcon(d.trip.src, d.trip.vehicle)}</div>${rows}</div>`;
 }
+
+/* Posizionamento geometrico preciso calcolato sull'asse x dei pallini */
 function placeVehicle(d, first) {
   const tl = plist.querySelector('.tl'), veh = tl && tl.querySelector('.veh'), trav = tl && tl.querySelector('.trav');
   if (!veh) return;
   const rows = tl.querySelectorAll('.st'), a = rows[d.progress.from], b = rows[d.progress.from + 1];
   if (!a) { veh.style.display = 'none'; trav.style.display = 'none'; return; }
+
+  // Allineamento orizzontale automatico calcolato direttamente dal centro del pallino
+  const firstDot = tl.querySelector('.dot');
+  if (firstDot) {
+    const xCenter = firstDot.offsetLeft + firstDot.offsetWidth / 2;
+    veh.style.left = xCenter + 'px';
+    trav.style.left = xCenter + 'px';
+  }
+
   const ca = a.offsetTop + 21, cb = b ? b.offsetTop + 21 : ca, y = ca + (cb - ca) * (b ? d.progress.frac : 0);
   const from = !first && vehMemo.trip === openTrip.tripId ? vehMemo.y : y;
   veh.style.transition = trav.style.transition = 'none';
@@ -626,6 +637,7 @@ function placeVehicle(d, first) {
   veh.style.top = y + 'px'; trav.style.height = Math.max(0, y - 21) + 'px';
   vehMemo = { trip: openTrip.tripId, y };
 }
+
 function renderTrip(first) {
   const d = lastTrip; if (!d || !openTrip) return;
   let status = 'programmato';
