@@ -6,8 +6,8 @@
 <title>Venezia TPL live</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-:root{--bg:#0d1317;--fg:#f0f4f8;--muted:#8a9ba8;--line:rgba(255,255,255,.08);--accent:#38bdf8;--late:#f87171;--ok:#4ade80;--glass:rgba(15,23,42,.75);--solid:#0f172a}
-@media(prefers-color-scheme:light){:root{--bg:#f8fafc;--fg:#0f172a;--muted:#64748b;--line:rgba(0,0,0,.08);--accent:#0284c7;--late:#dc2626;--ok:#16a34a;--glass:rgba(255,255,255,.85);--solid:#fff}}
+:root{--bg:#0d1317;--fg:#f0f4f8;--muted:#8a9ba8;--line:rgba(255,255,255,.08);--accent:#38bdf8;--late:#f87171;--ok:#4ade80;--glass:rgba(15,23,42,.75);--solid:#0f172a;--yellow:#facc15}
+@media(prefers-color-scheme:light){:root{--bg:#f8fafc;--fg:#0f172a;--muted:#64748b;--line:rgba(0,0,0,.08);--accent:#0284c7;--late:#dc2626;--ok:#16a34a;--glass:rgba(255,255,255,.85);--solid:#fff;--yellow:#eab308}}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--fg);overflow:hidden}
@@ -51,24 +51,26 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .banner{margin:.4rem 0;padding:.5rem;border-radius:8px;border:1px solid var(--late);color:var(--late);font-weight:600;font-size:.8rem;background:color-mix(in srgb,var(--late) 10%,transparent)}
 #pback{color:var(--accent);text-decoration:none;font-weight:600}
 
-/* passaggi */
-.dep{display:grid;grid-template-columns:auto 1fr auto;gap:.75rem;align-items:center;padding:.6rem 0;border-bottom:1px solid var(--line)}
-.dep.go{cursor:pointer;border-radius:8px;padding:.4rem .5rem;transition:background .15s}
+/* passaggi in stile Google Maps */
+.dep{display:grid;grid-template-columns:auto 1fr auto;gap:.75rem;align-items:center;padding:.7rem 0.5rem;border-bottom:1px solid var(--line);border-radius:8px;transition:background .15s}
+.dep.go{cursor:pointer}
 .dep.go:hover{background:color-mix(in srgb,var(--fg) 5%,transparent)}
-.dm{min-width:0}
-.dh{font-weight:600;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dn{font-size:.75rem;color:var(--muted)}
-.dt{text-align:right}
-.dt strong{font-size:.95rem;font-variant-numeric:tabular-nums}
+.dm{min-width:0;display:flex;flex-direction:column;gap:.15rem}
+.dh{font-weight:600;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dn{font-size:.78rem;color:var(--muted);display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+.dt{text-align:right;display:flex;flex-direction:column;align-items:flex-end}
+.dt strong{font-size:1rem;font-variant-numeric:tabular-nums;font-weight:700}
+.dt .in-min{font-size:.75rem;font-weight:600}
 .cx{opacity:.5}.cx .dh{text-decoration:line-through}
 .dn.late{color:var(--late)}.dn.ok,.dn.early{color:var(--ok)}
-.dn.z{display:flex;align-items:center;gap:.4rem}
-.pt{--h:#64748b;min-width:22px;height:22px;padding:0 5px;border-radius:99px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:none;background:color-mix(in srgb,var(--h) 22%,transparent);color:var(--h);border:1px solid color-mix(in srgb,var(--h) 45%,transparent)}
-.pt.sm{min-width:18px;height:18px;font-size:11px;padding:0 4px}
-.chips{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;padding:.5rem 0 .3rem}
-button.chip{padding:.2rem .65rem;font-size:.8rem}
-.chip small{font-size:.7rem;opacity:.7}
-.chip.on,.chip.on:hover{background:var(--accent);color:var(--bg);border-color:transparent;font-weight:600}
+
+/* Quadrato Giallo Pontile */
+.pt{width:22px;height:22px;min-width:22px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex:none;background:var(--yellow);color:#000;box-shadow:0 1px 3px rgba(0,0,0,0.2)}
+.pt.sm{width:18px;height:18px;min-width:18px;font-size:11px;border-radius:3px}
+
+.chips{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;padding:.4rem 0 .6rem}
+button.chip{padding:.25rem .7rem;font-size:.8rem;border-radius:8px;display:inline-flex;align-items:center;gap:.4rem}
+.chip.on,.chip.on:hover{background:var(--accent);color:var(--bg);border-color:transparent;font-weight:700}
 .search-item>.muted{margin-left:auto}
 
 /* mezzi */
@@ -192,9 +194,9 @@ const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.get
 const fmtSecs = s => `${p2(Math.floor(s / 3600) % 24)}:${p2(Math.floor(s % 3600 / 60))}:${p2(s % 60)}`;
 const localDate = () => { const d = new Date(); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; };
 
-const statusEl = $('status'), filterEl = $('filter'), resultsEl = $('search-results'), panel = $('panel'), plist = $('plist');
-const pname = $('pname'), psub = $('psub'), pstatus = $('pstatus'), pbadge = $('pbadge'), hintEl = $('hint'), followEl = $('follow');
-const range = $('tl-range'), dateEl = $('tl-date');
+const statusEl = $('status'), filterEl = $('filter'), resultsEl =$('search-results'), panel = $('panel'), plist =$('plist');
+const pname = $('pname'), psub =$('psub'), pstatus = $('pstatus'), pbadge =$('pbadge'), hintEl = $('hint'), followEl =$('follow');
+const range = $('tl-range'), dateEl =$('tl-date');
 
 let mode = 'live', staticVer = -1, lastUpdate = Date.now(), lastLoadSecs = -1, isPlaying = false, playTimer = null;
 const active = new Set(['nav', 'aut']);
@@ -231,9 +233,7 @@ function applyTime(secs, force) {
 }
 $('tl-play').onclick = () => {
   isPlaying = !isPlaying; syncPlay(); clearInterval(playTimer);
-  if (isPlaying) playTimer = setInterval(() => { const v = +range.value + +$('tl-speed').value; applyTime(v > 86400 ? 0 : v); }, 1000);
-};
-$('tl-now').onclick = () => { stopPlay(); dateEl.value = localDate(); applyTime(nowSecs(), true); };
+  if (isPlaying) playTimer = setInterval(() => { const v = +range.value + +$('tl-speed').value; applyTime(v > 86400 ? 0 : v); }, 1000); };$('tl-now').onclick = () => { stopPlay(); dateEl.value = localDate(); applyTime(nowSecs(), true); };
 range.oninput = () => applyTime(+range.value);
 dateEl.onchange = () => applyTime(+range.value, true);
 
@@ -263,22 +263,20 @@ const badge = (line, color, src, extra = '') => {
 };
 const busHtml = v => badge(v.line, v.color, v.src, `${mode === 'sched' ? ' sched' : ''}${v.id === selVeh ? ' sel' : ''}`);
 const tip = v => esc(`${vehIcon(v.src, v.label)} ${v.line}${v.headsign ? ' → ' + v.headsign : ''}${v.label ? ' · ' + vehName(v.src, v.label) : ''}`);
-const delayInfo = (dl, sched, unit) => dl >= 1 ? ['late', `in ritardo di ${dl}${unit} (prog. ${sched})`]
-  : dl <= -1 ? ['early', `in anticipo di ${-dl}${unit} (prog. ${sched})`] : ['ok', `in orario (prog. ${sched})`];
+const delayInfo = (dl, sched, unit) => dl >= 1 ? ['late', `+${dl}${unit}`]
+  : dl <= -1 ? ['early', `${dl}${unit}`] : ['ok', `in orario`];
 
-/* ---- zone: fermate con lo stesso nome vicine tra loro (pontili A, B, C…, corsie, due lati della strada) ---- */
-const PAL = ['#3b82f6', '#a855f7', '#14b8a6', '#f59e0b', '#22c55e', '#ec4899', '#ef4444'];
-const hue = l => /^[A-Za-z]/.test(l) ? PAL[(l.toUpperCase().charCodeAt(0) - 65) % 7] : /^\d+$/.test(l) ? PAL[(+l - 1) % 7] : '#64748b';
-const ptHtml = (l, sm, src) => `<span class="pt${sm ? ' sm' : ''}" style="--h:${hue(l || '')}" title="${l ? (src === 'nav' ? 'Pontile ' : 'Fermata ') + esc(l) : 'Altro'}">${esc(l || '·')}</span>`;
+/* ---- Quadrato Giallo per i Pontili ---- */
+const ptHtml = (l, sm) => `<span class="pt${sm ? ' sm' : ''}">${esc((l || '').toUpperCase())}</span>`;
 const norm = s => s.toLowerCase().replace(/"/g, '').replace(/f\.te\b/g, 'fondamente').replace(/p\.le\b/g, 'piazzale').replace(/\bs\.\s*/g, 'san ').replace(/\s+/g, ' ').trim();
-// Codice nel nome: F.te Nove "A"  /  VENEZIA CORSIA C  /  Stazione MESTRE FS C4  /  MESTRE CENTRO B2
 const LETTER = /^(.*?)\s*(?:"([^"]+)"|\bCORSIA\s+([A-Z0-9]+)|\s([A-Z]\d{1,2}))\s*$/i;
-const ALIAS = { 'favretti mestre fs': 'stazione mestre fs' };   // nomi diversi che appartengono alla stessa zona
+const ALIAS = { 'favretti mestre fs': 'stazione mestre fs' };
 const nice = n => n === n.toUpperCase() && /[A-Z]/.test(n) ? n.toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_, a, b) => a + b.toUpperCase()) : n;
-const ZONE_M = 300;   // oltre questa distanza, due fermate con lo stesso nome sono luoghi diversi
+const ZONE_M = 300;
 const meters = (a, b) => Math.hypot((a.lat - b.lat) * 111000, (a.lon - b.lon) * 78000);
 const unitOf = z => z.src === 'nav' ? ['Pontile', 'pontili'] : ['Fermata', 'fermate'];
 let zones = new Map(), zoneOf = new Map(), snorm = new Map();
+
 function buildZones() {
   const byName = new Map(); snorm = new Map();
   for (const [id, name, lat, lon, src] of stops) {
@@ -288,8 +286,6 @@ function buildZones() {
     l.push({ id, name: base, full: strip(name), src, letter: m ? (m[2] || m[3] || m[4]).toUpperCase() : '', lat, lon });
   }
   const cmp = (a, b) => (!a) - (!b) || a.localeCompare(b, 'it', { numeric: true });
-  // etichette: il codice del nome (C2, B1, "A", CORSIA C) se c'è; altrimenti un numero per posizione
-  // (stessa posizione = stesso numero), salvo una sola posizione senza codice (resta "·", es. Ferrovia)
   const assign = (c, codes) => {
     const pk = i => i.lat.toFixed(5) + ',' + i.lon.toFixed(5), places = new Map();
     for (const i of c) if (!(codes && i.letter) && !places.has(pk(i))) places.set(pk(i), String(places.size + 1));
@@ -298,7 +294,7 @@ function buildZones() {
   };
   zones = new Map(); zoneOf = new Map();
   for (const items of byName.values()) {
-    const cl = [];   // gruppi di fermate collegate a catena entro ZONE_M
+    const cl = [];
     for (const it of items) {
       let cur = [it];
       for (let k = cl.length - 1; k >= 0; k--) if (cl[k].some(o => meters(o, it) <= ZONE_M)) cur = cur.concat(cl.splice(k, 1)[0]);
@@ -308,7 +304,7 @@ function buildZones() {
       if (c.length < 2) continue;
       c.sort((a, b) => a.id.localeCompare(b.id, 'it', { numeric: true }));
       let letters = assign(c, true), name = c[0].name;
-      if (letters.length < 2) { letters = assign(c, false); name = c[0].full; }   // stesso codice su tutte (es. Park P14): conta il nome intero
+      if (letters.length < 2) { letters = assign(c, false); name = c[0].full; }
       if (letters.length < 2) continue;
       const z = { key: c[0].id, name: nice(name), src: c[0].src, items: c, pick: '*', letters,
         letterOf: new Map(c.map(i => [i.id, i.label])),
@@ -318,7 +314,17 @@ function buildZones() {
     }
   }
 }
-const isOpen = id => openZone ? zoneOf.get(id) === openZone : id === openStop;
+
+// Verifica se una fermata/pontile specifico è attualmente selezionato nel filtro
+const isStopSelected = id => {
+  if (openZone) {
+    const z = zoneOf.get(id);
+    if (z !== openZone) return false;
+    return openZone.pick === '*' || openZone.letterOf.get(id) === openZone.pick;
+  }
+  return id === openStop;
+};
+
 const openStopOrZone = (id, name, src) => { const z = zoneOf.get(id); z ? openZonePanel(z, z.letterOf.get(id) || '*') : openPanel(id, name, src); };
 const zoneItem = z => `<div class="search-item" data-type="zone" data-key="${esc(z.key)}" data-name="${esc(z.name)}">${ICON[z.src]} <span>${esc(z.name)}</span><span class="muted">${z.letters.length} ${unitOf(z)[1]}</span></div>`;
 
@@ -418,12 +424,12 @@ async function load() {
     if (d.error) throw new Error(d.error);
     const wait = [...active].filter(s => d.ready && !d.ready[s]);
     statusEl.className = '';
-    statusEl.textContent = `${[...active].map(s => `${ICON[s]} ${vehicles.filter(v => v.src === s).length}`).join(' · ')} ${m === 'sched' ? 'pianificato' : 'mezzi'} · ${new Date(d.updated).toLocaleTimeString('it-IT')}`
+    statusEl.textContent = `${[...active].map(s => `${ICON[s]}${vehicles.filter(v => v.src === s).length}`).join(' · ')} ${m === 'sched' ? 'pianificato' : 'mezzi'} · ${new Date(d.updated).toLocaleTimeString('it-IT')}`
       + (wait.length ? ` · orari in caricamento: ${wait.join(', ')}` : '');
   } catch (e) { if (m === mode) { statusEl.className = 'err'; statusEl.textContent = 'Dati non aggiornati: ' + e.message; } }
 }
 
-/* ---- fermate ---- */
+/* ---- fermate e illuminazione dinamica dei pontili ---- */
 function drawStops() {
   stopLayer.clearLayers();
   const near = map.getZoom() >= MIN_STOP_ZOOM;
@@ -433,8 +439,14 @@ function drawStops() {
   for (const [id, name, lat, lon, src] of stops) {
     if (!active.has(src) || !b.contains([lat, lon])) continue;
     if (++n > 2500) break;
-    L.circleMarker([lat, lon], { radius: 5, weight: 1.5, color: '#0f172a', fillColor: isOpen(id) ? '#f5a623' : '#ffffff', fillOpacity: .9 })
-      .bindTooltip(`${ICON[src]} ${esc(name)}`).on('click', () => openStopOrZone(id, name, src)).addTo(stopLayer);
+    const selected = isStopSelected(id);
+    L.circleMarker([lat, lon], {
+      radius: selected ? 8 : 5,
+      weight: selected ? 2 : 1.5,
+      color: '#0f172a',
+      fillColor: selected ? '#f5a623' : '#ffffff',
+      fillOpacity: 0.9
+    }).bindTooltip(`${ICON[src]} ${esc(name)}`).on('click', () => openStopOrZone(id, name, src)).addTo(stopLayer);
   }
 }
 map.on('moveend', drawStops);
@@ -484,6 +496,7 @@ async function loadDepartures() {
     lastDeps = d; renderDepartures();
   } catch (e) { if (id === openStop) plist.innerHTML = `<p class="late">Dati non disponibili: ${esc(e.message)}</p>`; }
 }
+
 function renderDepartures() {
   if (!lastDeps || !openStop) return;
   const live = mode === 'live', z = openZone;
@@ -491,21 +504,34 @@ function renderDepartures() {
   const base = lastDeps.departures.map(x => ({ ...x, tIn: live ? x.expIn : x.schedIn }))
     .filter(x => x.tIn >= -30 && x.tIn <= 120 && active.has(x.src || openSrc));
   const rows = base.filter(x => !z || z.pick === '*' || z.letterOf.get(x.stop) === z.pick).sort((a, b) => a.tIn - b.tIn).slice(0, z ? 60 : 30);
+  
+  // Filtri pontili puliti: solo lettera in quadrato giallo
   const chips = z ? `<div class="chips"><span class="muted">${unitOf(z)[0]}</span>`
-    + `<button class="chip${z.pick === '*' ? ' on' : ''}" data-p="*">Tutti <small>${base.length}</small></button>`
-    + z.letters.map(l => `<button class="chip${z.pick === l ? ' on' : ''}" data-p="${esc(l)}">${ptHtml(l, true, z.src)}<small>${base.filter(x => z.letterOf.get(x.stop) === l).length}</small></button>`).join('')
+    + `<button class="chip${z.pick === '*' ? ' on' : ''}" data-p="*">Tutti</button>`
+    + z.letters.map(l => `<button class="chip${z.pick === l ? ' on' : ''}" data-p="${esc(l)}">${ptHtml(l, true)}</button>`).join('')
     + '</div>' : '';
+    
+  // Passaggi in stile Google Maps Live
   const html = rows.map(x => {
     let cls = '', note = '';
     const src = x.src || openSrc;
     if (x.cancel) { cls = 'late'; note = x.cancel === 'trip' ? 'Corsa soppressa' : 'Fermata saltata'; }
-    else if (live) { if (!x.live) note = 'da orario'; else [cls, note] = delayInfo(x.delay, x.sched, ' min'); }
-    if (live && x.vehicle) note += (note ? ' · ' : '') + vehName(src, x.vehicle);
-    if (x.arrival) note = 'Termina qui' + (note ? ' · ' + note : '');
-    return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" role="button" tabindex="0" title="Segui il mezzo">${badge(x.line, x.color, src)}`
-      + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}${z ? ' z' : ''}">${z ? ptHtml(z.letterOf.get(x.stop), true, z.src) : ''}<span>${esc(note)}</span></div></div>`
-      + `<div class="dt"><strong>${esc(live ? x.exp : x.sched)}</strong><div class="muted">${x.tIn <= 0 ? 'adesso' : x.tIn + 'm'}</div></div></div>`;
+    else if (live) { if (!x.live) note = 'da orario'; else [cls, note] = delayInfo(x.delay, x.sched, 'm'); }
+    
+    const vName = (live && x.vehicle) ? vehName(src, x.vehicle) : '';
+    let infoSub = note;
+    if (vName) infoSub = infoSub ? `${infoSub} · ${vName}` : vName;
+    if (x.arrival) infoSub = 'Termina qui' + (infoSub ? ' · ' + infoSub : '');
+    
+    const tDisplay = live ? x.exp : x.sched;
+    const minText = x.tIn <= 0 ? 'In arrivo' : `${x.tIn} min`;
+    
+    return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" role="button" tabindex="0" title="Segui il mezzo">`
+      + `${badge(x.line, x.color, src)}`
+      + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}<span>${esc(infoSub)}</span></div></div>`
+      + `<div class="dt"><strong class="${cls}">${esc(tDisplay)}</strong><div class="in-min ${cls}">${minText}</div></div></div>`;
   }).join('');
+  
   plist.innerHTML = chips + (html ? html + '<p class="muted" style="margin-top:.75rem;text-align:center">Tocca un passaggio per seguire il mezzo.</p>' : '<p class="muted">Nessun passaggio nell\'orario selezionato.</p>');
 }
 
@@ -586,7 +612,11 @@ function renderTrip(first) {
 }
 plist.addEventListener('click', e => {
   const chip = e.target.closest('.chip');
-  if (chip && openZone) { openZone.pick = chip.dataset.p; return renderDepartures(); }
+  if (chip && openZone) {
+    openZone.pick = chip.dataset.p;
+    drawStops();
+    return renderDepartures();
+  }
   const dep = e.target.closest('.dep.go');
   if (dep && openStop) return followDeparture(dep.dataset.trip, dep.dataset.src, dep.dataset.stop);
   const row = e.target.closest('.st'); if (!row || !lastTrip) return;
