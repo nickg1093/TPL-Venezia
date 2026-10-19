@@ -35,23 +35,32 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .seg input{position:absolute;opacity:0;pointer-events:none}
 .seg label:has(input:checked){background:var(--accent);color:var(--bg);font-weight:600}
 
-/* pannello laterale */
-.side-panel{position:absolute;z-index:1100;top:16px;bottom:90px;width:380px;max-width:calc(100% - 32px);overflow-y:auto;background:var(--solid);color:var(--fg);border:1px solid var(--line);border-radius:20px;box-shadow:0 16px 40px rgba(0,0,0,.3);backdrop-filter:blur(20px)}
+/* Pannello laterale a struttura flex fissa per l'header e i filtri */
+.side-panel{position:absolute;z-index:1100;top:16px;bottom:90px;width:380px;max-width:calc(100% - 32px);display:flex;flex-direction:column;background:var(--solid);color:var(--fg);border:1px solid var(--line);border-radius:20px;box-shadow:0 16px 40px rgba(0,0,0,.3);backdrop-filter:blur(20px);overflow:hidden}
 #panel{right:16px}
-.ph{position:sticky;top:0;z-index:2;background:var(--solid);padding:1rem 1rem .75rem;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:.75rem;align-items:flex-start}
+.ph{flex-shrink:0;background:var(--solid);padding:1rem 1rem .75rem;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:.75rem;align-items:flex-start}
 .ph-content{display:grid;grid-template-columns:auto 1fr;gap:.3rem .75rem;align-items:center;min-width:0;flex:1}
 .ph-badge-area{grid-row:span 2;display:flex;align-items:flex-start}
 .ph-top{grid-column:2;font-size:1rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ph-sub{grid-column:2}
 .ph-status{grid-column:1/span 2;margin-top:.2rem;font-size:.8rem}
 .muted{color:var(--muted);font-size:.75rem}
-#plist{padding:.5rem 1rem 1rem}
+
+/* Filtro pontili bloccato e fisso subito sotto la testata */
+.chips-container{flex-shrink:0;background:var(--solid);padding:.5rem 1rem;border-bottom:1px solid var(--line)}
+.chips{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
+button.chip{padding:.25rem .7rem;font-size:.8rem;border-radius:8px;display:inline-flex;align-items:center;gap:.4rem}
+.chip.on,.chip.on:hover{background:var(--accent);color:var(--bg);border-color:transparent;font-weight:700}
+
+/* Finestra passaggi scorrevole indipendente */
+#plist{padding:.5rem 1rem 1rem;overflow-y:auto;flex:1;min-height:0}
+
 .late,.ok,.early{font-weight:600}
 .late{color:var(--late)}.ok,.early{color:var(--ok)}
 .banner{margin:.4rem 0;padding:.5rem;border-radius:8px;border:1px solid var(--late);color:var(--late);font-weight:600;font-size:.8rem;background:color-mix(in srgb,var(--late) 10%,transparent)}
 #pback{color:var(--accent);text-decoration:none;font-weight:600}
 
-/* passaggi in stile Google Maps */
+/* passaggi */
 .dep{display:grid;grid-template-columns:auto 1fr auto;gap:.75rem;align-items:center;padding:.7rem 0.5rem;border-bottom:1px solid var(--line);border-radius:8px;transition:background .15s}
 .dep.go{cursor:pointer}
 .dep.go:hover{background:color-mix(in srgb,var(--fg) 5%,transparent)}
@@ -60,17 +69,14 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .dn{font-size:.78rem;color:var(--muted);display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
 .dt{text-align:right;display:flex;flex-direction:column;align-items:flex-end}
 .dt strong{font-size:1rem;font-variant-numeric:tabular-nums;font-weight:700}
-.dt .in-min{font-size:.75rem;font-weight:600}
+.dt .in-min{font-size:.75rem;font-weight:600;color:var(--muted)}
 .cx{opacity:.5}.cx .dh{text-decoration:line-through}
 .dn.late{color:var(--late)}.dn.ok,.dn.early{color:var(--ok)}
+.sched-crossed{text-decoration:line-through;opacity:0.6;font-size:0.8rem;font-weight:normal}
 
 /* Quadrato Giallo Pontile */
 .pt{width:22px;height:22px;min-width:22px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex:none;background:var(--yellow);color:#000;box-shadow:0 1px 3px rgba(0,0,0,0.2)}
 .pt.sm{width:18px;height:18px;min-width:18px;font-size:11px;border-radius:3px}
-
-.chips{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center;padding:.4rem 0 .6rem}
-button.chip{padding:.25rem .7rem;font-size:.8rem;border-radius:8px;display:inline-flex;align-items:center;gap:.4rem}
-.chip.on,.chip.on:hover{background:var(--accent);color:var(--bg);border-color:transparent;font-weight:700}
 .search-item>.muted{margin-left:auto}
 
 /* mezzi */
@@ -179,6 +185,7 @@ button.chip{padding:.25rem .7rem;font-size:.8rem;border-radius:8px;display:inlin
       </div>
       <button id="pclose" type="button" aria-label="Chiudi" style="padding:.2rem .5rem">✕</button>
     </div>
+    <div id="chips-area"></div>
     <div id="plist"></div>
   </aside>
 </div>
@@ -194,7 +201,7 @@ const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.get
 const fmtSecs = s => `${p2(Math.floor(s / 3600) % 24)}:${p2(Math.floor(s % 3600 / 60))}:${p2(s % 60)}`;
 const localDate = () => { const d = new Date(); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; };
 
-const statusEl = $('status'), filterEl = $('filter'), resultsEl =$('search-results'), panel = $('panel'), plist =$('plist');
+const statusEl = $('status'), filterEl =$('filter'), resultsEl = $('search-results'), panel =$('panel'), plist = $('plist'), chipsArea =$('chips-area');
 const pname = $('pname'), psub =$('psub'), pstatus = $('pstatus'), pbadge =$('pbadge'), hintEl = $('hint'), followEl =$('follow');
 const range = $('tl-range'), dateEl =$('tl-date');
 
@@ -263,8 +270,6 @@ const badge = (line, color, src, extra = '') => {
 };
 const busHtml = v => badge(v.line, v.color, v.src, `${mode === 'sched' ? ' sched' : ''}${v.id === selVeh ? ' sel' : ''}`);
 const tip = v => esc(`${vehIcon(v.src, v.label)} ${v.line}${v.headsign ? ' → ' + v.headsign : ''}${v.label ? ' · ' + vehName(v.src, v.label) : ''}`);
-const delayInfo = (dl, sched, unit) => dl >= 1 ? ['late', `+${dl}${unit}`]
-  : dl <= -1 ? ['early', `${dl}${unit}`] : ['ok', `in orario`];
 
 /* ---- Quadrato Giallo per i Pontili ---- */
 const ptHtml = (l, sm) => `<span class="pt${sm ? ' sm' : ''}">${esc((l || '').toUpperCase())}</span>`;
@@ -315,7 +320,6 @@ function buildZones() {
   }
 }
 
-// Verifica se una fermata/pontile specifico è attualmente selezionato nel filtro
 const isStopSelected = id => {
   if (openZone) {
     const z = zoneOf.get(id);
@@ -464,6 +468,7 @@ function openPanel(id, name, src) {
   resetTrip();
   openZone = null; openStop = id; openStopName = name; openSrc = src; lastDeps = null; panel.hidden = false;
   pbadge.innerHTML = ''; pname.textContent = `${ICON[src]} ${name}`; psub.textContent = ''; pstatus.textContent = '';
+  chipsArea.innerHTML = '';
   plist.innerHTML = '<p class="muted">Caricamento…</p>';
   loadDepartures(); startPanelTimer(); drawStops();
 }
@@ -471,11 +476,13 @@ function openZonePanel(z, pick = '*') {
   resetTrip();
   z.pick = pick; openZone = z; openStop = z.items.map(i => i.id).join(','); openStopName = z.name; openSrc = z.src; lastDeps = null; panel.hidden = false;
   pbadge.innerHTML = ''; pname.textContent = `${ICON[z.src]} ${z.name}`; psub.textContent = ''; pstatus.textContent = '';
+  chipsArea.innerHTML = '';
   plist.innerHTML = '<p class="muted">Caricamento…</p>';
   loadDepartures(); startPanelTimer(); drawStops();
 }
 function closePanel() {
   openStop = null; openZone = null; resetTrip(); panel.hidden = true; clearInterval(panelTimer);
+  chipsArea.innerHTML = '';
   if (!filterEl.value) clearRoutes();
   drawStops();
 }
@@ -505,34 +512,54 @@ function renderDepartures() {
     .filter(x => x.tIn >= -30 && x.tIn <= 120 && active.has(x.src || openSrc));
   const rows = base.filter(x => !z || z.pick === '*' || z.letterOf.get(x.stop) === z.pick).sort((a, b) => a.tIn - b.tIn).slice(0, z ? 60 : 30);
   
-  // Filtri pontili puliti: solo lettera in quadrato giallo
-  const chips = z ? `<div class="chips"><span class="muted">${unitOf(z)[0]}</span>`
+  // Filtri pontili bloccati e fissi nell'area superiore dedicata
+  chipsArea.innerHTML = z ? `<div class="chips"><span class="muted">${unitOf(z)[0]}</span>`
     + `<button class="chip${z.pick === '*' ? ' on' : ''}" data-p="*">Tutti</button>`
     + z.letters.map(l => `<button class="chip${z.pick === l ? ' on' : ''}" data-p="${esc(l)}">${ptHtml(l, true)}</button>`).join('')
     + '</div>' : '';
     
-  // Passaggi in stile Google Maps Live
+  // Passaggi in stile Google Maps Live con orario barrato se in ritardo e dicitura "tra X min"
   const html = rows.map(x => {
-    let cls = '', note = '';
+    let cls = '', subNote = '';
     const src = x.src || openSrc;
-    if (x.cancel) { cls = 'late'; note = x.cancel === 'trip' ? 'Corsa soppressa' : 'Fermata saltata'; }
-    else if (live) { if (!x.live) note = 'da orario'; else [cls, note] = delayInfo(x.delay, x.sched, 'm'); }
     
+    if (x.cancel) {
+      cls = 'late';
+      subNote = x.cancel === 'trip' ? 'Corsa soppressa' : 'Fermata saltata';
+    } else if (live) {
+      if (!x.live) {
+        subNote = 'da orario';
+      } else if (x.delay >= 1) {
+        cls = 'late';
+        subNote = `in ritardo di ${x.delay} min`;
+      } else if (x.delay <= -1) {
+        cls = 'early';
+        subNote = `in anticipo di ${Math.abs(x.delay)} min`;
+      } else {
+        cls = 'ok';
+        subNote = 'in orario';
+      }
+    }
+
     const vName = (live && x.vehicle) ? vehName(src, x.vehicle) : '';
-    let infoSub = note;
-    if (vName) infoSub = infoSub ? `${infoSub} · ${vName}` : vName;
-    if (x.arrival) infoSub = 'Termina qui' + (infoSub ? ' · ' + infoSub : '');
-    
-    const tDisplay = live ? x.exp : x.sched;
-    const minText = x.tIn <= 0 ? 'In arrivo' : `${x.tIn} min`;
-    
+    let infoLine = subNote;
+    if (vName) infoLine = infoLine ? `${infoLine} · ${vName}` : vName;
+    if (x.arrival) infoLine = 'Termina qui' + (infoLine ? ' · ' + infoLine : '');
+
+    // Orario programmato barrato affiancato all'effettivo in ritardo
+    const timeDisplayHtml = (live && x.delay >= 1)
+      ? `<span class="sched-crossed">${esc(x.sched)}</span> <strong class="${cls}">${esc(x.exp)}</strong>`
+      : `<strong class="${cls}">${esc(live ? x.exp : x.sched)}</strong>`;
+
+    const minText = x.tIn <= 0 ? 'In arrivo' : `tra ${x.tIn} min`;
+
     return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" role="button" tabindex="0" title="Segui il mezzo">`
       + `${badge(x.line, x.color, src)}`
-      + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}<span>${esc(infoSub)}</span></div></div>`
-      + `<div class="dt"><strong class="${cls}">${esc(tDisplay)}</strong><div class="in-min ${cls}">${minText}</div></div></div>`;
+      + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}<span>${esc(infoLine)}</span></div></div>`
+      + `<div class="dt">${timeDisplayHtml}<div class="in-min ${cls}">${minText}</div></div></div>`;
   }).join('');
   
-  plist.innerHTML = chips + (html ? html + '<p class="muted" style="margin-top:.75rem;text-align:center">Tocca un passaggio per seguire il mezzo.</p>' : '<p class="muted">Nessun passaggio nell\'orario selezionato.</p>');
+  plist.innerHTML = html ? html + '<p class="muted" style="margin-top:.75rem;text-align:center">Tocca un passaggio per seguire il mezzo.</p>' : '<p class="muted">Nessun passaggio nell\'orario selezionato.</p>';
 }
 
 /* ---- dettaglio corsa ---- */
@@ -545,6 +572,7 @@ function openTripPanel(v, back = null) {
   pbadge.innerHTML = badge(v.line, v.color, v.src);
   pname.textContent = v.headsign ? `→ ${v.headsign}` : `→ Linea ${v.line}`;
   psub.textContent = 'Caricamento dettagli corsa…'; pstatus.textContent = '';
+  chipsArea.innerHTML = '';
   render(); drawStops();
   if (!v.tripId) { plist.innerHTML = '<p class="muted">Dati corsa non disponibili per questo mezzo.</p>'; showRoutes([v.routeId]); return; }
   plist.innerHTML = '<p class="muted">Caricamento…</p>';
@@ -563,9 +591,11 @@ function tripHtml(d) {
   const k = colorInfo(d.trip.color, d.trip.line), n = d.stops.length;
   const rows = d.stops.map((s, i) => {
     let time, sub = '';
-    if (d.live && s.delay != null) { const [c, t] = delayInfo(s.delay, esc(s.sched), 'm'); time = `<strong class="${c}">${esc(s.exp)}</strong>`; sub = t; }
-    else { time = `<strong>${esc(s.sched)}</strong>`; sub = d.live ? 'da orario' : ''; }
-    const meta = s.skipped ? 'Fermata saltata' : s.state === 'next' ? (s.inMin <= 0 ? 'In arrivo' : `Tra ${s.inMin} min`) : '';
+    if (d.live && s.delay != null) {
+      const [c, t] = [s.delay >= 1 ? 'late' : s.delay <= -1 ? 'early' : 'ok', s.delay >= 1 ? `in ritardo di ${s.delay}m` : s.delay <= -1 ? `in anticipo di ${-s.delay}m` : 'in orario'];
+      time = `<strong class="${c}">${esc(s.exp)}</strong>`; sub = t;
+    } else { time = `<strong>${esc(s.sched)}</strong>`; sub = d.live ? 'da orario' : ''; }
+    const meta = s.skipped ? 'Fermata saltata' : s.state === 'next' ? (s.inMin <= 0 ? 'In arrivo' : `tra ${s.inMin} min`) : '';
     return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === 0 ? ' first' : ''}${i === n - 1 ? ' last' : ''}" data-i="${i}">`
       + `<div class="rail"><span class="dot">${s.state === 'passed' ? '✓' : ''}</span></div>`
       + `<div class="sn"><div class="nm">${esc(s.name)}</div>${meta ? `<div class="muted">${meta}</div>` : ''}</div>`
@@ -610,13 +640,15 @@ function renderTrip(first) {
   const veh = plist.querySelector('.veh'), row = veh && veh.style.display !== 'none' ? veh : plist.querySelector('.st.next');
   if (row) row.scrollIntoView({ block: 'center' });
 }
-plist.addEventListener('click', e => {
+chipsArea.addEventListener('click', e => {
   const chip = e.target.closest('.chip');
   if (chip && openZone) {
     openZone.pick = chip.dataset.p;
     drawStops();
     return renderDepartures();
   }
+});
+plist.addEventListener('click', e => {
   const dep = e.target.closest('.dep.go');
   if (dep && openStop) return followDeparture(dep.dataset.trip, dep.dataset.src, dep.dataset.stop);
   const row = e.target.closest('.st'); if (!row || !lastTrip) return;
