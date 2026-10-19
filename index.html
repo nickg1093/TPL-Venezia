@@ -38,7 +38,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 /* Pannello laterale a struttura flex fissa per l'header e i filtri */
 .side-panel{position:absolute;z-index:1100;top:16px;bottom:90px;width:380px;max-width:calc(100% - 32px);display:flex;flex-direction:column;background:var(--solid);color:var(--fg);border:1px solid var(--line);border-radius:20px;box-shadow:0 16px 40px rgba(0,0,0,.3);backdrop-filter:blur(20px);overflow:hidden}
 #panel{right:16px}
-.ph{flex-shrink:0;background:var(--solid);padding:1rem 1rem .75rem;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:.75rem;align-items:flex-start}
+.ph{flex-shrink:0;background:var(--solid);padding:1rem 1rem .75rem;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:.5rem}
+.ph-main{display:flex;justify-content:space-between;gap:.75rem;align-items:flex-start;width:100%}
 .ph-content{display:grid;grid-template-columns:auto 1fr;gap:.3rem .75rem;align-items:center;min-width:0;flex:1}
 .ph-badge-area{grid-row:span 2;display:flex;align-items:flex-start}
 .ph-top{grid-column:2;font-size:1rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -46,8 +47,8 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .ph-status{grid-column:1/span 2;margin-top:.2rem;font-size:.8rem}
 .muted{color:var(--muted);font-size:.75rem}
 
-/* Filtro pontili bloccato e fisso subito sotto la testata */
-.chips-container{flex-shrink:0;background:var(--solid);padding:.5rem 1rem;border-bottom:1px solid var(--line)}
+/* Filtro pontili bloccato e fisso dentro la testata */
+.chips-container{width:100%;margin-top:.25rem}
 .chips{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
 button.chip{padding:.25rem .7rem;font-size:.8rem;border-radius:8px;display:inline-flex;align-items:center;gap:.4rem}
 .chip.on,.chip.on:hover{background:var(--accent);color:var(--bg);border-color:transparent;font-weight:700}
@@ -177,15 +178,17 @@ button.chip{padding:.25rem .7rem;font-size:.8rem;border-radius:8px;display:inlin
 
   <aside id="panel" class="side-panel" hidden aria-label="Dettagli">
     <div class="ph">
-      <div class="ph-content">
-        <div class="ph-badge-area" id="pbadge"></div>
-        <div class="ph-top" id="pname"></div>
-        <div class="ph-sub muted" id="psub"></div>
-        <div class="ph-status" id="pstatus"></div>
+      <div class="ph-main">
+        <div class="ph-content">
+          <div class="ph-badge-area" id="pbadge"></div>
+          <div class="ph-top" id="pname"></div>
+          <div class="ph-sub muted" id="psub"></div>
+          <div class="ph-status" id="pstatus"></div>
+        </div>
+        <button id="pclose" type="button" aria-label="Chiudi" style="padding:.2rem .5rem">✕</button>
       </div>
-      <button id="pclose" type="button" aria-label="Chiudi" style="padding:.2rem .5rem">✕</button>
+      <div id="chips-area" class="chips-container"></div>
     </div>
-    <div id="chips-area"></div>
     <div id="plist"></div>
   </aside>
 </div>
@@ -512,13 +515,13 @@ function renderDepartures() {
     .filter(x => x.tIn >= -30 && x.tIn <= 120 && active.has(x.src || openSrc));
   const rows = base.filter(x => !z || z.pick === '*' || z.letterOf.get(x.stop) === z.pick).sort((a, b) => a.tIn - b.tIn).slice(0, z ? 60 : 30);
   
-  // Filtri pontili bloccati e fissi nell'area superiore dedicata
+  // Filtri pontili bloccati e fissi nell'area superiore della testata
   chipsArea.innerHTML = z ? `<div class="chips"><span class="muted">${unitOf(z)[0]}</span>`
     + `<button class="chip${z.pick === '*' ? ' on' : ''}" data-p="*">Tutti</button>`
     + z.letters.map(l => `<button class="chip${z.pick === l ? ' on' : ''}" data-p="${esc(l)}">${ptHtml(l, true)}</button>`).join('')
     + '</div>' : '';
     
-  // Passaggi in stile Google Maps Live con orario barrato se in ritardo e dicitura "tra X min"
+  // Passaggi con orario barrato se in ritardo e dicitura "tra X min"
   const html = rows.map(x => {
     let cls = '', subNote = '';
     const src = x.src || openSrc;
@@ -546,7 +549,6 @@ function renderDepartures() {
     if (vName) infoLine = infoLine ? `${infoLine} · ${vName}` : vName;
     if (x.arrival) infoLine = 'Termina qui' + (infoLine ? ' · ' + infoLine : '');
 
-    // Orario programmato barrato affiancato all'effettivo in ritardo
     const timeDisplayHtml = (live && x.delay >= 1)
       ? `<span class="sched-crossed">${esc(x.sched)}</span> <strong class="${cls}">${esc(x.exp)}</strong>`
       : `<strong class="${cls}">${esc(live ? x.exp : x.sched)}</strong>`;
