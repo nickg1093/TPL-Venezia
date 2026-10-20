@@ -205,9 +205,9 @@ const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.get
 const fmtSecs = s => `${p2(Math.floor(s / 3600) % 24)}:${p2(Math.floor(s % 3600 / 60))}:${p2(s % 60)}`;
 const localDate = () => { const d = new Date(); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; };
 
-const statusEl = $('status'), filterEl =$('filter'), resultsEl = $('search-results'), panel =$('panel'), plist = $('plist'), chipsArea =$('chips-area');
-const pname = $('pname'), psub =$('psub'), pstatus = $('pstatus'), pbadge =$('pbadge'), hintEl = $('hint'), followEl =$('follow');
-const range = $('tl-range'), dateEl =$('tl-date');
+const statusEl = $('status'), filterEl = $('filter'), resultsEl = $('search-results'), panel = $('panel'), plist = $('plist'), chipsArea = $('chips-area');
+const pname = $('pname'), psub = $('psub'), pstatus = $('pstatus'), pbadge = $('pbadge'), hintEl = $('hint'), followEl = $('follow');
+const range = $('tl-range'), dateEl = $('tl-date');
 
 let mode = 'live', staticVer = -1, lastUpdate = Date.now(), lastLoadSecs = -1, isPlaying = false, playTimer = null;
 const active = new Set(['nav', 'aut']);
@@ -244,7 +244,9 @@ function applyTime(secs, force) {
 }
 $('tl-play').onclick = () => {
   isPlaying = !isPlaying; syncPlay(); clearInterval(playTimer);
-  if (isPlaying) playTimer = setInterval(() => { const v = +range.value + +$('tl-speed').value; applyTime(v > 86400 ? 0 : v); }, 1000); };$('tl-now').onclick = () => { stopPlay(); dateEl.value = localDate(); applyTime(nowSecs(), true); };
+  if (isPlaying) playTimer = setInterval(() => { const v = +range.value + +$('tl-speed').value; applyTime(v > 86400 ? 0 : v); }, 1000);
+};
+$('tl-now').onclick = () => { stopPlay(); dateEl.value = localDate(); applyTime(nowSecs(), true); };
 range.oninput = () => applyTime(+range.value);
 dateEl.onchange = () => applyTime(+range.value, true);
 
