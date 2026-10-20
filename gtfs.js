@@ -195,6 +195,3 @@ async function load(srcId) {
   return G;
 }
 module.exports = { load, empty, toLL };
-
-
-file gtfs.js
