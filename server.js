@@ -8,7 +8,7 @@ const schedule = require('./schedule');
 const { secsOfDayRome, hhmm } = schedule;
 
 const PORT = process.env.PORT || 3000;
-const REFRESH_MS = 15000;
+const REFRESH_MS = 8000;
 const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/aut/GTFSRT/' };
 const IDS = Object.keys(RT);
 const NOTES = { approx: 'data fuori dal calendario GTFS: orari indicativi' };
@@ -62,6 +62,7 @@ function byStart(G) {
   }
   return bs;
 }
+
 function resolveTrip(G, td) {
   if (!td) return null;
   const id = td.tripId;
@@ -144,27 +145,44 @@ function tripDetail(i, tid, live) {
   let cur = lv && lv.firstJ >= 0 ? lv.firstJ : 0;
   if (!(lv && lv.firstJ >= 0)) while (cur < n && at(cur) <= tNow) cur++;
 
-  // CONTROLLO DI SICUREZZA: se la corsa non è ancora partita (orario attuale < orario partenza prima fermata), 
-  // forziamo cur a 0 per evitare stati alterati o ritardi fittizi sul capolinea iniziale.
+  const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
   const departureTime = st.d[0] ?? st.a[0];
-  if (tNow < departureTime) {
+
+  // Verifica se il mezzo è ancora fermo o in attesa al capolinea prima della partenza
+  const isAtOriginBeforeDeparture = (tNow < departureTime) || 
+    (cur === 0 && veh && G.stopLoc[st.s[0]] && Math.hypot((veh.lat - G.stopLoc[st.s[0]][0]) * 111000, (veh.lon - G.stopLoc[st.s[0]][1]) * 78000) < 100);
+
+  if (isAtOriginBeforeDeparture) {
     cur = 0;
   }
 
   const stops = st.s.map((sid, k) => {
-    const ts = at(k), dl = live ? (k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null)) : null;
-    // Se siamo al capolinea di partenza e non è ancora l'ora di partenza, azzeriamo il ritardo iniziale
-    const effectiveDl = (k === 0 && tNow < departureTime) ? 0 : dl;
+    const ts = at(k);
+    let dl = live ? (k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null)) : null;
+    
+    // Al capolinea prima della partenza nessun anticipo/ritardo fittizio
+    if (isAtOriginBeforeDeparture) {
+      dl = 0;
+    }
+
     const originalStopName = G.stops[sid] || sid;
     
-    return { name: originalStopName, lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
-      sched: hhmm(ts), exp: effectiveDl != null ? hhmm(ts + effectiveDl) : null, delay: effectiveDl != null ? Math.round(effectiveDl / 60) : null,
-      inMin: Math.round((ts + (effectiveDl ?? 0) - tNow) / 60),
-      state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'), skipped: !!lv?.skipped.has(k) };
+    return { 
+      name: originalStopName, 
+      lat: G.stopLoc[sid]?.[0] ?? null, 
+      lon: G.stopLoc[sid]?.[1] ?? null,
+      sched: hhmm(ts), 
+      exp: dl != null ? hhmm(ts + dl) : null, 
+      delay: dl != null ? Math.round(dl / 60) : null,
+      inMin: Math.round((ts + (dl ?? 0) - tNow) / 60),
+      state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'), 
+      skipped: !!lv?.skipped.has(k) 
+    };
   });
 
-  const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
-  const dn = lv && cur < n ? (cur === 0 && tNow < departureTime ? 0 : lv.delays[cur]) : null;
+  const rawDn = lv && cur < n ? lv.delays[cur] : null;
+  const dn = isAtOriginBeforeDeparture ? 0 : rawDn;
+
   let progress;
   if (cur >= n) progress = { from: n - 1, frac: 0 };
   else if (cur === 0) progress = { from: 0, frac: 0 };
@@ -178,12 +196,24 @@ function tripDetail(i, tid, live) {
     }
     progress = { from: cur - 1, frac: Math.min(1, Math.max(0, frac)) };
   }
-  return { live, progress, cancelled: !!lv?.cancelled, note: noteOf(G),
+
+  return { 
+    live, 
+    progress, 
+    cancelled: !!lv?.cancelled, 
+    note: noteOf(G),
     delayNow: dn != null ? Math.round(dn / 60) : null,
     historyKnown: stops.some(s => s.state === 'passed' && s.delay != null),
-    trip: { src: i, line: r.name || trip.route, color: r.color || null,
-            headsign: trip.headsign || G.stops[st.s[n - 1]] || null, vehicle: veh?.label || null },
-    shape: gtfs.toLL(G.shapePts[trip.shape]), stops, };
+    trip: { 
+      src: i, 
+      line: r.name || trip.route, 
+      color: r.color || null,
+      headsign: trip.headsign || G.stops[st.s[n - 1]] || null, 
+      vehicle: veh?.label || null 
+    },
+    shape: gtfs.toLL(G.shapePts[trip.shape]), 
+    stops 
+  };
 }
 
 const noteOf = (G, date) => NOTES[schedule.scheduleMode(G, date)] || null;
