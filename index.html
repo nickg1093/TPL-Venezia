@@ -35,7 +35,6 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .seg input{position:absolute;opacity:0;pointer-events:none}
 .seg label:has(input:checked){background:var(--accent);color:var(--bg);font-weight:600}
 
-/* Pannello laterale compatto */
 .side-panel{position:absolute;z-index:1100;top:12px;width:360px;max-width:calc(100% - 24px);display:flex;flex-direction:column;background:var(--solid);color:var(--fg);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 32px rgba(0,0,0,.3);backdrop-filter:blur(20px);overflow:hidden}
 #panel{right:12px}
 .ph{flex-shrink:0;background:var(--solid);padding:.6rem .6rem .4rem;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:.25rem}
@@ -47,13 +46,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .ph-status{grid-column:1/span 2;margin-top:.1rem;font-size:.72rem}
 .muted{color:var(--muted);font-size:.68rem}
 
-/* Filtri pontili compatti */
 .chips-container{width:100%;margin-top:.1rem}
 .chips{display:flex;gap:.25rem;flex-wrap:wrap;align-items:center}
 button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inline-flex;align-items:center;gap:.25rem}
 .chip.on,.chip.on:hover{background:var(--accent);color:var(--bg);border-color:transparent;font-weight:700}
 
-/* Finestra passaggi e dettagli corsa dimensionata esattamente per 4 elementi */
 #plist{padding:.2rem .6rem .6rem;overflow-y:auto;flex:none;height:calc(4 * 44px + 0.8rem);min-height:0}
 
 .late,.ok,.early{font-weight:600}
@@ -61,7 +58,6 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .banner{margin:.3rem 0;padding:.3rem;border-radius:6px;border:1px solid var(--late);color:var(--late);font-weight:600;font-size:.7rem;background:color-mix(in srgb,var(--late) 10%,transparent)}
 #pback{color:var(--accent);text-decoration:none;font-weight:600}
 
-/* Passaggi e fermate con altezza fissa rigorosa */
 .dep{display:grid;grid-template-columns:auto 1fr auto;gap:.5rem;align-items:center;height:42px;padding:0 0.3rem;border-bottom:1px solid var(--line);border-radius:6px;transition:background .15s}
 .dep.go{cursor:pointer}
 .dep.go:hover{background:color-mix(in srgb,var(--fg) 5%,transparent)}
@@ -80,10 +76,8 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .dn.late{color:var(--late)}.dn.ok,.dn.early{color:var(--ok)}
 .sched-crossed{text-decoration:line-through;opacity:0.6;font-size:.7rem;font-weight:normal}
 
-/* Badge A richiesta */
 .req-tag { display: inline-block; background: color-mix(in srgb, var(--yellow) 20%, transparent); color: var(--yellow); padding: 0.05rem 0.3rem; border-radius: 4px; font-weight: 600; font-size: 0.6rem; border: 1px solid var(--yellow); margin-right: 0.3rem; line-height: 1; vertical-align: middle; }
 
-/* Timeline grafica unificata */
 .tl{position:relative;z-index:0;padding-top:.1rem}
 .rail-col{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
 .rail-line{position:absolute;left:50%;top:0;bottom:0;width:2.5px;margin-left:-1.25px;background:var(--line);z-index:1}
@@ -97,17 +91,14 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .st.next .dot{box-shadow:0 0 0 2.5px color-mix(in srgb,var(--rc) 30%,transparent);animation:pulse-dot 1.5s infinite ease-in-out}
 .st.passed .nm,.st.passed .tm,.st.passed .muted{opacity:.35}
 
-/* La linea rossa attiva (.trav) e l'icona (.veh) usano l'asse x calcolato sul primo pallino */
-.trav{position:absolute;top:21px;width:2.5px;margin-left:-1.25px;height:0;background:var(--rc);z-index:2;transition:height 14s linear}
-.veh{position:absolute;top:21px;width:22px;height:22px;margin-left:-11px;margin-top:-11px;border-radius:50%;background:var(--rc);border:2px solid var(--bg);box-shadow:0 2px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:.65rem;z-index:4;transition:top 14s linear}
+.trav{position:absolute;top:21px;width:2.5px;margin-left:-1.25px;height:0;background:var(--rc);z-index:2;transition:height 8s linear}
+.veh{position:absolute;top:21px;width:22px;height:22px;margin-left:-11px;margin-top:-11px;border-radius:50%;background:var(--rc);border:2px solid var(--bg);box-shadow:0 2px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:.65rem;z-index:4;transition:top 8s linear}
 
-/* Quadrato Giallo Pontile compatto */
 .pt{width:16px;height:16px;min-width:16px;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex:none;background:var(--yellow);color:#000;box-shadow:0 1px 2px rgba(0,0,0,0.2)}
 .pt.sm{width:14px;height:14px;min-width:14px;font-size:8px}
 .search-item>.muted{margin-left:auto}
 
-/* mezzi */
-.bus{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;min-width:24px;border-radius:50%;background:var(--c,#0a6c8c);color:var(--t,#fff);font:700 10px/1 system-ui,sans-serif;border:2px solid var(--b,#fff);box-shadow:0 2px 5px rgba(0,0,0,.3);white-space:nowrap;cursor:pointer;transition:transform .2s}
+.bus{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;min-width:24px;border-radius:50%;background:var(--c,#0a6c8c);color:var(--t,#fff);font:700 10px/1 system-ui,sans-serif;border:2px solid var(--b,#fff);box-shadow:0 2px 5px rgba(0,0,0,.3);white-space:nowrap;cursor:pointer;will-change:transform}
 .bus:hover{transform:scale(1.1)}
 .bus.aut{border-radius:5px;width:auto;min-width:22px;height:18px;padding:0 3px}
 .bus.sched{border-style:dashed;opacity:.85}
@@ -116,7 +107,6 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 @keyframes blink-live{0%{opacity:.3;transform:scale(.9)}50%{opacity:1;transform:scale(1.1)}100%{opacity:.3;transform:scale(.9)}}
 .live-indicator{display:inline-block;width:6px;height:6px;background:var(--ok);border-radius:50%;animation:blink-live 2s infinite ease-in-out;margin-right:3px}
 
-/* barre in basso */
 .bottom-bar{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);z-index:900;background:var(--glass);color:var(--fg);border:1px solid var(--line);border-radius:99px;padding:.4rem 1rem;display:flex;align-items:center;gap:.6rem;box-shadow:0 8px 24px rgba(0,0,0,.25);font-size:.75rem;white-space:nowrap;max-width:calc(100vw - 24px);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
 .time-display{font-weight:600;font-size:.9rem;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:.2rem}
 .time-display small{font-size:.65rem;font-weight:400;opacity:.7}
@@ -201,7 +191,7 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 <script>
 const $ = id => document.getElementById(id);
 const ICON = { nav: '🚢', aut: '🚌' };
-const POLL_MS = 15000, MOVE_MS = 14000, MIN_STOP_ZOOM = 14;
+const POLL_MS = 8000, MOVE_MS = 7500, MIN_STOP_ZOOM = 14;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const p2 = n => String(n).padStart(2, '0');
 const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds(); };
@@ -223,13 +213,11 @@ range.value = nowSecs();
 const keyOf = () => [...active].join(',');
 const schedQS = () => mode === 'sched' ? `&secs=${range.value}&date=${dateEl.value.replace(/-/g, '')}` : '';
 
-/* ---- mappa ---- */
 const map = L.map('map', { preferCanvas: true, zoomControl: false }).setView([45.437, 12.335], 12);
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap · ACTV (GTFS-RT)' }).addTo(map);
 const lineLayer = L.layerGroup().addTo(map), tripLayer = L.layerGroup().addTo(map), stopLayer = L.layerGroup().addTo(map);
 
-/* ---- orologio e timeline ---- */
 function updateClock() {
   if (mode !== 'live') return;
   const n = new Date();
@@ -251,7 +239,6 @@ $('tl-play').onclick = () => {
 range.oninput = () => applyTime(+range.value);
 dateEl.onchange = () => applyTime(+range.value, true);
 
-/* ---- aspetto dei mezzi ---- */
 const vehIcon = (src, label) => src === 'aut' ? (/^tram/i.test(String(label ?? '').trim()) ? '🚊' : '🚌') : '🚢';
 const NT = ['lido di venezia', 'ammiana', 'san nicolo', 'san nicolò', 'metamauco', 'marco polo', 'pellestrina'];
 function vehName(src, label) {
@@ -278,7 +265,6 @@ const badge = (line, color, src, extra = '') => {
 const busHtml = v => badge(v.line, v.color, v.src, `${mode === 'sched' ? ' sched' : ''}${v.id === selVeh ? ' sel' : ''}`);
 const tip = v => esc(`${vehIcon(v.src, v.label)} ${v.line}${v.headsign ? ' → ' + v.headsign : ''}${v.label ? ' · ' + vehName(v.src, v.label) : ''}`);
 
-/* ---- Quadrato Giallo per i Pontili ---- */
 const ptHtml = (l, sm) => `<span class="pt${sm ? ' sm' : ''}">${esc((l || '').toUpperCase())}</span>`;
 const norm = s => s.toLowerCase().replace(/"/g, '').replace(/f\.te\b/g, 'fondamente').replace(/p\.le\b/g, 'piazzale').replace(/\bs\.\s*/g, 'san ').replace(/\s+/g, ' ').trim();
 const LETTER = /^(.*?)\s*(?:"([^"]+)"|\bCORSIA\s+([A-Z0-9]+)|\s([A-Z]\d{1,2}))\s*$/i;
@@ -339,7 +325,6 @@ const isStopSelected = id => {
 const openStopOrZone = (id, name, src) => { const z = zoneOf.get(id); z ? openZonePanel(z, z.letterOf.get(id) || '*') : openPanel(id, name, src); };
 const zoneItem = z => `<div class="search-item" data-type="zone" data-key="${esc(z.key)}" data-name="${esc(z.name)}">${ICON[z.src]} <span>${esc(z.name)}</span><span class="muted">${z.letters.length} ${unitOf(z)[1]}</span></div>`;
 
-/* ---- dati statici, linee e ricerca ---- */
 const shapeCache = new Map();
 function loadStatics() {
   shapeCache.clear();
@@ -388,42 +373,70 @@ resultsEl.addEventListener('click', e => {
 document.addEventListener('click', e => { if (!e.target.closest('.search-wrapper')) resultsEl.classList.remove('active'); });
 map.on('click', () => { if (!openTrip && !filterEl.value) clearRoutes(); });
 
-/* ---- mezzi sulla mappa ---- */
 const markers = new Map();
+const activeMoving = new Set();
+let isTicking = false;
+
 function render() {
   const keep = new Set();
   for (const v of vehicles) {
     if (!active.has(v.src) || !Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
     keep.add(v.id);
-    const html = busHtml(v); let e = markers.get(v.id);
+    const html = busHtml(v); 
+    let e = markers.get(v.id);
+
     if (!e) {
       const m = L.marker([v.lat, v.lon], { icon: L.divIcon({ className: '', iconSize: null, html }) })
         .bindTooltip(tip(v), { direction: 'top', offset: [0, -12] }).addTo(map), id = v.id;
       m.on('click', () => { const c = vehicles.find(x => x.id === id); if (c) openTripPanel(c); });
-      markers.set(v.id, { m, html, from: null, to: [v.lat, v.lon], t0: 0 });
+      markers.set(v.id, e = { m, html, tipContent: tip(v), from: null, to: [v.lat, v.lon], t0: 0, id: v.id });
       continue;
     }
+
     if (e.html !== html) { e.m.setIcon(L.divIcon({ className: '', iconSize: null, html })); e.html = html; }
-    e.m.setTooltipContent(tip(v));
+    const newTip = tip(v);
+    if (e.tipContent !== newTip) { e.m.setTooltipContent(newTip); e.tipContent = newTip; }
+
     if (e.to[0] !== v.lat || e.to[1] !== v.lon) {
       const cur = e.m.getLatLng();
-      if (Math.abs(cur.lat - v.lat) + Math.abs(cur.lng - v.lon) > .02) { e.m.setLatLng([v.lat, v.lon]); e.from = null; }
-      else { e.from = [cur.lat, cur.lng]; e.t0 = performance.now(); }
+      if (Math.abs(cur.lat - v.lat) + Math.abs(cur.lng - v.lon) > .02) { 
+        e.m.setLatLng([v.lat, v.lon]); e.from = null; 
+      } else { 
+        e.from = [cur.lat, cur.lng]; e.t0 = performance.now(); 
+        activeMoving.add(e);
+      }
       e.to = [v.lat, v.lon];
     }
   }
-  for (const [id, e] of markers) if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
+
+  for (const [id, e] of markers) {
+    if (!keep.has(id)) { 
+      e.m.remove(); 
+      markers.delete(id); 
+      activeMoving.delete(e); 
+    }
+  }
+  
   $('tl-count').textContent = [...active].map(s => `${vehicles.filter(v => v.src === s).length} in ${s === 'nav' ? 'navigazione' : 'servizio'}`).join(' · ');
+  if (activeMoving.size > 0 && !isTicking) {
+    isTicking = true;
+    requestAnimationFrame(tick);
+  }
 }
-(function tick(now) {
-  for (const e of markers.values()) {
-    if (!e.from) continue;
+
+function tick(now) {
+  for (const e of activeMoving) {
+    if (!e.from) { activeMoving.delete(e); continue; }
     const p = Math.min(1, (now - e.t0) / MOVE_MS);
     e.m.setLatLng([e.from[0] + (e.to[0] - e.from[0]) * p, e.from[1] + (e.to[1] - e.from[1]) * p]);
-    if (p >= 1) e.from = null;
+    if (p >= 1) { e.from = null; activeMoving.delete(e); }
   }
-  requestAnimationFrame(tick);
-})(performance.now());
+  if (activeMoving.size > 0) {
+    requestAnimationFrame(tick);
+  } else {
+    isTicking = false;
+  }
+}
 
 async function load() {
   const m = mode, key = keyOf();
@@ -440,7 +453,6 @@ async function load() {
   } catch (e) { if (m === mode) { statusEl.className = 'err'; statusEl.textContent = 'Dati non aggiornati: ' + e.message; } }
 }
 
-/* ---- fermate e illuminazione dinamica dei pontili ---- */
 function drawStops() {
   stopLayer.clearLayers();
   const near = map.getZoom() >= MIN_STOP_ZOOM;
@@ -463,7 +475,7 @@ function drawStops() {
 map.on('moveend', drawStops);
 
 const refreshPanel = () => { if (openStop) loadDepartures(); else if (openTrip) loadTrip(); };
-const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInterval(refreshPanel, POLL_MS); };
+const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInterval(refreshPanel, 12000); };
 function resetTrip() {
   setFollow(false);
   const had = !!openTrip;
@@ -558,7 +570,7 @@ function renderDepartures() {
       ? `<div class="dt-time-wrap"><span class="sched-crossed">${esc(x.sched)}</span><strong class="${cls}">${esc(x.exp)}</strong></div>`
       : `<div class="dt-time-wrap"><strong class="${cls}">${esc(live ? x.exp : x.sched)}</strong></div>`;
 
-    const minText = x.tIn <= 0 ? 'In arrivo' : `tra ${x.tIn} min`;
+    const minText = x.tIn <= 0 ? (x.tIn === 0 ? 'In arrivo' : `in partenza`) : `tra ${x.tIn} min`;
 
     return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" role="button" tabindex="0" title="Segui il mezzo">`
       + `${badge(x.line, x.color, src)}`
@@ -569,7 +581,6 @@ function renderDepartures() {
   plist.innerHTML = html || '<p class="muted" style="text-align:center;padding:1rem">Nessun passaggio.</p>';
 }
 
-/* ---- dettaglio corsa ---- */
 function openTripPanel(v, back = null) {
   setFollow(false);
   openStop = null; openZone = null; clearInterval(panelTimer); lastTrip = null; tripLayer.clearLayers();
@@ -608,7 +619,7 @@ function tripHtml(d) {
       sub = d.live ? 'da orario' : '';
       timeHtml = `<div class="tm-time-wrap"><strong>${esc(s.sched)}</strong></div>`;
     }
-    const meta = s.skipped ? 'Fermata saltata' : s.state === 'next' ? (s.inMin <= 0 ? 'In arrivo' : `tra ${s.inMin} min`) : '';
+    const meta = s.skipped ? 'Fermata saltata' : s.state === 'next' ? (s.inMin <= 0 ? 'In partenza' : `tra ${s.inMin} min`) : '';
     const isFirst = i === 0 ? ' first' : '', isLast = i === n - 1 ? ' last' : '';
     return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${isFirst}${isLast}" data-i="${i}">`
       + `<div class="rail-col"><div class="rail-line"></div><span class="dot">${s.state === 'passed' ? '✓' : ''}</span></div>`
@@ -618,7 +629,6 @@ function tripHtml(d) {
   return `<div class="tl" style="--rc:${k.rail};--check-fg:${k.contrast}"><div class="trav"></div><div class="veh">${vehIcon(d.trip.src, d.trip.vehicle)}</div>${rows}</div>`;
 }
 
-/* Posizionamento geometrico preciso calcolato sull'asse x dei pallini */
 function placeVehicle(d, first) {
   const tl = plist.querySelector('.tl'), veh = tl && tl.querySelector('.veh'), trav = tl && tl.querySelector('.trav');
   if (!tl || !veh || !trav) return;
@@ -697,7 +707,6 @@ plist.addEventListener('click', e => {
   if (s && s.lat != null) map.flyTo([s.lat, s.lon], Math.max(map.getZoom(), 15));
 });
 
-/* ---- segui il mezzo ---- */
 function setFollow(on) { follow = on; followEl.hidden = !on; }
 function followTarget(ll, z) {
   const p = map.project(ll, z), narrow = window.innerWidth <= 640;
@@ -723,7 +732,6 @@ setInterval(() => {
 map.on('dragstart', () => setFollow(false));
 followEl.onclick = () => setFollow(false);
 
-/* ---- posizione, modalità e filtri ---- */
 let me = null;
 $('locate').onclick = () => map.locate({ setView: true, maxZoom: 16 });
 map.on('locationfound', e => {
