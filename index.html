@@ -61,6 +61,9 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .banner{margin:.3rem 0;padding:.3rem;border-radius:6px;border:1px solid var(--late);color:var(--late);font-weight:600;font-size:.7rem;background:color-mix(in srgb,var(--late) 10%,transparent)}
 #pback{color:var(--accent);text-decoration:none;font-weight:600}
 
+/* Badge A RICHIESTA nei passaggi */
+.badge-req{background:var(--yellow);color:#000;font-size:0.6rem;font-weight:800;padding:0.1rem 0.3rem;border-radius:4px;margin-right:0.3rem;display:inline-block;vertical-align:middle}
+
 /* Passaggi e fermate con altezza fissa rigorosa */
 .dep{display:grid;grid-template-columns:auto 1fr auto;gap:.5rem;align-items:center;height:42px;padding:0 0.3rem;border-bottom:1px solid var(--line);border-radius:6px;transition:background .15s}
 .dep.go{cursor:pointer}
@@ -513,6 +516,7 @@ async function loadDepartures() {
 function renderDepartures() {
   if (!lastDeps || !openStop) return;
   const live = mode === 'live', z = openZone;
+  pname.textContent = `${ICON[openSrc]} ${lastDeps.stop.name}`;
   psub.textContent = (z ? `${z.letters.length} ${unitOf(z)[1]} · ` : '') + (live ? `Live · ${new Date(lastDeps.liveUpdated).toLocaleTimeString('it-IT')}` : 'Orario') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
   
   const base = lastDeps.departures.map(x => ({ ...x, tIn: live ? x.expIn : x.schedIn }))
@@ -556,10 +560,11 @@ function renderDepartures() {
       : `<div class="dt-time-wrap"><strong class="${cls}">${esc(live ? x.exp : x.sched)}</strong></div>`;
 
     const minText = x.tIn <= 0 ? 'In arrivo' : `tra ${x.tIn} min`;
+    const reqBadge = x.isRequest ? '<span class="badge-req">A RICHIESTA</span>' : '';
 
     return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" role="button" tabindex="0" title="Segui il mezzo">`
       + `${badge(x.line, x.color, src)}`
-      + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}<span>${esc(infoLine)}</span></div></div>`
+      + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}<span>${reqBadge}${esc(infoLine)}</span></div></div>`
       + `<div class="dt">${timeDisplayHtml}<div class="in-min ${cls}">${minText}</div></div></div>`;
   }).join('');
   
