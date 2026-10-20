@@ -1,27 +1,47 @@
-# Venezia TPL Live 🚢🚌
+# ACTV live
 
-Un'applicazione web ad alte prestazioni per il monitoraggio in tempo reale del trasporto pubblico locale (TPL) di Venezia (ACTV), sviluppata con Node.js, Leaflet e protocolli GTFS / GTFS-Realtime.
+Mappa 2D leggera dei mezzi ACTV in tempo reale (GTFS-Realtime).
 
-## 🚀 Caratteristiche Principali
+## Avvio
+    npm install
+    npm start        # poi apri http://localhost:3000
 
-* **Tracciamento Real-Time:** Aggiornamenti in tempo reale dei veicoli (bus, tram e mezzi di navigazione) tramite flussi GTFS-RT.
-* **Massima Fluidità (60 FPS):** Rendering ottimizzato su Canvas e accelerazione hardware GPU tramite transizioni CSS per lo spostamento dei marker.
-* **Gestione Intelligente dei Capolinea:** Logica avanzata per evitare falsi anticipi o ritardi propagati quando il mezzo è fermo in attesa della partenza.
-* **Ricerca e Zone:** Indicizzazione rapida di fermate, linee e raggruppamento in zone di banchina.
-* **Basso Impatto di Memoria:** Ottimizzazione estrema del server con cache Gzip pre-compilate in RAM, assenza di cicli trigonometrici pesanti e utilizzo di strutture dati compatte.
+Richiede Node 18+.
 
----
+## Dati statici (GTFS)
+Due servizi, ciascuno con il suo feed:
 
-## 🛠️ Requisiti di Sistema
+| Servizio | GTFS statico (in `data/`) | Realtime |
+|---|---|---|
+| Navigazione | `actv_nav.zip` | `tpl.actv.it/nav/GTFSRT/` |
+| Automobilistico | `actv_aut.zip` | `tpl.actv.it/aut/GTFSRT/` |
+| Alilaguna | `alilaguna.zip` | nessuno: solo orari (posizioni stimate) |
 
-* **Node.js** (versione 18.x o superiore consigliata)
-* Dati GTFS statici e feed in tempo reale configurati.
+Al primo avvio il server scarica gli ZIP in `data/` e li rilegge ogni 24 ore. Se un download fallisce,
+scaricalo a mano e salvalo con il nome indicato. I due servizi sono tenuti separati, quindi gli ID non si mescolano.
 
----
+## Uso
+- Clicca un mezzo: vedi linea, destinazione, prossima fermata, ritardo e il tracciato della linea.
+- Scrivi il nome esatto di una linea nel filtro (es. `5.1`): vedi solo quei mezzi e il suo percorso.
 
-## 📦 Installazione e Avvio
+## Modalità
+- **Live**: posizioni e ritardi reali dal feed GTFS-RT.
+- **Orario programmato**: posizioni teoriche calcolate da `stop_times.txt` e dai calendari (`calendar.txt`,
+  `calendar_dates.txt`), seguendo il tracciato della linea. I marker hanno il bordo tratteggiato.
 
-1. Cliona o scarica la repository nella tua directory di lavoro.
-2. Installa le dipendenze essenziali:
-   ```bash
-   npm install
+## Filtri e movimento
+- I due pulsanti **Navigazione / Automobilistico** si possono attivare insieme o singolarmente (almeno uno resta attivo).
+  Valgono per mezzi, fermate e tracciati, sia in Live sia in Orario programmato.
+- I battelli sono pallini arrotondati, i bus rettangoli con angoli stondati.
+- Tra un aggiornamento e il successivo i mezzi si spostano in modo fluido.
+
+## Fermate e transiti
+Dallo zoom 14 in su compaiono le fermate. Cliccane una: il pannello mostra i prossimi 90 minuti di passaggi.
+- In modalità **Live** vedi l'orario previsto con i ritardi in tempo reale (e quello programmato tra parentesi),
+  oppure "da orario" se per quella corsa non ci sono aggiornamenti. Segnala anche corse soppresse e fermate saltate.
+- In modalità **Orario programmato** vedi solo gli orari da GTFS.
+Il pulsante "Dove sono" centra la mappa sulla tua posizione (il browser la consente su `localhost` o HTTPS).
+
+## Note
+- Il server interroga ACTV ogni 15 secondi, indipendentemente dal numero di utenti.
+- Controlla i termini d'uso dei dati open data ACTV prima di pubblicare l'app.
