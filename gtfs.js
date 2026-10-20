@@ -60,7 +60,7 @@ async function eachRow(buf, fields, fn) {
 const tm = x => { if (!x || !x.trim()) return null; const p = x.trim().split(':'); return +p[0] * 3600 + +p[1] * 60 + +(p[2] || 0); };
 
 // Una voce per corsa: s/q (fermate e stop_sequence) sono condivisi tra le corse con lo stesso schema,
-// a/d (arrivi e partenze) are Int32Array.
+// a/d (arrivi e partenze) sono Int32Array.
 async function readStopTimes(buf, intern) {
   const out = new Map(), pats = new Map();
   let id = null, q = [], s = [], a = [], d = [];
