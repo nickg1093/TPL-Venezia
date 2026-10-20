@@ -8,7 +8,7 @@ const schedule = require('./schedule');
 const { secsOfDayRome, hhmm } = schedule;
 
 const PORT = process.env.PORT || 3000;
-const REFRESH_MS = 5000; // Aggiornamento rapido ogni 5 secondi per massima reattività
+const REFRESH_MS = 8000; // Ottimizzato a 8 secondi per alleggerire il carico sui flussi RT
 const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/aut/GTFSRT/' };
 const IDS = Object.keys(RT);
 const NOTES = { approx: 'data fuori dal calendario GTFS: orari indicativi' };
@@ -148,9 +148,6 @@ function tripDetail(i, tid, live) {
   const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
   const departureTime = st.d[0] ?? st.a[0];
 
-  // LOGICA DINAMICA GPS: Se il mezzo è fisicamente presente entro 80m dal capolinea di origine,
-  // viene considerato ancora al capolinea (cur = 0), indipendentemente da micro-ritardi fittizi dell'AVM.
-  // Se invece supera la distanza di 80m (anche in anticipo rispetto all'orario), viene rilevata la partenza reale.
   if (veh && G.stopLoc[st.s[0]]) {
     const originLoc = G.stopLoc[st.s[0]];
     const distFromOrigin = Math.hypot((veh.lat - originLoc[0]) * 111000, (veh.lon - originLoc[1]) * 78000);
