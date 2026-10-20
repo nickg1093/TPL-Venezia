@@ -8,7 +8,7 @@ const schedule = require('./schedule');
 const { secsOfDayRome, hhmm } = schedule;
 
 const PORT = process.env.PORT || 3000;
-const REFRESH_MS = 15000;
+const REFRESH_MS = 5000; // Aggiornamento rapido ogni 5 secondi per massima reattività
 const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/aut/GTFSRT/' };
 const IDS = Object.keys(RT);
 const NOTES = { approx: 'data fuori dal calendario GTFS: orari indicativi' };
@@ -62,6 +62,7 @@ function byStart(G) {
   }
   return bs;
 }
+
 function resolveTrip(G, td) {
   if (!td) return null;
   const id = td.tripId;
@@ -144,17 +145,25 @@ function tripDetail(i, tid, live) {
   let cur = lv && lv.firstJ >= 0 ? lv.firstJ : 0;
   if (!(lv && lv.firstJ >= 0)) while (cur < n && at(cur) <= tNow) cur++;
 
-  // CONTROLLO DI SICUREZZA: se la corsa non è ancora partita (orario attuale < orario partenza prima fermata), 
-  // forziamo cur a 0 per evitare stati alterati o ritardi fittizi sul capolinea iniziale.
+  const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
   const departureTime = st.d[0] ?? st.a[0];
-  if (tNow < departureTime) {
+
+  // LOGICA DINAMICA GPS: Se il mezzo è fisicamente presente entro 80m dal capolinea di origine,
+  // viene considerato ancora al capolinea (cur = 0), indipendentemente da micro-ritardi fittizi dell'AVM.
+  // Se invece supera la distanza di 80m (anche in anticipo rispetto all'orario), viene rilevata la partenza reale.
+  if (veh && G.stopLoc[st.s[0]]) {
+    const originLoc = G.stopLoc[st.s[0]];
+    const distFromOrigin = Math.hypot((veh.lat - originLoc[0]) * 111000, (veh.lon - originLoc[1]) * 78000);
+    if (distFromOrigin < 80) {
+      cur = 0;
+    }
+  } else if (tNow < departureTime) {
     cur = 0;
   }
 
   const stops = st.s.map((sid, k) => {
     const ts = at(k), dl = live ? (k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null)) : null;
-    // Se siamo al capolinea di partenza e non è ancora l'ora di partenza, azzeriamo il ritardo iniziale
-    const effectiveDl = (k === 0 && tNow < departureTime) ? 0 : dl;
+    const effectiveDl = (k === 0 && cur === 0) ? (dl != null && dl > 0 ? 0 : dl) : dl;
     const originalStopName = G.stops[sid] || sid;
     
     return { name: originalStopName, lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
@@ -163,7 +172,6 @@ function tripDetail(i, tid, live) {
       state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'), skipped: !!lv?.skipped.has(k) };
   });
 
-  const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
   const dn = lv && cur < n ? (cur === 0 && tNow < departureTime ? 0 : lv.delays[cur]) : null;
   let progress;
   if (cur >= n) progress = { from: n - 1, frac: 0 };
