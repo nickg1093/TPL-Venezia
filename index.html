@@ -6,8 +6,8 @@
 <title>Venezia TPL live</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-:root{--bg:#0d1317;--fg:#f0f4f8;--muted:#8a9ba8;--line:rgba(255,255,255,.08);--accent:#38bdf8;--late:#f87171;--ok:#4ade80;--glass:rgba(15,23,42,.7);--glass-hover:rgba(15,23,42,.9);--solid:#0f172a;--yellow:#facc15}
-@media(prefers-color-scheme:light){:root{--bg:#f8fafc;--fg:#0f172a;--muted:#64748b;--line:rgba(0,0,0,.08);--accent:#0284c7;--late:#dc2626;--ok:#16a34a;--glass:rgba(255,255,255,.8);--glass-hover:rgba(255,255,255,.95);--solid:#fff;--yellow:#eab308}}
+:root{--bg:#0d1317;--fg:#f0f4f8;--muted:#8a9ba8;--line:rgba(255,255,255,.08);--accent:#38bdf8;--late:#f87171;--ok:#4ade80;--glass:rgba(15,23,42,.75);--glass-hover:rgba(15,23,42,.9);--solid:#0f172a;--yellow:#facc15}
+@media(prefers-color-scheme:light){:root{--bg:#f8fafc;--fg:#0f172a;--muted:#64748b;--line:rgba(0,0,0,.08);--accent:#0284c7;--late:#dc2626;--ok:#16a34a;--glass:rgba(255,255,255,.85);--glass-hover:rgba(255,255,255,.95);--solid:#fff;--yellow:#eab308}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
 html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--fg);overflow:hidden}
@@ -16,7 +16,7 @@ body{display:flex;flex-direction:column}
 #wrap{position:relative;flex:1;min-height:0}
 #map{position:absolute;inset:0}
 
-/* CONTROLLI FLUTTUANTI SUPERIORI (Universal Safe Area Aware) */
+/* CONTROLLI FLUTTUANTI SUPERIORI (Puliti e Minimali) */
 .floating-top{position:absolute;top:max(12px, env(safe-area-inset-top));left:max(12px, env(safe-area-inset-left));right:max(12px, env(safe-area-inset-right));z-index:1000;display:flex;align-items:center;gap:.4rem;pointer-events:none}
 .floating-top > *{pointer-events:auto}
 
@@ -29,16 +29,16 @@ body{display:flex;flex-direction:column}
 .seg input{position:absolute;opacity:0;pointer-events:none}
 .seg label:has(input:checked){background:var(--accent);color:var(--bg);font-weight:600;box-shadow:0 2px 8px color-mix(in srgb,var(--accent) 40%,transparent)}
 
-/* SEARCH COMPATTA UNIVERSALE */
+/* SEARCH COMPATTA E CONTENUTA NELLO SCHERMO */
 .search-container{position:relative;display:flex;align-items:center;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--line);border-radius:99px;padding:3px;box-shadow:0 8px 32px rgba(0,0,0,.25);transition:all .3s cubic-bezier(.16,1,.3,1)}
 .search-container:hover{background:var(--glass-hover)}
-.search-btn{width:40px;height:40px;border-radius:50%;background:transparent;border:none;color:var(--fg);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;transition:background .2s}
+.search-btn{width:40px;height:40px;border-radius:50%;background:transparent;border:none;color:var(--fg);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;transition:background .2s;flex-shrink:0}
 .search-btn:hover{background:color-mix(in srgb,var(--fg) 10%,transparent)}
 .search-input-wrap{max-width:0;overflow:hidden;transition:max-width .3s cubic-bezier(.16,1,.3,1);display:flex;align-items:center}
-.search-container.expanded .search-input-wrap{max-width:220px}
-.search-container input[type=search]{font:inherit;font-size:.85rem;padding:.4rem .6rem;border:none;background:transparent;color:var(--fg);width:210px;outline:none}
+.search-container.expanded .search-input-wrap{max-width:200px}
+.search-container input[type=search]{font:inherit;font-size:.85rem;padding:.4rem .6rem;border:none;background:transparent;color:var(--fg);width:190px;outline:none}
 
-#search-results{position:absolute;top:calc(100% + 8px);left:0;width:100%;min-width:260px;max-height:18rem;overflow-y:auto;background:var(--solid);border:1px solid var(--line);border-radius:14px;box-shadow:0 16px 40px rgba(0,0,0,.4);z-index:1200;display:none}
+#search-results{position:absolute;top:calc(100% + 8px);left:0;right:0;min-width:240px;max-height:18rem;overflow-y:auto;background:var(--solid);border:1px solid var(--line);border-radius:14px;box-shadow:0 16px 40px rgba(0,0,0,.4);z-index:1200;display:none}
 #search-results.active{display:block}
 .search-category{font-size:.65rem;font-weight:700;color:var(--muted);padding:.4rem .8rem;background:var(--line);text-transform:uppercase;letter-spacing:.5px}
 .search-item{padding:.65rem .8rem;cursor:pointer;display:flex;align-items:center;gap:.6rem;font-size:.85rem;border-bottom:1px solid var(--line);transition:background .15s}
@@ -50,10 +50,9 @@ body{display:flex;flex-direction:column}
 button.icon-btn{font:inherit;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--glass);backdrop-filter:blur(20px);color:var(--fg);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .2s;box-shadow:0 8px 32px rgba(0,0,0,.25);flex-shrink:0}
 button.icon-btn:hover{background:var(--glass-hover)}
 
-.hint{position:absolute;left:16px;bottom:90px;z-index:900;padding:.4rem .8rem;border-radius:99px;background:var(--solid);color:var(--muted);border:1px solid var(--line);font-size:.75rem;pointer-events:none;backdrop-filter:blur(12px);box-shadow:0 4px 12px rgba(0,0,0,.2)}
-#follow{pointer-events:auto;bottom:85px;cursor:pointer}
+#follow{position:absolute;left:16px;bottom:80px;z-index:900;padding:.4rem .8rem;border-radius:99px;background:var(--solid);color:var(--muted);border:1px solid var(--line);font-size:.75rem;cursor:pointer;backdrop-filter:blur(12px);box-shadow:0 4px 12px rgba(0,0,0,.2);pointer-events:auto}
 
-/* SIDE PANEL (Bottom Sheet su Mobile, Finestra Fluttuante su Desktop) */
+/* SIDE PANEL (Bottom Sheet su Mobile ottimizzato per non coprire i controlli) */
 .side-panel{position:absolute;z-index:1100;top:68px;width:380px;max-width:calc(100% - 24px);display:flex;flex-direction:column;background:var(--solid);color:var(--fg);border:1px solid var(--line);border-radius:18px;box-shadow:0 20px 48px rgba(0,0,0,.4);backdrop-filter:blur(24px);overflow:hidden}
 #panel{right:12px}
 .ph{flex-shrink:0;background:var(--solid);padding:.7rem .7rem .5rem;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:.3rem}
@@ -132,42 +131,43 @@ button.chip:hover{background:color-mix(in srgb,var(--fg) 10%,transparent)}
 @keyframes blink-live{0%{opacity:.3;transform:scale(.9)}50%{opacity:1;transform:scale(1.1)}100%{opacity:.3;transform:scale(.9)}}
 .live-indicator{display:inline-block;width:6px;height:6px;background:var(--ok);border-radius:50%;animation:blink-live 2s infinite ease-in-out;margin-right:3px}
 
-/* BOTTOM UNIFIED BAR (Safe Area Bottom Aware) */
-.bottom-bar{position:absolute;bottom:max(12px, env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);z-index:900;background:var(--glass);color:var(--fg);border:1px solid var(--line);border-radius:99px;padding:.4rem 1.1rem;display:flex;align-items:center;gap:.7rem;box-shadow:0 12px 36px rgba(0,0,0,.25);font-size:.75rem;white-space:nowrap;max-width:calc(100vw - 24px);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);transition:background .2s}
+/* BOTTOM UNIFIED BAR (Con Live/Pianificato integrato, orario e timeline responsive) */
+.bottom-bar{position:absolute;bottom:max(12px, env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);z-index:900;background:var(--glass);color:var(--fg);border:1px solid var(--line);border-radius:99px;padding:.35rem .8rem;display:flex;align-items:center;gap:.5rem;box-shadow:0 12px 36px rgba(0,0,0,.3);font-size:.75rem;white-space:nowrap;max-width:calc(100vw - 20px);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);transition:background .2s}
 .bottom-bar:hover{background:var(--glass-hover)}
-.time-display{font-weight:600;font-size:.9rem;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:.2rem}
-.time-display small{font-size:.65rem;font-weight:400;opacity:.7}
-.ora-btn{background:var(--ok);color:#000;border:none;padding:.3rem .7rem;font-weight:700;font-size:.65rem;text-transform:uppercase;border-radius:99px;cursor:pointer;transition:filter .15s;min-height:30px}
-.ora-btn:hover{filter:brightness(1.1)}
-#timeline-controls{display:none;align-items:center;gap:.5rem}
-#timeline-controls.active{display:flex}
-#tl-play{background:color-mix(in srgb,var(--fg) 10%,transparent);border:none;border-radius:50%;width:32px;height:32px;color:var(--fg);font-size:.75rem;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s}
-#tl-play:hover{background:color-mix(in srgb,var(--fg) 20%,transparent)}
-#tl-date,#tl-speed{background:color-mix(in srgb,var(--bg) 40%,transparent);color:var(--fg);border:1px solid var(--line);border-radius:99px;padding:.3rem .6rem;font:inherit;font-size:.7rem;cursor:pointer;min-height:30px}
-#tl-range{accent-color:var(--accent);cursor:pointer;width:110px}
 
-/* OTTIMIZZAZIONE UNIVERSALE PER DISPOSITIVI MOBILI (Smartphone < 640px) */
+.bottom-bar .seg label {
+  font-size: 0.75rem;
+  padding: 0.3rem 0.6rem;
+  min-height: 30px;
+}
+
+.time-display{font-weight:600;font-size:.85rem;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:.2rem}
+.time-display small{font-size:.6rem;font-weight:400;opacity:.7}
+.ora-btn{background:var(--ok);color:#000;border:none;padding:.25rem .5rem;font-weight:700;font-size:.6rem;text-transform:uppercase;border-radius:99px;cursor:pointer;transition:filter .15s;min-height:26px}
+.ora-btn:hover{filter:brightness(1.1)}
+
+#timeline-controls{display:none;align-items:center;gap:.4rem}
+#timeline-controls.active{display:flex}
+#tl-play{background:color-mix(in srgb,var(--fg) 10%,transparent);border:none;border-radius:50%;width:28px;height:28px;color:var(--fg);font-size:.7rem;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s}
+#tl-play:hover{background:color-mix(in srgb,var(--fg) 20%,transparent)}
+#tl-date,#tl-speed{background:color-mix(in srgb,var(--bg) 40%,transparent);color:var(--fg);border:1px solid var(--line);border-radius:99px;padding:.2rem .4rem;font:inherit;font-size:.65rem;cursor:pointer;min-height:26px}
+#tl-range{accent-color:var(--accent);cursor:pointer;width:90px}
+
+/* OTTIMIZZAZIONE UNIVERSALE PER DISPOSITIVI MOBILI (< 640px) */
 @media(max-width:640px){
-  .floating-top{top:max(8px, env(safe-area-inset-top));left:max(8px, env(safe-area-inset-left));right:max(8px, env(safe-area-inset-right));gap:.3rem}
+  .floating-top{top:max(8px, env(safe-area-inset-top));left:max(8px, env(safe-area-inset-left));right:max(8px, env(safe-area-inset-right));gap:.25rem}
   #status{display:none}
-  .bottom-bar{bottom:max(8px, env(safe-area-inset-bottom));left:8px;right:8px;transform:none;border-radius:20px;justify-content:space-between;flex-wrap:wrap;padding:.5rem .8rem}
-  .side-panel{top:auto;left:6px;right:6px;bottom:max(65px, calc(env(safe-area-inset-bottom) + 55px));width:auto;max-width:none;max-height:55vh;border-radius:20px 20px 0 0}
-  .hint{bottom:max(70px, calc(env(safe-area-inset-bottom) + 60px));left:12px}
+  .bottom-bar{bottom:max(8px, env(safe-area-inset-bottom));left:6px;right:6px;transform:none;border-radius:16px;justify-content:space-between;flex-wrap:wrap;padding:.4rem .5rem;gap:.3rem}
+  .side-panel{top:auto;left:6px;right:6px;bottom:max(70px, calc(env(safe-area-inset-bottom) + 60px));width:auto;max-width:none;max-height:50vh;border-radius:18px 18px 0 0}
+  #follow{bottom:max(75px, calc(env(safe-area-inset-bottom) + 65px));left:8px}
+  #tl-range{width:70px}
 }
 </style>
 </head>
 <body>
 
-<!-- TOP FLOATING CONTROLS -->
+<!-- TOP FLOATING CONTROLS (Senza elementi superflui) -->
 <div class="floating-top">
-  <!-- Mode Toggle (Live / Pianificato) -->
-  <div class="float-group">
-    <div class="seg" role="radiogroup" aria-label="Modalità">
-      <label title="Live"><input type="radio" name="mode" value="live" checked><span class="live-indicator"></span>Live</label>
-      <label title="Orario programmato"><input type="radio" name="mode" value="sched">Pianificato</label>
-    </div>
-  </div>
-
   <!-- Servizi (Nav / Aut) -->
   <div class="float-group">
     <div class="seg" role="group" aria-label="Servizi">
@@ -179,7 +179,7 @@ button.chip:hover{background:color-mix(in srgb,var(--fg) 10%,transparent)}
   <!-- Localizzazione -->
   <button id="locate" class="icon-btn" type="button" title="Mostra la mia posizione">📍</button>
 
-  <!-- Search a comparsa -->
+  <!-- Search a comparsa corretta (rimane dentro lo schermo) -->
   <div class="search-container" id="search-container">
     <button class="search-btn" id="search-toggle-btn" type="button" title="Cerca">🔍</button>
     <div class="search-input-wrap">
@@ -194,17 +194,24 @@ button.chip:hover{background:color-mix(in srgb,var(--fg) 10%,transparent)}
 
 <div id="wrap">
   <div id="map"></div>
-  <div id="hint" class="hint">Avvicina lo zoom per le fermate</div>
-  <button id="follow" class="hint" type="button" hidden>📍 Seguo il mezzo</button>
+  <button id="follow" type="button" hidden>📍 Seguo il mezzo</button>
 
-  <!-- BOTTOM BAR UNIFICATA E TRASPARENTE -->
+  <!-- BOTTOM BAR UNIFICATA: LIVE/PIANIFICATO + ORARIO/TIMELINE -->
   <div class="bottom-bar" id="bottom-bar">
-    <div style="display:flex;align-items:center;gap:.4rem;" id="clock-section">
-      <span class="live-indicator" style="width:5px;height:5px"></span>
-      <div class="time-display" id="clock-time">00:00:<small>00</small></div>
-      <span style="color:var(--muted)" id="updated-ago">· aggiornato ora</span>
+    <!-- Toggle Live / Pianificato integrato sotto -->
+    <div class="seg" role="radiogroup" aria-label="Modalità">
+      <label title="Live"><input type="radio" name="mode" value="live" checked><span class="live-indicator"></span>Live</label>
+      <label title="Orario programmato"><input type="radio" name="mode" value="sched">Pianificato</label>
     </div>
 
+    <!-- Sezione orario Live -->
+    <div style="display:flex;align-items:center;gap:.3rem;" id="clock-section">
+      <span class="live-indicator" style="width:4px;height:4px"></span>
+      <div class="time-display" id="clock-time">00:00:<small>00</small></div>
+      <span style="color:var(--muted);font-size:.65rem" id="updated-ago">· ora</span>
+    </div>
+
+    <!-- Controlli Timeline Pianificato -->
     <div id="timeline-controls">
       <button id="tl-play" type="button" title="Play / Pausa">▶</button>
       <div class="time-display" id="tl-time">12:00:00</div>
@@ -215,7 +222,8 @@ button.chip:hover{background:color-mix(in srgb,var(--fg) 10%,transparent)}
       </select>
       <input id="tl-range" type="range" min="0" max="86400" value="43200" step="1" title="Timeline">
     </div>
-    <span id="tl-count" class="muted" style="margin-left:auto">0 in navigazione</span>
+
+    <span id="tl-count" class="muted" style="margin-left:auto;font-size:.7rem">0 mezzi</span>
   </div>
 
   <aside id="panel" class="side-panel" hidden aria-label="Dettagli">
@@ -227,7 +235,7 @@ button.chip:hover{background:color-mix(in srgb,var(--fg) 10%,transparent)}
           <div class="ph-sub muted" id="psub"></div>
           <div class="ph-status" id="pstatus"></div>
         </div>
-        <button id="pclose" class="icon-btn" type="button" aria-label="Chiudi" style="width:32px;height:32px;min-height:auto;font-size:.8rem">✕</button>
+        <button id="pclose" class="icon-btn" type="button" aria-label="Chiudi" style="width:30px;height:30px;min-height:auto;font-size:.75rem">✕</button>
       </div>
       <div id="chips-area" class="chips-container"></div>
     </div>
@@ -247,7 +255,7 @@ const fmtSecs = s => `${p2(Math.floor(s / 3600) % 24)}:${p2(Math.floor(s % 3600 
 const localDate = () => { const d = new Date(); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; };
 
 const statusEl = $('status'), filterEl =$('filter'), resultsEl = $('search-results'), panel =$('panel'), plist = $('plist'), chipsArea =$('chips-area');
-const pname = $('pname'), psub =$('psub'), pstatus = $('pstatus'), pbadge =$('pbadge'), hintEl = $('hint'), followEl =$('follow');
+const pname = $('pname'), psub = $('psub'), pstatus =$('pstatus'), pbadge = $('pbadge'), followEl =$('follow');
 const range = $('tl-range'), dateEl =$('tl-date');
 const searchContainer = $('search-container'), searchToggleBtn =$('search-toggle-btn');
 
@@ -262,6 +270,7 @@ range.value = nowSecs();
 const keyOf = () => [...active].join(',');
 const schedQS = () => mode === 'sched' ? `&secs=${range.value}&date=${dateEl.value.replace(/-/g, '')}` : '';
 
+// Gestione corretta della ricerca con lente d'ingrandimento (rimane dentro lo schermo)
 searchToggleBtn.onclick = (e) => {
   e.stopPropagation();
   searchContainer.classList.toggle('expanded');
@@ -289,7 +298,7 @@ function updateClock() {
   const n = new Date();
   $('clock-time').innerHTML = `${p2(n.getHours())}:${p2(n.getMinutes())}:<small>${p2(n.getSeconds())}</small>`;
   const s = Math.floor((Date.now() - lastUpdate) / 1000);
-  $('updated-ago').textContent = s <= 2 ? '· aggiornato ora' : `· ${s}s fa`;
+  $('updated-ago').textContent = s <= 2 ? '· ora' : `· ${s}s fa`;
 }
 setInterval(updateClock, 1000);
 
@@ -477,7 +486,7 @@ function render() {
     if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
   }
   
-  $('tl-count').textContent = [...active].map(s => `${vehicles.filter(v => v.src === s).length} in ${s === 'nav' ? 'navigazione' : 'servizio'}`).join(' · ');
+  $('tl-count').textContent = [...active].map(s => `${vehicles.filter(v => v.src === s).length} ${s === 'nav' ? 'navi' : 'mezzi'}`).join(' · ');
 }
 
 requestAnimationFrame(function frame(now) {
@@ -504,14 +513,13 @@ async function load() {
     const wait = [...active].filter(s => d.ready && !d.ready[s]);
     statusEl.className = '';
     statusEl.textContent = `${[...active].map(s => `${ICON[s]}${vehicles.filter(v => v.src === s).length}`).join(' · ')} ${m === 'sched' ? 'pianificato' : 'mezzi'} · ${new Date(d.updated).toLocaleTimeString('it-IT')}`
-      + (wait.length ? ` · orari in caricamento: ${wait.join(', ')}` : '');
-  } catch (e) { if (m === mode) { statusEl.className = 'err'; statusEl.textContent = 'Dati non aggiornati: ' + e.message; } }
+      + (wait.length ? ` · in caricamento: ${wait.join(', ')}` : '');
+  } catch (e) { if (m === mode) { statusEl.className = 'err'; statusEl.textContent = 'Errore: ' + e.message; } }
 }
 
 function drawStops() {
   stopLayer.clearLayers();
   const near = map.getZoom() >= MIN_STOP_ZOOM;
-  hintEl.hidden = near;
   if (!near) return;
   const b = map.getBounds().pad(.1); let n = 0;
   for (let i = 0; i < stops.length; i++) {
@@ -799,6 +807,7 @@ map.on('locationfound', e => {
 });
 map.on('locationerror', () => { statusEl.className = 'err'; statusEl.textContent = 'Posizione non disponibile'; });
 
+// Gestione Mode Toggle unito alla barra inferiore
 document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener('change', () => {
   mode = el.value; vehicles = [];
   const sched = mode === 'sched';
