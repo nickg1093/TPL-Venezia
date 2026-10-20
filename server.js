@@ -8,7 +8,7 @@ const schedule = require('./schedule');
 const { secsOfDayRome, hhmm } = schedule;
 
 const PORT = process.env.PORT || 3000;
-const REFRESH_MS = 8000;
+const REFRESH_MS = 15000;
 const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/aut/GTFSRT/' };
 const IDS = Object.keys(RT);
 const NOTES = { approx: 'data fuori dal calendario GTFS: orari indicativi' };
@@ -30,27 +30,14 @@ for (const id of IDS) {
   D[id] = gtfs.empty(); ready[id] = false;
   S[id] = { updated: 0, error: null, vehicles: [], live: {}, hist: new Map() };
 }
-
-// Cache pre-serializzata e compressa in RAM per le fermate
-let cachedStopsGzip = null;
-let version = 0;
-
-// Ottimizzazione distanza con controllo rettangolare (Zero Math.sqrt)
-function isNearby(lat1, lon1, lat2, lon2, maxMeters) {
-  const dLat = Math.abs(lat1 - lat2) * 111000;
-  if (dLat > maxMeters) return false;
-  const dLon = Math.abs(lon1 - lon2) * 78000;
-  if (dLon > maxMeters) return false;
-  return (dLat * dLat + dLon * dLon) <= (maxMeters * maxMeters);
-}
+let stopsBody = null, version = 0;
 
 async function loadStatic() {
   for (const id of IDS) {
     try {
       const g = await gtfs.load(id);
       if (!g) continue;
-      D[id] = g; S[id].hist.clear(); ready[id] = true; version++;
-      cachedStopsGzip = null;
+      D[id] = g; S[id].hist.clear(); ready[id] = true; stopsBody = null; version++;
       refresh(id);
     } catch (e) { console.error(`GTFS statico [${id}]:`, e.message); }
   }
@@ -75,7 +62,6 @@ function byStart(G) {
   }
   return bs;
 }
-
 function resolveTrip(G, td) {
   if (!td) return null;
   const id = td.tripId;
@@ -125,8 +111,8 @@ async function refresh(id) {
         if (dly != null) explicit[j] = dly;
       }
       let c = has(tu, 'delay') ? Number(tu.delay) : null;
-      const delays = new Array(n);
-      for (let k = 0; k < n; k++) { if (explicit[k] != null) c = explicit[k]; delays[k] = c; }
+      const delays = [];
+      for (let k = 0; k < n; k++) { if (explicit[k] != null) c = explicit[k]; delays.push(c); }
       live[tid] = { delays, cancelled: tu.trip.scheduleRelationship === 3, skipped, firstJ };
       let h = s8.hist.get(tid); if (!h) s8.hist.set(tid, h = { delays: new Array(n).fill(null), seen: 0 });
       for (let k = 0; k < n; k++) if (explicit[k] != null) h.delays[k] = explicit[k];
@@ -158,34 +144,27 @@ function tripDetail(i, tid, live) {
   let cur = lv && lv.firstJ >= 0 ? lv.firstJ : 0;
   if (!(lv && lv.firstJ >= 0)) while (cur < n && at(cur) <= tNow) cur++;
 
-  const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
+  // CONTROLLO DI SICUREZZA: se la corsa non è ancora partita (orario attuale < orario partenza prima fermata), 
+  // forziamo cur a 0 per evitare stati alterati o ritardi fittizi sul capolinea iniziale.
   const departureTime = st.d[0] ?? st.a[0];
-  const originLoc = G.stopLoc[st.s[0]];
-
-  const isAtOriginBeforeDeparture = (tNow < departureTime) || 
-    (cur === 0 && veh && originLoc && isNearby(veh.lat, veh.lon, originLoc[0], originLoc[1], 100));
-
-  if (isAtOriginBeforeDeparture) cur = 0;
-
-  const stops = new Array(n);
-  for (let k = 0; k < n; k++) {
-    const sid = st.s[k], ts = at(k);
-    let dl = live ? (k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null)) : null;
-    if (isAtOriginBeforeDeparture) dl = 0;
-
-    stops[k] = { 
-      name: G.stops[sid] || sid, 
-      lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
-      sched: hhmm(ts), exp: dl != null ? hhmm(ts + dl) : null, delay: dl != null ? Math.round(dl / 60) : null,
-      inMin: Math.round((ts + (dl ?? 0) - tNow) / 60),
-      state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'), 
-      skipped: !!lv?.skipped.has(k) 
-    };
+  if (tNow < departureTime) {
+    cur = 0;
   }
 
-  const rawDn = lv && cur < n ? lv.delays[cur] : null;
-  const dn = isAtOriginBeforeDeparture ? 0 : rawDn;
+  const stops = st.s.map((sid, k) => {
+    const ts = at(k), dl = live ? (k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null)) : null;
+    // Se siamo al capolinea di partenza e non è ancora l'ora di partenza, azzeriamo il ritardo iniziale
+    const effectiveDl = (k === 0 && tNow < departureTime) ? 0 : dl;
+    const originalStopName = G.stops[sid] || sid;
+    
+    return { name: originalStopName, lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
+      sched: hhmm(ts), exp: effectiveDl != null ? hhmm(ts + effectiveDl) : null, delay: effectiveDl != null ? Math.round(effectiveDl / 60) : null,
+      inMin: Math.round((ts + (effectiveDl ?? 0) - tNow) / 60),
+      state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'), skipped: !!lv?.skipped.has(k) };
+  });
 
+  const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
+  const dn = lv && cur < n ? (cur === 0 && tNow < departureTime ? 0 : lv.delays[cur]) : null;
   let progress;
   if (cur >= n) progress = { from: n - 1, frac: 0 };
   else if (cur === 0) progress = { from: 0, frac: 0 };
@@ -199,14 +178,12 @@ function tripDetail(i, tid, live) {
     }
     progress = { from: cur - 1, frac: Math.min(1, Math.max(0, frac)) };
   }
-
-  return { 
-    live, progress, cancelled: !!lv?.cancelled, note: noteOf(G),
+  return { live, progress, cancelled: !!lv?.cancelled, note: noteOf(G),
     delayNow: dn != null ? Math.round(dn / 60) : null,
     historyKnown: stops.some(s => s.state === 'passed' && s.delay != null),
-    trip: { src: i, line: r.name || trip.route, color: r.color || null, headsign: trip.headsign || G.stops[st.s[n - 1]] || null, vehicle: veh?.label || null },
-    shape: gtfs.toLL(G.shapePts[trip.shape]), stops 
-  };
+    trip: { src: i, line: r.name || trip.route, color: r.color || null,
+            headsign: trip.headsign || G.stops[st.s[n - 1]] || null, vehicle: veh?.label || null },
+    shape: gtfs.toLL(G.shapePts[trip.shape]), stops, };
 }
 
 const noteOf = (G, date) => NOTES[schedule.scheduleMode(G, date)] || null;
@@ -219,11 +196,17 @@ const getEquivalentStopIds = (G, sid) => {
   const loc = G.stopLoc[sid];
   if (!loc) return [sid];
   const nameA = G.stops[sid] || '';
+  
   const equivalent = [];
   for (const sId in G.stops) {
     const sLoc = G.stopLoc[sId];
     if (!sLoc) continue;
-    if (isNearby(loc[0], loc[1], sLoc[0], sLoc[1], 2)) {
+    
+    const dLat = Math.abs(sLoc[0] - loc[0]) * 111000;
+    const dLon = Math.abs(sLoc[1] - loc[1]) * 78000;
+    const distanceMeters = Math.hypot(dLat, dLon);
+    
+    if (distanceMeters <= 2) {
       const nameB = G.stops[sId] || '';
       if (namesAreCompatible(nameA, nameB)) equivalent.push(sId);
     }
@@ -256,22 +239,22 @@ const API = {
     }
     return { updated: Date.now(), error: errors.join('; ') || null, version, ready, vehicles };
   },
-  '/api/stops': (u, req, res) => {
-    if (!cachedStopsGzip) {
+  '/api/stops': () => {
+    if (!stopsBody) {
       const out = [];
       for (const i of IDS) {
         const G = D[i];
         for (const s in G.stopIndex) { 
           const cleanName = G.stopBaseNames?.get(s) || G.stops[s];
           const l = G.stopLoc[s]; 
-          if (l && cleanName) out.push([`${i}:${s}`, cleanName, l[0], l[1], i]); 
+          if (l && cleanName) {
+            out.push([`${i}:${s}`, cleanName, l[0], l[1], i]); 
+          }
         }
       }
-      cachedStopsGzip = zlib.gzipSync(Buffer.from(JSON.stringify(out)));
+      stopsBody = JSON.stringify(out);
     }
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Encoding': 'gzip', 'Cache-Control': 'no-store' });
-    res.end(cachedStopsGzip);
-    return null;
+    return stopsBody;
   },
   '/api/stop': u => {
     const full = q(u, 'id'), [i, sid] = splitId(full);
@@ -283,7 +266,8 @@ const API = {
     let allDepartures = [];
     for (const equivSid of equivalentSids) {
       const isReq = G.stopIsRequest?.get(equivSid) || false;
-      for (const d of schedule.departures(G, S[i].live, equivSid, q(u, 'secs'), q(u, 'date'))) {
+      const deps = schedule.departures(G, S[i].live, equivSid, q(u, 'secs'), q(u, 'date'));
+      for (const d of deps) {
         allDepartures.push({ ...d, isRequest: isReq });
       }
     }
@@ -354,11 +338,8 @@ const page = pageFile ? fs.readFileSync(pageFile) : null;
 http.createServer((req, res) => {
   const u = new URL(req.url, 'http://localhost'), handler = API[u.pathname];
   if (handler) {
-    try {
-      const resVal = handler(u, req, res);
-      if (resVal !== null) send(req, res, resVal);
-    } catch (e) { send(req, res, { error: e.message }, e.code || 500); }
-    return;
+    try { return send(req, res, handler(u)); }
+    catch (e) { return send(req, res, { error: e.message }, e.code || 500); }
   }
   res.writeHead(page ? 200 : 500, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(page || 'index.html mancante');

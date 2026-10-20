@@ -1,16 +1,12 @@
 {
-  "name": "venice-tpl-live",
-  "version": "2.0.0",
-  "description": "Applicazione web ad alte prestazioni per il monitoraggio in tempo reale del TPL di Venezia",
+  "name": "actv-live",
+  "version": "1.1.0",
+  "description": "Mappa 2D in tempo reale dei mezzi ACTV (GTFS-RT)",
   "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
   "dependencies": {
-    "adm-zip": "^0.5.10",
-    "protobufjs": "^7.2.5"
-  },
-  "engines": {
-    "node": ">=18.0.0"
+    "adm-zip": "^0.5.16",
+    "protobufjs": "^7.2.6"
   }
 }
