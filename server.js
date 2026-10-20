@@ -147,7 +147,8 @@ function tripDetail(i, tid, live) {
 
   const stops = st.s.map((sid, k) => {
     const ts = at(k), dl = live ? (k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null)) : null;
-    return { name: G.stops[sid] || sid, lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
+    const cleanStopName = G.stopBaseNames?.get(sid) || G.stops[sid] || sid;
+    return { name: cleanStopName, lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
       sched: hhmm(ts), exp: dl != null ? hhmm(ts + dl) : null, delay: dl != null ? Math.round(dl / 60) : null,
       inMin: Math.round((ts + (dl ?? 0) - tNow) / 60),
       state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'), skipped: !!lv?.skipped.has(k) };
@@ -182,6 +183,22 @@ const splitId = f => { const k = (f || '').indexOf(':'); return k < 0 ? [null, f
 const fail = (code, msg) => Object.assign(new Error(msg), { code });
 const q = (u, k) => u.searchParams.get(k);
 
+// Unisce automaticamente i doppioni con coordinate geografiche identiche (es. varianti a richiesta)
+const getEquivalentStopIds = (G, sid) => {
+  const loc = G.stopLoc[sid];
+  if (!loc) return [sid];
+  const baseName = G.stopBaseNames?.get(sid) || G.stops[sid];
+  const equivalent = [];
+  for (const sId in G.stops) {
+    const sLoc = G.stopLoc[sId];
+    const sBase = G.stopBaseNames?.get(sId) || G.stops[sId];
+    if (sBase === baseName && sLoc && Math.abs(sLoc[0] - loc[0]) < 0.00005 && Math.abs(sLoc[1] - loc[1]) < 0.00005) {
+      equivalent.push(sId);
+    }
+  }
+  return equivalent.length > 0 ? equivalent : [sid];
+};
+
 const API = {
   '/api/vehicles': u => {
     const list = wanted(u), errors = list.map(i => S[i].error).filter(Boolean);
@@ -203,7 +220,13 @@ const API = {
       const out = [];
       for (const i of IDS) {
         const G = D[i];
-        for (const s in G.stopIndex) { const l = G.stopLoc[s]; if (l) out.push([`${i}:${s}`, G.stops[s], l[0], l[1], i]); }
+        for (const s in G.stopIndex) { 
+          const cleanName = G.stopBaseNames?.get(s) || G.stops[s];
+          const l = G.stopLoc[s]; 
+          if (l && cleanName) {
+            out.push([`${i}:${s}`, cleanName, l[0], l[1], i]); 
+          }
+        }
       }
       stopsBody = JSON.stringify(out);
     }
@@ -211,25 +234,60 @@ const API = {
   },
   '/api/stop': u => {
     const full = q(u, 'id'), [i, sid] = splitId(full);
-    if (!D[i]) throw fail(404, 'fermata sconosciuta');
+    const G = D[i];
+    if (!G) throw fail(404, 'fermata sconosciuta');
     const labels = new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
-    return { stop: { id: full, name: D[i].stops[sid] || sid, src: i }, liveUpdated: S[i].updated, note: noteOf(D[i], q(u, 'date')),
-             departures: schedule.departures(D[i], S[i].live, sid, q(u, 'secs'), q(u, 'date'))
-               .map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) };
+    
+    const equivalentSids = getEquivalentStopIds(G, sid);
+    let allDepartures = [];
+    for (const equivSid of equivalentSids) {
+      const isReq = G.stopIsRequest?.get(equivSid) || false;
+      const deps = schedule.departures(G, S[i].live, equivSid, q(u, 'secs'), q(u, 'date'));
+      for (const d of deps) {
+        allDepartures.push({ ...d, isRequest: isReq });
+      }
+    }
+
+    const uniqueMap = new Map();
+    for (const d of allDepartures) {
+      uniqueMap.set(d.tripId, d);
+    }
+    allDepartures = Array.from(uniqueMap.values());
+    allDepartures.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn));
+
+    const cleanName = G.stopBaseNames?.get(sid) || G.stops[sid] || sid;
+
+    return { 
+      stop: { id: full, name: cleanName, src: i }, 
+      liveUpdated: S[i].updated, 
+      note: noteOf(G, q(u, 'date')),
+      departures: allDepartures.map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) 
+    };
   },
   '/api/zone': u => {   // passaggi di più fermate insieme (pontili della stessa zona)
     const ids = (q(u, 'ids') || '').split(',').slice(0, 24), out = [], lab = {};
     if (!ids.some(f => D[splitId(f)[0]])) throw fail(404, 'zona sconosciuta');
     let note = null, liveUpdated = 0;
     for (const full of ids) {
-      const [i, sid] = splitId(full); if (!D[i]) continue;
+      const [i, sid] = splitId(full); const G = D[i]; if (!G) continue;
       lab[i] ||= new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
-      for (const x of schedule.departures(D[i], S[i].live, sid, q(u, 'secs'), q(u, 'date')))
-        out.push({ ...x, src: i, stop: full, vehicle: lab[i].get(x.tripId) || null });
-      note = noteOf(D[i], q(u, 'date')); liveUpdated = Math.max(liveUpdated, S[i].updated);
+      
+      const equivalentSids = getEquivalentStopIds(G, sid);
+      for (const equivSid of equivalentSids) {
+        const isReq = G.stopIsRequest?.get(equivSid) || false;
+        for (const x of schedule.departures(G, S[i].live, equivSid, q(u, 'secs'), q(u, 'date'))) {
+          out.push({ ...x, src: i, stop: full, vehicle: lab[i].get(x.tripId) || null, isRequest: isReq });
+        }
+      }
+      note = noteOf(G, q(u, 'date')); liveUpdated = Math.max(liveUpdated, S[i].updated);
     }
-    out.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn));
-    return { liveUpdated, note, departures: out.slice(0, 300) };
+    const zoneMap = new Map();
+    for (const d of out) {
+      zoneMap.set(`${d.tripId}_${d.schedIn}`, d);
+    }
+    const uniqueOut = Array.from(zoneMap.values());
+    uniqueOut.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn));
+    return { liveUpdated, note, departures: uniqueOut.slice(0, 300) };
   },
   '/api/trip': u => {
     const [i, tid] = splitId(q(u, 'id'));
