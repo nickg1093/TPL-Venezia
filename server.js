@@ -31,11 +31,9 @@ for (const id of IDS) {
   S[id] = { updated: 0, error: null, vehicles: [], live: {}, hist: new Map() };
 }
 
-// Cache pre-serializzata e compressa in RAM per le fermate
 let cachedStopsGzip = null;
 let version = 0;
 
-// Ottimizzazione distanza con controllo rettangolare (Zero Math.sqrt)
 function isNearby(lat1, lon1, lat2, lon2, maxMeters) {
   const dLat = Math.abs(lat1 - lat2) * 111000;
   if (dLat > maxMeters) return false;
@@ -144,7 +142,16 @@ async function refresh(id) {
           routeId: routeKey ? `${id}:${routeKey}` : null, headsign: trip.headsign || null };
       });
     s8.updated = now; s8.error = null;
-  } catch (err) { s8.error = `${id}: ${err.message}`; }
+  } catch (err) {
+    // FALLBACK INTELLIGENTE: se la chiamata GTFS-RT fallisce, non blocchiamo l'app ma iniettiamo le posizioni teoriche schedulate
+    s8.error = `${id}: ${err.message} (Fallback attivo)`;
+    try {
+      const scheduledFallback = schedule.positionsNow(D[id]);
+      s8.vehicles = scheduledFallback.map(v => ({
+        ...v, tripId: v.id, id: `${id}:${v.id}`, src: id, routeId: v.routeId ? `${id}:${v.routeId}` : null
+      }));
+    } catch (_) {}
+  }
 }
 
 function tripDetail(i, tid, live) {
