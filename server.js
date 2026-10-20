@@ -182,19 +182,21 @@ const splitId = f => { const k = (f || '').indexOf(':'); return k < 0 ? [null, f
 const fail = (code, msg) => Object.assign(new Error(msg), { code });
 const q = (u, k) => u.searchParams.get(k);
 
-// Raggruppa gli stop_id che condividono lo stesso nome di base normalizzato
-function getEquivalentStopIds(G, sid) {
+// Unisce solo i veri doppioni geograficamente identici (es. 5020 e 15020), lasciando intatte le zone e i lati opposti
+const getEquivalentStopIds = (G, sid) => {
+  const loc = G.stopLoc[sid];
+  if (!loc) return [sid];
   const baseName = G.stopBaseNames?.get(sid) || G.stops[sid];
-  if (!baseName) return [sid];
   const equivalent = [];
   for (const sId in G.stops) {
+    const sLoc = G.stopLoc[sId];
     const sBase = G.stopBaseNames?.get(sId) || G.stops[sId];
-    if (sBase === baseName) {
+    if (sBase === baseName && sLoc && Math.abs(sLoc[0] - loc[0]) < 0.0001 && Math.abs(sLoc[1] - loc[1]) < 0.0001) {
       equivalent.push(sId);
     }
   }
   return equivalent.length > 0 ? equivalent : [sid];
-}
+};
 
 const API = {
   '/api/vehicles': u => {
@@ -217,13 +219,11 @@ const API = {
       const out = [];
       for (const i of IDS) {
         const G = D[i];
-        const seenNames = new Set();
         for (const s in G.stopIndex) { 
-          const baseName = G.stopBaseNames?.get(s) || G.stops[s];
+          const cleanName = G.stopBaseNames?.get(s) || G.stops[s];
           const l = G.stopLoc[s]; 
-          if (l && baseName && !seenNames.has(baseName)) {
-            seenNames.add(baseName);
-            out.push([`${i}:${s}`, baseName, l[0], l[1], i]); 
+          if (l && cleanName) {
+            out.push([`${i}:${s}`, cleanName, l[0], l[1], i]); 
           }
         }
       }
