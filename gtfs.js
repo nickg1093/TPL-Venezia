@@ -15,7 +15,7 @@ const MAX_AGE_MS = 24 * 3600 * 1000;
 const loaded = {};   // md5 dell'ultimo ZIP letto per servizio: se non cambia, non si rilegge
 
 const empty = () => ({ routes: {}, trips: {}, stops: {}, stopLoc: {}, routeShapes: {}, shapePts: {}, calendar: {},
-  exByDate: {}, stopTimes: new Map(), stopIndex: {}, tripIds: [], tripPrefixes: [], nameToStopIds: new Map() });
+  exByDate: {}, stopTimes: new Map(), stopIndex: {}, tripIds: [], tripPrefixes: [], nameToStopIds: new Map(), stopBaseNames: new Map(), stopIsRequest: new Map() });
 
 // Tracciato piatto [lat,lon,lat,lon,...] -> [[lat,lon],...] per il browser
 const toLL = p => {
@@ -60,7 +60,7 @@ async function eachRow(buf, fields, fn) {
 const tm = x => { if (!x || !x.trim()) return null; const p = x.trim().split(':'); return +p[0] * 3600 + +p[1] * 60 + +(p[2] || 0); };
 
 // Una voce per corsa: s/q (fermate e stop_sequence) sono condivisi tra le corse con lo stesso schema,
-// a/d (arrivi e partenze) sono Int32Array.
+// a/d (arrivi e partenze) are Int32Array.
 async function readStopTimes(buf, intern) {
   const out = new Map(), pats = new Map();
   let id = null, q = [], s = [], a = [], d = [];
@@ -126,7 +126,7 @@ async function load(srcId) {
   const entries = new AdmZip(buf).getEntries();
   const read = name => { const e = entries.find(x => { const n = x.entryName.toLowerCase(); return n === name || n.endsWith('/' + name); }); return e ? e.getData() : null; };
   const pool = new Map(), intern = x => { let v = pool.get(x); if (v === undefined) pool.set(x, v = x); return v; };
-  const G = empty(), { routes, trips, stops, stopLoc, shapePts, calendar, exByDate, nameToStopIds } = G;
+  const G = empty(), { routes, trips, stops, stopLoc, shapePts, calendar, exByDate, nameToStopIds, stopBaseNames, stopIsRequest } = G;
   const usedShapes = new Set(), shapesByRoute = {};
 
   await eachRow(read('routes.txt'), ['route_id', 'route_short_name', 'route_long_name', 'route_color'], r => {
@@ -134,16 +134,23 @@ async function load(srcId) {
   });
   await eachRow(read('stops.txt'), ['stop_id', 'stop_name', 'stop_lat', 'stop_lon'], s => {
     const sId = intern(s.stop_id);
-    const sName = s.stop_name;
+    const sName = s.stop_name || '';
     stops[sId] = sName;
     if (s.stop_lat && s.stop_lon && isFinite(+s.stop_lat) && isFinite(+s.stop_lon)) stopLoc[s.stop_id] = [+s.stop_lat, +s.stop_lon];
     
-    // Mappatura per risolvere i codici fermata duplicati basandosi sul nome (Punto 3)
-    if (sName) {
-      if (!nameToStopIds.has(sName)) {
-        nameToStopIds.set(sName, []);
+    // Rileva se contiene "a richiesta" (o varianti simili)
+    const isReq = /a\s*richiesta/i.test(sName);
+    stopIsRequest.set(s.stop_id, isReq);
+
+    // Rimuove la dicitura "a richiesta" per ottenere il nome base pulito
+    const cleanName = sName.replace(/\s+a\s*richiesta\w*/gi, '').trim();
+    stopBaseNames.set(s.stop_id, cleanName || sName);
+    
+    if (cleanName) {
+      if (!nameToStopIds.has(cleanName)) {
+        nameToStopIds.set(cleanName, []);
       }
-      nameToStopIds.get(sName).push(s.stop_id);
+      nameToStopIds.get(cleanName).push(s.stop_id);
     }
   });
   await eachRow(read('trips.txt'), ['trip_id', 'route_id', 'trip_headsign', 'service_id', 'shape_id', 'direction_id'], t => {
