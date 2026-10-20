@@ -1,32 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const AdmZip = require('adm-zip');
 
 /**
- * Estrae automaticamente i file ZIP presenti nella cartella 'data' 
- * (es. data/actv_aut.zip -> data/aut/)
+ * Legge un file CSV in modo asincrono riga per riga tramite streaming.
+ * Riduce drasticamente l'impatto sulla memoria rispetto al caricamento intero del file in RAM.
  */
-function extractZipFiles() {
-  const dataDir = path.join(__dirname, 'data');
-  const services = ['aut', 'nav'];
-
-  for (const s of services) {
-    const zipPath = path.join(dataDir, `actv_${s}.zip`);
-    const targetDir = path.join(dataDir, s);
-
-    if (fs.existsSync(zipPath)) {
-      try {
-        console.log(`Decompressione automatica di actv_${s}.zip...`);
-        const zip = new AdmZip(zipPath);
-        zip.extractAllTo(targetDir, true);
-      } catch (err) {
-        console.error(`Errore nella decompressione di actv_${s}.zip:`, err.message);
-      }
-    }
-  }
-}
-
 async function parseCsv(filePath) {
   const rows = [];
   if (!fs.existsSync(filePath)) return rows;
@@ -42,20 +21,33 @@ async function parseCsv(filePath) {
   return rows;
 }
 
+/**
+ * Restituisce una struttura dati GTFS vuota e pulita.
+ */
 function empty() {
   return {
-    stops: {}, stopLoc: {}, stopIndex: {}, stopBaseNames: new Map(), stopIsRequest: new Map(),
-    routes: {}, trips: {}, stopTimes: new Map(), tripPrefixes: [], routeShapes: {}, shapePts: {}
+    stops: {}, 
+    stopLoc: {}, 
+    stopIndex: {}, 
+    stopBaseNames: new Map(), 
+    stopIsRequest: new Map(),
+    routes: {}, 
+    trips: {}, 
+    stopTimes: new Map(), 
+    tripPrefixes: [], 
+    routeShapes: {}, 
+    shapePts: {}
   };
 }
 
+/**
+ * Carica e indicizza i file della cartella GTFS statica.
+ */
 async function load(src) {
-  // Esegue l'estrazione dai file .zip prima di leggere i CSV
-  extractZipFiles();
-
-  const dir = path.join(__dirname, 'data', src);
+  const dir = path.join(__dirname, 'gtfs', src);
   if (!fs.existsSync(dir)) return null;
 
+  // Caricamento parallelo dei file di testo GTFS
   const [stopsRaw, routesRaw, tripsRaw, stopTimesRaw, shapesRaw] = await Promise.all([
     parseCsv(path.join(dir, 'stops.txt')),
     parseCsv(path.join(dir, 'routes.txt')),
@@ -66,6 +58,7 @@ async function load(src) {
 
   const G = empty();
 
+  // Indicizzazione delle fermate
   for (const s of stopsRaw) {
     const id = s.stop_id;
     if (!id) continue;
@@ -76,24 +69,30 @@ async function load(src) {
     if (/richiesta/i.test(s.stop_name)) G.stopIsRequest.set(id, true);
   }
 
+  // Indicizzazione delle linee/rotte
   for (const r of routesRaw) {
     G.routes[r.route_id] = { name: r.route_short_name || r.route_long_name, color: r.route_color ? `#${r.route_color}` : null };
   }
 
+  // Indicizzazione delle corse (trips)
   for (const t of tripsRaw) {
     G.trips[t.trip_id] = { route: t.route_id, headsign: t.trip_headsign, dir: t.direction_id != null ? +t.direction_id : null, shape: t.shape_id };
   }
 
+  // Raggruppamento temporaneo degli orari di passaggio per corsa
   const stMap = new Map();
   for (const st of stopTimesRaw) {
     const tid = st.trip_id;
     let list = stMap.get(tid);
     if (!list) { list = []; stMap.set(tid, list); }
+    
+    // Converte il formato orario "HH:MM:SS" in secondi totali dall'inizio della giornata
     const parseTime = t => {
       if (!t) return 0;
       const [h, m, s] = t.split(':').map(Number);
       return h * 3600 + m * 60 + (s || 0);
     };
+    
     list.push({
       sid: st.stop_id,
       seq: +st.stop_sequence,
@@ -102,6 +101,8 @@ async function load(src) {
     });
   }
 
+  // OTTIMIZZAZIONE MEMORIA: Conversione in array tipizzati (TypedArrays)
+  // Riduce l'ingombro di RAM nel motore V8 di Node.js ed elimina il overhead degli oggetti standard.
   for (const [tid, list] of stMap) {
     list.sort((a, b) => a.seq - b.seq);
     const n = list.length;
@@ -115,6 +116,7 @@ async function load(src) {
     G.stopTimes.set(tid, { s, q, a, d, start: a[0], end: a[n - 1] });
   }
 
+  // Indicizzazione della geometria visiva dei percorsi (shapes)
   const shMap = {};
   for (const sh of shapesRaw) {
     const id = sh.shape_id;
