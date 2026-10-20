@@ -16,7 +16,7 @@ body{display:flex;flex-direction:column}
 #wrap{position:relative;flex:1;min-height:0}
 #map{position:absolute;inset:0}
 
-/* PANNELLO VERTICALE A DESTRA (Comodo e accessibile) */
+/* CONTROLLI VERTICALI A DESTRA (Stile Glassmorphism Frison) */
 .floating-right{position:absolute;top:max(12px, env(safe-area-inset-top));right:max(12px, env(safe-area-inset-right));z-index:1000;display:flex;flex-direction:column;gap:8px;pointer-events:none}
 .floating-right > *{pointer-events:auto}
 
@@ -37,7 +37,7 @@ button.icon-btn:hover{background:color-mix(in srgb,var(--fg) 10%,transparent)}
 .search-container.expanded .search-input-wrap{max-width:260px;padding:.2rem .6rem}
 .search-container input[type=search]{font:inherit;font-size:.95rem;padding:.4rem .6rem;border:none;background:transparent;color:var(--fg);width:230px;outline:none}
 
-#search-results{position:absolute;top:calc(100 + 8px);right:0;width:280px;max-height:20rem;overflow-y:auto;background:var(--solid);border:1px solid var(--line);border-radius:14px;box-shadow:0 16px 40px rgba(0,0,0,.5);z-index:1200;display:none}
+#search-results{position:absolute;top:calc(100% + 8px);right:0;width:280px;max-height:20rem;overflow-y:auto;background:var(--solid);border:1px solid var(--line);border-radius:14px;box-shadow:0 16px 40px rgba(0,0,0,.5);z-index:1200;display:none}
 #search-results.active{display:block}
 .search-category{font-size:.7rem;font-weight:700;color:var(--muted);padding:.4rem .8rem;background:var(--line);text-transform:uppercase;letter-spacing:.5px}
 .search-item{padding:.7rem .9rem;cursor:pointer;display:flex;align-items:center;gap:.6rem;font-size:.95rem;border-bottom:1px solid var(--line);transition:background .15s}
@@ -48,7 +48,7 @@ button.icon-btn:hover{background:color-mix(in srgb,var(--fg) 10%,transparent)}
 
 #follow{position:absolute;left:12px;bottom:85px;z-index:900;padding:.5rem 1rem;border-radius:99px;background:var(--solid);color:var(--fg);border:1px solid var(--line);font-size:.85rem;font-weight:600;cursor:pointer;backdrop-filter:blur(12px);box-shadow:0 6px 16px rgba(0,0,0,.3);pointer-events:auto}
 
-/* SIDE PANEL (Bottom Sheet ottimizzato per sfruttare lo schermo) */
+/* SIDE PANEL (Bottom Sheet accessibile e ben dimensionato) */
 .side-panel{position:absolute;z-index:1100;top:68px;width:420px;max-width:calc(100% - 16px);display:flex;flex-direction:column;background:var(--solid);color:var(--fg);border:1px solid var(--line);border-radius:20px;box-shadow:0 24px 56px rgba(0,0,0,.5);backdrop-filter:blur(24px);overflow:hidden}
 #panel{right:8px}
 .ph{flex-shrink:0;background:var(--solid);padding:.8rem;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:.4rem}
@@ -77,7 +77,7 @@ button.chip:hover{background:color-mix(in srgb,var(--fg) 15%,transparent)}
 .dep.go{cursor:pointer}
 .dep.go:hover{background:color-mix(in srgb,var(--fg) 8%,transparent)}
 
-/* RAIL E PUNTINI LEGGIBILI */
+/* RAIL E PUNTINI OTTIMIZZATI PER ACCESSIBILITÀ */
 .st{display:grid;grid-template-columns:38px 1fr auto;gap:.4rem;align-items:center;height:50px;padding:0 0.4rem;border-bottom:1px solid var(--line);border-radius:8px;cursor:pointer;transition:background .15s}
 .st:hover{background:color-mix(in srgb,var(--fg) 8%,transparent)}
 
@@ -125,7 +125,7 @@ button.chip:hover{background:color-mix(in srgb,var(--fg) 15%,transparent)}
 @keyframes blink-live{0%{opacity:.3;transform:scale(.9)}50%{opacity:1;transform:scale(1.15)}100%{opacity:.3;transform:scale(.9)}}
 .live-indicator{display:inline-block;width:6px;height:6px;background:var(--ok);border-radius:50%;animation:blink-live 2s infinite ease-in-out;margin-right:4px}
 
-/* BOTTOM UNIFIED BAR (Font grandi, leggibili e spazi sfruttati al massimo) */
+/* BOTTOM BAR UNIFICATA (Proporzionata e accessibile) */
 .bottom-bar{position:absolute;bottom:max(12px, env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);z-index:900;background:var(--glass);color:var(--fg);border:1px solid var(--line);border-radius:99px;padding:.4rem .9rem;display:flex;align-items:center;gap:.7rem;box-shadow:0 12px 36px rgba(0,0,0,.4);font-size:.85rem;white-space:nowrap;max-width:calc(100vw - 20px);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);transition:background .2s}
 .bottom-bar:hover{background:var(--glass-hover)}
 
@@ -143,7 +143,7 @@ button.chip:hover{background:color-mix(in srgb,var(--fg) 15%,transparent)}
 #tl-date,#tl-speed{background:color-mix(in srgb,var(--bg) 50%,transparent);color:var(--fg);border:1px solid var(--line);border-radius:99px;padding:.2rem .5rem;font:inherit;font-size:.7rem;font-weight:600;cursor:pointer;min-height:28px}
 #tl-range{accent-color:var(--accent);cursor:pointer;width:90px}
 
-/* OTTIMIZZAZIONE DISPOSITIVI MOBILI (Fullscreen e massima leggibilità) */
+/* OTTIMIZZAZIONE DISPOSITIVI MOBILI */
 @media(max-width:640px){
   #status{display:none}
   .bottom-bar{bottom:max(8px, env(safe-area-inset-bottom));left:6px;right:6px;transform:none;border-radius:18px;justify-content:space-between;flex-wrap:wrap;padding:.4rem .6rem;gap:.4rem}
@@ -158,7 +158,7 @@ button.chip:hover{background:color-mix(in srgb,var(--fg) 15%,transparent)}
 <!-- STATUS IN ALTO A SINISTRA -->
 <span id="status" role="status">Caricamento…</span>
 
-<!-- CONTROLLI VERTICALI A DESTRA (Grandi, comodi da toccare) -->
+<!-- CONTROLLI VERTICALI A DESTRA (Stile Frison accessibile) -->
 <div class="floating-right">
   <!-- Servizi (Nav / Aut) -->
   <div class="float-stack">
