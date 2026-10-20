@@ -80,6 +80,9 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .dn.late{color:var(--late)}.dn.ok,.dn.early{color:var(--ok)}
 .sched-crossed{text-decoration:line-through;opacity:0.6;font-size:.7rem;font-weight:normal}
 
+/* Badge A richiesta */
+.req-tag { display: inline-block; background: color-mix(in srgb, var(--yellow) 20%, transparent); color: var(--yellow); padding: 0.05rem 0.3rem; border-radius: 4px; font-weight: 600; font-size: 0.6rem; border: 1px solid var(--yellow); margin-right: 0.3rem; line-height: 1; vertical-align: middle; }
+
 /* Timeline grafica unificata */
 .tl{position:relative;z-index:0;padding-top:.1rem}
 .rail-col{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
@@ -545,7 +548,9 @@ function renderDepartures() {
       }
     }
 
+    const reqHtml = x.isRequest ? `<span class="req-tag">A richiesta</span>` : '';
     const vName = (live && x.vehicle) ? vehName(src, x.vehicle) : '';
+    
     let infoLine = subNote;
     if (vName) infoLine = infoLine ? `${infoLine} · ${vName}` : vName;
 
@@ -557,7 +562,7 @@ function renderDepartures() {
 
     return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" role="button" tabindex="0" title="Segui il mezzo">`
       + `${badge(x.line, x.color, src)}`
-      + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}<span>${esc(infoLine)}</span></div></div>`
+      + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}${reqHtml}<span>${esc(infoLine)}</span></div></div>`
       + `<div class="dt">${timeDisplayHtml}<div class="in-min ${cls}">${minText}</div></div></div>`;
   }).join('');
   
@@ -749,3 +754,4 @@ drawStops(); updateClock(); load(); setInterval(load, POLL_MS);
 </script>
 </body>
 </html>
+```[cite: 3]
