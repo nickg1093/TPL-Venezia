@@ -91,14 +91,13 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .st.next .dot{box-shadow:0 0 0 2.5px color-mix(in srgb,var(--rc) 30%,transparent);animation:pulse-dot 1.5s infinite ease-in-out}
 .st.passed .nm,.st.passed .tm,.st.passed .muted{opacity:.35}
 
-.trav{position:absolute;top:21px;width:2.5px;margin-left:-1.25px;height:0;background:var(--rc);z-index:2;transition:height 4.5s linear}
-.veh{position:absolute;top:21px;width:22px;height:22px;margin-left:-11px;margin-top:-11px;border-radius:50%;background:var(--rc);border:2px solid var(--bg);box-shadow:0 2px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:.65rem;z-index:4;transition:top 4.5s linear}
+.trav{position:absolute;top:21px;width:2.5px;margin-left:-1.25px;height:0;background:var(--rc);z-index:2;transition:height 8s linear}
+.veh{position:absolute;top:21px;width:22px;height:22px;margin-left:-11px;margin-top:-11px;border-radius:50%;background:var(--rc);border:2px solid var(--bg);box-shadow:0 2px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:.65rem;z-index:4;transition:top 8s linear}
 
 .pt{width:16px;height:16px;min-width:16px;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex:none;background:var(--yellow);color:#000;box-shadow:0 1px 2px rgba(0,0,0,0.2)}
 .pt.sm{width:14px;height:14px;min-width:14px;font-size:8px}
 .search-item>.muted{margin-left:auto}
 
-/* Ottimizzazione CSS per performance hardware dei bus */
 .bus{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;min-width:24px;border-radius:50%;background:var(--c,#0a6c8c);color:var(--t,#fff);font:700 10px/1 system-ui,sans-serif;border:2px solid var(--b,#fff);box-shadow:0 2px 5px rgba(0,0,0,.3);white-space:nowrap;cursor:pointer;will-change:transform}
 .bus:hover{transform:scale(1.1)}
 .bus.aut{border-radius:5px;width:auto;min-width:22px;height:18px;padding:0 3px}
@@ -192,7 +191,7 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 <script>
 const $ = id => document.getElementById(id);
 const ICON = { nav: '🚢', aut: '🚌' };
-const POLL_MS = 5000, MOVE_MS = 4500, MIN_STOP_ZOOM = 14;
+const POLL_MS = 8000, MOVE_MS = 7500, MIN_STOP_ZOOM = 14;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const p2 = n => String(n).padStart(2, '0');
 const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds(); };
@@ -374,7 +373,7 @@ resultsEl.addEventListener('click', e => {
 document.addEventListener('click', e => { if (!e.target.closest('.search-wrapper')) resultsEl.classList.remove('active'); });
 map.on('click', () => { if (!openTrip && !filterEl.value) clearRoutes(); });
 
-/* OTTIMIZZAZIONE MARKER: Lista attiva per animazione fluida senza ricalcoli pesanti */
+/* GESTIONE MARKER MAPPA ULTRA-LEGGERA */
 const markers = new Map();
 const activeMoving = new Set();
 let isTicking = false;
@@ -395,7 +394,6 @@ function render() {
       continue;
     }
 
-    // Aggiorna solo se c'è un vero cambiamento
     if (e.html !== html) { e.m.setIcon(L.divIcon({ className: '', iconSize: null, html })); e.html = html; }
     const newTip = tip(v);
     if (e.tipContent !== newTip) { e.m.setTooltipContent(newTip); e.tipContent = newTip; }
@@ -427,7 +425,6 @@ function render() {
   }
 }
 
-/* Ciclo di animazione ultra-leggero attivato solo per i mezzi in movimento */
 function tick(now) {
   for (const e of activeMoving) {
     if (!e.from) { activeMoving.delete(e); continue; }
@@ -479,7 +476,7 @@ function drawStops() {
 map.on('moveend', drawStops);
 
 const refreshPanel = () => { if (openStop) loadDepartures(); else if (openTrip) loadTrip(); };
-const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInterval(refreshPanel, POLL_MS); };
+const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInterval(refreshPanel, 12000); }; // Pannelli a 12s per massima leggerezza
 function resetTrip() {
   setFollow(false);
   const had = !!openTrip;
