@@ -140,21 +140,31 @@ function tripDetail(i, tid, live) {
   const tNow = !fits(nowS) && fits(nowS + 86400) ? nowS + 86400 : nowS;
   const lv = live ? S[i].live[tid] : null, hist = live ? S[i].hist.get(tid)?.delays : null;
   const at = k => (k === n - 1 ? st.a[k] : st.d[k]);
+  
   let cur = lv && lv.firstJ >= 0 ? lv.firstJ : 0;
   if (!(lv && lv.firstJ >= 0)) while (cur < n && at(cur) <= tNow) cur++;
 
+  // CONTROLLO DI SICUREZZA: se la corsa non è ancora partita (orario attuale < orario partenza prima fermata), 
+  // forziamo cur a 0 per evitare stati alterati o ritardi fittizi sul capolinea iniziale.
+  const departureTime = st.d[0] ?? st.a[0];
+  if (tNow < departureTime) {
+    cur = 0;
+  }
+
   const stops = st.s.map((sid, k) => {
     const ts = at(k), dl = live ? (k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null)) : null;
-    // RESTITUISCE IL NOME ORIGINALE DEL GTFS (es. "S. Servolo A RICHIESTA" se la corsa punta a quell'ID)
+    // Se siamo al capolinea di partenza e non è ancora l'ora di partenza, azzeriamo il ritardo iniziale
+    const effectiveDl = (k === 0 && tNow < departureTime) ? 0 : dl;
     const originalStopName = G.stops[sid] || sid;
+    
     return { name: originalStopName, lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
-      sched: hhmm(ts), exp: dl != null ? hhmm(ts + dl) : null, delay: dl != null ? Math.round(dl / 60) : null,
-      inMin: Math.round((ts + (dl ?? 0) - tNow) / 60),
+      sched: hhmm(ts), exp: effectiveDl != null ? hhmm(ts + effectiveDl) : null, delay: effectiveDl != null ? Math.round(effectiveDl / 60) : null,
+      inMin: Math.round((ts + (effectiveDl ?? 0) - tNow) / 60),
       state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'), skipped: !!lv?.skipped.has(k) };
   });
 
   const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
-  const dn = lv && cur < n ? lv.delays[cur] : null;
+  const dn = lv && cur < n ? (cur === 0 && tNow < departureTime ? 0 : lv.delays[cur]) : null;
   let progress;
   if (cur >= n) progress = { from: n - 1, frac: 0 };
   else if (cur === 0) progress = { from: 0, frac: 0 };
