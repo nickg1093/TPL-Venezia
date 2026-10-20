@@ -1,0 +1,12 @@
+{
+  "name": "actv-live",
+  "version": "1.1.0",
+  "description": "Mappa 2D in tempo reale dei mezzi ACTV (GTFS-RT)",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "protobufjs": "^7.2.6"
+  }
+}
