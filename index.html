@@ -373,7 +373,6 @@ resultsEl.addEventListener('click', e => {
 document.addEventListener('click', e => { if (!e.target.closest('.search-wrapper')) resultsEl.classList.remove('active'); });
 map.on('click', () => { if (!openTrip && !filterEl.value) clearRoutes(); });
 
-/* GESTIONE MARKER MAPPA ULTRA-LEGGERA */
 const markers = new Map();
 const activeMoving = new Set();
 let isTicking = false;
@@ -476,7 +475,7 @@ function drawStops() {
 map.on('moveend', drawStops);
 
 const refreshPanel = () => { if (openStop) loadDepartures(); else if (openTrip) loadTrip(); };
-const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInterval(refreshPanel, 12000); }; // Pannelli a 12s per massima leggerezza
+const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInterval(refreshPanel, 12000); };
 function resetTrip() {
   setFollow(false);
   const had = !!openTrip;
