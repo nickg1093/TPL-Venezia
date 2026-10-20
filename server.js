@@ -13,6 +13,7 @@ const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/a
 const IDS = Object.keys(RT);
 const NOTES = { approx: 'data fuori dal calendario GTFS: orari indicativi' };
 
+// Sottoinsieme dello schema GTFS-Realtime: basta per posizioni, ritardi e soppressioni
 const Feed = protobuf.parse(`syntax = "proto2";
 message FeedMessage { repeated FeedEntity entity = 2; }
 message FeedEntity { optional string id = 1; optional TripUpdate trip_update = 3; optional VehiclePosition vehicle = 4; }
@@ -35,7 +36,7 @@ let stopsBody = null, version = 0;
 async function loadStatic() {
   for (const id of IDS) {
     try {
-      const g = await gtfs.load(id);
+      const g = await gtfs.load(id);   // null = ZIP invariato, niente da rileggere
       if (!g) continue;
       D[id] = g; S[id].hist.clear(); ready[id] = true; stopsBody = null; version++;
       refresh(id);
@@ -52,6 +53,7 @@ const delayOf = (ev, sched) => {
   return null;
 };
 
+// Indice (linea, partenza) -> corse: serve solo se il feed usa ID diversi dal GTFS, quindi si costruisce al bisogno
 function byStart(G) {
   if (G._bs) return G._bs;
   const bs = (G._bs = {});
@@ -99,7 +101,7 @@ async function refresh(id) {
       const st = G.stopTimes.get(tid), n = st.s.length, explicit = new Array(n), skipped = new Set();
       let cur = 0, firstJ = -1;
       for (const u of tu.stopTimeUpdate || []) {
-        if (u.scheduleRelationship === 2) continue;
+        if (u.scheduleRelationship === 2) continue;   // NO_DATA
         let j = -1;
         if (u.stopId) { j = st.s.indexOf(u.stopId, cur); if (j < 0) j = st.s.indexOf(u.stopId); }
         if (j < 0 && has(u, 'stopSequence')) j = st.q.indexOf(u.stopSequence);
@@ -118,7 +120,7 @@ async function refresh(id) {
       for (let k = 0; k < n; k++) if (explicit[k] != null) h.delays[k] = explicit[k];
       h.seen = now;
     }
-    for (const [k, h] of s8.hist) if (now - h.seen > 3 * 3600 * 1000) s8.hist.delete(k);
+    for (const [k, h] of s8.hist) if (now - h.seen > 3 * 3600 * 1000) s8.hist.delete(k);   // niente accumulo
     s8.live = live;
     s8.vehicles = pos.filter(e => Number.isFinite(e.vehicle?.position?.latitude) && Number.isFinite(e.vehicle.position.longitude))
       .map(e => {
@@ -145,8 +147,7 @@ function tripDetail(i, tid, live) {
 
   const stops = st.s.map((sid, k) => {
     const ts = at(k), dl = live ? (k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null)) : null;
-    const cleanStopName = G.stopBaseNames?.get(sid) || G.stops[sid] || sid;
-    return { name: cleanStopName, lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
+    return { name: G.stops[sid] || sid, lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
       sched: hhmm(ts), exp: dl != null ? hhmm(ts + dl) : null, delay: dl != null ? Math.round(dl / 60) : null,
       inMin: Math.round((ts + (dl ?? 0) - tNow) / 60),
       state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'), skipped: !!lv?.skipped.has(k) };
@@ -202,13 +203,7 @@ const API = {
       const out = [];
       for (const i of IDS) {
         const G = D[i];
-        for (const s in G.stopIndex) { 
-          const cleanName = G.stopBaseNames?.get(s) || G.stops[s];
-          const l = G.stopLoc[s]; 
-          if (l && cleanName) {
-            out.push([`${i}:${s}`, cleanName, l[0], l[1], i]); 
-          }
-        }
+        for (const s in G.stopIndex) { const l = G.stopLoc[s]; if (l) out.push([`${i}:${s}`, G.stops[s], l[0], l[1], i]); }
       }
       stopsBody = JSON.stringify(out);
     }
@@ -216,37 +211,22 @@ const API = {
   },
   '/api/stop': u => {
     const full = q(u, 'id'), [i, sid] = splitId(full);
-    const G = D[i];
-    if (!G) throw fail(404, 'fermata sconosciuta');
+    if (!D[i]) throw fail(404, 'fermata sconosciuta');
     const labels = new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
-    
-    const isReq = G.stopIsRequest?.get(sid) || false;
-    const deps = schedule.departures(G, S[i].live, sid, q(u, 'secs'), q(u, 'date'));
-    const allDepartures = deps.map(d => ({ ...d, isRequest: isReq }));
-
-    allDepartures.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn));
-    const cleanName = G.stopBaseNames?.get(sid) || G.stops[sid] || sid;
-
-    return { 
-      stop: { id: full, name: cleanName, src: i }, 
-      liveUpdated: S[i].updated, 
-      note: noteOf(G, q(u, 'date')),
-      departures: allDepartures.map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) 
-    };
+    return { stop: { id: full, name: D[i].stops[sid] || sid, src: i }, liveUpdated: S[i].updated, note: noteOf(D[i], q(u, 'date')),
+             departures: schedule.departures(D[i], S[i].live, sid, q(u, 'secs'), q(u, 'date'))
+               .map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) };
   },
-  '/api/zone': u => {
+  '/api/zone': u => {   // passaggi di più fermate insieme (pontili della stessa zona)
     const ids = (q(u, 'ids') || '').split(',').slice(0, 24), out = [], lab = {};
     if (!ids.some(f => D[splitId(f)[0]])) throw fail(404, 'zona sconosciuta');
     let note = null, liveUpdated = 0;
     for (const full of ids) {
-      const [i, sid] = splitId(full); const G = D[i]; if (!G) continue;
+      const [i, sid] = splitId(full); if (!D[i]) continue;
       lab[i] ||= new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
-      
-      const isReq = G.stopIsRequest?.get(sid) || false;
-      for (const x of schedule.departures(G, S[i].live, sid, q(u, 'secs'), q(u, 'date'))) {
-        out.push({ ...x, src: i, stop: full, vehicle: lab[i].get(x.tripId) || null, isRequest: isReq });
-      }
-      note = noteOf(G, q(u, 'date')); liveUpdated = Math.max(liveUpdated, S[i].updated);
+      for (const x of schedule.departures(D[i], S[i].live, sid, q(u, 'secs'), q(u, 'date')))
+        out.push({ ...x, src: i, stop: full, vehicle: lab[i].get(x.tripId) || null });
+      note = noteOf(D[i], q(u, 'date')); liveUpdated = Math.max(liveUpdated, S[i].updated);
     }
     out.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn));
     return { liveUpdated, note, departures: out.slice(0, 300) };

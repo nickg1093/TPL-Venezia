@@ -61,9 +61,6 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .banner{margin:.3rem 0;padding:.3rem;border-radius:6px;border:1px solid var(--late);color:var(--late);font-weight:600;font-size:.7rem;background:color-mix(in srgb,var(--late) 10%,transparent)}
 #pback{color:var(--accent);text-decoration:none;font-weight:600}
 
-/* Badge A RICHIESTA nei passaggi */
-.badge-req{background:var(--yellow);color:#000;font-size:0.6rem;font-weight:800;padding:0.1rem 0.3rem;border-radius:4px;margin-right:0.3rem;display:inline-block;vertical-align:middle}
-
 /* Passaggi e fermate con altezza fissa rigorosa */
 .dep{display:grid;grid-template-columns:auto 1fr auto;gap:.5rem;align-items:center;height:42px;padding:0 0.3rem;border-bottom:1px solid var(--line);border-radius:6px;transition:background .15s}
 .dep.go{cursor:pointer}
@@ -208,9 +205,9 @@ const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.get
 const fmtSecs = s => `${p2(Math.floor(s / 3600) % 24)}:${p2(Math.floor(s % 3600 / 60))}:${p2(s % 60)}`;
 const localDate = () => { const d = new Date(); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; };
 
-const statusEl = $('status'), filterEl = $('filter'), resultsEl = $('search-results'), panel = $('panel'), plist = $('plist'), chipsArea = $('chips-area');
-const pname = $('pname'), psub = $('psub'), pstatus = $('pstatus'), pbadge = $('pbadge'), hintEl = $('hint'), followEl = $('follow');
-const range = $('tl-range'), dateEl = $('tl-date');
+const statusEl = $('status'), filterEl =$('filter'), resultsEl = $('search-results'), panel =$('panel'), plist = $('plist'), chipsArea =$('chips-area');
+const pname = $('pname'), psub =$('psub'), pstatus = $('pstatus'), pbadge =$('pbadge'), hintEl = $('hint'), followEl =$('follow');
+const range = $('tl-range'), dateEl =$('tl-date');
 
 let mode = 'live', staticVer = -1, lastUpdate = Date.now(), lastLoadSecs = -1, isPlaying = false, playTimer = null;
 const active = new Set(['nav', 'aut']);
@@ -247,9 +244,7 @@ function applyTime(secs, force) {
 }
 $('tl-play').onclick = () => {
   isPlaying = !isPlaying; syncPlay(); clearInterval(playTimer);
-  if (isPlaying) playTimer = setInterval(() => { const v = +range.value + +$('tl-speed').value; applyTime(v > 86400 ? 0 : v); }, 1000);
-};
-$('tl-now').onclick = () => { stopPlay(); dateEl.value = localDate(); applyTime(nowSecs(), true); };
+  if (isPlaying) playTimer = setInterval(() => { const v = +range.value + +$('tl-speed').value; applyTime(v > 86400 ? 0 : v); }, 1000); };$('tl-now').onclick = () => { stopPlay(); dateEl.value = localDate(); applyTime(nowSecs(), true); };
 range.oninput = () => applyTime(+range.value);
 dateEl.onchange = () => applyTime(+range.value, true);
 
@@ -516,7 +511,6 @@ async function loadDepartures() {
 function renderDepartures() {
   if (!lastDeps || !openStop) return;
   const live = mode === 'live', z = openZone;
-  pname.textContent = `${ICON[openSrc]} ${lastDeps.stop.name}`;
   psub.textContent = (z ? `${z.letters.length} ${unitOf(z)[1]} · ` : '') + (live ? `Live · ${new Date(lastDeps.liveUpdated).toLocaleTimeString('it-IT')}` : 'Orario') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
   
   const base = lastDeps.departures.map(x => ({ ...x, tIn: live ? x.expIn : x.schedIn }))
@@ -560,11 +554,10 @@ function renderDepartures() {
       : `<div class="dt-time-wrap"><strong class="${cls}">${esc(live ? x.exp : x.sched)}</strong></div>`;
 
     const minText = x.tIn <= 0 ? 'In arrivo' : `tra ${x.tIn} min`;
-    const reqBadge = x.isRequest ? '<span class="badge-req">A RICHIESTA</span>' : '';
 
     return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" role="button" tabindex="0" title="Segui il mezzo">`
       + `${badge(x.line, x.color, src)}`
-      + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}<span>${reqBadge}${esc(infoLine)}</span></div></div>`
+      + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}<span>${esc(infoLine)}</span></div></div>`
       + `<div class="dt">${timeDisplayHtml}<div class="in-min ${cls}">${minText}</div></div></div>`;
   }).join('');
   
