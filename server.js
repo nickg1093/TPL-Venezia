@@ -183,21 +183,43 @@ const splitId = f => { const k = (f || '').indexOf(':'); return k < 0 ? [null, f
 const fail = (code, msg) => Object.assign(new Error(msg), { code });
 const q = (u, k) => u.searchParams.get(k);
 
-// Unisce automaticamente i doppioni con coordinate geografiche identiche (es. varianti a richiesta)
+// Funzione universale per trovare ID equivalenti (soglia <= 2 metri + compatibilità nomi)
 const getEquivalentStopIds = (G, sid) => {
   const loc = G.stopLoc[sid];
   if (!loc) return [sid];
-  const baseName = G.stopBaseNames?.get(sid) || G.stops[sid];
+  const nameA = G.stops[sid] || '';
+  
   const equivalent = [];
   for (const sId in G.stops) {
     const sLoc = G.stopLoc[sId];
-    const sBase = G.stopBaseNames?.get(sId) || G.stops[sId];
-    if (sBase === baseName && sLoc && Math.abs(sLoc[0] - loc[0]) < 0.00005 && Math.abs(sLoc[1] - loc[1]) < 0.00005) {
-      equivalent.push(sId);
+    if (!sLoc) continue;
+    
+    // Distanza geometrica in metri (soglia stretta a 2 metri)
+    const dLat = Math.abs(sLoc[0] - loc[0]) * 111000;
+    const dLon = Math.abs(sLoc[1] - loc[1]) * 78000;
+    const distanceMeters = Math.hypot(dLat, dLon);
+    
+    if (distanceMeters <= 2) {
+      const nameB = G.stops[sId] || '';
+      if (namesAreCompatible(nameA, nameB)) {
+        equivalent.push(sId);
+      }
     }
   }
   return equivalent.length > 0 ? equivalent : [sid];
 };
+
+function namesAreCompatible(n1, n2) {
+  const clean1 = n1.toLowerCase().replace(/a\s*richiesta\w*/gi, '').replace(/[^\w\s]/g, '').trim();
+  const clean2 = n2.toLowerCase().replace(/a\s*richiesta\w*/gi, '').replace(/[^\w\s]/g, '').trim();
+  
+  if (clean1.includes(clean2) || clean2.includes(clean1)) return true;
+  
+  const tokens1 = clean1.split(/\s+/).filter(w => w.length > 2);
+  const tokens2 = clean2.split(/\s+/).filter(w => w.length > 2);
+  
+  return tokens1.some(t => tokens2.includes(t));
+}
 
 const API = {
   '/api/vehicles': u => {
