@@ -13,7 +13,6 @@ const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/a
 const IDS = Object.keys(RT);
 const NOTES = { approx: 'data fuori dal calendario GTFS: orari indicativi' };
 
-// Sottoinsieme dello schema GTFS-Realtime: basta per posizioni, ritardi e soppressioni
 const Feed = protobuf.parse(`syntax = "proto2";
 message FeedMessage { repeated FeedEntity entity = 2; }
 message FeedEntity { optional string id = 1; optional TripUpdate trip_update = 3; optional VehiclePosition vehicle = 4; }
@@ -36,7 +35,7 @@ let stopsBody = null, version = 0;
 async function loadStatic() {
   for (const id of IDS) {
     try {
-      const g = await gtfs.load(id);   // null = ZIP invariato, niente da rileggere
+      const g = await gtfs.load(id);
       if (!g) continue;
       D[id] = g; S[id].hist.clear(); ready[id] = true; stopsBody = null; version++;
       refresh(id);
@@ -53,7 +52,6 @@ const delayOf = (ev, sched) => {
   return null;
 };
 
-// Indice (linea, partenza) -> corse: serve solo se il feed usa ID diversi dal GTFS, quindi si costruisce al bisogno
 function byStart(G) {
   if (G._bs) return G._bs;
   const bs = (G._bs = {});
@@ -101,7 +99,7 @@ async function refresh(id) {
       const st = G.stopTimes.get(tid), n = st.s.length, explicit = new Array(n), skipped = new Set();
       let cur = 0, firstJ = -1;
       for (const u of tu.stopTimeUpdate || []) {
-        if (u.scheduleRelationship === 2) continue;   // NO_DATA
+        if (u.scheduleRelationship === 2) continue;
         let j = -1;
         if (u.stopId) { j = st.s.indexOf(u.stopId, cur); if (j < 0) j = st.s.indexOf(u.stopId); }
         if (j < 0 && has(u, 'stopSequence')) j = st.q.indexOf(u.stopSequence);
@@ -120,7 +118,7 @@ async function refresh(id) {
       for (let k = 0; k < n; k++) if (explicit[k] != null) h.delays[k] = explicit[k];
       h.seen = now;
     }
-    for (const [k, h] of s8.hist) if (now - h.seen > 3 * 3600 * 1000) s8.hist.delete(k);   // niente accumulo
+    for (const [k, h] of s8.hist) if (now - h.seen > 3 * 3600 * 1000) s8.hist.delete(k);
     s8.live = live;
     s8.vehicles = pos.filter(e => Number.isFinite(e.vehicle?.position?.latitude) && Number.isFinite(e.vehicle.position.longitude))
       .map(e => {
@@ -236,7 +234,7 @@ const API = {
       departures: allDepartures.map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) 
     };
   },
-  '/api/zone': u => {   // passaggi di più fermate insieme (pontili della stessa zona)
+  '/api/zone': u => {
     const ids = (q(u, 'ids') || '').split(',').slice(0, 24), out = [], lab = {};
     if (!ids.some(f => D[splitId(f)[0]])) throw fail(404, 'zona sconosciuta');
     let note = null, liveUpdated = 0;
