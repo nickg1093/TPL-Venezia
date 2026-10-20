@@ -2,42 +2,61 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Venezia TPL live</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-:root{--bg:#0d1317;--fg:#f0f4f8;--muted:#8a9ba8;--line:rgba(255,255,255,.08);--accent:#38bdf8;--late:#f87171;--ok:#4ade80;--glass:rgba(15,23,42,.75);--solid:#0f172a;--yellow:#facc15}
-@media(prefers-color-scheme:light){:root{--bg:#f8fafc;--fg:#0f172a;--muted:#64748b;--line:rgba(0,0,0,.08);--accent:#0284c7;--late:#dc2626;--ok:#16a34a;--glass:rgba(255,255,255,.85);--solid:#fff;--yellow:#eab308}}
-*{box-sizing:border-box}
+:root{--bg:#0d1317;--fg:#f0f4f8;--muted:#8a9ba8;--line:rgba(255,255,255,.08);--accent:#38bdf8;--late:#f87171;--ok:#4ade80;--glass:rgba(15,23,42,.7);--glass-hover:rgba(15,23,42,.9);--solid:#0f172a;--yellow:#facc15}
+@media(prefers-color-scheme:light){:root{--bg:#f8fafc;--fg:#0f172a;--muted:#64748b;--line:rgba(0,0,0,.08);--accent:#0284c7;--late:#dc2626;--ok:#16a34a;--glass:rgba(255,255,255,.8);--glass-hover:rgba(255,255,255,.95);--solid:#fff;--yellow:#eab308}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
 html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--fg);overflow:hidden}
 body{display:flex;flex-direction:column}
-header{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;padding:.5rem 1rem;background:var(--glass);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--line);z-index:1000}
-.search-wrapper{position:relative;flex:1;min-width:180px;max-width:300px}
-input[type=search]{font:inherit;padding:.45rem .9rem;border:1px solid var(--line);border-radius:99px;background:color-mix(in srgb,var(--bg) 50%,transparent);color:var(--fg);width:100%;transition:all .2s}
-input[type=search]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent)}
-#search-results{position:absolute;top:calc(100% + 6px);left:0;width:100%;min-width:240px;max-height:18rem;overflow-y:auto;background:var(--solid);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 24px rgba(0,0,0,.25);z-index:1200;display:none}
-#search-results.active{display:block}
-.search-category{font-size:.65rem;font-weight:700;color:var(--muted);padding:.4rem .8rem;background:var(--line);text-transform:uppercase;letter-spacing:.5px}
-.search-item{padding:.6rem .8rem;cursor:pointer;display:flex;align-items:center;gap:.6rem;font-size:.85rem;border-bottom:1px solid var(--line);transition:background .15s}
-.search-item:hover{background:color-mix(in srgb,var(--accent) 10%,transparent)}
-#status{margin-left:auto;font-size:.75rem;color:var(--muted);white-space:nowrap}
-#status.err{color:var(--late)}
+
 #wrap{position:relative;flex:1;min-height:0}
 #map{position:absolute;inset:0}
-button,.seg label{font:inherit;font-size:.85rem;font-weight:500;padding:.4rem .8rem;border:1px solid var(--line);border-radius:99px;background:color-mix(in srgb,var(--bg) 50%,transparent);color:var(--fg);cursor:pointer;transition:all .2s cubic-bezier(.16,1,.3,1);display:inline-flex;align-items:center;gap:.3rem;justify-content:center;user-select:none;min-height:40px}
-button:hover,.seg label:hover{background:color-mix(in srgb,var(--fg) 8%,transparent);border-color:color-mix(in srgb,var(--fg) 15%,transparent)}
-button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.hint{position:absolute;left:16px;bottom:80px;z-index:900;padding:.3rem .7rem;border-radius:99px;background:var(--solid);color:var(--muted);border:1px solid var(--line);font-size:.75rem;pointer-events:none;backdrop-filter:blur(12px);box-shadow:0 4px 12px rgba(0,0,0,.15)}
-#follow{pointer-events:auto;bottom:75px;cursor:pointer}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:99px;overflow:hidden;background:color-mix(in srgb,var(--bg) 30%,transparent)}
-.seg label{border:none;border-radius:0;background:transparent;padding:.4rem .8rem;min-height:auto}
-.seg input{position:absolute;opacity:0;pointer-events:none}
-.seg label:has(input:checked){background:var(--accent);color:var(--bg);font-weight:600}
 
-.side-panel{position:absolute;z-index:1100;top:12px;width:360px;max-width:calc(100% - 24px);display:flex;flex-direction:column;background:var(--solid);color:var(--fg);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 32px rgba(0,0,0,.3);backdrop-filter:blur(20px);overflow:hidden}
+/* CONTROLLI FLUTTUANTI SUPERIORI (Universal Safe Area Aware) */
+.floating-top{position:absolute;top:max(12px, env(safe-area-inset-top));left:max(12px, env(safe-area-inset-left));right:max(12px, env(safe-area-inset-right));z-index:1000;display:flex;align-items:center;gap:.4rem;pointer-events:none}
+.floating-top > *{pointer-events:auto}
+
+.float-group{display:flex;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--line);border-radius:99px;padding:3px;box-shadow:0 8px 32px rgba(0,0,0,.25);transition:background .2s}
+.float-group:hover{background:var(--glass-hover)}
+
+.seg{display:inline-flex;border-radius:99px;overflow:hidden}
+.seg label{font:inherit;font-size:.8rem;font-weight:500;padding:.4rem .7rem;border:none;border-radius:99px;background:transparent;color:var(--fg);cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:.3rem;justify-content:center;user-select:none;min-height:40px;min-width:40px}
+.seg label:hover{background:color-mix(in srgb,var(--fg) 6%,transparent)}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label:has(input:checked){background:var(--accent);color:var(--bg);font-weight:600;box-shadow:0 2px 8px color-mix(in srgb,var(--accent) 40%,transparent)}
+
+/* SEARCH COMPATTA UNIVERSALE */
+.search-container{position:relative;display:flex;align-items:center;background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--line);border-radius:99px;padding:3px;box-shadow:0 8px 32px rgba(0,0,0,.25);transition:all .3s cubic-bezier(.16,1,.3,1)}
+.search-container:hover{background:var(--glass-hover)}
+.search-btn{width:40px;height:40px;border-radius:50%;background:transparent;border:none;color:var(--fg);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;transition:background .2s}
+.search-btn:hover{background:color-mix(in srgb,var(--fg) 10%,transparent)}
+.search-input-wrap{max-width:0;overflow:hidden;transition:max-width .3s cubic-bezier(.16,1,.3,1);display:flex;align-items:center}
+.search-container.expanded .search-input-wrap{max-width:220px}
+.search-container input[type=search]{font:inherit;font-size:.85rem;padding:.4rem .6rem;border:none;background:transparent;color:var(--fg);width:210px;outline:none}
+
+#search-results{position:absolute;top:calc(100% + 8px);left:0;width:100%;min-width:260px;max-height:18rem;overflow-y:auto;background:var(--solid);border:1px solid var(--line);border-radius:14px;box-shadow:0 16px 40px rgba(0,0,0,.4);z-index:1200;display:none}
+#search-results.active{display:block}
+.search-category{font-size:.65rem;font-weight:700;color:var(--muted);padding:.4rem .8rem;background:var(--line);text-transform:uppercase;letter-spacing:.5px}
+.search-item{padding:.65rem .8rem;cursor:pointer;display:flex;align-items:center;gap:.6rem;font-size:.85rem;border-bottom:1px solid var(--line);transition:background .15s}
+.search-item:hover{background:color-mix(in srgb,var(--accent) 15%,transparent)}
+
+#status{margin-left:auto;background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--line);padding:.4rem 1rem;border-radius:99px;font-size:.75rem;color:var(--muted);white-space:nowrap;box-shadow:0 8px 32px rgba(0,0,0,.25)}
+#status.err{color:var(--late)}
+
+button.icon-btn{font:inherit;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--glass);backdrop-filter:blur(20px);color:var(--fg);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .2s;box-shadow:0 8px 32px rgba(0,0,0,.25);flex-shrink:0}
+button.icon-btn:hover{background:var(--glass-hover)}
+
+.hint{position:absolute;left:16px;bottom:90px;z-index:900;padding:.4rem .8rem;border-radius:99px;background:var(--solid);color:var(--muted);border:1px solid var(--line);font-size:.75rem;pointer-events:none;backdrop-filter:blur(12px);box-shadow:0 4px 12px rgba(0,0,0,.2)}
+#follow{pointer-events:auto;bottom:85px;cursor:pointer}
+
+/* SIDE PANEL (Bottom Sheet su Mobile, Finestra Fluttuante su Desktop) */
+.side-panel{position:absolute;z-index:1100;top:68px;width:380px;max-width:calc(100% - 24px);display:flex;flex-direction:column;background:var(--solid);color:var(--fg);border:1px solid var(--line);border-radius:18px;box-shadow:0 20px 48px rgba(0,0,0,.4);backdrop-filter:blur(24px);overflow:hidden}
 #panel{right:12px}
-.ph{flex-shrink:0;background:var(--solid);padding:.6rem .6rem .4rem;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:.25rem}
+.ph{flex-shrink:0;background:var(--solid);padding:.7rem .7rem .5rem;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:.3rem}
 .ph-main{display:flex;justify-content:space-between;gap:.5rem;align-items:flex-start;width:100%}
 .ph-content{display:grid;grid-template-columns:auto 1fr;gap:.1rem .6rem;align-items:center;min-width:0;flex:1}
 .ph-badge-area{grid-row:span 2;display:flex;align-items:flex-start}
@@ -47,23 +66,24 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .muted{color:var(--muted);font-size:.68rem}
 
 .chips-container{width:100%;margin-top:.1rem}
-.chips{display:flex;gap:.25rem;flex-wrap:wrap;align-items:center}
-button.chip{padding:.25rem .55rem;font-size:.75rem;border-radius:6px;display:inline-flex;align-items:center;gap:.25rem;min-height:auto}
+.chips{display:flex;gap:.3rem;flex-wrap:wrap;align-items:center}
+button.chip{padding:.3rem .6rem;font-size:.75rem;border-radius:8px;border:1px solid var(--line);background:color-mix(in srgb,var(--bg) 40%,transparent);color:var(--fg);display:inline-flex;align-items:center;gap:.25rem;cursor:pointer;transition:all .15s;min-height:32px}
+button.chip:hover{background:color-mix(in srgb,var(--fg) 10%,transparent)}
 .chip.on,.chip.on:hover{background:var(--accent);color:var(--bg);border-color:transparent;font-weight:700}
 
-#plist{padding:.2rem .6rem .6rem;overflow-y:auto;flex:none;height:calc(4 * 44px + 0.8rem);min-height:0}
+#plist{padding:.3rem .7rem .7rem;overflow-y:auto;flex:none;height:calc(4 * 44px + 0.8rem);min-height:0}
 
 .late,.ok,.early{font-weight:600}
 .late{color:var(--late)}.ok,.early{color:var(--ok)}
 .banner{margin:.3rem 0;padding:.3rem;border-radius:6px;border:1px solid var(--late);color:var(--late);font-weight:600;font-size:.7rem;background:color-mix(in srgb,var(--late) 10%,transparent)}
 #pback{color:var(--accent);text-decoration:none;font-weight:600}
 
-.dep{display:grid;grid-template-columns:auto 1fr auto;gap:.5rem;align-items:center;height:42px;padding:0 0.3rem;border-bottom:1px solid var(--line);border-radius:6px;transition:background .15s}
+.dep{display:grid;grid-template-columns:auto 1fr auto;gap:.5rem;align-items:center;height:44px;padding:0 0.4rem;border-bottom:1px solid var(--line);border-radius:8px;transition:background .15s}
 .dep.go{cursor:pointer}
 .dep.go:hover{background:color-mix(in srgb,var(--fg) 5%,transparent)}
 
-/* STRUTTURA RAIL E PUNTINI BLINDATA AL MILLIMETRO (Inalterata) */
-.st{display:grid;grid-template-columns:36px 1fr auto;gap:.4rem;align-items:center;height:42px;padding:0 0.3rem;border-bottom:1px solid var(--line);border-radius:6px;cursor:pointer;transition:background .15s}
+/* RAIL E PUNTINI BLINDATI AL MILLIMETRO */
+.st{display:grid;grid-template-columns:36px 1fr auto;gap:.4rem;align-items:center;height:44px;padding:0 0.4rem;border-bottom:1px solid var(--line);border-radius:8px;cursor:pointer;transition:background .15s}
 .st:hover{background:color-mix(in srgb,var(--fg) 5%,transparent)}
 
 .dm,.sn{min-width:0;display:flex;flex-direction:column;gap:0}
@@ -82,8 +102,8 @@ button.chip{padding:.25rem .55rem;font-size:.75rem;border-radius:6px;display:inl
 .tl{position:relative;z-index:0;padding-top:.1rem}
 .rail-col{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
 .rail-line{position:absolute;left:50%;top:0;bottom:0;width:2.5px;margin-left:-1.25px;background:var(--line);z-index:1}
-.st.first .rail-line{top:21px}
-.st.last .rail-line{bottom:21px}
+.st.first .rail-line{top:22px}
+.st.last .rail-line{bottom:22px}
 
 .dot{width:11px;height:11px;border-radius:50%;background:var(--bg);border:2px solid var(--rc);z-index:3;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:800}
 .st.passed .dot{background:var(--rc);color:var(--check-fg,#fff)}
@@ -92,10 +112,10 @@ button.chip{padding:.25rem .55rem;font-size:.75rem;border-radius:6px;display:inl
 .st.next .dot{box-shadow:0 0 0 2.5px color-mix(in srgb,var(--rc) 30%,transparent);animation:pulse-dot 1.5s infinite ease-in-out}
 .st.passed .nm,.st.passed .tm,.st.passed .muted{opacity:.35}
 
-.trav{position:absolute;top:21px;width:2.5px;margin-left:-1.25px;height:0;background:var(--rc);z-index:2}
-.veh{position:absolute;top:21px;width:22px;height:22px;margin-left:-11px;margin-top:-11px;border-radius:50%;background:var(--rc);border:2px solid var(--bg);box-shadow:0 2px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:.65rem;z-index:4}
+.trav{position:absolute;top:22px;width:2.5px;margin-left:-1.25px;height:0;background:var(--rc);z-index:2}
+.veh{position:absolute;top:22px;width:22px;height:22px;margin-left:-11px;margin-top:-11px;border-radius:50%;background:var(--rc);border:2px solid var(--bg);box-shadow:0 2px 4px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:.65rem;z-index:4}
 
-.pt{width:16px;height:16px;min-width:16px;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex:none;background:var(--yellow);color:#000;box-shadow:0 1px 2px rgba(0,0,0,0.2)}
+.pt{width:16px;height:16px;min-width:16px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;flex:none;background:var(--yellow);color:#000;box-shadow:0 1px 2px rgba(0,0,0,0.2)}
 .pt.sm{width:14px;height:14px;min-width:14px;font-size:8px}
 .search-item>.muted{margin-left:auto}
 
@@ -105,74 +125,97 @@ button.chip{padding:.25rem .55rem;font-size:.75rem;border-radius:6px;display:inl
 
 .bus{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;min-width:24px;border-radius:50%;background:var(--c,#0a6c8c);color:var(--t,#fff);font:700 10px/1 system-ui,sans-serif;border:2px solid var(--b,#fff);box-shadow:0 2px 5px rgba(0,0,0,.3);white-space:nowrap;cursor:pointer}
 .bus:hover{transform:scale(1.1)}
-.bus.aut{border-radius:5px;width:auto;min-width:22px;height:18px;padding:0 3px}
+.bus.aut{border-radius:6px;width:auto;min-width:22px;height:18px;padding:0 4px}
 .bus.sched{border-style:dashed;opacity:.85}
 .bus.sel{outline:2px solid var(--accent);outline-offset:2px}
 
 @keyframes blink-live{0%{opacity:.3;transform:scale(.9)}50%{opacity:1;transform:scale(1.1)}100%{opacity:.3;transform:scale(.9)}}
 .live-indicator{display:inline-block;width:6px;height:6px;background:var(--ok);border-radius:50%;animation:blink-live 2s infinite ease-in-out;margin-right:3px}
 
-.bottom-bar{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);z-index:900;background:var(--glass);color:var(--fg);border:1px solid var(--line);border-radius:99px;padding:.4rem 1rem;display:flex;align-items:center;gap:.6rem;box-shadow:0 8px 24px rgba(0,0,0,.25);font-size:.75rem;white-space:nowrap;max-width:calc(100vw - 24px);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+/* BOTTOM UNIFIED BAR (Safe Area Bottom Aware) */
+.bottom-bar{position:absolute;bottom:max(12px, env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);z-index:900;background:var(--glass);color:var(--fg);border:1px solid var(--line);border-radius:99px;padding:.4rem 1.1rem;display:flex;align-items:center;gap:.7rem;box-shadow:0 12px 36px rgba(0,0,0,.25);font-size:.75rem;white-space:nowrap;max-width:calc(100vw - 24px);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);transition:background .2s}
+.bottom-bar:hover{background:var(--glass-hover)}
 .time-display{font-weight:600;font-size:.9rem;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:.2rem}
 .time-display small{font-size:.65rem;font-weight:400;opacity:.7}
-.ora-btn{background:var(--ok);color:#000;border:none;padding:.3rem .6rem;font-weight:700;font-size:.65rem;text-transform:uppercase;min-height:auto}
-.ora-btn:hover{filter:brightness(1.1);background:var(--ok)}
-#timeline-bar{display:none}
-#timeline-bar.active{display:flex}
-#tl-play{background:color-mix(in srgb,var(--fg) 10%,transparent);border:none;border-radius:50%;width:32px;height:32px;color:var(--fg);font-size:.75rem;padding:0}
+.ora-btn{background:var(--ok);color:#000;border:none;padding:.3rem .7rem;font-weight:700;font-size:.65rem;text-transform:uppercase;border-radius:99px;cursor:pointer;transition:filter .15s;min-height:30px}
+.ora-btn:hover{filter:brightness(1.1)}
+#timeline-controls{display:none;align-items:center;gap:.5rem}
+#timeline-controls.active{display:flex}
+#tl-play{background:color-mix(in srgb,var(--fg) 10%,transparent);border:none;border-radius:50%;width:32px;height:32px;color:var(--fg);font-size:.75rem;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .2s}
 #tl-play:hover{background:color-mix(in srgb,var(--fg) 20%,transparent)}
-#tl-date,#tl-speed{background:color-mix(in srgb,var(--bg) 50%,transparent);color:var(--fg);border:1px solid var(--line);border-radius:99px;padding:.3rem .5rem;font:inherit;font-size:.7rem;cursor:pointer}
-#tl-range{flex:1;accent-color:var(--accent);cursor:pointer;min-width:100px}
+#tl-date,#tl-speed{background:color-mix(in srgb,var(--bg) 40%,transparent);color:var(--fg);border:1px solid var(--line);border-radius:99px;padding:.3rem .6rem;font:inherit;font-size:.7rem;cursor:pointer;min-height:30px}
+#tl-range{accent-color:var(--accent);cursor:pointer;width:110px}
 
+/* OTTIMIZZAZIONE UNIVERSALE PER DISPOSITIVI MOBILI (Smartphone < 640px) */
 @media(max-width:640px){
-  header{padding:.4rem .6rem;gap:.4rem;justify-content:space-between}
-  .search-wrapper{max-width:none;order:3;width:100%;flex-basis:100%}
+  .floating-top{top:max(8px, env(safe-area-inset-top));left:max(8px, env(safe-area-inset-left));right:max(8px, env(safe-area-inset-right));gap:.3rem}
   #status{display:none}
-  .bottom-bar{bottom:8px;left:8px;right:8px;transform:none;border-radius:12px;justify-content:space-between;flex-wrap:wrap;padding:.4rem .6rem}
-  .side-panel{top:auto;left:6px;right:6px;bottom:70px;width:auto;max-width:none;max-height:60vh;border-radius:16px 16px 0 0}
-  .hint{bottom:70px;left:10px}
+  .bottom-bar{bottom:max(8px, env(safe-area-inset-bottom));left:8px;right:8px;transform:none;border-radius:20px;justify-content:space-between;flex-wrap:wrap;padding:.5rem .8rem}
+  .side-panel{top:auto;left:6px;right:6px;bottom:max(65px, calc(env(safe-area-inset-bottom) + 55px));width:auto;max-width:none;max-height:55vh;border-radius:20px 20px 0 0}
+  .hint{bottom:max(70px, calc(env(safe-area-inset-bottom) + 60px));left:12px}
 }
 </style>
 </head>
 <body>
-<header>
-  <div class="seg" role="radiogroup" aria-label="Modalità">
-    <label title="Live"><input type="radio" name="mode" value="live" checked><span class="live-indicator"></span>Live</label>
-    <label title="Orario programmato"><input type="radio" name="mode" value="sched">Pianificato</label>
+
+<!-- TOP FLOATING CONTROLS -->
+<div class="floating-top">
+  <!-- Mode Toggle (Live / Pianificato) -->
+  <div class="float-group">
+    <div class="seg" role="radiogroup" aria-label="Modalità">
+      <label title="Live"><input type="radio" name="mode" value="live" checked><span class="live-indicator"></span>Live</label>
+      <label title="Orario programmato"><input type="radio" name="mode" value="sched">Pianificato</label>
+    </div>
   </div>
-  <div class="seg" role="group" aria-label="Servizi">
-    <label title="Navigazione"><input type="checkbox" name="src" value="nav" checked>🚢</label>
-    <label title="Automobilistico"><input type="checkbox" name="src" value="aut" checked>🚌</label>
+
+  <!-- Servizi (Nav / Aut) -->
+  <div class="float-group">
+    <div class="seg" role="group" aria-label="Servizi">
+      <label title="Navigazione"><input type="checkbox" name="src" value="nav" checked>🚢</label>
+      <label title="Automobilistico"><input type="checkbox" name="src" value="aut" checked>🚌</label>
+    </div>
   </div>
-  <button id="locate" type="button" title="Mostra la mia posizione">📍</button>
-  <div class="search-wrapper">
-    <input id="filter" type="search" placeholder="Cerca fermata o linea..." autocomplete="off" aria-label="Cerca fermata o linea">
+
+  <!-- Localizzazione -->
+  <button id="locate" class="icon-btn" type="button" title="Mostra la mia posizione">📍</button>
+
+  <!-- Search a comparsa -->
+  <div class="search-container" id="search-container">
+    <button class="search-btn" id="search-toggle-btn" type="button" title="Cerca">🔍</button>
+    <div class="search-input-wrap">
+      <input id="filter" type="search" placeholder="Cerca fermata o linea..." autocomplete="off" aria-label="Cerca fermata o linea">
+    </div>
     <div id="search-results"></div>
   </div>
+
+  <!-- Status -->
   <span id="status" role="status">Caricamento…</span>
-</header>
+</div>
 
 <div id="wrap">
   <div id="map"></div>
   <div id="hint" class="hint">Avvicina lo zoom per le fermate</div>
   <button id="follow" class="hint" type="button" hidden>📍 Seguo il mezzo</button>
 
-  <div id="clock-bar" class="bottom-bar">
-    <span class="live-indicator" style="width:5px;height:5px"></span>
-    <div class="time-display" id="clock-time">00:00:<small>00</small></div>
-    <span style="color:var(--muted)" id="updated-ago">· aggiornato ora</span>
-  </div>
+  <!-- BOTTOM BAR UNIFICATA E TRASPARENTE -->
+  <div class="bottom-bar" id="bottom-bar">
+    <div style="display:flex;align-items:center;gap:.4rem;" id="clock-section">
+      <span class="live-indicator" style="width:5px;height:5px"></span>
+      <div class="time-display" id="clock-time">00:00:<small>00</small></div>
+      <span style="color:var(--muted)" id="updated-ago">· aggiornato ora</span>
+    </div>
 
-  <div id="timeline-bar" class="bottom-bar">
-    <button id="tl-play" type="button" title="Play / Pausa">▶</button>
-    <div class="time-display" id="tl-time">12:00:00</div>
-    <button id="tl-now" type="button" class="ora-btn">ORA</button>
-    <input id="tl-date" type="date" title="Seleziona data">
-    <select id="tl-speed" title="Velocità">
-      <option value="1">1x</option><option value="5" selected>5x</option><option value="15">15x</option><option value="60">60x</option>
-    </select>
-    <span id="tl-count" class="muted">0 in navigazione</span>
-    <input id="tl-range" type="range" min="0" max="86400" value="43200" step="1" title="Timeline">
+    <div id="timeline-controls">
+      <button id="tl-play" type="button" title="Play / Pausa">▶</button>
+      <div class="time-display" id="tl-time">12:00:00</div>
+      <button id="tl-now" type="button" class="ora-btn">ORA</button>
+      <input id="tl-date" type="date" title="Seleziona data">
+      <select id="tl-speed" title="Velocità">
+        <option value="1">1x</option><option value="5" selected>5x</option><option value="15">15x</option><option value="60">60x</option>
+      </select>
+      <input id="tl-range" type="range" min="0" max="86400" value="43200" step="1" title="Timeline">
+    </div>
+    <span id="tl-count" class="muted" style="margin-left:auto">0 in navigazione</span>
   </div>
 
   <aside id="panel" class="side-panel" hidden aria-label="Dettagli">
@@ -184,7 +227,7 @@ button.chip{padding:.25rem .55rem;font-size:.75rem;border-radius:6px;display:inl
           <div class="ph-sub muted" id="psub"></div>
           <div class="ph-status" id="pstatus"></div>
         </div>
-        <button id="pclose" type="button" aria-label="Chiudi" style="padding:.2rem .4rem">✕</button>
+        <button id="pclose" class="icon-btn" type="button" aria-label="Chiudi" style="width:32px;height:32px;min-height:auto;font-size:.8rem">✕</button>
       </div>
       <div id="chips-area" class="chips-container"></div>
     </div>
@@ -206,6 +249,7 @@ const localDate = () => { const d = new Date(); return `${d.getFullYear()}-${p2(
 const statusEl = $('status'), filterEl =$('filter'), resultsEl = $('search-results'), panel =$('panel'), plist = $('plist'), chipsArea =$('chips-area');
 const pname = $('pname'), psub =$('psub'), pstatus = $('pstatus'), pbadge =$('pbadge'), hintEl = $('hint'), followEl =$('follow');
 const range = $('tl-range'), dateEl =$('tl-date');
+const searchContainer = $('search-container'), searchToggleBtn =$('search-toggle-btn');
 
 let mode = 'live', staticVer = -1, lastUpdate = Date.now(), lastLoadSecs = -1, isPlaying = false, playTimer = null;
 const active = new Set(['nav', 'aut']);
@@ -217,6 +261,23 @@ dateEl.value = localDate();
 range.value = nowSecs();
 const keyOf = () => [...active].join(',');
 const schedQS = () => mode === 'sched' ? `&secs=${range.value}&date=${dateEl.value.replace(/-/g, '')}` : '';
+
+searchToggleBtn.onclick = (e) => {
+  e.stopPropagation();
+  searchContainer.classList.toggle('expanded');
+  if (searchContainer.classList.contains('expanded')) {
+    filterEl.focus();
+  } else {
+    filterEl.value = '';
+    resultsEl.classList.remove('active');
+    clearRoutes();
+  }
+};
+document.addEventListener('click', e => {
+  if (!searchContainer.contains(e.target)) {
+    searchContainer.classList.remove('expanded');
+  }
+});
 
 const map = L.map('map', { preferCanvas: true, zoomControl: false }).setView([45.437, 12.335], 12);
 L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -240,8 +301,7 @@ function applyTime(secs, force) {
 }
 $('tl-play').onclick = () => {
   isPlaying = !isPlaying; syncPlay(); clearInterval(playTimer);
-  if (isPlaying) playTimer = setInterval(() => { const v = +range.value + +$('tl-speed').value; applyTime(v > 86400 ? 0 : v); }, 1000); };
-$('tl-now').onclick = () => { stopPlay(); dateEl.value = localDate(); applyTime(nowSecs(), true); };
+  if (isPlaying) playTimer = setInterval(() => { const v = +range.value + +$('tl-speed').value; applyTime(v > 86400 ? 0 : v); }, 1000); };$('tl-now').onclick = () => { stopPlay(); dateEl.value = localDate(); applyTime(nowSecs(), true); };
 range.oninput = () => applyTime(+range.value);
 dateEl.onchange = () => applyTime(+range.value, true);
 
@@ -372,14 +432,15 @@ resultsEl.addEventListener('click', e => {
   const it = e.target.closest('.search-item');
   if (!it || !it.dataset.type) return;
   filterEl.value = it.dataset.name; resultsEl.classList.remove('active');
+  searchContainer.classList.remove('expanded');
   if (it.dataset.type === 'zone') { const z = zones.get(it.dataset.key); if (z) { map.flyTo(z.center, 16); openZonePanel(z); } }
   else if (it.dataset.type === 'stop') { map.flyTo([+it.dataset.lat, +it.dataset.lon], 16); openStopOrZone(it.dataset.id, it.dataset.name, it.dataset.src); }
   else showRoutes([it.dataset.id]);
 });
-document.addEventListener('click', e => { if (!e.target.closest('.search-wrapper')) resultsEl.classList.remove('active'); });
+document.addEventListener('click', e => { if (!e.target.closest('.search-container')) resultsEl.classList.remove('active'); });
 map.on('click', () => { if (!openTrip && !filterEl.value) clearRoutes(); });
 
-// INTERPOLAZIONE CONTINUA (DEAD RECKONING) & GESTIONE MARKER FLUIDA
+// INTERPOLAZIONE CONTINUA (DEAD RECKONING) & MARKER FLUIDI
 const markers = new Map();
 
 function render() {
@@ -419,7 +480,6 @@ function render() {
   $('tl-count').textContent = [...active].map(s => `${vehicles.filter(v => v.src === s).length} in ${s === 'nav' ? 'navigazione' : 'servizio'}`).join(' · ');
 }
 
-// Loop animazione a 60 FPS per interpolare i movimenti dolcemente
 requestAnimationFrame(function frame(now) {
   if (mode === 'live') {
     for (const e of markers.values()) {
@@ -742,8 +802,8 @@ map.on('locationerror', () => { statusEl.className = 'err'; statusEl.textContent
 document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener('change', () => {
   mode = el.value; vehicles = [];
   const sched = mode === 'sched';
-  $('clock-bar').style.display = sched ? 'none' : 'flex';
-  $('timeline-bar').classList.toggle('active', sched);
+  $('clock-section').style.display = sched ? 'none' : 'flex';
+  $('timeline-controls').classList.toggle('active', sched);
   if (sched) applyTime(+range.value, true);
   else { stopPlay(); load(); }
   render(); renderDepartures();
