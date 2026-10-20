@@ -98,7 +98,13 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .pt.sm{width:14px;height:14px;min-width:14px;font-size:8px}
 .search-item>.muted{margin-left:auto}
 
-.bus{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;min-width:24px;border-radius:50%;background:var(--c,#0a6c8c);color:var(--t,#fff);font:700 10px/1 system-ui,sans-serif;border:2px solid var(--b,#fff);box-shadow:0 2px 5px rgba(0,0,0,.3);white-space:nowrap;cursor:pointer;will-change:transform}
+/* Accelerazione Hardware GPU per marker mappa */
+.leaflet-marker-icon.bus-marker {
+  transition: transform 1s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  will-change: transform;
+}
+
+.bus{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;min-width:24px;border-radius:50%;background:var(--c,#0a6c8c);color:var(--t,#fff);font:700 10px/1 system-ui,sans-serif;border:2px solid var(--b,#fff);box-shadow:0 2px 5px rgba(0,0,0,.3);white-space:nowrap;cursor:pointer}
 .bus:hover{transform:scale(1.1)}
 .bus.aut{border-radius:5px;width:auto;min-width:22px;height:18px;padding:0 3px}
 .bus.sched{border-style:dashed;opacity:.85}
@@ -191,7 +197,7 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 <script>
 const $ = id => document.getElementById(id);
 const ICON = { nav: '🚢', aut: '🚌' };
-const POLL_MS = 8000, MOVE_MS = 7500, MIN_STOP_ZOOM = 14;
+const POLL_MS = 8000, MIN_STOP_ZOOM = 14;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const p2 = n => String(n).padStart(2, '0');
 const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds(); };
@@ -213,6 +219,7 @@ range.value = nowSecs();
 const keyOf = () => [...active].join(',');
 const schedQS = () => mode === 'sched' ? `&secs=${range.value}&date=${dateEl.value.replace(/-/g, '')}` : '';
 
+// Leaflet impostato con preferCanvas per prestazioni a 60 FPS
 const map = L.map('map', { preferCanvas: true, zoomControl: false }).setView([45.437, 12.335], 12);
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap · ACTV (GTFS-RT)' }).addTo(map);
@@ -235,7 +242,8 @@ function applyTime(secs, force) {
 }
 $('tl-play').onclick = () => {
   isPlaying = !isPlaying; syncPlay(); clearInterval(playTimer);
-  if (isPlaying) playTimer = setInterval(() => { const v = +range.value + +$('tl-speed').value; applyTime(v > 86400 ? 0 : v); }, 1000); };$('tl-now').onclick = () => { stopPlay(); dateEl.value = localDate(); applyTime(nowSecs(), true); };
+  if (isPlaying) playTimer = setInterval(() => { const v = +range.value + +$('tl-speed').value; applyTime(v > 86400 ? 0 : v); }, 1000); };
+$('tl-now').onclick = () => { stopPlay(); dateEl.value = localDate(); applyTime(nowSecs(), true); };
 range.oninput = () => applyTime(+range.value);
 dateEl.onchange = () => applyTime(+range.value, true);
 
@@ -373,69 +381,41 @@ resultsEl.addEventListener('click', e => {
 document.addEventListener('click', e => { if (!e.target.closest('.search-wrapper')) resultsEl.classList.remove('active'); });
 map.on('click', () => { if (!openTrip && !filterEl.value) clearRoutes(); });
 
+// Gestione marker ottimizzata con In-Place DOM Diffing
 const markers = new Map();
-const activeMoving = new Set();
-let isTicking = false;
 
 function render() {
   const keep = new Set();
-  for (const v of vehicles) {
+  for (let i = 0; i < vehicles.length; i++) {
+    const v = vehicles[i];
     if (!active.has(v.src) || !Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
     keep.add(v.id);
     const html = busHtml(v); 
     let e = markers.get(v.id);
 
     if (!e) {
-      const m = L.marker([v.lat, v.lon], { icon: L.divIcon({ className: '', iconSize: null, html }) })
+      const m = L.marker([v.lat, v.lon], { icon: L.divIcon({ className: 'bus-marker', iconSize: null, html }) })
         .bindTooltip(tip(v), { direction: 'top', offset: [0, -12] }).addTo(map), id = v.id;
       m.on('click', () => { const c = vehicles.find(x => x.id === id); if (c) openTripPanel(c); });
-      markers.set(v.id, e = { m, html, tipContent: tip(v), from: null, to: [v.lat, v.lon], t0: 0, id: v.id });
+      markers.set(v.id, e = { m, html, tipContent: tip(v), lat: v.lat, lon: v.lon, id: v.id });
       continue;
     }
 
-    if (e.html !== html) { e.m.setIcon(L.divIcon({ className: '', iconSize: null, html })); e.html = html; }
+    if (e.html !== html) { e.m.setIcon(L.divIcon({ className: 'bus-marker', iconSize: null, html })); e.html = html; }
     const newTip = tip(v);
     if (e.tipContent !== newTip) { e.m.setTooltipContent(newTip); e.tipContent = newTip; }
 
-    if (e.to[0] !== v.lat || e.to[1] !== v.lon) {
-      const cur = e.m.getLatLng();
-      if (Math.abs(cur.lat - v.lat) + Math.abs(cur.lng - v.lon) > .02) { 
-        e.m.setLatLng([v.lat, v.lon]); e.from = null; 
-      } else { 
-        e.from = [cur.lat, cur.lng]; e.t0 = performance.now(); 
-        activeMoving.add(e);
-      }
-      e.to = [v.lat, v.lon];
+    if (e.lat !== v.lat || e.lon !== v.lon) {
+      e.m.setLatLng([v.lat, v.lon]);
+      e.lat = v.lat; e.lon = v.lon;
     }
   }
 
   for (const [id, e] of markers) {
-    if (!keep.has(id)) { 
-      e.m.remove(); 
-      markers.delete(id); 
-      activeMoving.delete(e); 
-    }
+    if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
   }
   
   $('tl-count').textContent = [...active].map(s => `${vehicles.filter(v => v.src === s).length} in ${s === 'nav' ? 'navigazione' : 'servizio'}`).join(' · ');
-  if (activeMoving.size > 0 && !isTicking) {
-    isTicking = true;
-    requestAnimationFrame(tick);
-  }
-}
-
-function tick(now) {
-  for (const e of activeMoving) {
-    if (!e.from) { activeMoving.delete(e); continue; }
-    const p = Math.min(1, (now - e.t0) / MOVE_MS);
-    e.m.setLatLng([e.from[0] + (e.to[0] - e.from[0]) * p, e.from[1] + (e.to[1] - e.from[1]) * p]);
-    if (p >= 1) { e.from = null; activeMoving.delete(e); }
-  }
-  if (activeMoving.size > 0) {
-    requestAnimationFrame(tick);
-  } else {
-    isTicking = false;
-  }
 }
 
 async function load() {
@@ -459,7 +439,9 @@ function drawStops() {
   hintEl.hidden = near;
   if (!near) return;
   const b = map.getBounds().pad(.1); let n = 0;
-  for (const [id, name, lat, lon, src] of stops) {
+  for (let i = 0; i < stops.length; i++) {
+    const s = stops[i];
+    const [id, name, lat, lon, src] = s;
     if (!active.has(src) || !b.contains([lat, lon])) continue;
     if (++n > 2500) break;
     const selected = isStopSelected(id);
@@ -686,8 +668,10 @@ function renderTrip(first) {
   const k = colorInfo(d.trip.color, d.trip.line);
   if (d.shape?.length) L.polyline(d.shape, { color: k.rail, weight: 4, opacity: .8 }).addTo(lineLayer);
   else showRoutes([openTrip.routeId]);
-  for (const s of d.stops) if (s.lat != null)
-    L.circleMarker([s.lat, s.lon], { radius: 3.5, weight: 1.5, color: '#0f172a', fillColor: '#fff', fillOpacity: .9 }).bindTooltip(esc(s.name)).addTo(tripLayer);
+  for (let i = 0; i < d.stops.length; i++) {
+    const s = d.stops[i];
+    if (s.lat != null) L.circleMarker([s.lat, s.lon], { radius: 3.5, weight: 1.5, color: '#0f172a', fillColor: '#fff', fillOpacity: .9 }).bindTooltip(esc(s.name)).addTo(tripLayer);
+  }
   const veh = plist.querySelector('.veh'), row = veh && veh.style.display !== 'none' ? veh : plist.querySelector('.st.next');
   if (row) row.scrollIntoView({ block: 'center' });
 }
