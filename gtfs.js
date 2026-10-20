@@ -7,7 +7,7 @@ const AdmZip = require('adm-zip');
 
 const BASE = 'https://actv.avmspa.it/sites/default/files/attachments/opendata/';
 const DIR = path.join(__dirname, 'data');
-const SOURCES = {   // puoi anche copiare gli ZIP a mano in data/
+const SOURCES = {    // puoi anche copiare gli ZIP a mano in data/
   nav: { url: BASE + 'navigazione/actv_nav.zip', file: path.join(DIR, 'actv_nav.zip') },
   aut: { url: BASE + 'automobilistico/actv_aut.zip', file: path.join(DIR, 'actv_aut.zip') }
 };
@@ -15,7 +15,7 @@ const MAX_AGE_MS = 24 * 3600 * 1000;
 const loaded = {};   // md5 dell'ultimo ZIP letto per servizio: se non cambia, non si rilegge
 
 const empty = () => ({ routes: {}, trips: {}, stops: {}, stopLoc: {}, routeShapes: {}, shapePts: {}, calendar: {},
-  exByDate: {}, stopTimes: new Map(), stopIndex: {}, tripIds: [], tripPrefixes: [] });
+  exByDate: {}, stopTimes: new Map(), stopIndex: {}, tripIds: [], tripPrefixes: [], nameToStopIds: new Map() });
 
 // Tracciato piatto [lat,lon,lat,lon,...] -> [[lat,lon],...] per il browser
 const toLL = p => {
@@ -126,15 +126,25 @@ async function load(srcId) {
   const entries = new AdmZip(buf).getEntries();
   const read = name => { const e = entries.find(x => { const n = x.entryName.toLowerCase(); return n === name || n.endsWith('/' + name); }); return e ? e.getData() : null; };
   const pool = new Map(), intern = x => { let v = pool.get(x); if (v === undefined) pool.set(x, v = x); return v; };
-  const G = empty(), { routes, trips, stops, stopLoc, shapePts, calendar, exByDate } = G;
+  const G = empty(), { routes, trips, stops, stopLoc, shapePts, calendar, exByDate, nameToStopIds } = G;
   const usedShapes = new Set(), shapesByRoute = {};
 
   await eachRow(read('routes.txt'), ['route_id', 'route_short_name', 'route_long_name', 'route_color'], r => {
     routes[r.route_id] = { name: r.route_short_name || r.route_long_name || r.route_id, color: r.route_color ? '#' + r.route_color : null };
   });
   await eachRow(read('stops.txt'), ['stop_id', 'stop_name', 'stop_lat', 'stop_lon'], s => {
-    stops[intern(s.stop_id)] = s.stop_name;
+    const sId = intern(s.stop_id);
+    const sName = s.stop_name;
+    stops[sId] = sName;
     if (s.stop_lat && s.stop_lon && isFinite(+s.stop_lat) && isFinite(+s.stop_lon)) stopLoc[s.stop_id] = [+s.stop_lat, +s.stop_lon];
+    
+    // Mappatura per risolvere i codici fermata duplicati basandosi sul nome (Punto 3)
+    if (sName) {
+      if (!nameToStopIds.has(sName)) {
+        nameToStopIds.set(sName, []);
+      }
+      nameToStopIds.get(sName).push(s.stop_id);
+    }
   });
   await eachRow(read('trips.txt'), ['trip_id', 'route_id', 'trip_headsign', 'service_id', 'shape_id', 'direction_id'], t => {
     const route = intern(t.route_id), shape = t.shape_id ? intern(t.shape_id) : null;
