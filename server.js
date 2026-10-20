@@ -13,7 +13,6 @@ const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/a
 const IDS = Object.keys(RT);
 const NOTES = { approx: 'data fuori dal calendario GTFS: orari indicativi' };
 
-// Sottoinsieme dello schema GTFS-Realtime: basta per posizioni, ritardi e soppressioni
 const Feed = protobuf.parse(`syntax = "proto2";
 message FeedMessage { repeated FeedEntity entity = 2; }
 message FeedEntity { optional string id = 1; optional TripUpdate trip_update = 3; optional VehiclePosition vehicle = 4; }
@@ -36,7 +35,7 @@ let stopsBody = null, version = 0;
 async function loadStatic() {
   for (const id of IDS) {
     try {
-      const g = await gtfs.load(id);   // null = ZIP invariato, niente da rileggere
+      const g = await gtfs.load(id);
       if (!g) continue;
       D[id] = g; S[id].hist.clear(); ready[id] = true; stopsBody = null; version++;
       refresh(id);
@@ -53,7 +52,6 @@ const delayOf = (ev, sched) => {
   return null;
 };
 
-// Indice (linea, partenza) -> corse: serve solo se il feed usa ID diversi dal GTFS, quindi si costruisce al bisogno
 function byStart(G) {
   if (G._bs) return G._bs;
   const bs = (G._bs = {});
@@ -101,7 +99,7 @@ async function refresh(id) {
       const st = G.stopTimes.get(tid), n = st.s.length, explicit = new Array(n), skipped = new Set();
       let cur = 0, firstJ = -1;
       for (const u of tu.stopTimeUpdate || []) {
-        if (u.scheduleRelationship === 2) continue;   // NO_DATA
+        if (u.scheduleRelationship === 2) continue;
         let j = -1;
         if (u.stopId) { j = st.s.indexOf(u.stopId, cur); if (j < 0) j = st.s.indexOf(u.stopId); }
         if (j < 0 && has(u, 'stopSequence')) j = st.q.indexOf(u.stopSequence);
@@ -120,7 +118,7 @@ async function refresh(id) {
       for (let k = 0; k < n; k++) if (explicit[k] != null) h.delays[k] = explicit[k];
       h.seen = now;
     }
-    for (const [k, h] of s8.hist) if (now - h.seen > 3 * 3600 * 1000) s8.hist.delete(k);   // niente accumulo
+    for (const [k, h] of s8.hist) if (now - h.seen > 3 * 3600 * 1000) s8.hist.delete(k);
     s8.live = live;
     s8.vehicles = pos.filter(e => Number.isFinite(e.vehicle?.position?.latitude) && Number.isFinite(e.vehicle.position.longitude))
       .map(e => {
@@ -147,8 +145,9 @@ function tripDetail(i, tid, live) {
 
   const stops = st.s.map((sid, k) => {
     const ts = at(k), dl = live ? (k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null)) : null;
-    const cleanStopName = G.stopBaseNames?.get(sid) || G.stops[sid] || sid;
-    return { name: cleanStopName, lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
+    // RESTITUISCE IL NOME ORIGINALE DEL GTFS (es. "S. Servolo A RICHIESTA" se la corsa punta a quell'ID)
+    const originalStopName = G.stops[sid] || sid;
+    return { name: originalStopName, lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
       sched: hhmm(ts), exp: dl != null ? hhmm(ts + dl) : null, delay: dl != null ? Math.round(dl / 60) : null,
       inMin: Math.round((ts + (dl ?? 0) - tNow) / 60),
       state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'), skipped: !!lv?.skipped.has(k) };
@@ -183,7 +182,6 @@ const splitId = f => { const k = (f || '').indexOf(':'); return k < 0 ? [null, f
 const fail = (code, msg) => Object.assign(new Error(msg), { code });
 const q = (u, k) => u.searchParams.get(k);
 
-// Funzione universale per trovare ID equivalenti (soglia <= 2 metri + compatibilità nomi)
 const getEquivalentStopIds = (G, sid) => {
   const loc = G.stopLoc[sid];
   if (!loc) return [sid];
@@ -194,16 +192,13 @@ const getEquivalentStopIds = (G, sid) => {
     const sLoc = G.stopLoc[sId];
     if (!sLoc) continue;
     
-    // Distanza geometrica in metri (soglia stretta a 2 metri)
     const dLat = Math.abs(sLoc[0] - loc[0]) * 111000;
     const dLon = Math.abs(sLoc[1] - loc[1]) * 78000;
     const distanceMeters = Math.hypot(dLat, dLon);
     
     if (distanceMeters <= 2) {
       const nameB = G.stops[sId] || '';
-      if (namesAreCompatible(nameA, nameB)) {
-        equivalent.push(sId);
-      }
+      if (namesAreCompatible(nameA, nameB)) equivalent.push(sId);
     }
   }
   return equivalent.length > 0 ? equivalent : [sid];
@@ -212,12 +207,9 @@ const getEquivalentStopIds = (G, sid) => {
 function namesAreCompatible(n1, n2) {
   const clean1 = n1.toLowerCase().replace(/a\s*richiesta\w*/gi, '').replace(/[^\w\s]/g, '').trim();
   const clean2 = n2.toLowerCase().replace(/a\s*richiesta\w*/gi, '').replace(/[^\w\s]/g, '').trim();
-  
   if (clean1.includes(clean2) || clean2.includes(clean1)) return true;
-  
   const tokens1 = clean1.split(/\s+/).filter(w => w.length > 2);
   const tokens2 = clean2.split(/\s+/).filter(w => w.length > 2);
-  
   return tokens1.some(t => tokens2.includes(t));
 }
 
@@ -271,9 +263,7 @@ const API = {
     }
 
     const uniqueMap = new Map();
-    for (const d of allDepartures) {
-      uniqueMap.set(d.tripId, d);
-    }
+    for (const d of allDepartures) uniqueMap.set(d.tripId, d);
     allDepartures = Array.from(uniqueMap.values());
     allDepartures.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn));
 
@@ -286,7 +276,7 @@ const API = {
       departures: allDepartures.map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) 
     };
   },
-  '/api/zone': u => {   // passaggi di più fermate insieme (pontili della stessa zona)
+  '/api/zone': u => {
     const ids = (q(u, 'ids') || '').split(',').slice(0, 24), out = [], lab = {};
     if (!ids.some(f => D[splitId(f)[0]])) throw fail(404, 'zona sconosciuta');
     let note = null, liveUpdated = 0;
@@ -304,9 +294,7 @@ const API = {
       note = noteOf(G, q(u, 'date')); liveUpdated = Math.max(liveUpdated, S[i].updated);
     }
     const zoneMap = new Map();
-    for (const d of out) {
-      zoneMap.set(`${d.tripId}_${d.schedIn}`, d);
-    }
+    for (const d of out) zoneMap.set(`${d.tripId}_${d.schedIn}`, d);
     const uniqueOut = Array.from(zoneMap.values());
     uniqueOut.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn));
     return { liveUpdated, note, departures: uniqueOut.slice(0, 300) };
