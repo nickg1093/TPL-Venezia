@@ -1,5 +1,4 @@
 // GTFS statico ACTV: scarica gli ZIP e li legge in strutture compatte
-// (typed array per gli orari, tracciati in Float32Array, schemi di fermate condivisi tra corse).
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -7,17 +6,16 @@ const AdmZip = require('adm-zip');
 
 const BASE = 'https://actv.avmspa.it/sites/default/files/attachments/opendata/';
 const DIR = path.join(__dirname, 'data');
-const SOURCES = {    // puoi anche copiare gli ZIP a mano in data/
+const SOURCES = {
   nav: { url: BASE + 'navigazione/actv_nav.zip', file: path.join(DIR, 'actv_nav.zip') },
   aut: { url: BASE + 'automobilistico/actv_aut.zip', file: path.join(DIR, 'actv_aut.zip') }
 };
 const MAX_AGE_MS = 24 * 3600 * 1000;
-const loaded = {};   // md5 dell'ultimo ZIP letto per servizio: se non cambia, non si rilegge
+const loaded = {};
 
 const empty = () => ({ routes: {}, trips: {}, stops: {}, stopLoc: {}, routeShapes: {}, shapePts: {}, calendar: {},
   exByDate: {}, stopTimes: new Map(), stopIndex: {}, tripIds: [], tripPrefixes: [], nameToStopIds: new Map(), stopBaseNames: new Map(), stopIsRequest: new Map() });
 
-// Tracciato piatto [lat,lon,lat,lon,...] -> [[lat,lon],...] per il browser
 const toLL = p => {
   if (!p) return null;
   const o = new Array(p.length >> 1);
@@ -59,8 +57,6 @@ async function eachRow(buf, fields, fn) {
 
 const tm = x => { if (!x || !x.trim()) return null; const p = x.trim().split(':'); return +p[0] * 3600 + +p[1] * 60 + +(p[2] || 0); };
 
-// Una voce per corsa: s/q (fermate e stop_sequence) sono condivisi tra le corse con lo stesso schema,
-// a/d (arrivi e partenze) sono Int32Array.
 async function readStopTimes(buf, intern) {
   const out = new Map(), pats = new Map();
   let id = null, q = [], s = [], a = [], d = [];
@@ -76,7 +72,7 @@ async function readStopTimes(buf, intern) {
   await eachRow(buf, ['trip_id', 'stop_sequence', 'stop_id', 'arrival_time', 'departure_time'], r => {
     if (r.trip_id !== id) {
       flush(); id = r.trip_id;
-      const old = out.get(id);   // righe di una corsa non contigue: si riprende quanto già letto
+      const old = out.get(id);
       if (old) { q = [...old.q]; s = [...old.s]; a = [...old.a]; d = [...old.d]; } else { q = []; s = []; a = []; d = []; }
     }
     let ar = tm(r.arrival_time), de = tm(r.departure_time);
@@ -96,7 +92,7 @@ async function getZip(src) {
   if (!exists || Date.now() - last > MAX_AGE_MS) {
     try {
       const res = await fetch(src.url, {
-        signal: AbortSignal.timeout(exists ? 20000 : 120000),   // con una copia locale non si aspetta a lungo
+        signal: AbortSignal.timeout(exists ? 20000 : 120000),
         redirect: 'follow',
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
                    'Accept': 'application/zip,application/octet-stream,*/*' }
@@ -116,7 +112,6 @@ async function getZip(src) {
   return fs.readFileSync(src.file);
 }
 
-// Restituisce i dati, oppure null se lo ZIP non è cambiato dall'ultima lettura.
 async function load(srcId) {
   const t0 = Date.now(), log = m => console.log(`GTFS [${srcId}]: ${m} (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
   const buf = await getZip(SOURCES[srcId]);
@@ -132,27 +127,30 @@ async function load(srcId) {
   await eachRow(read('routes.txt'), ['route_id', 'route_short_name', 'route_long_name', 'route_color'], r => {
     routes[r.route_id] = { name: r.route_short_name || r.route_long_name || r.route_id, color: r.route_color ? '#' + r.route_color : null };
   });
+  
   await eachRow(read('stops.txt'), ['stop_id', 'stop_name', 'stop_lat', 'stop_lon'], s => {
     const sId = intern(s.stop_id);
     const sName = s.stop_name || '';
-    stops[sId] = sName;
+    
+    // Mantiene RIGOROSAMENTE il nome originale del GTFS senza alterarlo
+    stops[sId]  = sName;
+    
     if (s.stop_lat && s.stop_lon && isFinite(+s.stop_lat) && isFinite(+s.stop_lon)) stopLoc[s.stop_id] = [+s.stop_lat, +s.stop_lon];
     
-    // Identifica se la fermata è a richiesta
+    // Rileva se è a richiesta dal nome originale
     const isReq = /a\s*richiesta/i.test(sName);
     stopIsRequest.set(s.stop_id, isReq);
 
-    // Salva il nome base pulito per il matching delle coordinate
-    const cleanName = sName.replace(/\s+a\s*richiesta\w*/gi, '').trim();
+    // Nome base pulito esclusivamente ad uso interno per indici e ricerche geografiche
+    const cleanName = sName.replace(/\s+a\s*richiesta\w*/gi, '').replace(/\.$/, '').trim();
     stopBaseNames.set(s.stop_id, cleanName || sName);
     
     if (cleanName) {
-      if (!nameToStopIds.has(cleanName)) {
-        nameToStopIds.set(cleanName, []);
-      }
+      if (!nameToStopIds.has(cleanName)) nameToStopIds.set(cleanName, []);
       nameToStopIds.get(cleanName).push(s.stop_id);
     }
   });
+
   await eachRow(read('trips.txt'), ['trip_id', 'route_id', 'trip_headsign', 'service_id', 'shape_id', 'direction_id'], t => {
     const route = intern(t.route_id), shape = t.shape_id ? intern(t.shape_id) : null;
     trips[t.trip_id] = { route, headsign: t.trip_headsign ? intern(t.trip_headsign) : null, service: intern((t.service_id || '').trim()), shape,
@@ -161,7 +159,7 @@ async function load(srcId) {
   });
   log(`${Object.keys(routes).length} linee, ${Object.keys(trips).length} viaggi, ${Object.keys(stops).length} fermate: leggo i tracciati`);
 
-  const raw = {};   // solo i tracciati usati da qualche corsa
+  const raw = {};
   await eachRow(read('shapes.txt'), ['shape_id', 'shape_pt_sequence', 'shape_pt_lat', 'shape_pt_lon'], p => {
     if (usedShapes.has(p.shape_id)) (raw[p.shape_id] ||= []).push(+p.shape_pt_sequence, +p.shape_pt_lat, +p.shape_pt_lon);
   });
@@ -189,7 +187,6 @@ async function load(srcId) {
   G.stopTimes = await readStopTimes(read('stop_times.txt'), intern);
   const { stopTimes } = G;
 
-  // Indice fermata -> coppie [numero corsa, posizione] in un Int32Array per fermata
   G.tripIds = [...stopTimes.keys()];
   const cnt = {};
   for (const tid of G.tripIds) for (const sid of stopTimes.get(tid).s) cnt[sid] = (cnt[sid] || 0) + 1;
