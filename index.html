@@ -98,9 +98,9 @@ button.chip{padding:.15rem .45rem;font-size:.7rem;border-radius:6px;display:inli
 .pt.sm{width:14px;height:14px;min-width:14px;font-size:8px}
 .search-item>.muted{margin-left:auto}
 
-/* OTTIMIZZAZIONE FLUIDITÀ GPU CSS */
+/* Accelerazione Hardware GPU per marker mappa */
 .leaflet-marker-icon.bus-marker {
-  transition: transform 1s cubic-bezier(0.25, 0.1, 0.25, 1) !important;
+  transition: transform 1s cubic-bezier(0.16, 1, 0.3, 1) !important;
   will-change: transform;
 }
 
@@ -219,6 +219,7 @@ range.value = nowSecs();
 const keyOf = () => [...active].join(',');
 const schedQS = () => mode === 'sched' ? `&secs=${range.value}&date=${dateEl.value.replace(/-/g, '')}` : '';
 
+// Leaflet impostato con preferCanvas per prestazioni a 60 FPS
 const map = L.map('map', { preferCanvas: true, zoomControl: false }).setView([45.437, 12.335], 12);
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap · ACTV (GTFS-RT)' }).addTo(map);
@@ -380,23 +381,23 @@ resultsEl.addEventListener('click', e => {
 document.addEventListener('click', e => { if (!e.target.closest('.search-wrapper')) resultsEl.classList.remove('active'); });
 map.on('click', () => { if (!openTrip && !filterEl.value) clearRoutes(); });
 
-/* GESTIONE MARKER MAPPA CON CLASSE GPU ACCELERATA */
+// Gestione marker ottimizzata con In-Place DOM Diffing
 const markers = new Map();
 
 function render() {
   const keep = new Set();
-  for (const v of vehicles) {
+  for (let i = 0; i < vehicles.length; i++) {
+    const v = vehicles[i];
     if (!active.has(v.src) || !Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
     keep.add(v.id);
     const html = busHtml(v); 
     let e = markers.get(v.id);
 
     if (!e) {
-      // Uso della classe bus-marker per abilitare la transizione hardware CSS fluida
       const m = L.marker([v.lat, v.lon], { icon: L.divIcon({ className: 'bus-marker', iconSize: null, html }) })
         .bindTooltip(tip(v), { direction: 'top', offset: [0, -12] }).addTo(map), id = v.id;
       m.on('click', () => { const c = vehicles.find(x => x.id === id); if (c) openTripPanel(c); });
-      markers.set(v.id, e = { m, html, tipContent: tip(v), id: v.id });
+      markers.set(v.id, e = { m, html, tipContent: tip(v), lat: v.lat, lon: v.lon, id: v.id });
       continue;
     }
 
@@ -404,14 +405,14 @@ function render() {
     const newTip = tip(v);
     if (e.tipContent !== newTip) { e.m.setTooltipContent(newTip); e.tipContent = newTip; }
 
-    e.m.setLatLng([v.lat, v.lon]);
+    if (e.lat !== v.lat || e.lon !== v.lon) {
+      e.m.setLatLng([v.lat, v.lon]);
+      e.lat = v.lat; e.lon = v.lon;
+    }
   }
 
   for (const [id, e] of markers) {
-    if (!keep.has(id)) { 
-      e.m.remove(); 
-      markers.delete(id); 
-    }
+    if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
   }
   
   $('tl-count').textContent = [...active].map(s => `${vehicles.filter(v => v.src === s).length} in ${s === 'nav' ? 'navigazione' : 'servizio'}`).join(' · ');
@@ -438,7 +439,9 @@ function drawStops() {
   hintEl.hidden = near;
   if (!near) return;
   const b = map.getBounds().pad(.1); let n = 0;
-  for (const [id, name, lat, lon, src] of stops) {
+  for (let i = 0; i < stops.length; i++) {
+    const s = stops[i];
+    const [id, name, lat, lon, src] = s;
     if (!active.has(src) || !b.contains([lat, lon])) continue;
     if (++n > 2500) break;
     const selected = isStopSelected(id);
@@ -665,8 +668,10 @@ function renderTrip(first) {
   const k = colorInfo(d.trip.color, d.trip.line);
   if (d.shape?.length) L.polyline(d.shape, { color: k.rail, weight: 4, opacity: .8 }).addTo(lineLayer);
   else showRoutes([openTrip.routeId]);
-  for (const s of d.stops) if (s.lat != null)
-    L.circleMarker([s.lat, s.lon], { radius: 3.5, weight: 1.5, color: '#0f172a', fillColor: '#fff', fillOpacity: .9 }).bindTooltip(esc(s.name)).addTo(tripLayer);
+  for (let i = 0; i < d.stops.length; i++) {
+    const s = d.stops[i];
+    if (s.lat != null) L.circleMarker([s.lat, s.lon], { radius: 3.5, weight: 1.5, color: '#0f172a', fillColor: '#fff', fillOpacity: .9 }).bindTooltip(esc(s.name)).addTo(tripLayer);
+  }
   const veh = plist.querySelector('.veh'), row = veh && veh.style.display !== 'none' ? veh : plist.querySelector('.st.next');
   if (row) row.scrollIntoView({ block: 'center' });
 }
