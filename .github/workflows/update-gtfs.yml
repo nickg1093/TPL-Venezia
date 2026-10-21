@@ -2,8 +2,8 @@ name: Aggiorna GTFS ACTV
 
 on:
   schedule:
-    # Esegue ogni 15 minuti per intercettare subito gli aggiornamenti di ACTV e mantenere attivo il server
-    - cron: '*/15 * * * *'
+    # Esegue ogni 2 ore per controllare i nuovi file GTFS
+    - cron: '0 */2 * * *'
   workflow_dispatch:
 
 permissions:
@@ -15,43 +15,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sveglia e Mantieni Attivo Server Render
-        run: |
-          echo "Invio richiesta di risveglio a Render e attendo che si accenda..."
-          curl -s --retry 3 --retry-delay 10 --max-time 60 https://veneziatpl.onrender.com/ > /dev/null
-          echo "Server Render sveglio e operativo!"
-
       - name: Scarica e verifica i GTFS ACTV
         run: |
           mkdir -p data
           UPDATED=0
 
-          for f in navigazione/actv_nav automobilistico/actv_aut; do
-            NAME=$(basename $f)
-            URL="https://actv.avmspa.it/sites/default/files/attachments/opendata/$f.zip"
-            TARGET="data/$NAME.zip"
-            TMP="data/$NAME.tmp.zip"
+          # Array con i collegamenti diretti e corretti e i relativi nomi file locali
+          declare -A urls=(
+            ["actv_nav"]="https://actv.avmspa.it/sites/default/files/attachments/opendata/navigazione/actv_nav.zip"
+            ["actv_aut"]="https://actv.avmspa.it/sites/default/files/attachments/opendata/automobilistico/actv_aut.zip"
+          )
+
+          for name in "${!urls[@]}"; do
+            url="${urls[$name]}"
+            target="data/$name.zip"
+            tmp="data/$name.tmp.zip"
+
+            echo "Controllo $name da: $url"
 
             # Scarica solo se il file remoto è più recente di quello locale (-z)
-            if [ -f "$TARGET" ]; then
-              curl -s -fL -z "$TARGET" "$URL" -o "$TMP"
+            if [ -f "$target" ]; then
+              curl -s -fL -z "$target" "$url" -o "$tmp"
             else
-              curl -s -fL "$URL" -o "$TMP"
+              curl -s -fL "$url" -o "$tmp"
             fi
 
-            # Verifica che il file scaricato sia un ZIP valido (Magic Number PK)
-            if [ -f "$TMP" ] && [ -s "$TMP" ]; then
-              if head -c 2 "$TMP" | grep -q "PK"; then
-                mv "$TMP" "$TARGET"
+            # Verifica che il file scaricato esista, non sia vuoto e sia uno ZIP valido (Magic Number PK)
+            if [ -f "$tmp" ] && [ -s "$tmp" ]; then
+              if head -c 2 "$tmp" | grep -q "PK"; then
+                mv "$tmp" "$target"
                 UPDATED=1
-                echo "Nuova versione trovata per $NAME!"
+                echo "-> Nuovo aggiornamento scaricato e validato per $name!"
               else
-                echo "Attenzione: $NAME.tmp.zip non è un file ZIP valido. Scartato."
-                rm -f "$TMP"
+                echo "-> Attenzione: il file scaricato per $name non è uno ZIP valido. Scartato."
+                rm -f "$tmp"
               fi
             else
-              echo "Nessun aggiornamento per $NAME."
-              rm -f "$TMP"
+              echo "-> Nessuna modifica remota trovata per $name."
+              rm -f "$tmp"
             fi
           done
 
@@ -64,7 +65,7 @@ jobs:
           git config user.email "bot@actions.github.io"
           git add data/*.zip
           if ! git diff --cached --quiet; then
-            git commit -m "Aggiornamento automatico file GTFS ACTV"
+            git commit -m "Aggiornamento automatico file GTFS ACTV ($(date +'%Y-%m-%d %H:%M'))"
             git push
             echo "Modifiche GTFS salvate e inviate con successo!"
           fi
