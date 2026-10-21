@@ -2,7 +2,8 @@ name: Aggiorna GTFS ACTV
 
 on:
   schedule:
-    - cron: '0 */2 * * *'
+    # Esegue ogni 15 minuti per tenere sveglio Render e controllare i GTFS
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -13,6 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Sveglia Server Render (Keep-Alive)
+        run: |
+          echo "Invio richiesta di risveglio a Render..."
+          # Tenta di contattare il server, riprova se va in timeout (utile se Render è spento)
+          curl -s --retry 3 --retry-delay 10 --max-time 60 https://veneziatpl.onrender.com/ > /dev/null || true
+          echo "Richiesta di keep-alive completata."
 
       - name: Scarica e verifica i GTFS ACTV
         run: |
@@ -31,14 +39,10 @@ jobs:
 
             echo "=== Scarico $name ==="
             
-            # -L segue i redirect automaticamente
-            # --user-agent simula un browser reale
-            # --retry 3 riprova in caso di cadute di linea
             curl -s -L --retry 3 --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "$url" -o "$tmp"
             
             echo "Dimensione file scaricato: $(wc -c < "$tmp") bytes"
 
-            # Verifica che sia uno ZIP valido controllando i primi byte PK
             if [ -s "$tmp" ] && head -c 2 "$tmp" | grep -q "PK"; then
               echo "Il file scaricato è uno ZIP valido."
               
