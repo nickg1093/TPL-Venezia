@@ -50,6 +50,7 @@ async function loadStatic() {
       D[id] = g; S[id].hist.clear(); ready[id] = true; version++;
       cachedStopsGzip = null;
       refresh(id);
+      console.log(`GTFS statico [${id}] caricato/aggiornato con successo.`);
     } catch (e) { console.error(`GTFS statico [${id}]:`, e.message); }
   }
 }
@@ -74,14 +75,25 @@ function byStart(G) {
   return bs;
 }
 
+// Funzione pulita per rimuovere prefissi variabili (es. AUT_791_, AUT_793_)
+const cleanId = id => (id ? String(id).replace(/^AUT_\d+_/, '') : '');
+
 function resolveTrip(G, td) {
   if (!td) return null;
   const id = td.tripId;
-  if (id && G.stopTimes.has(id)) return id;
+  
+  // 1. Controllo diretto o tramite ID pulito (immune a cambi di prefisso come AUT_791 vs AUT_793)
   if (id) {
+    if (G.stopTimes.has(id)) return id;
+    const targetClean = cleanId(id);
+    for (const tid of G.stopTimes.keys()) {
+      if (cleanId(tid) === targetClean) return tid;
+    }
     const body = id.replace(/^[A-Za-z]+_/, '');
     for (const p of G.tripPrefixes) if (G.stopTimes.has(p + body)) return p + body;
   }
+
+  // 2. Fallback basato su rotta e orario di partenza
   if (td.routeId && td.startTime) {
     const [h, m, s = 0] = td.startTime.split(':').map(Number), secs = h * 3600 + m * 60 + s, bs = byStart(G);
     for (const k of [has(td, 'directionId') ? `${td.routeId}|${td.directionId}|${secs}` : null, `${td.routeId}||${secs}`]) {
@@ -143,7 +155,6 @@ async function refresh(id) {
       });
     s8.updated = now; s8.error = null;
   } catch (err) {
-    // FALLBACK INTELLIGENTE: se la chiamata GTFS-RT fallisce, non blocchiamo l'app ma iniettiamo le posizioni teoriche schedulate
     s8.error = `${id}: ${err.message} (Fallback attivo)`;
     try {
       const scheduledFallback = schedule.positionsNow(D[id]);
@@ -248,6 +259,11 @@ function namesAreCompatible(n1, n2) {
 }
 
 const API = {
+  // Endpoint per forzare il ricaricamento dei GTFS statici aggiornati
+  '/api/reload-gtfs': async (u, req, res) => {
+    await loadStatic();
+    return { success: true, message: "GTFS ricaricati con successo!" };
+  },
   '/api/vehicles': u => {
     const list = wanted(u), errors = list.map(i => S[i].error).filter(Boolean);
     return { updated: Math.max(0, ...list.map(i => S[i].updated)), error: errors.join('; ') || null, version, ready,
@@ -358,11 +374,11 @@ function send(req, res, obj, code = 200) {
 const pageFile = ['public/index.html', 'index.html'].map(f => path.join(__dirname, f)).find(f => fs.existsSync(f));
 const page = pageFile ? fs.readFileSync(pageFile) : null;
 
-http.createServer((req, res) => {
+http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost'), handler = API[u.pathname];
   if (handler) {
     try {
-      const resVal = handler(u, req, res);
+      const resVal = await handler(u, req, res);
       if (resVal !== null) send(req, res, resVal);
     } catch (e) { send(req, res, { error: e.message }, e.code || 500); }
     return;
