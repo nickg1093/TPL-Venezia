@@ -29,41 +29,38 @@ jobs:
             target="data/$name.zip"
             tmp="data/$name.tmp.zip"
 
-            echo "=== Controllo $name ==="
-            echo "URL: $url"
-
-            # NOTA: Rimosso -i per evitare di salvare le intestazioni HTTP nel file
-            curl -s -L --retry 3 "$url" -o "$tmp"
+            echo "=== Scarico $name ==="
             
-            echo "Dimensione del file scaricato (bytes):"
-            wc -c < "$tmp"
+            # -L segue i redirect automaticamente
+            # --user-agent simula un browser reale
+            # --retry 3 riprova in caso di cadute di linea
+            curl -s -L --retry 3 --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "$url" -o "$tmp"
+            
+            echo "Dimensione file scaricato: $(wc -c < "$tmp") bytes"
 
-            # Verifica che sia un file ZIP valido (Magic Number PK)
+            # Verifica che sia uno ZIP valido controllando i primi byte PK
             if [ -s "$tmp" ] && head -c 2 "$tmp" | grep -q "PK"; then
-              echo "Il file è un archivio ZIP valido."
+              echo "Il file scaricato è uno ZIP valido."
               
               if [ -f "$target" ]; then
                 old_hash=$(md5sum "$target" | awk '{print $1}')
                 new_hash=$(md5sum "$tmp" | awk '{print $1}')
-                
-                echo "Hash vecchio: $old_hash"
-                echo "Hash nuovo:   $new_hash"
 
                 if [ "$old_hash" != "$new_hash" ]; then
                   mv "$tmp" "$target"
                   UPDATED=1
-                  echo ">>> ESITO: Il file $name è CAMBIATO! Sostituito."
+                  echo ">>> ESITO: Il file $name è diverso! Aggiornato con successo."
                 else
-                  echo ">>> ESITO: Il file $name è identico a prima."
+                  echo ">>> ESITO: Il file $name è identico a quello attuale."
                   rm -f "$tmp"
                 fi
               else
                 mv "$tmp" "$target"
                 UPDATED=1
-                echo ">>> ESITO: File $name salvato per la prima volta."
+                echo ">>> ESITO: Primo salvataggio per $name."
               fi
             else
-              echo ">>> ERRORE: Il file scaricato NON è un archivio ZIP valido."
+              echo ">>> ERRORE: Il file scaricato non è un archivio ZIP valido."
               rm -f "$tmp"
             fi
           done
@@ -80,6 +77,4 @@ jobs:
             git commit -m "Aggiornamento automatico file GTFS ACTV ($(date +'%Y-%m-%d %H:%M'))"
             git push
             echo "Modifiche GTFS salvate e inviate con successo!"
-          else
-            echo "Nessuna differenza rilevata da Git."
           fi
