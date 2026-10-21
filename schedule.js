@@ -7,6 +7,9 @@ const DAY = 86400000;
 const dateOf = s => new Date(Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)));
 const dowOf = s => dateOf(s).getUTCDay();
 
+// Funzione chiave per normalizzare i codici (rimuove prefissi dinamici come AUT_791_, AUT_793_, ecc.)
+const cleanId = id => (id ? String(id).replace(/^AUT_\d+_/, '') : '');
+
 const FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit',
   day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
 function romeNow(ms = Date.now()) {
@@ -17,6 +20,31 @@ function romeNow(ms = Date.now()) {
 function when(secs, date) {
   const b = romeNow(), s = secs == null ? NaN : +secs;
   return { secs: Number.isFinite(s) ? s : b.secs, day: /^\d{8}$/.test(date || '') ? dateOf(date) : b.d };
+}
+
+// Funzioni di supporto per lookup flessibile (immuni a cambi di prefisso tra GTFS statico e Real-Time)
+function getTrip(G, tripId) {
+  if (!tripId) return null;
+  if (G.trips[tripId]) return G.trips[tripId];
+  const clean = cleanId(tripId);
+  const cache = (G._cleanTripsCache ||= (() => {
+    const map = new Map();
+    for (const id in G.trips) map.set(cleanId(id), G.trips[id]);
+    return map;
+  })());
+  return cache.get(clean) || null;
+}
+
+function getStopTime(G, tripId) {
+  if (!tripId) return null;
+  if (G.stopTimes.has(tripId)) return G.stopTimes.get(tripId);
+  const clean = cleanId(tripId);
+  const cache = (G._cleanStopTimesCache ||= (() => {
+    const map = new Map();
+    for (const [id, st] of G.stopTimes.entries()) map.set(cleanId(id), st);
+    return map;
+  })());
+  return cache.get(clean) || null;
 }
 
 // Servizi attivi in una data. mode 'approx' = data fuori dal periodo coperto dai calendari:
@@ -102,7 +130,6 @@ function fracOnShape(G, shapeId, sidA, sidB, A, B, V) {
 }
 
 // ---- corse in viaggio a un dato istante ----
-// Le corse sono raggruppate a fasce di 10 minuti: non si scorrono tutte a ogni richiesta.
 function candidates(G, t) {
   const bk = (G._bk ||= (() => {
     const m = new Map();
@@ -115,13 +142,12 @@ function candidates(G, t) {
 
 function positionsNow(G, secsParam = null, date = null) {
   const { secs, day } = when(secsParam, date), out = [], seen = new Set();
-  // oggi, e le corse di ieri che proseguono dopo la mezzanotte
   for (const [off, dd] of [[0, day], [86400, new Date(day - DAY)]]) {
     const t = secs + off, ds = ymd(dd);
     for (const tripId of candidates(G, t)) {
-      const st = G.stopTimes.get(tripId);
-      if (t < st.start || t > st.end || seen.has(tripId)) continue;
-      const trip = G.trips[tripId];
+      const st = getStopTime(G, tripId);
+      if (!st || t < st.start || t > st.end || seen.has(tripId)) continue;
+      const trip = getTrip(G, tripId);
       if (!trip || !serviceActive(G, trip.service, ds)) continue;
       const n = st.d.length; let i = 0;
       while (i < n && t > st.d[i]) i++;
@@ -143,7 +169,7 @@ function positionsNow(G, secsParam = null, date = null) {
   return out;
 }
 
-// ---- passaggi a una fermata (finestra: da -3 a +120 minuti) ----
+// ---- passaggi a una fermata ----
 function departures(G, live, stopId, secsParam = null, date = null) {
   const list = G.stopIndex[stopId];
   if (!list) return [];
@@ -151,16 +177,18 @@ function departures(G, live, stopId, secsParam = null, date = null) {
   for (const [off, dd] of [[0, day], [86400, new Date(day - DAY)], [-86400, new Date(+day + DAY)]]) {
     const tNow = secs + off, ds = ymd(dd);
     for (let p = 0; p < list.length; p += 2) {
-      const tripId = G.tripIds[list[p]], i = list[p + 1], st = G.stopTimes.get(tripId);
+      const rawTripId = G.tripIds[list[p]], i = list[p + 1];
+      const st = getStopTime(G, rawTripId);
+      if (!st) continue;
       const last = i === st.s.length - 1, ts = last ? st.a[i] : st.d[i];
-      const lv = off >= 0 ? live?.[tripId] : null;
+      const lv = off >= 0 ? live?.[rawTripId] : null;
       const dl = lv ? lv.delays[i] : null;
       const sm = ts - tNow, em = ts + (dl ?? 0) - tNow;
       if ((sm < -180 || sm > 7200) && (em < -180 || em > 7200)) continue;
-      const trip = G.trips[tripId];
+      const trip = getTrip(G, rawTripId);
       if (!trip || !serviceActive(G, trip.service, ds)) continue;
       const r = G.routes[trip.route] || {};
-      out.push({ tripId, line: r.name || trip.route, color: r.color || null,
+      out.push({ tripId: rawTripId, line: r.name || trip.route, color: r.color || null,
         headsign: trip.headsign || G.stops[st.s[st.s.length - 1]] || null,
         sched: hhmm(ts), exp: hhmm(ts + (dl ?? 0)),
         schedIn: Math.round(sm / 60), expIn: Math.round(em / 60),
@@ -171,7 +199,7 @@ function departures(G, live, stopId, secsParam = null, date = null) {
   return out.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn)).slice(0, 80);
 }
 
-const isActiveToday = (G, tripId) => { const t = G.trips[tripId]; return !!t && serviceActive(G, t.service, ymd(romeNow().d)); };
+const isActiveToday = (G, tripId) => { const t = getTrip(G, tripId); return !!t && serviceActive(G, t.service, ymd(romeNow().d)); };
 const scheduleMode = (G, date) => servicesFor(G, /^\d{8}$/.test(date || '') ? date : ymd(romeNow().d)).mode;
 const secsOfDayRome = ms => romeNow(ms).secs;
 module.exports = { positionsNow, departures, secsOfDayRome, isActiveToday, scheduleMode, fracOnShape, hhmm };
