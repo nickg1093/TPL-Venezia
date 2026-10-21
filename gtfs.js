@@ -10,7 +10,6 @@ const SOURCES = {
   nav: { url: BASE + 'navigazione/actv_nav.zip', file: path.join(DIR, 'actv_nav.zip') },
   aut: { url: BASE + 'automobilistico/actv_aut.zip', file: path.join(DIR, 'actv_aut.zip') }
 };
-const MAX_AGE_MS = 24 * 3600 * 1000;
 const loaded = {};
 
 const empty = () => ({ routes: {}, trips: {}, stops: {}, stopLoc: {}, routeShapes: {}, shapePts: {}, calendar: {},
@@ -87,27 +86,34 @@ async function readStopTimes(buf, intern) {
 
 async function getZip(src) {
   fs.mkdirSync(DIR, { recursive: true });
-  const stamp = src.file + '.stamp', exists = fs.existsSync(src.file);
-  const last = fs.existsSync(stamp) ? (+fs.readFileSync(stamp, 'utf8') || 0) : 0;
-  if (!exists || Date.now() - last > MAX_AGE_MS) {
-    try {
-      const res = await fetch(src.url, {
-        signal: AbortSignal.timeout(exists ? 20000 : 120000),
-        redirect: 'follow',
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
-                   'Accept': 'application/zip,application/octet-stream,*/*' }
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const buf = Buffer.from(await res.arrayBuffer());
-      if (buf.length < 4 || buf[0] !== 0x50 || buf[1] !== 0x4b) throw new Error('la risposta non è un file ZIP');
-      fs.writeFileSync(src.file, buf);
-      fs.writeFileSync(stamp, String(Date.now()));
-      console.log('GTFS statico scaricato:', path.basename(src.file));
-    } catch (e) {
-      const why = e.message + (e.cause ? ', ' + (e.cause.code || e.cause.message) : '');
-      if (!exists) throw new Error(`download fallito (${why}): scaricalo a mano in data/${path.basename(src.file)}`);
-      console.log('Download GTFS fallito, uso la copia locale:', why);
+  const exists = fs.existsSync(src.file);
+  try {
+    const res = await fetch(src.url, {
+      signal: AbortSignal.timeout(exists ? 20000 : 120000),
+      redirect: 'follow',
+      headers: { 
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
+        'Accept': 'application/zip,application/octet-stream,*/*' 
+      }
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length < 4 || buf[0] !== 0x50 || buf[1] !== 0x4b) throw new Error('la risposta non è un file ZIP');
+    
+    const newHash = crypto.createHash('md5').update(buf).digest('hex');
+    let oldHash = '';
+    if (exists) {
+      oldHash = crypto.createHash('md5').update(fs.readFileSync(src.file)).digest('hex');
     }
+
+    if (!exists || oldHash !== newHash) {
+      fs.writeFileSync(src.file, buf);
+      console.log('GTFS statico scaricato e aggiornato:', path.basename(src.file));
+    }
+  } catch (e) {
+    const why = e.message + (e.cause ? ', ' + (e.cause.code || e.cause.message) : '');
+    if (!exists) throw new Error(`download fallito (${why}): scaricalo a mano in data/${path.basename(src.file)}`);
+    console.log('Download GTFS fallito, uso la copia locale:', why);
   }
   return fs.readFileSync(src.file);
 }
@@ -132,16 +138,12 @@ async function load(srcId) {
     const sId = intern(s.stop_id);
     const sName = s.stop_name || '';
     
-    // Mantiene RIGOROSAMENTE il nome originale del GTFS senza alterarlo
     stops[sId]  = sName;
-    
     if (s.stop_lat && s.stop_lon && isFinite(+s.stop_lat) && isFinite(+s.stop_lon)) stopLoc[s.stop_id] = [+s.stop_lat, +s.stop_lon];
     
-    // Rileva se è a richiesta dal nome originale
     const isReq = /a\s*richiesta/i.test(sName);
     stopIsRequest.set(s.stop_id, isReq);
 
-    // Nome base pulito esclusivamente ad uso interno per indici e ricerche geografiche
     const cleanName = sName.replace(/\s+a\s*richiesta\w*/gi, '').replace(/\.$/, '').trim();
     stopBaseNames.set(s.stop_id, cleanName || sName);
     
