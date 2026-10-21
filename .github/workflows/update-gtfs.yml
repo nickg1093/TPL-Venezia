@@ -2,7 +2,6 @@ name: Aggiorna GTFS ACTV
 
 on:
   schedule:
-    # Esegue ogni 2 ore per controllare i nuovi file GTFS
     - cron: '0 */2 * * *'
   workflow_dispatch:
 
@@ -15,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Scarica e verifica i GTFS ACTV
+      - name: Scarica e verifica i GTFS ACTV con Debug
         run: |
           mkdir -p data
           UPDATED=0
@@ -30,41 +29,48 @@ jobs:
             target="data/$name.zip"
             tmp="data/$name.tmp.zip"
 
-            echo "Controllo e download di $name..."
-            
-            # Scarica sempre il file temporaneo (senza filtri sulla data)
-            curl -s -fL --retry 3 "$url" -o "$tmp"
+            echo "=== Controllo $name ==="
+            echo "URL: $url"
 
-            # Verifica che il file scaricato esista, non sia vuoto e sia uno ZIP valido (Magic Number PK)
-            if [ -f "$tmp" ] && [ -s "$tmp" ]; then
-              if head -c 2 "$tmp" | grep -q "PK"; then
+            # Scarica il file e mostra le intestazioni HTTP per capire se risponde con 200 OK o errori
+            curl -i -s -L --retry 3 "$url" -o "$tmp"
+            
+            echo "Dimensione del file scaricato (bytes):"
+            wc -c < "$tmp"
+
+            # Mostra i primi caratteri per capire se è uno ZIP o una pagina HTML di errore
+            echo "Primi 5 caratteri del file:"
+            head -c 5 "$tmp" || true
+            echo ""
+
+            # Verifica che sia un file ZIP valido (Magic Number PK)
+            if [ -s "$tmp" ] && head -c 2 "$tmp" | grep -q "PK"; then
+              echo "Il file è un archivio ZIP valido."
+              
+              if [ -f "$target" ]; then
+                old_hash=$(md5sum "$target" | awk '{print $1}')
+                new_hash=$(md5sum "$tmp" | awk '{print $1}')
                 
-                # Se il file target precedente esiste, confrontiamo gli hash MD5
-                if [ -f "$target" ]; then
-                  old_hash=$(md5sum "$target" | awk '{print $1}')
-                  new_hash=$(md5sum "$tmp" | awk '{print $1}')
-                  
-                  if [ "$old_hash" != "$new_hash" ]; then
-                    mv "$tmp" "$target"
-                    UPDATED=1
-                    echo "-> Il file $name è CAMBIATO! Aggiornato con successo."
-                  else
-                    echo "-> Il file $name è identico alla versione precedente. Nessuna modifica."
-                    rm -f "$tmp"
-                  fi
-                else
-                  # Se il file target non esiste proprio, lo salviamo
+                echo "Hash vecchio: $old_hash"
+                echo "Hash nuovo:   $new_hash"
+
+                if [ "$old_hash" != "$new_hash" ]; then
                   mv "$tmp" "$target"
                   UPDATED=1
-                  echo "-> File $name salvato per la prima volta."
+                  echo ">>> ESITO: Il file $name è CAMBIATO! Sostituito."
+                else
+                  echo ">>> ESITO: Il file $name è identico a prima."
+                  rm -f "$tmp"
                 fi
-
               else
-                echo "-> Attenzione: il file scaricato per $name non è uno ZIP valido. Scartato."
-                rm -f "$tmp"
+                mv "$tmp" "$target"
+                UPDATED=1
+                echo ">>> ESITO: File $name salvato per la prima volta."
               fi
             else
-              echo "-> Errore nel download di $name."
+              echo ">>> ERRORE: Il file scaricato NON è un archivio ZIP valido (potrebbe essere una pagina HTML o un errore del server)."
+              echo "Contenuto iniziale del file (per debug):"
+              head -n 20 "$tmp" || true
               rm -f "$tmp"
             fi
           done
@@ -80,5 +86,7 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit -m "Aggiornamento automatico file GTFS ACTV ($(date +'%Y-%m-%d %H:%M'))"
             git push
-            echo "Modifiche GTFS salvate e inviate con successo alla repository!"
+            echo "Modifiche GTFS salvate e inviate con successo!"
+          else
+            echo "Nessuna differenza rilevata da Git."
           fi
