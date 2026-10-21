@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Scarica e verifica i GTFS ACTV con Debug
+      - name: Scarica e verifica i GTFS ACTV
         run: |
           mkdir -p data
           UPDATED=0
@@ -32,16 +32,11 @@ jobs:
             echo "=== Controllo $name ==="
             echo "URL: $url"
 
-            # Scarica il file e mostra le intestazioni HTTP per capire se risponde con 200 OK o errori
-            curl -i -s -L --retry 3 "$url" -o "$tmp"
+            # NOTA: Rimosso -i per evitare di salvare le intestazioni HTTP nel file
+            curl -s -L --retry 3 "$url" -o "$tmp"
             
             echo "Dimensione del file scaricato (bytes):"
             wc -c < "$tmp"
-
-            # Mostra i primi caratteri per capire se è uno ZIP o una pagina HTML di errore
-            echo "Primi 5 caratteri del file:"
-            head -c 5 "$tmp" || true
-            echo ""
 
             # Verifica che sia un file ZIP valido (Magic Number PK)
             if [ -s "$tmp" ] && head -c 2 "$tmp" | grep -q "PK"; then
@@ -68,9 +63,7 @@ jobs:
                 echo ">>> ESITO: File $name salvato per la prima volta."
               fi
             else
-              echo ">>> ERRORE: Il file scaricato NON è un archivio ZIP valido (potrebbe essere una pagina HTML o un errore del server)."
-              echo "Contenuto iniziale del file (per debug):"
-              head -n 20 "$tmp" || true
+              echo ">>> ERRORE: Il file scaricato NON è un archivio ZIP valido."
               rm -f "$tmp"
             fi
           done
