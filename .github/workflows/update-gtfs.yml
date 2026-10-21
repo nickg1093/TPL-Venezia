@@ -2,7 +2,8 @@ name: Aggiorna GTFS ACTV
 
 on:
   schedule:
-    - cron: '0 3 * * 1'   # ogni lunedì alle 3:00 UTC
+    # Esegue ogni 15 minuti per intercettare subito gli aggiornamenti di ACTV e mantenere attivo il server
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -14,17 +15,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Scarica i GTFS ACTV
+      - name: Sveglia e Mantieni Attivo Server Render
+        run: |
+          echo "Invio richiesta di risveglio a Render e attendo che si accenda..."
+          curl -s --retry 3 --retry-delay 10 --max-time 60 https://veneziatpl.onrender.com/ > /dev/null
+          echo "Server Render sveglio e operativo!"
+
+      - name: Scarica e verifica i GTFS ACTV
         run: |
           mkdir -p data
+          UPDATED=0
+
           for f in navigazione/actv_nav automobilistico/actv_aut; do
-            out="data/$(basename $f).zip"
-            curl -fL --retry 3 "https://actv.avmspa.it/sites/default/files/attachments/opendata/$f.zip" -o "$out.tmp"
-            head -c 2 "$out.tmp" | grep -q PK
-            mv "$out.tmp" "$out"
+            NAME=$(basename $f)
+            URL="https://actv.avmspa.it/sites/default/files/attachments/opendata/$f.zip"
+            TARGET="data/$NAME.zip"
+            TMP="data/$NAME.tmp.zip"
+
+            # Scarica solo se il file remoto è più recente di quello locale (-z)
+            if [ -f "$TARGET" ]; then
+              curl -s -fL -z "$TARGET" "$URL" -o "$TMP"
+            else
+              curl -s -fL "$URL" -o "$TMP"
+            fi
+
+            # Verifica che il file scaricato sia un ZIP valido (Magic Number PK)
+            if [ -f "$TMP" ] && [ -s "$TMP" ]; then
+              if head -c 2 "$TMP" | grep -q "PK"; then
+                mv "$TMP" "$TARGET"
+                UPDATED=1
+                echo "Nuova versione trovata per $NAME!"
+              else
+                echo "Attenzione: $NAME.tmp.zip non è un file ZIP valido. Scartato."
+                rm -f "$TMP"
+              fi
+            else
+              echo "Nessun aggiornamento per $NAME."
+              rm -f "$TMP"
+            fi
           done
 
-      - name: Commit se ci sono modifiche
+          echo "HAS_CHANGES=$UPDATED" >> $GITHUB_ENV
+
+      - name: Commit e Push se ci sono modifiche nei GTFS
+        if: env.HAS_CHANGES == '1'
         run: |
           git config user.name "Bot Aggiornamento GTFS"
           git config user.email "bot@actions.github.io"
@@ -32,4 +66,5 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit -m "Aggiornamento automatico file GTFS ACTV"
             git push
+            echo "Modifiche GTFS salvate e inviate con successo!"
           fi
