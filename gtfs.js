@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const AdmZip = require('adm-zip');
+const ids = require('./ids');
 
 const BASE = 'https://actv.avmspa.it/sites/default/files/attachments/opendata/';
 const DIR = path.join(__dirname, 'data');
@@ -84,37 +85,55 @@ async function readStopTimes(buf, intern) {
   return out;
 }
 
+// DOWNLOAD GTFS dal sito ACTV (che rifiuta le richieste senza User-Agent da browser).
+// - fino a 3 tentativi con attesa crescente; timeout lungo solo al primo avvio
+// - ETag / Last-Modified: se il file non è cambiato il server risponde 304 e non si scarica nulla
+// - il file viene accettato SOLO se è uno ZIP intero con i file GTFS indispensabili
+// - sostituzione atomica (scrive .tmp e rinomina): un download interrotto non rovina mai la copia buona
+const REQUIRED = ['trips.txt', 'stop_times.txt', 'stops.txt', 'routes.txt'];
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+  'Accept': 'application/zip,application/octet-stream;q=0.9,*/*;q=0.8', 'Accept-Language': 'it-IT,it;q=0.9'
+};
+function validZip(buf) {
+  if (buf.length < 22 || buf[0] !== 0x50 || buf[1] !== 0x4b) return 'la risposta non è un file ZIP';
+  try {
+    const names = new AdmZip(buf).getEntries().map(e => e.entryName.toLowerCase());
+    const miss = REQUIRED.filter(n => !names.some(x => x === n || x.endsWith('/' + n)));
+    return miss.length ? 'ZIP incompleto, mancano: ' + miss.join(', ') : null;
+  } catch (e) { return 'ZIP danneggiato (' + e.message + ')'; }
+}
+const metaFile = src => src.file + '.meta.json';
+const readMeta = src => { try { return JSON.parse(fs.readFileSync(metaFile(src), 'utf8')); } catch { return {}; } };
+
 async function getZip(src) {
   fs.mkdirSync(DIR, { recursive: true });
-  const exists = fs.existsSync(src.file);
-  try {
-    const res = await fetch(src.url, {
-      signal: AbortSignal.timeout(exists ? 20000 : 120000),
-      redirect: 'follow',
-      headers: { 
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
-        'Accept': 'application/zip,application/octet-stream,*/*' 
+  const exists = fs.existsSync(src.file), meta = exists ? readMeta(src) : {};
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const h = { ...HEADERS };
+      if (meta.etag) h['If-None-Match'] = meta.etag;
+      if (meta.lastModified) h['If-Modified-Since'] = meta.lastModified;
+      const res = await fetch(src.url, { signal: AbortSignal.timeout(exists ? 30000 : 120000), redirect: 'follow', headers: h });
+      if (res.status === 304) break;                       // invariato: si usa la copia locale
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const buf = Buffer.from(await res.arrayBuffer());
+      const bad = validZip(buf); if (bad) throw new Error(bad);
+      const oldHash = exists ? crypto.createHash('md5').update(fs.readFileSync(src.file)).digest('hex') : '';
+      if (crypto.createHash('md5').update(buf).digest('hex') !== oldHash) {
+        fs.writeFileSync(src.file + '.tmp', buf); fs.renameSync(src.file + '.tmp', src.file);
+        console.log('GTFS statico scaricato e aggiornato:', path.basename(src.file));
       }
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length < 4 || buf[0] !== 0x50 || buf[1] !== 0x4b) throw new Error('la risposta non è un file ZIP');
-    
-    const newHash = crypto.createHash('md5').update(buf).digest('hex');
-    let oldHash = '';
-    if (exists) {
-      oldHash = crypto.createHash('md5').update(fs.readFileSync(src.file)).digest('hex');
+      fs.writeFileSync(metaFile(src), JSON.stringify({ etag: res.headers.get('etag'), lastModified: res.headers.get('last-modified') }));
+      lastErr = null; break;
+    } catch (e) {
+      lastErr = e.message + (e.cause ? ', ' + (e.cause.code || e.cause.message) : '');
+      console.log(`Download GTFS ${path.basename(src.file)} tentativo ${attempt}/3 fallito: ${lastErr}`);
+      if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 3000));
     }
-
-    if (!exists || oldHash !== newHash) {
-      fs.writeFileSync(src.file, buf);
-      console.log('GTFS statico scaricato e aggiornato:', path.basename(src.file));
-    }
-  } catch (e) {
-    const why = e.message + (e.cause ? ', ' + (e.cause.code || e.cause.message) : '');
-    if (!exists) throw new Error(`download fallito (${why}): scaricalo a mano in data/${path.basename(src.file)}`);
-    console.log('Download GTFS fallito, uso la copia locale:', why);
   }
+  if (lastErr && !exists) throw new Error(`download fallito (${lastErr}): scaricalo a mano in data/${path.basename(src.file)}`);
   return fs.readFileSync(src.file);
 }
 
@@ -206,6 +225,7 @@ async function load(srcId) {
   for (const rid in shapesByRoute) {
     G.routeShapes[rid] = [...shapesByRoute[rid]].filter(s => shapePts[s]).sort((a, b) => shapePts[b].length - shapePts[a].length).slice(0, 4).map(s => shapePts[s]);
   }
+  ids.attach(G);
   loaded[srcId] = sig;
   log(`PRONTO: ${Object.keys(routes).length} linee, ${Object.keys(trips).length} viaggi, ${Object.keys(stops).length} fermate, ${stopTimes.size} corse con orari`);
   return G;

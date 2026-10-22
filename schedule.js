@@ -7,9 +7,6 @@ const DAY = 86400000;
 const dateOf = s => new Date(Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)));
 const dowOf = s => dateOf(s).getUTCDay();
 
-// Funzione chiave per normalizzare i codici (rimuove prefissi dinamici come AUT_791_, AUT_793_, ecc.)
-const cleanId = id => (id ? String(id).replace(/^AUT_\d+_/, '') : '');
-
 const FMT = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit',
   day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
 function romeNow(ms = Date.now()) {
@@ -22,30 +19,9 @@ function when(secs, date) {
   return { secs: Number.isFinite(s) ? s : b.secs, day: /^\d{8}$/.test(date || '') ? dateOf(date) : b.d };
 }
 
-// Funzioni di supporto per lookup flessibile (immuni a cambi di prefisso tra GTFS statico e Real-Time)
-function getTrip(G, tripId) {
-  if (!tripId) return null;
-  if (G.trips[tripId]) return G.trips[tripId];
-  const clean = cleanId(tripId);
-  const cache = (G._cleanTripsCache ||= (() => {
-    const map = new Map();
-    for (const id in G.trips) map.set(cleanId(id), G.trips[id]);
-    return map;
-  })());
-  return cache.get(clean) || null;
-}
-
-function getStopTime(G, tripId) {
-  if (!tripId) return null;
-  if (G.stopTimes.has(tripId)) return G.stopTimes.get(tripId);
-  const clean = cleanId(tripId);
-  const cache = (G._cleanStopTimesCache ||= (() => {
-    const map = new Map();
-    for (const [id, st] of G.stopTimes.entries()) map.set(cleanId(id), st);
-    return map;
-  })());
-  return cache.get(clean) || null;
-}
+// Le chiavi di G.trips e G.stopTimes sono gli ID statici: nessuna normalizzazione necessaria qui.
+const getTrip = (G, id) => G.trips[id] || null;
+const getStopTime = (G, id) => G.stopTimes.get(id) || null;
 
 // Servizi attivi in una data. mode 'approx' = data fuori dal periodo coperto dai calendari:
 // si usa il solo giorno della settimana.

@@ -45,3 +45,14 @@ Il pulsante "Dove sono" centra la mappa sulla tua posizione (il browser la conse
 ## Note
 - Il server interroga ACTV ogni 15 secondi, indipendentemente dal numero di utenti.
 - Controlla i termini d'uso dei dati open data ACTV prima di pubblicare l'app.
+
+## Keep-alive su Render (piano gratuito)
+Render addormenta il servizio dopo 15 minuti senza richieste in ingresso. Tre livelli, dal più affidabile:
+1. **Pinger esterno (consigliato)**: UptimeRobot o cron-job.org, ogni 5 minuti su `https://veneziatpl.onrender.com/healthz`.
+2. Workflow GitHub `keepalive.yml` (ogni 10 minuti, ma GitHub può ritardare i cron).
+3. Auto-ping interno ogni 10 minuti (usa `RENDER_EXTERNAL_URL`, impostato da Render): tiene sveglio il server solo finché è già acceso.
+Nota: il piano gratuito ha 750 ore/mese, sufficienti per un solo servizio sempre acceso.
+
+## ID universali
+`ids.js` collega corse e linee del realtime a quelle del GTFS statico per suffissi univoci, senza prefissi fissi:
+un aggiornamento del file `actv_aut.zip` con codici diversi non rompe più il collegamento.

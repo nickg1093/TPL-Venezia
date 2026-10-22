@@ -104,7 +104,7 @@ button.chip:hover{background:color-mix(in srgb,var(--fg) 15%,transparent)}
 .st.passed .dot{background:var(--rc);color:var(--check-fg,#fff)}
 
 @keyframes pulse-dot{0%{transform:scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 70%,transparent)}70%{transform:scale(1.25);box-shadow:0 0 0 6px color-mix(in srgb,var(--rc) 0%,transparent)}100%{transform:scale(1);box-shadow:0 0 0 0 color-mix(in srgb,var(--rc) 70%,transparent)}}
-.st.next .dot{box-shadow:0 0 0 3px color-mix(in srgb,var(--rc) 40%,transparent);animation:pulse-dot 1.5s infinite ease-in-out}
+.st.at .dot,.st.next .dot{box-shadow:0 0 0 3px color-mix(in srgb,var(--rc) 40%,transparent);animation:pulse-dot 1.5s infinite ease-in-out}
 .st.passed .nm,.st.passed .tm,.st.passed .muted{opacity:.4}
 
 .trav{position:absolute;top:25px;width:2.5px;margin-left:-1.25px;height:0;background:var(--rc);z-index:2}
@@ -455,7 +455,7 @@ function render() {
       const m = L.marker([v.lat, v.lon], { icon: L.divIcon({ className: 'bus-marker', iconSize: null, html }) })
         .bindTooltip(tip(v), { direction: 'top', offset: [0, -12] }).addTo(map), id = v.id;
       m.on('click', () => { const c = vehicles.find(x => x.id === id); if (c) openTripPanel(c); });
-      markers.set(v.id, e = { m, html, tipContent: tip(v), lat: v.lat, lon: v.lon, prevLat: v.lat, prevLon: v.lon, targetLat: v.lat, targetLon: v.lon, lastTime: now, duration: POLL_MS });
+      markers.set(v.id, e = { m, html, tipContent: tip(v), lat: v.lat, lon: v.lon, prevLat: v.lat, prevLon: v.lon, targetLat: v.lat, targetLon: v.lon, lastTime: now, lastChange: now, duration: POLL_MS });
       continue;
     }
 
@@ -467,6 +467,8 @@ function render() {
       const curLatLng = e.m.getLatLng();
       e.prevLat = curLatLng.lat; e.prevLon = curLatLng.lng;
       e.targetLat = v.lat; e.targetLon = v.lon;
+      // il mezzo arriva a destinazione proprio quando è atteso il prossimo aggiornamento (intervallo reale, 4-20 s)
+      e.duration = Math.min(20000, Math.max(4000, (now - e.lastChange) * 1.1)); e.lastChange = now;
       e.lastTime = now;
     }
   }
@@ -477,10 +479,12 @@ function render() {
 }
 
 requestAnimationFrame(function frame(now) {
-  if (mode === 'live') {
+  if (mode === 'live' && !document.hidden) {
     for (const e of markers.values()) {
+      if (e.done) { if (e.lastTime === e.doneAt) continue; }
       const elapsed = now - e.lastTime;
       const progress = Math.min(1, elapsed / e.duration);
+      e.done = progress >= 1; e.doneAt = e.lastTime;
       const currentLat = e.prevLat + (e.targetLat - e.prevLat) * progress;
       const currentLon = e.prevLon + (e.targetLon - e.prevLon) * progress;
       e.m.setLatLng([currentLat, currentLon]);
@@ -671,7 +675,7 @@ function tripHtml(d) {
       sub = d.live ? 'da orario' : '';
       timeHtml = `<div class="tm-time-wrap"><strong>${esc(s.sched)}</strong></div>`;
     }
-    const meta = s.skipped ? 'Fermata saltata' : s.state === 'next' ? (s.inMin <= 0 ? 'In partenza' : `tra ${s.inMin} min`) : '';
+    const meta = s.skipped ? 'Fermata saltata' : s.state === 'at' ? 'In fermata' : s.state === 'next' ? (s.inMin <= 0 ? 'In partenza' : `tra ${s.inMin} min`) : '';
     const isFirst = i === 0 ? ' first' : '', isLast = i === n - 1 ? ' last' : '';
     return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${isFirst}${isLast}" data-i="${i}">`
       + `<div class="rail-col"><div class="rail-line"></div><span class="dot">${s.state === 'passed' ? '✓' : ''}</span></div>`
@@ -742,7 +746,7 @@ function renderTrip(first) {
     const s = d.stops[i];
     if (s.lat != null) L.circleMarker([s.lat, s.lon], { radius: 3.5, weight: 1.5, color: '#0f172a', fillColor: '#fff', fillOpacity: .9 }).bindTooltip(esc(s.name)).addTo(tripLayer);
   }
-  const veh = plist.querySelector('.veh'), row = veh && veh.style.display !== 'none' ? veh : plist.querySelector('.st.next');
+  const veh = plist.querySelector('.veh'), row = veh && veh.style.display !== 'none' ? veh : plist.querySelector('.st.at, .st.next');
   if (row) row.scrollIntoView({ block: 'center' });
 }
 chipsArea.addEventListener('click', e => {

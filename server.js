@@ -5,6 +5,8 @@ const zlib = require('zlib');
 const protobuf = require('protobufjs');
 const gtfs = require('./gtfs');
 const schedule = require('./schedule');
+const ids = require('./ids');
+const motion = require('./motion');
 const { secsOfDayRome, hhmm } = schedule;
 
 const PORT = process.env.PORT || 3000;
@@ -28,7 +30,7 @@ message VehiclePosition { optional TripDescriptor trip = 1; optional Position po
 const D = {}, S = {}, ready = {};
 for (const id of IDS) {
   D[id] = gtfs.empty(); ready[id] = false;
-  S[id] = { updated: 0, error: null, vehicles: [], live: {}, hist: new Map() };
+  S[id] = { updated: 0, error: null, vehicles: [], live: {}, hist: new Map(), track: new Map() };
 }
 
 let cachedStopsGzip = null;
@@ -42,17 +44,18 @@ function isNearby(lat1, lon1, lat2, lon2, maxMeters) {
   return (dLat * dLat + dLon * dLon) <= (maxMeters * maxMeters);
 }
 
+// Caricamento GTFS statico: i feed partono in parallelo; ognuno viene sostituito solo a lettura completata.
 async function loadStatic() {
-  for (const id of IDS) {
+  await Promise.all(IDS.map(async id => {
     try {
       const g = await gtfs.load(id);
-      if (!g) continue;
+      if (!g) return;
       D[id] = g; S[id].hist.clear(); ready[id] = true; version++;
       cachedStopsGzip = null;
       refresh(id);
       console.log(`GTFS statico [${id}] caricato/aggiornato con successo.`);
     } catch (e) { console.error(`GTFS statico [${id}]:`, e.message); }
-  }
+  }));
 }
 
 const has = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
@@ -75,28 +78,16 @@ function byStart(G) {
   return bs;
 }
 
-// Funzione pulita per rimuovere prefissi variabili (es. AUT_791_, AUT_793_)
-const cleanId = id => (id ? String(id).replace(/^AUT_\d+_/, '') : '');
-
+// RISOLUZIONE CORSA: collega la corsa del realtime a quella del GTFS statico (vedi ids.js).
+// 1) per ID (esatto o per suffisso univoco, immune a cambi di prefisso); 2) per linea + orario di partenza.
 function resolveTrip(G, td) {
-  if (!td) return null;
-  const id = td.tripId;
-  
-  // 1. Controllo diretto o tramite ID pulito (immune a cambi di prefisso come AUT_791 vs AUT_793)
-  if (id) {
-    if (G.stopTimes.has(id)) return id;
-    const targetClean = cleanId(id);
-    for (const tid of G.stopTimes.keys()) {
-      if (cleanId(tid) === targetClean) return tid;
-    }
-    const body = id.replace(/^[A-Za-z]+_/, '');
-    for (const p of G.tripPrefixes) if (G.stopTimes.has(p + body)) return p + body;
-  }
-
-  // 2. Fallback basato su rotta e orario di partenza
-  if (td.routeId && td.startTime) {
+  if (!td || !G.idx) return null;
+  const byId = ids.resolveTripId(G, td.tripId);
+  if (byId && G.stopTimes.has(byId)) return byId;
+  if (td.startTime) {
+    const route = ids.resolveRouteId(G, td.routeId);
     const [h, m, s = 0] = td.startTime.split(':').map(Number), secs = h * 3600 + m * 60 + s, bs = byStart(G);
-    for (const k of [has(td, 'directionId') ? `${td.routeId}|${td.directionId}|${secs}` : null, `${td.routeId}||${secs}`]) {
+    if (route) for (const k of [has(td, 'directionId') ? `${route}|${td.directionId}|${secs}` : null, `${route}||${secs}`]) {
       const c = k && bs[k];
       if (c?.length) return c.find(x => schedule.isActiveToday(G, x)) || c[0];
     }
@@ -147,12 +138,14 @@ async function refresh(id) {
     s8.vehicles = pos.filter(e => Number.isFinite(e.vehicle?.position?.latitude) && Number.isFinite(e.vehicle.position.longitude))
       .map(e => {
         const v = e.vehicle, tripId = resolveTrip(G, v.trip), trip = G.trips[tripId] || {};
-        const routeKey = trip.route || v.trip?.routeId || null, r = G.routes[routeKey] || {};
+        const routeKey = trip.route || ids.resolveRouteId(G, v.trip?.routeId) || v.trip?.routeId || null, r = G.routes[routeKey] || {};
         return { id: `${id}:${v.vehicle?.id || e.id}`, src: id, label: v.vehicle?.label || null,
           lat: +v.position.latitude.toFixed(5), lon: +v.position.longitude.toFixed(5),
+          speed: motion.updateSpeed(s8.track, v.vehicle?.id || e.id, v.position.latitude, v.position.longitude, now),
           line: r.name || routeKey || '?', color: r.color || null, tripId,
           routeId: routeKey ? `${id}:${routeKey}` : null, headsign: trip.headsign || null };
       });
+    for (const [k, p] of s8.track) if (now - p.t > 600000) s8.track.delete(k);   // mezzi non più visti
     s8.updated = now; s8.error = null;
   } catch (err) {
     s8.error = `${id}: ${err.message} (Fallback attivo)`;
@@ -177,12 +170,13 @@ function tripDetail(i, tid, live) {
   if (!(lv && lv.firstJ >= 0)) while (cur < n && at(cur) <= tNow) cur++;
 
   const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
-  const departureTime = st.d[0] ?? st.a[0];
-  const originLoc = G.stopLoc[st.s[0]];
-
-  const isAtOriginBeforeDeparture = (tNow < departureTime) || 
-    (cur === 0 && veh && originLoc && isNearby(veh.lat, veh.lon, originLoc[0], originLoc[1], 100));
-
+  // STATO DEL MEZZO: fermo in fermata o già partito (GPS + velocità + tracciato + orario/ritardo, vedi motion.js)
+  const fracBeyond = k => { const A = G.stopLoc[st.s[k]], B = G.stopLoc[st.s[k + 1]]; return veh && A && B ? schedule.fracOnShape(G, trip.shape, st.s[k], st.s[k + 1], A, B, [veh.lat, veh.lon]) : null; };
+  const loc = veh ? motion.locate({ n, cur, veh, stopLoc: k => G.stopLoc[st.s[k]], fracBeyond,
+    planDep: k => at(k) + (lv?.delays[k] ?? hist?.[k] ?? 0), nowS: tNow }) : { cur, atStop: -1 };
+  cur = loc.cur;
+  const atStop = loc.atStop;
+  const isAtOriginBeforeDeparture = (!veh && tNow < (st.d[0] ?? st.a[0])) || (atStop === 0 && loc.waiting);
   if (isAtOriginBeforeDeparture) cur = 0;
 
   const stops = new Array(n);
@@ -196,7 +190,7 @@ function tripDetail(i, tid, live) {
       lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
       sched: hhmm(ts), exp: dl != null ? hhmm(ts + dl) : null, delay: dl != null ? Math.round(dl / 60) : null,
       inMin: Math.round((ts + (dl ?? 0) - tNow) / 60),
-      state: k < cur ? 'passed' : (k === cur ? 'next' : 'upcoming'), 
+      state: k < cur ? 'passed' : (k === atStop ? 'at' : k === cur ? 'next' : 'upcoming'), 
       skipped: !!lv?.skipped.has(k) 
     };
   }
@@ -205,7 +199,8 @@ function tripDetail(i, tid, live) {
   const dn = isAtOriginBeforeDeparture ? 0 : rawDn;
 
   let progress;
-  if (cur >= n) progress = { from: n - 1, frac: 0 };
+  if (atStop >= 0) progress = { from: atStop, frac: 0 };
+  else if (cur >= n) progress = { from: n - 1, frac: 0 };
   else if (cur === 0) progress = { from: 0, frac: 0 };
   else {
     const A = G.stopLoc[st.s[cur - 1]], B = G.stopLoc[st.s[cur]]; let frac;
@@ -219,7 +214,7 @@ function tripDetail(i, tid, live) {
   }
 
   return { 
-    live, progress, cancelled: !!lv?.cancelled, note: noteOf(G),
+    live, progress, atStop, speedKmh: veh?.speed != null ? Math.round(veh.speed * 3.6) : null, cancelled: !!lv?.cancelled, note: noteOf(G),
     delayNow: dn != null ? Math.round(dn / 60) : null,
     historyKnown: stops.some(s => s.state === 'passed' && s.delay != null),
     trip: { src: i, line: r.name || trip.route, color: r.color || null, headsign: trip.headsign || G.stops[st.s[n - 1]] || null, vehicle: veh?.label || null },
@@ -376,6 +371,7 @@ const page = pageFile ? fs.readFileSync(pageFile) : null;
 
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost'), handler = API[u.pathname];
+  if (u.pathname === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end('ok'); }
   if (handler) {
     try {
       const resVal = await handler(u, req, res);
@@ -387,6 +383,13 @@ http.createServer(async (req, res) => {
   res.end(page || 'index.html mancante');
 }).listen(PORT, () => console.log(`http://localhost:${PORT}`));
 
-for (const id of IDS) setInterval(() => refresh(id), REFRESH_MS);
+// Ogni feed ha il proprio ciclo: indipendenti e in parallelo; un ciclo lento non ne blocca né ne sovrappone un altro.
+for (const id of IDS) (async function loop() { const t0 = Date.now(); await refresh(id); setTimeout(loop, Math.max(1000, REFRESH_MS - (Date.now() - t0))); })();
 loadStatic();
 setInterval(loadStatic, 24 * 3600 * 1000);
+
+// KEEP-ALIVE Render (piano gratuito): si addormenta dopo 15 min senza richieste HTTP in ingresso.
+// Il server si auto-contatta dall'esterno (URL pubblico) ogni 10 min finché è sveglio;
+// per svegliarlo da spento serve comunque un pinger esterno su /healthz (vedi README).
+const SELF = process.env.RENDER_EXTERNAL_URL || process.env.KEEPALIVE_URL;
+if (SELF) setInterval(() => fetch(SELF.replace(/\/$/, '') + '/healthz', { signal: AbortSignal.timeout(15000) }).catch(() => {}), 10 * 60 * 1000);
