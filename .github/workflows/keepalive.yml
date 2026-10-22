@@ -1,0 +1,19 @@
+name: Keep-alive Render
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # GitHub può ritardare i cron di molti minuti: usa anche un pinger esterno (vedi README)
+  workflow_dispatch:
+permissions: {}
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /healthz
+        run: |
+          for i in 1 2 3 4; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 https://veneziatpl.onrender.com/healthz || echo 000)
+            echo "tentativo $i: HTTP $code"
+            [ "$code" = "200" ] && exit 0
+            sleep 20
+          done
+          exit 1

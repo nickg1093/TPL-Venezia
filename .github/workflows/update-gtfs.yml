@@ -2,8 +2,7 @@ name: Aggiorna GTFS ACTV
 
 on:
   schedule:
-    # Esegue ogni 15 minuti per tenere sveglio Render e controllare i GTFS
-    - cron: '*/15 * * * *'
+    - cron: '17 */6 * * *'   # controllo GTFS ogni 6 ore
   workflow_dispatch:
 
 permissions:
@@ -14,13 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Sveglia Server Render (Keep-Alive)
-        run: |
-          echo "Invio richiesta di risveglio a Render..."
-          # Tenta di contattare il server, riprova se va in timeout (utile se Render è spento)
-          curl -s --retry 3 --retry-delay 10 --max-time 60 https://veneziatpl.onrender.com/ > /dev/null || true
-          echo "Richiesta di keep-alive completata."
 
       - name: Scarica e verifica i GTFS ACTV
         run: |
