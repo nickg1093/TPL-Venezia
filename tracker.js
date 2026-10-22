@@ -24,10 +24,12 @@ const C = {
   TERM_M: 250,
   STILL: 1.2,          // m/s: sotto = fermo
   MOVE: 2.5,           // m/s: sopra = in marcia
-  MOVE_SUSTAIN_MS: 10000, // al capolinea la marcia deve durare 10 s per contare come partenza (manovre escluse)
+  MOVE_SUSTAIN_MS: 6000, // al capolinea la marcia deve durare 6 s per contare come partenza (manovre escluse)
   APPROACH_M: 350, APPROACH_S: 75,
   STALE_S: 240,        // previsione del feed superata da oltre 4 min senza aggiornamenti = stantia
-  DEPART_S: 30         // ultimi secondi prima della partenza prevista: "in partenza"
+  DEPART_S: 30,        // ultimi secondi prima della partenza prevista: "in partenza"
+  DEP_DISP_M: 15,      // spostamento dal punto di sosta che prova la partenza (m)
+  MOVE_PASS: 2.0       // m/s istantanei: mezzo che passa oltre la fermata senza sosta
 };
 const M_LAT = 111000, M_LON = 78000;
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
@@ -90,6 +92,17 @@ function stopOffsets(G, trip, st) {
 
 // ---- stima ----
 // x: { G, trip, st, lv, hist, veh, tNow, nowMs, vs }   vs = memoria persistente della corsa (oggetto, viene aggiornato)
+//
+// MACCHINA A STATI per la fermata corrente (stage), che può solo AVANZARE finché la fermata corrente non cambia:
+//   0 in viaggio  ->  1 in arrivo  ->  2 in fermata  ->  3 in partenza  ->  (cur+1: la fermata è "transitata", si riparte da 0/1)
+// Eccezioni controllate: 1 può tornare a 0 solo se il mezzo si allontana molto (>450 m, es. coda); 2 e 3 non tornano mai indietro.
+// Questo elimina le sequenze "in arrivo > in fermata > in partenza > in arrivo".
+//
+// PARTENZA (la fermata passa a "transitata"), prove incrociate:
+//   a) oltre la zona della fermata (55 m dopo il palo; 250 m al capolinea)
+//   b) dopo una sosta: spostamento >= 15 m dal punto di sosta con velocità istantanea >= 0.8 m/s oppure avanzamento >3 m tra due rilevamenti
+//   c) senza sosta: >20 m oltre il palo e velocità istantanea >= 2 m/s (corsa passata senza fermarsi)
+//   d) dichiarazione del mezzo (IN_TRANSIT_TO / STOPPED_AT sulla fermata successiva) solo se coerente con la posizione
 function update(x) {
   const { G, trip, st, lv, hist, veh, tNow, nowMs } = x, vs = x.vs || (x.vs = {});
   const n = st.s.length, at = k => (k === n - 1 ? st.a[k] : st.d[k]);
@@ -103,79 +116,102 @@ function update(x) {
   if (lv && lv.firstJ >= 0) { feedCur = lv.firstJ; while (feedCur < n - 1 && tNow - (at(feedCur) + dly(feedCur)) > C.STALE_S) feedCur++; }
   else { feedCur = 0; while (feedCur < n && at(feedCur) <= tNow) feedCur++; }
 
-  // 2) GPS: posizione lungo il tracciato
-  const sp = veh && Number.isFinite(veh.speed) ? veh.speed : null, still = veh?.stillS || 0;
+  // 2) GPS: posizione lungo il tracciato, velocità lisciata (sp, per le stime) e istantanea (vi, per le ripartenze)
+  const sp = veh && Number.isFinite(veh.speed) ? veh.speed : null;
+  const vi = veh && Number.isFinite(veh.vInst) ? veh.vInst : sp;
   const fresh = !!veh && Number.isFinite(veh.lat) && !(veh.ageS != null && veh.ageS * 1000 > C.FRESH_MS);   // età misurata col nostro orologio
   const offs = fresh ? stopOffsets(G, trip, st) : null;
   let sv = null, lateral = null;
   if (offs) { const pr = project(shapeInfo(G, trip.shape), veh.lat, veh.lon, vs.sMax ?? null); if (pr && pr.lat <= C.OFFROUTE_M) { sv = pr.s; lateral = pr.lat; } }
+  if (sv != null && veh.ts !== vs.curTs) { vs.prevS = vs.curS ?? null; vs.curS = sv; vs.curTs = veh.ts; }   // nuovo rilevamento
+  const adv = sv != null && vs.prevS != null ? sv - vs.prevS : 0;                                        // avanzamento (m) fra gli ultimi due rilevamenti
   if (sp != null && sp >= C.MOVE) vs.moveSince ??= nowMs; else vs.moveSince = null;
   const sustained = vs.moveSince != null && nowMs - vs.moveSince >= C.MOVE_SUSTAIN_MS;
 
-  const prevCur = vs.cur ?? 0;
+  // 3) FERMATA CORRENTE (monotona)
+  const prevCur = vs.cur ?? 0, a0 = vs.at;
   let cur = Math.max(prevCur, feedCur), src = 'feed';
   if (sv != null) {
     let pc = prevCur; src = 'gps';
     while (pc < n - 1) {
-      const dk = sv - offs[pc], term = pc === 0;
-      let gone = dk > (term ? C.TERM_M : C.PASS_M);
-      if (!gone && sp != null && sp >= C.MOVE) gone = term ? dk > 90 && sustained : dk > 20;
+      const dk = sv - offs[pc], term = pc === 0, a = a0 && a0.k === pc ? a0 : null;
+      let gone = dk > (term ? C.TERM_M : C.PASS_M);                                                     // a) oltre la zona
+      if (!gone && a && a.anchorS != null) {                                                            // b) dopo una sosta
+        const moved = sv - a.anchorS;
+        gone = term ? (moved > 60 && sustained) : (moved > C.DEP_DISP_M && ((vi ?? 0) >= 0.8 || adv > 3));
+      }
+      if (!gone && !a && !term) gone = dk > 20 && (vi ?? 0) >= C.MOVE_PASS;                              // c) senza sosta
+      if (!gone && !a && term) gone = dk > 90 && sustained;
       if (!gone) break; pc++;
     }
+    cur = Math.max(prevCur, pc);
     // il feed più avanti di 2+ fermate mentre il bus corre = proiezione GPS dubbia (percorsi sovrapposti): ci si fida del feed
-    cur = (feedCur - pc >= 2 && (sp == null || sp >= C.MOVE)) ? Math.max(prevCur, feedCur) : Math.max(prevCur, pc);
-    if (cur !== pc) src = 'feed';
+    if (feedCur - pc >= 2 && (sp == null || sp >= C.MOVE)) { cur = Math.max(prevCur, feedCur); src = 'feed'; }
   }
-  // stato dichiarato dal feed (STOPPED_AT / IN_TRANSIT_TO) con stop_sequence: conferma la fermata solo se non contraddice il GPS
-  if (veh?.seq != null && sv == null) { const j = st.q.indexOf(veh.seq); if (j >= 0) cur = Math.max(cur, j); }
+  // d) dichiarazione del mezzo: vale solo se coerente col GPS (o senza GPS)
+  if (veh?.seq != null) {
+    const j = st.q.indexOf(veh.seq);
+    if (j > cur && (sv == null ? j - cur <= 3 : j === cur + 1 && sv - offs[cur] > 20)) cur = j;
+  }
   cur = clamp(cur, 0, n);
+  const changed = cur !== prevCur;
+  if (changed) { vs.at = null; vs.stage = 0; }
 
-  // 3) IN FERMATA?
+  // 4) IN FERMATA? Una volta fermi in zona la sosta è "appiccicosa": resta finché non c'è una prova di partenza (punto 3)
   let atStop = -1;
   if (veh && cur < n) {
     const k = cur, term = k === 0, dk = sv != null ? sv - offs[k] : null;
-    const stopped = sp != null ? sp < C.STILL : (veh.status === 1 || still >= 5);
-    const inZone = dk != null ? (dk >= -(term ? C.TERM_BACK_M : C.ARR_BACK_M) && dk <= (term ? C.TERM_M : C.PASS_M)) : dTo(k) <= (term ? 120 : 50);
-    if (inZone && stopped) atStop = k;
+    const back = term ? C.TERM_BACK_M : C.ARR_BACK_M, fwd = term ? C.TERM_M : C.PASS_M;
+    const stopped = vi != null ? vi < C.STILL : (veh.status === 1 || (veh.stillS || 0) >= 5);
+    const inZone = dk != null ? (dk >= -back && dk <= fwd) : dTo(k) <= (term ? 120 : 50);
+    const sticky = vs.at && vs.at.k === k && (dk != null ? dk >= -back - 20 && dk <= fwd + 20 : dTo(k) <= (term ? 160 : 80));
+    if ((inZone && stopped) || sticky || (veh.status === 1 && inZone)) atStop = k;
+    if (atStop === k && !(vs.at && vs.at.k === k)) vs.at = { k, anchorS: dk != null ? sv : null, since: nowMs };
   }
 
-  // 4) ETA per ogni fermata, in ms assoluti
+  // 5) ETA per ogni fermata, in ms assoluti
   const pred = k => at(k) + dly(k);
-  let etaCur = cur < n ? pred(cur) : 0;
   const remaining = sv != null && cur < n ? offs[cur] - sv : null;
-  if (atStop === cur && cur < n) etaCur = Math.max(at(cur) + Math.max(dly(cur), 0), tNow);          // si parte non prima dell'orario; oltre l'orario: ora
+  const moving = atStop === cur && vs.at?.anchorS != null && sv != null && Math.abs(sv - vs.at.anchorS) > 8 && (vi ?? 0) >= 0.8;   // già in movimento dopo la sosta
+  let etaCur = cur < n ? pred(cur) : 0;
+  if (atStop === cur && cur < n) etaCur = moving ? tNow : Math.max(at(cur) + Math.max(dly(cur), 0), tNow);   // non si parte prima dell'orario; oltre: ora
   else if (remaining != null && remaining > 0 && cur > 0) {
     const vSched = (offs[cur] - offs[cur - 1]) / Math.max(30, st.a[cur] - st.d[cur - 1]);
-    const vEff = sp != null && sp >= C.STILL ? 0.5 * clamp(sp, 2.5, 14) + 0.5 * vSched : 0.6 * vSched;  // fermo in coda: ritmo ridotto
-    const gps = tNow + remaining / Math.max(1.5, vEff), stalePred = lv == null || pred(cur) < tNow - 30;   // senza feed o previsione già superata: conta solo il GPS
+    const vEff = sp != null && sp >= C.STILL ? 0.5 * clamp(sp, 2.5, 14) + 0.5 * vSched : 0.6 * vSched;   // fermo in coda: ritmo ridotto
+    const gps = tNow + remaining / Math.max(1.5, vEff), stalePred = lv == null || pred(cur) < tNow - 30;  // senza feed o previsione superata: solo GPS
     const w = stalePred ? 1 : clamp(1 - remaining / 1200, 0, 0.85);
     etaCur = w * gps + (1 - w) * pred(cur);
-  } else if (cur === 0 && !veh) etaCur = Math.max(pred(0), at(0));                               // niente partenza anticipata
+  } else if (cur === 0 && !veh) etaCur = Math.max(pred(0), at(0));                                        // niente partenza anticipata
   if (cur < n) etaCur = Math.max(etaCur, tNow);
 
-  const etaMs = new Float64Array(n).fill(NaN), effD = cur < n ? etaCur - at(cur) : 0;   // ritardo effettivo alla fermata corrente
+  const etaMs = new Float64Array(n).fill(NaN), effD = cur < n ? etaCur - at(cur) : 0;
   for (let k = cur, last = 0; k < n; k++) {
-    let e = k === cur ? etaCur : at(k) + effD + (dly(k) - dly(cur));   // ritardo effettivo + variazione prevista dal feed lungo la corsa
+    let e = k === cur ? etaCur : at(k) + effD + (dly(k) - dly(cur));       // ritardo effettivo + variazione prevista dal feed
     e = Math.max(e, last); last = e; etaMs[k] = nowMs + (e - tNow) * 1000;
   }
 
-  // 5) FASE della fermata corrente
-  let phase = 'scheduled';
-  if (cur >= n) phase = 'arrived';
-  else if (cur === 0 && sv != null && sp != null && sp >= C.MOVE && sv - offs[0] > 60) phase = 'departing';
-  else if (atStop === cur) phase = cur === n - 1 ? 'arrived' : (etaCur - tNow <= C.DEPART_S || (sp != null && sp >= C.STILL) ? 'departing' : 'at');
-  else if (veh && sv != null && remaining != null && remaining <= C.APPROACH_M && etaCur - tNow <= C.APPROACH_S) phase = 'approaching';
-  else if (veh) phase = etaCur - tNow <= 45 ? 'approaching' : 'enroute';
-  else if (etaCur - tNow <= 45) phase = 'approaching';
+  // 6) FASE: stage candidato dalle prove di questo ciclo, poi solo avanzamento
+  let target = 0;
+  if (cur >= n) target = 4;
+  else if (atStop === cur) target = (moving || etaCur - tNow <= C.DEPART_S) && cur < n - 1 ? 3 : 2;
+  else if (cur === 0 && sv != null && (vi ?? 0) >= C.MOVE && sv - offs[0] > 60) target = 3;                // lascia il capolinea
+  else if (remaining != null ? (remaining <= 150 || (remaining <= C.APPROACH_M && etaCur - tNow <= C.APPROACH_S)) : etaCur - tNow <= 45) target = 1;
+  let stage = vs.stage || 0;
+  if (target > stage) stage = target;
+  else if (stage === 1 && target === 0 && (remaining == null ? etaCur - tNow > 120 : remaining > 450)) stage = 0;   // unico ritorno consentito
+  vs.stage = stage;
+  const last = cur === n - 1;
+  const phase = stage >= 4 ? 'arrived' : stage === 3 ? 'departing' : stage === 2 ? (last ? 'arrived' : 'at') : stage === 1 ? 'approaching' : (veh ? 'enroute' : 'scheduled');
 
-  // 6) MEMORIA (monotona)
+  // 7) MEMORIA
   vs.dep ??= {}; for (let k = prevCur; k < cur && k < n; k++) vs.dep[k] ??= nowMs;
   vs.cur = cur; vs.seen = nowMs; vs.delay = cur < n ? Math.round(etaCur - at(cur)) : vs.delay;
   if (sv != null) vs.sMax = Math.max(vs.sMax ?? 0, sv);
 
-  return { cur, atStop, phase, etaMs, src, sVeh: sv, lateral, delayS: vs.delay ?? 0,
+  return { cur, atStop, phase, stage, etaMs, src, sVeh: sv, lateral, delayS: vs.delay ?? 0,
     atOrigin: atStop === 0 || (!veh && cur === 0 && tNow < at(0)), waiting: atStop === cur && etaCur - tNow > 0, speed: sp, dep: vs.dep };
 }
+
 // Punto del tracciato all'ascissa s, e tratto di tracciato tra due ascisse (per muovere il mezzo SULLA linea, non in rettilineo).
 const rnd = q => [+q[0].toFixed(5), +q[1].toFixed(5)];
 function seg(sh, s) { let lo = 0, hi = sh.n - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (sh.cum[m] <= s) lo = m; else hi = m; } return lo; }

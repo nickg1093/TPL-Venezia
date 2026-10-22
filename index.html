@@ -237,7 +237,7 @@ button.chip:hover{background:color-mix(in srgb,var(--fg) 15%,transparent)}
 <script>
 const $ = id => document.getElementById(id);
 const ICON = { nav: '🚢', aut: '🚌' };
-const POLL_MS = 3000, MIN_STOP_ZOOM = 14;
+const POLL_MS = 2000, MIN_STOP_ZOOM = 14;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const p2 = n => String(n).padStart(2, '0');
 const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds(); };

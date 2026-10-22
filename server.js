@@ -15,7 +15,7 @@ const { secsOfDayRome, hhmm } = schedule;
 const PORT = process.env.PORT || 3000;
 // Intervallo di lettura dei feed ACTV. 3 s: i dati cambiano ogni pochi secondi; i feed invariati NON vengono rielaborati
 // (ETag/If-Modified-Since + confronto del contenuto). In caso di errori si rallenta da sé (vedi loop in fondo).
-const REFRESH_MS = +process.env.RT_POLL_MS || 3000;
+const REFRESH_MS = +process.env.RT_POLL_MS || 2000;   // massimo; la lettura si adatta al ritmo di pubblicazione del feed (min 1 s)
 const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/aut/GTFSRT/' };
 const IDS = Object.keys(RT);
 const NOTES = { approx: 'data fuori dal calendario GTFS: orari indicativi' };
@@ -129,6 +129,10 @@ async function refresh(id) {
     const [P, U] = await Promise.all([pull(id, 'vehiclePositions'), pull(id, 'tripUpdates')]);
     const G = D[id], live = {}, now = Date.now(), pos = P.ents, upd = U.ents;
     s8.errCount = 0; s8.feedTs = P.headerTs ? P.headerTs * 1000 : null;
+    if (P.changed) {   // ritmo con cui ACTV pubblica davvero nuovi dati: si legge ~3 volte più spesso, senza sprechi
+      if (s8.lastChange) { const iv = Math.min(60000, Math.max(500, now - s8.lastChange)); s8.pubMs = s8.pubMs ? 0.7 * s8.pubMs + 0.3 * iv : iv; }
+      s8.lastChange = now;
+    }
     if (!P.changed && !U.changed && s8.vehicles.length && s8.updated) {   // nessun dato nuovo: si aggiorna solo il tempo trascorso
       s8.updated = now; buildStates(id); return;
     }
@@ -173,7 +177,7 @@ async function refresh(id) {
           lat: +v.position.latitude.toFixed(5), lon: +v.position.longitude.toFixed(5),
           // velocità: dichiarata dal feed se c'è, altrimenti da due rilevamenti successivi / differenza dei loro timestamp
           speed: (calc => Number.isFinite(v.position.speed) ? v.position.speed : calc)(motion.updateSpeed(s8.track, key, v.position.latitude, v.position.longitude, ts, now)),
-          stillS: motion.stillFor(s8.track, key), key, ts, bearing: v.position.bearing ?? null,
+          stillS: motion.stillFor(s8.track, key), vInst: motion.instSpeed(s8.track, key), key, ts, bearing: v.position.bearing ?? null,
           status: v.currentStatus ?? null, seq: v.currentStopSequence ?? null,
           line: r.name || routeKey || '?', color: r.color || null, tripId,
           routeId: routeKey ? `${id}:${routeKey}` : null, headsign: trip.headsign || null };
@@ -331,7 +335,7 @@ const API = {
   // ANALISI FEED: campi standard compilati/mancanti, campi proprietari ACTV, collegamento con il GTFS statico.
   // Apri /api/audit (o /api/audit?src=aut) e inviami il risultato per tarare il software sul feed reale.
   '/api/audit': u => Object.fromEntries(wanted(u).map(i => [i, {
-    intervalloLetturaMs: REFRESH_MS, ultimoAggiornamento: S[i].updated ? new Date(S[i].updated).toISOString() : null,
+    intervalloLetturaMs: REFRESH_MS, periodoPubblicazioneStimatoMs: S[i].pubMs ? Math.round(S[i].pubMs) : null, ultimoAggiornamento: S[i].updated ? new Date(S[i].updated).toISOString() : null,
     etaFeedSecondi: S[i].feedTs ? Math.round((Date.now() - S[i].feedTs) / 1000) : null,
     collegamentoGtfsStatico: S[i].match,                      // "collegati" vicino a "total" = versione GTFS statica corretta
     veicoli: S[i].raw.vehiclePositions ? audit(S[i].raw.vehiclePositions.buf) : null,
@@ -457,7 +461,7 @@ http.createServer(async (req, res) => {
 }).listen(PORT, () => console.log(`http://localhost:${PORT}`));
 
 // Ogni feed ha il proprio ciclo: indipendenti e in parallelo; un ciclo lento non ne blocca né ne sovrappone un altro.
-for (const id of IDS) (async function loop() { const t0 = Date.now(); await refresh(id); setTimeout(loop, Math.max(500, Math.min(30000, REFRESH_MS * 2 ** Math.min(S[id].errCount, 4)) - (Date.now() - t0))); })();
+for (const id of IDS) (async function loop() { const t0 = Date.now(); await refresh(id); const base = Math.min(REFRESH_MS, Math.max(1000, (S[id].pubMs || REFRESH_MS * 3) / 3)); setTimeout(loop, Math.max(500, Math.min(30000, base * 2 ** Math.min(S[id].errCount, 4)) - (Date.now() - t0))); })();
 loadStatic();
 setInterval(loadStatic, 24 * 3600 * 1000);
 

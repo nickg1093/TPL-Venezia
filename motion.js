@@ -24,13 +24,15 @@ function updateSpeed(track, key, lat, lon, tsMs, arrMs) {
   p.arr = arrMs;
   const d = dist(lat, lon, p.lat, p.lon), v = d / dt;
   if (v > 35) { Object.assign(p, { lat, lon, t: tsMs }); return p.speed; }
-  p.speed = p.speed == null ? v : p.speed + (v - p.speed) * (1 - Math.exp(-dt / 6));
+  p.inst = v;                                       // istantanea: serve a vedere subito una ripartenza
+  p.speed = p.speed == null ? v : p.speed + (v - p.speed) * (1 - Math.exp(-dt / 6));   // lisciata: per le stime ETA
   if (d > 8) p.moved = tsMs;                       // oltre il rumore GPS: si è mosso davvero
   Object.assign(p, { lat, lon, t: tsMs });
   return p.speed;
 }
 
 // Da quanti secondi il mezzo è fermo (0 se in movimento o sconosciuto).
+const instSpeed = (track, key) => track.get(key)?.inst ?? null;
 const stillFor = (track, key) => { const p = track.get(key); return p ? Math.max(0, (p.t - p.moved) / 1000) : 0; };   // secondi (di feed) senza spostamenti
 
 // Stato rispetto alle fermate della corsa. Ritorna { cur, atStop }:
@@ -64,4 +66,4 @@ function locate({ n, cur, veh, stopLoc, fracBeyond, planDep, nowS }) {
   }
   return { cur, atStop: -1 };
 }
-module.exports = { updateSpeed, stillFor, locate, dist };
+module.exports = { updateSpeed, instSpeed, stillFor, locate, dist };

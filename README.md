@@ -56,3 +56,10 @@ Nota: il piano gratuito ha 750 ore/mese, sufficienti per un solo servizio sempre
 ## ID universali
 `ids.js` collega corse e linee del realtime a quelle del GTFS statico per suffissi univoci, senza prefissi fissi:
 un aggiornamento del file `actv_aut.zip` con codici diversi non rompe più il collegamento.
+
+## Analisi dei feed realtime: /api/audit
+Apri `https://<tuo-sito>/api/audit` (o `?src=aut`). Mostra, per ogni feed:
+- `collegamentoGtfsStatico`: quante corse/veicoli del realtime trovano la corrispondenza nel GTFS statico (se "collegati" è molto più basso di "total", la versione del file in `data/` non è quella giusta);
+- campi standard GTFS-RT compilati (con percentuale), campi standard mancanti e **campi proprietari ACTV** (con numero, tipo ed esempi);
+- note di coerenza (età del feed, timestamp per veicolo, velocità dichiarata, `current_status` presente o no).
+Intervallo di lettura: 3 s (variabile `RT_POLL_MS`); i feed invariati non vengono rielaborati e in caso di errori il server rallenta da solo.
