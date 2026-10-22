@@ -30,7 +30,7 @@ message VehiclePosition { optional TripDescriptor trip = 1; optional Position po
 const D = {}, S = {}, ready = {};
 for (const id of IDS) {
   D[id] = gtfs.empty(); ready[id] = false;
-  S[id] = { updated: 0, error: null, vehicles: [], live: {}, hist: new Map(), track: new Map() };
+  S[id] = { updated: 0, error: null, vehicles: [], live: {}, hist: new Map(), track: new Map(), state: {} };
 }
 
 let cachedStopsGzip = null;
@@ -147,6 +147,7 @@ async function refresh(id) {
       });
     for (const [k, p] of s8.track) if (now - p.t > 600000) s8.track.delete(k);   // mezzi non più visti
     s8.updated = now; s8.error = null;
+    buildStates(id);
   } catch (err) {
     s8.error = `${id}: ${err.message} (Fallback attivo)`;
     try {
@@ -158,26 +159,42 @@ async function refresh(id) {
   }
 }
 
-function tripDetail(i, tid, live) {
-  const G = D[i], st = G.stopTimes.get(tid), trip = G.trips[tid], r = G.routes[trip.route] || {}, n = st.s.length;
-  const nowS = secsOfDayRome(Date.now());
-  const fits = t => t >= st.start - 3600 && t <= st.end + 3600;
-  const tNow = !fits(nowS) && fits(nowS + 86400) ? nowS + 86400 : nowS;
-  const lv = live ? S[i].live[tid] : null, hist = live ? S[i].hist.get(tid)?.delays : null;
-  const at = k => (k === n - 1 ? st.a[k] : st.d[k]);
-  
+// STATO UNICO DI UNA CORSA (fonte di verità condivisa da pannello fermata, dettaglio corsa e mappa):
+//   cur = prossima fermata non ancora transitata; atStop = fermata in cui il mezzo è fermo ora (-1 se nessuna).
+// Ordine delle prove: 1) indicazione del feed (prima fermata con previsione), 2) orario programmato se non c'è feed,
+// 3) correzione con GPS + velocità + tracciato (motion.js), che prevale se il feed è in ritardo sul mezzo.
+const tripNow = st => { const nowS = secsOfDayRome(Date.now()), fits = t => t >= st.start - 3600 && t <= st.end + 3600; return !fits(nowS) && fits(nowS + 86400) ? nowS + 86400 : nowS; };
+function computeState(G, trip, st, lv, hist, veh, tNow) {
+  const n = st.s.length, at = k => (k === n - 1 ? st.a[k] : st.d[k]);
   let cur = lv && lv.firstJ >= 0 ? lv.firstJ : 0;
   if (!(lv && lv.firstJ >= 0)) while (cur < n && at(cur) <= tNow) cur++;
-
-  const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
-  // STATO DEL MEZZO: fermo in fermata o già partito (GPS + velocità + tracciato + orario/ritardo, vedi motion.js)
   const fracBeyond = k => { const A = G.stopLoc[st.s[k]], B = G.stopLoc[st.s[k + 1]]; return veh && A && B ? schedule.fracOnShape(G, trip.shape, st.s[k], st.s[k + 1], A, B, [veh.lat, veh.lon]) : null; };
   const loc = veh ? motion.locate({ n, cur, veh, stopLoc: k => G.stopLoc[st.s[k]], fracBeyond,
     planDep: k => at(k) + (lv?.delays[k] ?? hist?.[k] ?? 0), nowS: tNow }) : { cur, atStop: -1 };
   cur = loc.cur;
-  const atStop = loc.atStop;
-  const isAtOriginBeforeDeparture = (!veh && tNow < (st.d[0] ?? st.a[0])) || (atStop === 0 && loc.waiting);
-  if (isAtOriginBeforeDeparture) cur = 0;
+  const atOrigin = (!veh && tNow < (st.d[0] ?? st.a[0])) || (loc.atStop === 0 && loc.waiting);
+  if (atOrigin) cur = 0;
+  return { cur, atStop: loc.atStop, waiting: !!loc.waiting, atOrigin };
+}
+// Ricalcolato a ogni polling per tutte le corse con dati live: lo legge il pannello fermata.
+function buildStates(i) {
+  const G = D[i], out = {}, byTrip = new Map(S[i].vehicles.filter(v => v.tripId).map(v => [v.tripId, v]));
+  for (const tid of new Set([...Object.keys(S[i].live), ...byTrip.keys()])) {
+    const st = G.stopTimes.get(tid), trip = G.trips[tid]; if (!st || !trip) continue;
+    out[tid] = computeState(G, trip, st, S[i].live[tid], S[i].hist.get(tid)?.delays, byTrip.get(tid), tripNow(st));
+  }
+  S[i].state = out;
+}
+
+function tripDetail(i, tid, live) {
+  const G = D[i], st = G.stopTimes.get(tid), trip = G.trips[tid], r = G.routes[trip.route] || {}, n = st.s.length;
+  const tNow = tripNow(st);
+  const lv = live ? S[i].live[tid] : null, hist = live ? S[i].hist.get(tid)?.delays : null;
+  const at = k => (k === n - 1 ? st.a[k] : st.d[k]);
+  const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
+  const ss = computeState(G, trip, st, lv, hist, veh, tNow);
+  let cur = ss.cur;
+  const atStop = ss.atStop, isAtOriginBeforeDeparture = ss.atOrigin;
 
   const stops = new Array(n);
   for (let k = 0; k < n; k++) {
@@ -227,6 +244,7 @@ const wanted = u => (u.searchParams.get('src') || IDS.join(',')).split(',').filt
 const splitId = f => { const k = (f || '').indexOf(':'); return k < 0 ? [null, f] : [f.slice(0, k), f.slice(k + 1)]; };
 const fail = (code, msg) => Object.assign(new Error(msg), { code });
 const q = (u, k) => u.searchParams.get(k);
+const mode = u => (q(u, 'secs') != null ? 'sched' : 'live');   // in modalità orario non c'è stato live
 
 const getEquivalentStopIds = (G, sid) => {
   const loc = G.stopLoc[sid];
@@ -301,7 +319,7 @@ const API = {
     let allDepartures = [];
     for (const equivSid of equivalentSids) {
       const isReq = G.stopIsRequest?.get(equivSid) || false;
-      for (const d of schedule.departures(G, S[i].live, equivSid, q(u, 'secs'), q(u, 'date'))) {
+      for (const d of schedule.departures(G, S[i].live, equivSid, q(u, 'secs'), q(u, 'date'), mode(u) === 'sched' ? null : S[i].state)) {
         allDepartures.push({ ...d, isRequest: isReq });
       }
     }
@@ -331,7 +349,7 @@ const API = {
       const equivalentSids = getEquivalentStopIds(G, sid);
       for (const equivSid of equivalentSids) {
         const isReq = G.stopIsRequest?.get(equivSid) || false;
-        for (const x of schedule.departures(G, S[i].live, equivSid, q(u, 'secs'), q(u, 'date'))) {
+        for (const x of schedule.departures(G, S[i].live, equivSid, q(u, 'secs'), q(u, 'date'), mode(u) === 'sched' ? null : S[i].state)) {
           out.push({ ...x, src: i, stop: full, vehicle: lab[i].get(x.tripId) || null, isRequest: isReq });
         }
       }

@@ -626,7 +626,7 @@ function renderDepartures() {
       ? `<div class="dt-time-wrap"><span class="sched-crossed">${esc(x.sched)}</span><strong class="${cls}">${esc(x.exp)}</strong></div>`
       : `<div class="dt-time-wrap"><strong class="${cls}">${esc(live ? x.exp : x.sched)}</strong></div>`;
 
-    const minText = x.tIn <= 0 ? (x.tIn === 0 ? 'In arrivo' : `in partenza`) : `tra ${x.tIn} min`;
+    const minText = x.atStop ? 'In fermata' : x.tIn <= 0 ? (x.tIn === 0 ? 'In arrivo' : 'in partenza') : `tra ${x.tIn} min`;
 
     return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" role="button" tabindex="0" title="Segui il mezzo">`
       + `${badge(x.line, x.color, src)}`

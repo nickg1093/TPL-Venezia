@@ -146,7 +146,7 @@ function positionsNow(G, secsParam = null, date = null) {
 }
 
 // ---- passaggi a una fermata ----
-function departures(G, live, stopId, secsParam = null, date = null) {
+function departures(G, live, stopId, secsParam = null, date = null, state = null) {
   const list = G.stopIndex[stopId];
   if (!list) return [];
   const { secs, day } = when(secsParam, date), out = [];
@@ -159,6 +159,10 @@ function departures(G, live, stopId, secsParam = null, date = null) {
       const last = i === st.s.length - 1, ts = last ? st.a[i] : st.d[i];
       const lv = off >= 0 ? live?.[rawTripId] : null;
       const dl = lv ? lv.delays[i] : null;
+      // Mezzo già transitato da questa fermata (secondo feed + GPS + velocità): non è più un passaggio futuro.
+      const ps = off === 0 ? state?.[rawTripId] : null;
+      if (ps && !last && i < ps.cur) continue;
+      if (ps && last && i < ps.cur) continue;
       const sm = ts - tNow, em = ts + (dl ?? 0) - tNow;
       if ((sm < -180 || sm > 7200) && (em < -180 || em > 7200)) continue;
       const trip = getTrip(G, rawTripId);
@@ -169,7 +173,7 @@ function departures(G, live, stopId, secsParam = null, date = null) {
         sched: hhmm(ts), exp: hhmm(ts + (dl ?? 0)),
         schedIn: Math.round(sm / 60), expIn: Math.round(em / 60),
         delay: dl != null ? Math.round(dl / 60) : null, live: dl != null,
-        cancel: lv?.cancelled ? 'trip' : (lv?.skipped.has(i) ? 'stop' : null), arrival: last });
+        atStop: !!ps && ps.atStop === i, cancel: lv?.cancelled ? 'trip' : (lv?.skipped.has(i) ? 'stop' : null), arrival: last });
     }
   }
   return out.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn)).slice(0, 80);
