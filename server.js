@@ -142,6 +142,7 @@ async function refresh(id) {
         return { id: `${id}:${v.vehicle?.id || e.id}`, src: id, label: v.vehicle?.label || null,
           lat: +v.position.latitude.toFixed(5), lon: +v.position.longitude.toFixed(5),
           speed: motion.updateSpeed(s8.track, v.vehicle?.id || e.id, v.position.latitude, v.position.longitude, now),
+          stillS: motion.stillFor(s8.track, v.vehicle?.id || e.id, now),
           line: r.name || routeKey || '?', color: r.color || null, tripId,
           routeId: routeKey ? `${id}:${routeKey}` : null, headsign: trip.headsign || null };
       });
@@ -201,6 +202,7 @@ function tripDetail(i, tid, live) {
     const sid = st.s[k], ts = at(k);
     let dl = live ? (k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null)) : null;
     if (isAtOriginBeforeDeparture) dl = 0;
+    else if (dl != null && dl < 0 && (k === 0 || k === atStop)) dl = 0;   // da capolinea/fermata di sosta non si parte in anticipo
 
     stops[k] = { 
       name: G.stops[sid] || sid, 
@@ -244,6 +246,8 @@ const wanted = u => (u.searchParams.get('src') || IDS.join(',')).split(',').filt
 const splitId = f => { const k = (f || '').indexOf(':'); return k < 0 ? [null, f] : [f.slice(0, k), f.slice(k + 1)]; };
 const fail = (code, msg) => Object.assign(new Error(msg), { code });
 const q = (u, k) => u.searchParams.get(k);
+// Ordine di passaggio: per orario PREVISTO (con ritardo/anticipo reale), poi per orario programmato.
+const byExpected = (a, b) => (a.expIn - b.expIn) || (a.schedIn - b.schedIn);
 const mode = u => (q(u, 'secs') != null ? 'sched' : 'live');   // in modalità orario non c'è stato live
 
 const getEquivalentStopIds = (G, sid) => {
@@ -327,7 +331,7 @@ const API = {
     const uniqueMap = new Map();
     for (const d of allDepartures) uniqueMap.set(d.tripId, d);
     allDepartures = Array.from(uniqueMap.values());
-    allDepartures.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn));
+    allDepartures.sort(byExpected);
 
     const cleanName = G.stopBaseNames?.get(sid) || G.stops[sid] || sid;
 
@@ -358,7 +362,7 @@ const API = {
     const zoneMap = new Map();
     for (const d of out) zoneMap.set(`${d.tripId}_${d.schedIn}`, d);
     const uniqueOut = Array.from(zoneMap.values());
-    uniqueOut.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn));
+    uniqueOut.sort(byExpected);
     return { liveUpdated, note, departures: uniqueOut.slice(0, 300) };
   },
   '/api/trip': u => {

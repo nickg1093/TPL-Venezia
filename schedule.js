@@ -158,11 +158,16 @@ function departures(G, live, stopId, secsParam = null, date = null, state = null
       if (!st) continue;
       const last = i === st.s.length - 1, ts = last ? st.a[i] : st.d[i];
       const lv = off >= 0 ? live?.[rawTripId] : null;
-      const dl = lv ? lv.delays[i] : null;
-      // Mezzo già transitato da questa fermata (secondo feed + GPS + velocità): non è più un passaggio futuro.
       const ps = off === 0 ? state?.[rawTripId] : null;
-      if (ps && !last && i < ps.cur) continue;
-      if (ps && last && i < ps.cur) continue;
+      if (ps && i < ps.cur) continue;        // mezzo già transitato da questa fermata
+      let dl = lv ? lv.delays[i] : null;
+      // Regole di partenza: dal capolinea (o da una fermata dove il mezzo sosta) non si parte prima dell'orario;
+      // se il mezzo è ancora lì oltre l'orario previsto, il ritardo è almeno il tempo trascorso.
+      if (dl != null && !last) {
+        if (ps && ps.atStop === i) dl = Math.max(dl, 0, tNow - ts);
+        else if (i === 0 && dl < 0) dl = 0;
+      }
+      // Mezzo già transitato da questa fermata (secondo feed + GPS + velocità): non è più un passaggio futuro.
       const sm = ts - tNow, em = ts + (dl ?? 0) - tNow;
       if ((sm < -180 || sm > 7200) && (em < -180 || em > 7200)) continue;
       const trip = getTrip(G, rawTripId);
@@ -176,7 +181,7 @@ function departures(G, live, stopId, secsParam = null, date = null, state = null
         atStop: !!ps && ps.atStop === i, cancel: lv?.cancelled ? 'trip' : (lv?.skipped.has(i) ? 'stop' : null), arrival: last });
     }
   }
-  return out.sort((a, b) => Math.min(a.schedIn, a.expIn) - Math.min(b.schedIn, b.expIn)).slice(0, 80);
+  return out.sort((a, b) => (a.expIn - b.expIn) || (a.schedIn - b.schedIn)).slice(0, 80);
 }
 
 const isActiveToday = (G, tripId) => { const t = getTrip(G, tripId); return !!t && serviceActive(G, t.service, ymd(romeNow().d)); };
