@@ -237,7 +237,7 @@ button.chip:hover{background:color-mix(in srgb,var(--fg) 15%,transparent)}
 <script>
 const $ = id => document.getElementById(id);
 const ICON = { nav: '🚢', aut: '🚌' };
-const POLL_MS = 8000, MIN_STOP_ZOOM = 14;
+const POLL_MS = 6000, MIN_STOP_ZOOM = 14;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const p2 = n => String(n).padStart(2, '0');
 const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds(); };
@@ -328,6 +328,24 @@ const badge = (line, color, src, extra = '') => {
 };
 const busHtml = v => badge(v.line, v.color, v.src, `${mode === 'sched' ? ' sched' : ''}${v.id === selVeh ? ' sel' : ''}`);
 const tip = v => esc(`${vehIcon(v.src, v.label)} ${v.line}${v.headsign ? ' → ' + v.headsign : ''}${v.label ? ' · ' + vehName(v.src, v.label) : ''}`);
+
+// ETICHETTE DI STATO DEL PASSAGGIO (una sola funzione per pannello fermata e dettaglio corsa)
+//  at = fermo in fermata · departing = sta partendo · approaching = in arrivo · altrimenti conto alla rovescia in minuti
+function etaText(phase, expMs, inMin, live = true) {
+  if (live) {
+    if (phase === 'at') return 'In fermata';
+    if (phase === 'departing') return 'In partenza';
+    if (phase === 'approaching') return 'In arrivo';
+    if (phase === 'arrived') return 'Arrivato';
+    if (expMs) { const s = (expMs - Date.now()) / 1000; return s <= 45 ? 'In arrivo' : `tra ${Math.max(1, Math.round(s / 60))} min`; }
+  }
+  return inMin <= 0 ? 'In partenza' : `tra ${inMin} min`;
+}
+// aggiorna ogni secondo i "tra N min" senza aspettare il server
+setInterval(() => document.querySelectorAll('[data-exp]').forEach(el => {
+  const ph = el.dataset.ph; if (!el.dataset.exp || ph === 'at' || ph === 'departing' || ph === 'approaching' || ph === 'arrived') return;
+  el.textContent = etaText(ph, +el.dataset.exp, 0);
+}), 1000);
 
 const ptHtml = (l, sm) => `<span class="pt${sm ? ' sm' : ''}">${esc((l || '').toUpperCase())}</span>`;
 const norm = s => s.toLowerCase().replace(/"/g, '').replace(/f\.te\b/g, 'fondamente').replace(/p\.le\b/g, 'piazzale').replace(/\bs\.\s*/g, 'san ').replace(/\s+/g, ' ').trim();
@@ -438,56 +456,58 @@ resultsEl.addEventListener('click', e => {
 document.addEventListener('click', e => { if (!e.target.closest('.search-container')) resultsEl.classList.remove('active'); });
 map.on('click', () => { if (!openTrip && !filterEl.value) clearRoutes(); });
 
-// INTERPOLAZIONE CONTINUA (DEAD RECKONING) & MARKER FLUIDI
+// MOVIMENTO FLUIDO DEI MEZZI
+// La velocità si stima dagli ultimi due rilevamenti GPS e il marker viene proiettato in avanti (dead reckoning);
+// il marker visualizzato insegue il punto proiettato con smorzamento esponenziale. Nessun punto di arrivo fisso:
+// niente scatti né pause tra un aggiornamento e l'altro, e nessun salto quando arriva un dato nuovo.
 const markers = new Map();
+const TAU = 650;          // ms: morbidezza dell'inseguimento (più alto = più morbido ma più in ritardo)
+const MAX_EXTRAP = 1.4;   // la proiezione non supera 1,4 intervalli di aggiornamento; poi il mezzo attende il dato
+const SNAP_M = 250;       // salto superiore: il marker si sposta di colpo (cambio corsa, riconnessione)
+const mDist = (aLat, aLon, bLat, bLon) => Math.hypot((aLat - bLat) * 111000, (aLon - bLon) * 78000);
 
 function render() {
-  const keep = new Set();
-  const now = performance.now();
+  const keep = new Set(), now = performance.now();
   for (let i = 0; i < vehicles.length; i++) {
     const v = vehicles[i];
     if (!active.has(v.src) || !Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
     keep.add(v.id);
-    const html = busHtml(v); 
+    const html = busHtml(v);
     let e = markers.get(v.id);
 
-    if (!e) {
+    if (!e) {   // nuovo mezzo
       const m = L.marker([v.lat, v.lon], { icon: L.divIcon({ className: 'bus-marker', iconSize: null, html }) })
         .bindTooltip(tip(v), { direction: 'top', offset: [0, -12] }).addTo(map), id = v.id;
       m.on('click', () => { const c = vehicles.find(x => x.id === id); if (c) openTripPanel(c); });
-      markers.set(v.id, e = { m, html, tipContent: tip(v), lat: v.lat, lon: v.lon, prevLat: v.lat, prevLon: v.lon, targetLat: v.lat, targetLon: v.lon, lastTime: now, lastChange: now, duration: POLL_MS });
+      markers.set(v.id, { m, html, tipContent: tip(v), lat: v.lat, lon: v.lon, fixLat: v.lat, fixLon: v.lon, fixT: now, dt: POLL_MS, vLat: 0, vLon: 0 });
       continue;
     }
-
     if (e.html !== html) { e.m.setIcon(L.divIcon({ className: 'bus-marker', iconSize: null, html })); e.html = html; }
     const newTip = tip(v);
     if (e.tipContent !== newTip) { e.m.setTooltipContent(newTip); e.tipContent = newTip; }
 
-    if (e.targetLat !== v.lat || e.targetLon !== v.lon) {
-      const curLatLng = e.m.getLatLng();
-      e.prevLat = curLatLng.lat; e.prevLon = curLatLng.lng;
-      e.targetLat = v.lat; e.targetLon = v.lon;
-      // il mezzo arriva a destinazione proprio quando è atteso il prossimo aggiornamento (intervallo reale, 4-20 s)
-      e.duration = Math.min(20000, Math.max(4000, (now - e.lastChange) * 1.1)); e.lastChange = now;
-      e.lastTime = now;
+    if (mode !== 'live') { e.lat = e.fixLat = v.lat; e.lon = e.fixLon = v.lon; e.m.setLatLng([v.lat, v.lon]); continue; }   // orario: posizione diretta
+    if (v.lat !== e.fixLat || v.lon !== e.fixLon) {   // nuovo rilevamento GPS
+      const d = mDist(v.lat, v.lon, e.fixLat, e.fixLon), dtm = Math.min(60000, Math.max(1500, now - e.fixT));
+      if (d > SNAP_M) { e.lat = v.lat; e.lon = v.lon; e.vLat = e.vLon = 0; }
+      else if (d < 4) { e.vLat = e.vLon = 0; }                                     // entro il rumore GPS: fermo
+      else { e.vLat = (v.lat - e.fixLat) / dtm; e.vLon = (v.lon - e.fixLon) / dtm; }   // gradi/ms
+      e.dt = dtm; e.fixLat = v.lat; e.fixLon = v.lon; e.fixT = now;
     }
   }
-
-  for (const [id, e] of markers) {
-    if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
-  }
+  for (const [id, e] of markers) if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
 }
 
-requestAnimationFrame(function frame(now) {
+let lastFrame = performance.now();
+requestAnimationFrame(function frame(t) {
+  const dt = Math.min(100, t - lastFrame); lastFrame = t;
   if (mode === 'live' && !document.hidden) {
+    const k = 1 - Math.exp(-dt / TAU);
     for (const e of markers.values()) {
-      if (e.done) { if (e.lastTime === e.doneAt) continue; }
-      const elapsed = now - e.lastTime;
-      const progress = Math.min(1, elapsed / e.duration);
-      e.done = progress >= 1; e.doneAt = e.lastTime;
-      const currentLat = e.prevLat + (e.targetLat - e.prevLat) * progress;
-      const currentLon = e.prevLon + (e.targetLon - e.prevLon) * progress;
-      e.m.setLatLng([currentLat, currentLon]);
+      const age = Math.min(t - e.fixT, e.dt * MAX_EXTRAP);
+      const dLat = e.fixLat + e.vLat * age - e.lat, dLon = e.fixLon + e.vLon * age - e.lon;
+      if (Math.abs(dLat) < 2e-7 && Math.abs(dLon) < 2e-7) continue;                // già arrivato (~2 cm): nessun lavoro
+      e.lat += dLat * k; e.lon += dLon * k; e.m.setLatLng([e.lat, e.lon]);
     }
   }
   requestAnimationFrame(frame);
@@ -531,7 +551,7 @@ function drawStops() {
 map.on('moveend', drawStops);
 
 const refreshPanel = () => { if (openStop) loadDepartures(); else if (openTrip) loadTrip(); };
-const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInterval(refreshPanel, 12000); };
+const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInterval(refreshPanel, 5000); };
 function resetTrip() {
   setFollow(false);
   const had = !!openTrip;
@@ -626,12 +646,12 @@ function renderDepartures() {
       ? `<div class="dt-time-wrap"><span class="sched-crossed">${esc(x.sched)}</span><strong class="${cls}">${esc(x.exp)}</strong></div>`
       : `<div class="dt-time-wrap"><strong class="${cls}">${esc(live ? x.exp : x.sched)}</strong></div>`;
 
-    const minText = x.atStop ? 'In fermata' : x.tIn <= 0 ? (x.tIn === 0 ? 'In arrivo' : 'in partenza') : `tra ${x.tIn} min`;
+    const minText = etaText(x.phase, x.expMs, x.tIn, live);
 
     return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" role="button" tabindex="0" title="Segui il mezzo">`
       + `${badge(x.line, x.color, src)}`
       + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}${reqHtml}<span>${esc(infoLine)}</span></div></div>`
-      + `<div class="dt">${timeDisplayHtml}<div class="in-min ${cls}">${minText}</div></div></div>`;
+      + `<div class="dt">${timeDisplayHtml}<div class="in-min ${cls}" data-exp="${live && x.expMs ? Math.round(x.expMs) : ''}" data-ph="${live ? (x.phase || '') : ''}">${minText}</div></div></div>`;
   }).join('');
   
   plist.innerHTML = html || '<p class="muted" style="text-align:center;padding:1rem">Nessun passaggio.</p>';
@@ -675,7 +695,7 @@ function tripHtml(d) {
       sub = d.live ? 'da orario' : '';
       timeHtml = `<div class="tm-time-wrap"><strong>${esc(s.sched)}</strong></div>`;
     }
-    const meta = s.skipped ? 'Fermata saltata' : s.state === 'at' ? 'In fermata' : s.state === 'next' ? (s.inMin <= 0 ? 'In partenza' : `tra ${s.inMin} min`) : '';
+    const meta = s.skipped ? 'Fermata saltata' : (s.state === 'at' || s.state === 'next') ? etaText(s.phase, s.expMs, s.inMin, d.live) : (s.state === 'upcoming' && d.live && s.expMs ? `tra ${Math.max(1, Math.round((s.expMs - Date.now()) / 60000))} min` : '');
     const isFirst = i === 0 ? ' first' : '', isLast = i === n - 1 ? ' last' : '';
     return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${isFirst}${isLast}" data-i="${i}">`
       + `<div class="rail-col"><div class="rail-line"></div><span class="dot">${s.state === 'passed' ? '✓' : ''}</span></div>`
@@ -733,7 +753,7 @@ function renderTrip(first) {
   const o = d.stops[0];
   psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '')
     + (o ? `da ${esc(o.name)}${o.sched ? ', ' + o.sched : ''}` : '') + (d.note ? `<br>${esc(d.note)}` : '');
-  pstatus.innerHTML = `${status} · ${vehName(d.trip.src, d.trip.vehicle || openTrip.label)}`;
+  pstatus.innerHTML = `${status} · ${vehName(d.trip.src, d.trip.vehicle || openTrip.label)}${d.live && d.speedKmh != null ? ` · ${d.speedKmh} km/h` : ''}`;
   plist.innerHTML = (d.cancelled ? '<div class="banner">Corsa soppressa</div>' : '') + tripHtml(d)
     + (d.live && d.historyKnown ? '<p class="muted" style="margin-top:.4rem">Fermate passate: ultima stima.</p>' : '');
   placeVehicle(d, first);

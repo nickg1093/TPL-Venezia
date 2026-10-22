@@ -149,7 +149,7 @@ function positionsNow(G, secsParam = null, date = null) {
 function departures(G, live, stopId, secsParam = null, date = null, state = null) {
   const list = G.stopIndex[stopId];
   if (!list) return [];
-  const { secs, day } = when(secsParam, date), out = [];
+  const { secs, day } = when(secsParam, date), out = [], nowMs = Date.now();
   for (const [off, dd] of [[0, day], [86400, new Date(day - DAY)], [-86400, new Date(+day + DAY)]]) {
     const tNow = secs + off, ds = ymd(dd);
     for (let p = 0; p < list.length; p += 2) {
@@ -160,14 +160,9 @@ function departures(G, live, stopId, secsParam = null, date = null, state = null
       const lv = off >= 0 ? live?.[rawTripId] : null;
       const ps = off === 0 ? state?.[rawTripId] : null;
       if (ps && i < ps.cur) continue;        // mezzo già transitato da questa fermata
-      let dl = lv ? lv.delays[i] : null;
-      // Regole di partenza: dal capolinea (o da una fermata dove il mezzo sosta) non si parte prima dell'orario;
-      // se il mezzo è ancora lì oltre l'orario previsto, il ritardo è almeno il tempo trascorso.
-      if (dl != null && !last) {
-        if (ps && ps.atStop === i) dl = Math.max(dl, 0, tNow - ts);
-        else if (i === 0 && dl < 0) dl = 0;
-      }
-      // Mezzo già transitato da questa fermata (secondo feed + GPS + velocità): non è più un passaggio futuro.
+      // Con stato live (tracker.js): ETA fusa feed + GPS + orario, e già corretta per le regole di partenza.
+      let dl = lv ? lv.delays[i] : null, expMs = null;
+      if (ps && i >= ps.cur && ps.etaMs && Number.isFinite(ps.etaMs[i])) { expMs = ps.etaMs[i]; dl = (expMs - nowMs) / 1000 - (ts - tNow); }
       const sm = ts - tNow, em = ts + (dl ?? 0) - tNow;
       if ((sm < -180 || sm > 7200) && (em < -180 || em > 7200)) continue;
       const trip = getTrip(G, rawTripId);
@@ -178,10 +173,10 @@ function departures(G, live, stopId, secsParam = null, date = null, state = null
         sched: hhmm(ts), exp: hhmm(ts + (dl ?? 0)),
         schedIn: Math.round(sm / 60), expIn: Math.round(em / 60),
         delay: dl != null ? Math.round(dl / 60) : null, live: dl != null,
-        atStop: !!ps && ps.atStop === i, cancel: lv?.cancelled ? 'trip' : (lv?.skipped.has(i) ? 'stop' : null), arrival: last });
+        atStop: !!ps && ps.atStop === i, phase: ps && i >= ps.cur ? (i === ps.cur ? ps.phase : 'enroute') : null, expMs, expSec: em, cancel: lv?.cancelled ? 'trip' : (lv?.skipped.has(i) ? 'stop' : null), arrival: last });
     }
   }
-  return out.sort((a, b) => (a.expIn - b.expIn) || (a.schedIn - b.schedIn)).slice(0, 80);
+  return out.sort((a, b) => (a.expSec - b.expSec) || (a.schedIn - b.schedIn)).slice(0, 80);
 }
 
 const isActiveToday = (G, tripId) => { const t = getTrip(G, tripId); return !!t && serviceActive(G, t.service, ymd(romeNow().d)); };

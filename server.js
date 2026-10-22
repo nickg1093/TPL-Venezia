@@ -7,10 +7,11 @@ const gtfs = require('./gtfs');
 const schedule = require('./schedule');
 const ids = require('./ids');
 const motion = require('./motion');
+const tracker = require('./tracker');
 const { secsOfDayRome, hhmm } = schedule;
 
 const PORT = process.env.PORT || 3000;
-const REFRESH_MS = 8000;
+const REFRESH_MS = 6000;
 const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/aut/GTFSRT/' };
 const IDS = Object.keys(RT);
 const NOTES = { approx: 'data fuori dal calendario GTFS: orari indicativi' };
@@ -23,14 +24,14 @@ message StopTimeEvent { optional int32 delay = 1; optional int64 time = 2; }
 message StopTimeUpdate { optional uint32 stop_sequence = 1; optional StopTimeEvent arrival = 2; optional StopTimeEvent departure = 3; optional string stop_id = 4; optional int32 schedule_relationship = 5; }
 message TripDescriptor { optional string trip_id = 1; optional string start_time = 2; optional int32 schedule_relationship = 4; optional string route_id = 5; optional uint32 direction_id = 6; }
 message VehicleDescriptor { optional string id = 1; optional string label = 2; }
-message Position { optional float latitude = 1; optional float longitude = 2; }
-message VehiclePosition { optional TripDescriptor trip = 1; optional Position position = 2; optional VehicleDescriptor vehicle = 8; }
+message Position { optional float latitude = 1; optional float longitude = 2; optional float bearing = 3; optional float speed = 5; }
+message VehiclePosition { optional TripDescriptor trip = 1; optional Position position = 2; optional uint32 current_stop_sequence = 3; optional int32 current_status = 4; optional uint64 timestamp = 5; optional string stop_id = 7; optional VehicleDescriptor vehicle = 8; }
 `).root.lookupType('FeedMessage');
 
 const D = {}, S = {}, ready = {};
 for (const id of IDS) {
   D[id] = gtfs.empty(); ready[id] = false;
-  S[id] = { updated: 0, error: null, vehicles: [], live: {}, hist: new Map(), track: new Map(), state: {} };
+  S[id] = { updated: 0, error: null, vehicles: [], live: {}, hist: new Map(), track: new Map(), vs: new Map(), state: {} };
 }
 
 let cachedStopsGzip = null;
@@ -50,7 +51,7 @@ async function loadStatic() {
     try {
       const g = await gtfs.load(id);
       if (!g) return;
-      D[id] = g; S[id].hist.clear(); ready[id] = true; version++;
+      D[id] = g; S[id].hist.clear(); S[id].vs.clear(); S[id].state = {}; ready[id] = true; version++;
       cachedStopsGzip = null;
       refresh(id);
       console.log(`GTFS statico [${id}] caricato/aggiornato con successo.`);
@@ -141,8 +142,11 @@ async function refresh(id) {
         const routeKey = trip.route || ids.resolveRouteId(G, v.trip?.routeId) || v.trip?.routeId || null, r = G.routes[routeKey] || {};
         return { id: `${id}:${v.vehicle?.id || e.id}`, src: id, label: v.vehicle?.label || null,
           lat: +v.position.latitude.toFixed(5), lon: +v.position.longitude.toFixed(5),
-          speed: motion.updateSpeed(s8.track, v.vehicle?.id || e.id, v.position.latitude, v.position.longitude, now),
+          // velocità: quella dichiarata dal feed se c'è, altrimenti calcolata dagli spostamenti; ts = istante del rilevamento GPS
+          speed: (calc => Number.isFinite(v.position.speed) ? v.position.speed : calc)(motion.updateSpeed(s8.track, v.vehicle?.id || e.id, v.position.latitude, v.position.longitude, now)),
           stillS: motion.stillFor(s8.track, v.vehicle?.id || e.id, now),
+          ts: v.timestamp ? Number(v.timestamp) * 1000 : now, bearing: v.position.bearing ?? null,
+          status: v.currentStatus ?? null, seq: v.currentStopSequence ?? null,
           line: r.name || routeKey || '?', color: r.color || null, tripId,
           routeId: routeKey ? `${id}:${routeKey}` : null, headsign: trip.headsign || null };
       });
@@ -165,79 +169,66 @@ async function refresh(id) {
 // Ordine delle prove: 1) indicazione del feed (prima fermata con previsione), 2) orario programmato se non c'è feed,
 // 3) correzione con GPS + velocità + tracciato (motion.js), che prevale se il feed è in ritardo sul mezzo.
 const tripNow = st => { const nowS = secsOfDayRome(Date.now()), fits = t => t >= st.start - 3600 && t <= st.end + 3600; return !fits(nowS) && fits(nowS + 86400) ? nowS + 86400 : nowS; };
-function computeState(G, trip, st, lv, hist, veh, tNow) {
-  const n = st.s.length, at = k => (k === n - 1 ? st.a[k] : st.d[k]);
-  let cur = lv && lv.firstJ >= 0 ? lv.firstJ : 0;
-  if (!(lv && lv.firstJ >= 0)) while (cur < n && at(cur) <= tNow) cur++;
-  const fracBeyond = k => { const A = G.stopLoc[st.s[k]], B = G.stopLoc[st.s[k + 1]]; return veh && A && B ? schedule.fracOnShape(G, trip.shape, st.s[k], st.s[k + 1], A, B, [veh.lat, veh.lon]) : null; };
-  const loc = veh ? motion.locate({ n, cur, veh, stopLoc: k => G.stopLoc[st.s[k]], fracBeyond,
-    planDep: k => at(k) + (lv?.delays[k] ?? hist?.[k] ?? 0), nowS: tNow }) : { cur, atStop: -1 };
-  cur = loc.cur;
-  const atOrigin = (!veh && tNow < (st.d[0] ?? st.a[0])) || (loc.atStop === 0 && loc.waiting);
-  if (atOrigin) cur = 0;
-  return { cur, atStop: loc.atStop, waiting: !!loc.waiting, atOrigin };
-}
-// Ricalcolato a ogni polling per tutte le corse con dati live: lo legge il pannello fermata.
+// Ricalcolato a ogni polling per tutte le corse con dati live (feed e/o GPS). Lo leggono pannello fermata e dettaglio corsa:
+// una sola fonte di verità, con memoria persistente per corsa (vedi tracker.js).
 function buildStates(i) {
-  const G = D[i], out = {}, byTrip = new Map(S[i].vehicles.filter(v => v.tripId).map(v => [v.tripId, v]));
+  const G = D[i], out = {}, now = Date.now(), byTrip = new Map();
+  for (const v of S[i].vehicles) if (v.tripId) { const o = byTrip.get(v.tripId); if (!o || (v.ts || 0) > (o.ts || 0)) byTrip.set(v.tripId, v); }   // doppioni: il rilevamento più fresco
   for (const tid of new Set([...Object.keys(S[i].live), ...byTrip.keys()])) {
     const st = G.stopTimes.get(tid), trip = G.trips[tid]; if (!st || !trip) continue;
-    out[tid] = computeState(G, trip, st, S[i].live[tid], S[i].hist.get(tid)?.delays, byTrip.get(tid), tripNow(st));
+    let vs = S[i].vs.get(tid); if (!vs) S[i].vs.set(tid, vs = {});
+    try { out[tid] = tracker.update({ G, trip, st, lv: S[i].live[tid], hist: S[i].hist.get(tid)?.delays, veh: byTrip.get(tid), tNow: tripNow(st), nowMs: now, vs }); }
+    catch (e) { console.error('stato corsa', tid, e.message); }
   }
+  for (const [k, vs] of S[i].vs) if (now - (vs.seen || 0) > 900000) S[i].vs.delete(k);
   S[i].state = out;
 }
 
 function tripDetail(i, tid, live) {
   const G = D[i], st = G.stopTimes.get(tid), trip = G.trips[tid], r = G.routes[trip.route] || {}, n = st.s.length;
-  const tNow = tripNow(st);
+  const tNow = tripNow(st), nowMs = Date.now();
   const lv = live ? S[i].live[tid] : null, hist = live ? S[i].hist.get(tid)?.delays : null;
   const at = k => (k === n - 1 ? st.a[k] : st.d[k]);
   const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
-  const ss = computeState(G, trip, st, lv, hist, veh, tNow);
-  let cur = ss.cur;
-  const atStop = ss.atStop, isAtOriginBeforeDeparture = ss.atOrigin;
+  // stesso stato usato dal pannello fermata; in modalità orario si calcola solo da orario programmato
+  const ss = (live && S[i].state[tid]) || tracker.update({ G, trip, st, lv, hist, veh, tNow, nowMs, vs: {} });
+  const cur = ss.cur, atStop = ss.atStop, offs = tracker.stopOffsets(G, trip, st);
 
   const stops = new Array(n);
   for (let k = 0; k < n; k++) {
-    const sid = st.s[k], ts = at(k);
-    let dl = live ? (k >= cur ? (lv ? lv.delays[k] : null) : (hist ? hist[k] : null)) : null;
-    if (isAtOriginBeforeDeparture) dl = 0;
-    else if (dl != null && dl < 0 && (k === 0 || k === atStop)) dl = 0;   // da capolinea/fermata di sosta non si parte in anticipo
-
-    stops[k] = { 
-      name: G.stops[sid] || sid, 
+    const sid = st.s[k], ts = at(k), future = k >= cur && Number.isFinite(ss.etaMs[k]);
+    // dopo la fermata corrente: ritardo/anticipo dall'ETA stimata (feed + GPS); prima: ultima stima nota
+    const dlS = live ? (future ? (ss.etaMs[k] - nowMs) / 1000 - (ts - tNow) : (hist?.[k] ?? null)) : null;
+    stops[k] = {
+      name: G.stops[sid] || sid,
       lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
-      sched: hhmm(ts), exp: dl != null ? hhmm(ts + dl) : null, delay: dl != null ? Math.round(dl / 60) : null,
-      inMin: Math.round((ts + (dl ?? 0) - tNow) / 60),
-      state: k < cur ? 'passed' : (k === atStop ? 'at' : k === cur ? 'next' : 'upcoming'), 
-      skipped: !!lv?.skipped.has(k) 
+      sched: hhmm(ts), exp: dlS != null ? hhmm(ts + dlS) : null, delay: dlS != null ? Math.round(dlS / 60) : null,
+      expMs: future ? Math.round(ss.etaMs[k]) : null,
+      inMin: future ? Math.round((ss.etaMs[k] - nowMs) / 60000) : Math.round((ts - tNow) / 60),
+      state: k < cur ? 'passed' : (k === atStop ? 'at' : k === cur ? 'next' : 'upcoming'),
+      phase: k === cur ? ss.phase : null, skipped: !!lv?.skipped.has(k)
     };
   }
 
-  const rawDn = lv && cur < n ? lv.delays[cur] : null;
-  const dn = isAtOriginBeforeDeparture ? 0 : rawDn;
-
+  // posizione del mezzo tra due fermate: dal GPS lungo il tracciato se disponibile, altrimenti dagli orari
   let progress;
   if (atStop >= 0) progress = { from: atStop, frac: 0 };
   else if (cur >= n) progress = { from: n - 1, frac: 0 };
   else if (cur === 0) progress = { from: 0, frac: 0 };
   else {
-    const A = G.stopLoc[st.s[cur - 1]], B = G.stopLoc[st.s[cur]]; let frac;
-    if (veh && A && B) frac = schedule.fracOnShape(G, trip.shape, st.s[cur - 1], st.s[cur], A, B, [veh.lat, veh.lon]);
-    else {
-      const dPrev = live ? (hist?.[cur - 1] ?? lv?.delays[cur] ?? 0) : 0, dCur = live ? (lv?.delays[cur] ?? 0) : 0;
-      const t0 = st.d[cur - 1] + dPrev, t1 = st.a[cur] + dCur;
-      frac = t1 > t0 ? (tNow - t0) / (t1 - t0) : 0;
-    }
+    let frac;
+    if (ss.sVeh != null && offs && offs[cur] > offs[cur - 1]) frac = (ss.sVeh - offs[cur - 1]) / (offs[cur] - offs[cur - 1]);
+    else { const t0 = st.d[cur - 1], t1 = st.a[cur] + (ss.delayS || 0); frac = t1 > t0 ? (tNow - t0) / (t1 - t0) : 0; }
     progress = { from: cur - 1, frac: Math.min(1, Math.max(0, frac)) };
   }
 
-  return { 
-    live, progress, atStop, speedKmh: veh?.speed != null ? Math.round(veh.speed * 3.6) : null, cancelled: !!lv?.cancelled, note: noteOf(G),
+  const dn = live && cur < n ? ss.delayS : null;
+  return {
+    live, progress, atStop, phase: ss.phase, speedKmh: ss.speed != null ? Math.round(ss.speed * 3.6) : null, cancelled: !!lv?.cancelled, note: noteOf(G),
     delayNow: dn != null ? Math.round(dn / 60) : null,
     historyKnown: stops.some(s => s.state === 'passed' && s.delay != null),
     trip: { src: i, line: r.name || trip.route, color: r.color || null, headsign: trip.headsign || G.stops[st.s[n - 1]] || null, vehicle: veh?.label || null },
-    shape: gtfs.toLL(G.shapePts[trip.shape]), stops 
+    shape: gtfs.toLL(G.shapePts[trip.shape]), stops
   };
 }
 
@@ -247,7 +238,7 @@ const splitId = f => { const k = (f || '').indexOf(':'); return k < 0 ? [null, f
 const fail = (code, msg) => Object.assign(new Error(msg), { code });
 const q = (u, k) => u.searchParams.get(k);
 // Ordine di passaggio: per orario PREVISTO (con ritardo/anticipo reale), poi per orario programmato.
-const byExpected = (a, b) => (a.expIn - b.expIn) || (a.schedIn - b.schedIn);
+const byExpected = (a, b) => (a.expSec - b.expSec) || (a.schedIn - b.schedIn);
 const mode = u => (q(u, 'secs') != null ? 'sched' : 'live');   // in modalità orario non c'è stato live
 
 const getEquivalentStopIds = (G, sid) => {
