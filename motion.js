@@ -10,23 +10,28 @@ const ORIGIN_M = 250;      // area del capolinea: i bus sostano anche oltre il p
 const STILL_SEC = 45;      // fermo da almeno tanti secondi = in sosta (non semplice coda/semaforo)
 const PASSED_M = 80;       // oltre questa distanza dalla fermata (e dopo di essa sul tracciato) è già transitato
 
-// Velocità istantanea (m/s) da due campioni consecutivi, lisciata (media esponenziale).
-// Evita valori impazziti: campioni troppo vicini nel tempo o salti GPS irrealistici vengono scartati.
-function updateSpeed(track, key, lat, lon, now) {
+// Velocità (m/s) da due rilevamenti GPS successivi, divisa per la differenza dei loro TIMESTAMP (del veicolo o dell'intestazione
+// del feed), non per l'orario in cui li abbiamo scaricati: così polling più o meno frequenti non falsano il valore.
+//  - dt <= 0: rilevamento già visto, velocità invariata
+//  - v > 35 m/s: salto GPS, ignorato
+//  - media esponenziale con costante 6 s: filtra il rumore senza ritardare troppo le ripartenze
+// arrMs = istante (orologio del server) in cui è arrivato l'ultimo rilevamento NUOVO: serve a stabilire se i dati sono vecchi.
+function updateSpeed(track, key, lat, lon, tsMs, arrMs) {
   const p = track.get(key);
-  if (!p) { track.set(key, { lat, lon, t: now, speed: null, moved: now }); return null; }
-  const dt = (now - p.t) / 1000;
-  if (dt < 2) return p.speed;
+  if (!p) { track.set(key, { lat, lon, t: tsMs, arr: arrMs, speed: null, moved: tsMs }); return null; }
+  const dt = (tsMs - p.t) / 1000;
+  if (dt <= 0) return p.speed;
+  p.arr = arrMs;
   const d = dist(lat, lon, p.lat, p.lon), v = d / dt;
-  if (v > 30) { Object.assign(p, { lat, lon, t: now }); return p.speed; }   // >108 km/h: salto GPS
-  const sp = p.speed == null ? v : p.speed * 0.5 + v * 0.5;
-  if (d > 8) p.moved = now;                     // oltre il rumore GPS: il mezzo si è mosso davvero
-  Object.assign(p, { lat, lon, t: now, speed: sp });
-  return sp;
+  if (v > 35) { Object.assign(p, { lat, lon, t: tsMs }); return p.speed; }
+  p.speed = p.speed == null ? v : p.speed + (v - p.speed) * (1 - Math.exp(-dt / 6));
+  if (d > 8) p.moved = tsMs;                       // oltre il rumore GPS: si è mosso davvero
+  Object.assign(p, { lat, lon, t: tsMs });
+  return p.speed;
 }
 
 // Da quanti secondi il mezzo è fermo (0 se in movimento o sconosciuto).
-const stillFor = (track, key, now) => { const p = track.get(key); return p ? Math.max(0, (now - p.moved) / 1000) : 0; };
+const stillFor = (track, key) => { const p = track.get(key); return p ? Math.max(0, (p.t - p.moved) / 1000) : 0; };   // secondi (di feed) senza spostamenti
 
 // Stato rispetto alle fermate della corsa. Ritorna { cur, atStop }:
 //   cur    = indice della prossima fermata non ancora transitata

@@ -8,30 +8,35 @@ const schedule = require('./schedule');
 const ids = require('./ids');
 const motion = require('./motion');
 const tracker = require('./tracker');
+const { audit } = require('./feedaudit');
+const crypto = require('crypto');
 const { secsOfDayRome, hhmm } = schedule;
 
 const PORT = process.env.PORT || 3000;
-const REFRESH_MS = 6000;
+// Intervallo di lettura dei feed ACTV. 3 s: i dati cambiano ogni pochi secondi; i feed invariati NON vengono rielaborati
+// (ETag/If-Modified-Since + confronto del contenuto). In caso di errori si rallenta da sé (vedi loop in fondo).
+const REFRESH_MS = +process.env.RT_POLL_MS || 3000;
 const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/aut/GTFSRT/' };
 const IDS = Object.keys(RT);
 const NOTES = { approx: 'data fuori dal calendario GTFS: orari indicativi' };
 
 const Feed = protobuf.parse(`syntax = "proto2";
-message FeedMessage { repeated FeedEntity entity = 2; }
+message FeedHeader { optional string gtfs_realtime_version = 1; optional uint32 incrementality = 2; optional uint64 timestamp = 3; }
+message FeedMessage { optional FeedHeader header = 1; repeated FeedEntity entity = 2; }
 message FeedEntity { optional string id = 1; optional TripUpdate trip_update = 3; optional VehiclePosition vehicle = 4; }
 message TripUpdate { optional TripDescriptor trip = 1; repeated StopTimeUpdate stop_time_update = 2; optional int32 delay = 5; }
-message StopTimeEvent { optional int32 delay = 1; optional int64 time = 2; }
+message StopTimeEvent { optional int32 delay = 1; optional int64 time = 2; optional int32 uncertainty = 3; }
 message StopTimeUpdate { optional uint32 stop_sequence = 1; optional StopTimeEvent arrival = 2; optional StopTimeEvent departure = 3; optional string stop_id = 4; optional int32 schedule_relationship = 5; }
 message TripDescriptor { optional string trip_id = 1; optional string start_time = 2; optional int32 schedule_relationship = 4; optional string route_id = 5; optional uint32 direction_id = 6; }
 message VehicleDescriptor { optional string id = 1; optional string label = 2; }
 message Position { optional float latitude = 1; optional float longitude = 2; optional float bearing = 3; optional float speed = 5; }
-message VehiclePosition { optional TripDescriptor trip = 1; optional Position position = 2; optional uint32 current_stop_sequence = 3; optional int32 current_status = 4; optional uint64 timestamp = 5; optional string stop_id = 7; optional VehicleDescriptor vehicle = 8; }
+message VehiclePosition { optional TripDescriptor trip = 1; optional Position position = 2; optional uint32 current_stop_sequence = 3; optional int32 current_status = 4; optional uint64 timestamp = 5; optional string stop_id = 7; optional VehicleDescriptor vehicle = 8; optional int32 congestion_level = 6; optional int32 occupancy_status = 9; }
 `).root.lookupType('FeedMessage');
 
 const D = {}, S = {}, ready = {};
 for (const id of IDS) {
   D[id] = gtfs.empty(); ready[id] = false;
-  S[id] = { updated: 0, error: null, vehicles: [], live: {}, hist: new Map(), track: new Map(), vs: new Map(), state: {} };
+  S[id] = { updated: 0, error: null, vehicles: [], live: {}, hist: new Map(), track: new Map(), vs: new Map(), state: {}, snap: new Map(), cache: {}, raw: {}, match: {}, errCount: 0, feedTs: null };
 }
 
 let cachedStopsGzip = null;
@@ -51,7 +56,7 @@ async function loadStatic() {
     try {
       const g = await gtfs.load(id);
       if (!g) return;
-      D[id] = g; S[id].hist.clear(); S[id].vs.clear(); S[id].state = {}; ready[id] = true; version++;
+      D[id] = g; S[id].hist.clear(); S[id].vs.clear(); S[id].snap.clear(); S[id].state = {}; ready[id] = true; version++;
       cachedStopsGzip = null;
       refresh(id);
       console.log(`GTFS statico [${id}] caricato/aggiornato con successo.`);
@@ -96,22 +101,43 @@ function resolveTrip(G, td) {
   return null;
 }
 
-async function pull(base, name) {
-  const res = await fetch(base + name, { signal: AbortSignal.timeout(10000) });
+// Lettura di un feed GTFS-RT. Ritorna { ents, headerTs, changed }:
+//  - richiesta condizionale (ETag / If-Modified-Since): 304 = nessun dato nuovo
+//  - se i byte sono identici al giro precedente non si decodifica nulla (changed = false)
+//  - i byte grezzi restano disponibili per /api/audit
+async function pull(id, name) {
+  const s8 = S[id], c = (s8.cache[name] ||= {}), h = {};
+  if (c.etag) h['If-None-Match'] = c.etag;
+  if (c.lm) h['If-Modified-Since'] = c.lm;
+  const res = await fetch(RT[id] + name, { signal: AbortSignal.timeout(8000), headers: h });
+  if (res.status === 304 && c.ents) return { ents: c.ents, headerTs: c.headerTs, changed: false };
   if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
-  const msg = Feed.decode(new Uint8Array(await res.arrayBuffer()));
-  return Feed.toObject(msg, { longs: Number }).entity || [];
+  const buf = Buffer.from(await res.arrayBuffer());
+  s8.raw[name] = { buf, at: Date.now() };
+  c.etag = res.headers.get('etag'); c.lm = res.headers.get('last-modified');
+  const hash = crypto.createHash('md5').update(buf).digest('hex');
+  if (hash === c.hash && c.ents) return { ents: c.ents, headerTs: c.headerTs, changed: false };
+  const o = Feed.toObject(Feed.decode(new Uint8Array(buf)), { longs: Number });
+  Object.assign(c, { hash, ents: o.entity || [], headerTs: o.header?.timestamp ? Number(o.header.timestamp) : null });
+  return { ents: c.ents, headerTs: c.headerTs, changed: true };
 }
 
 async function refresh(id) {
   const s8 = S[id];
   try {
-    const [pos, upd] = await Promise.all([pull(RT[id], 'vehiclePositions'), pull(RT[id], 'tripUpdates')]);
-    const G = D[id], live = {}, now = Date.now();
+    // i due feed si leggono in parallelo
+    const [P, U] = await Promise.all([pull(id, 'vehiclePositions'), pull(id, 'tripUpdates')]);
+    const G = D[id], live = {}, now = Date.now(), pos = P.ents, upd = U.ents;
+    s8.errCount = 0; s8.feedTs = P.headerTs ? P.headerTs * 1000 : null;
+    if (!P.changed && !U.changed && s8.vehicles.length && s8.updated) {   // nessun dato nuovo: si aggiorna solo il tempo trascorso
+      s8.updated = now; buildStates(id); return;
+    }
+    let tuOk = 0, vOk = 0;
     for (const e of upd) {
       const tu = e.tripUpdate;
       if (!tu?.trip?.tripId) continue;
       const tid = resolveTrip(G, tu.trip); if (!tid) continue;
+      tuOk++;
       const st = G.stopTimes.get(tid), n = st.s.length, explicit = new Array(n), skipped = new Set();
       let cur = 0, firstJ = -1;
       for (const u of tu.stopTimeUpdate || []) {
@@ -138,23 +164,26 @@ async function refresh(id) {
     s8.live = live;
     s8.vehicles = pos.filter(e => Number.isFinite(e.vehicle?.position?.latitude) && Number.isFinite(e.vehicle.position.longitude))
       .map(e => {
-        const v = e.vehicle, tripId = resolveTrip(G, v.trip), trip = G.trips[tripId] || {};
+        const v = e.vehicle, tripId = resolveTrip(G, v.trip), trip = G.trips[tripId] || {}, key = v.vehicle?.id || e.id;
+        if (tripId) vOk++;
+        // istante del rilevamento: del veicolo, altrimenti dell'intestazione del feed, altrimenti di scarico (nell'ordine)
+        const ts = v.timestamp ? Number(v.timestamp) * 1000 : (P.headerTs ? P.headerTs * 1000 : now);
         const routeKey = trip.route || ids.resolveRouteId(G, v.trip?.routeId) || v.trip?.routeId || null, r = G.routes[routeKey] || {};
         return { id: `${id}:${v.vehicle?.id || e.id}`, src: id, label: v.vehicle?.label || null,
           lat: +v.position.latitude.toFixed(5), lon: +v.position.longitude.toFixed(5),
-          // velocità: quella dichiarata dal feed se c'è, altrimenti calcolata dagli spostamenti; ts = istante del rilevamento GPS
-          speed: (calc => Number.isFinite(v.position.speed) ? v.position.speed : calc)(motion.updateSpeed(s8.track, v.vehicle?.id || e.id, v.position.latitude, v.position.longitude, now)),
-          stillS: motion.stillFor(s8.track, v.vehicle?.id || e.id, now),
-          ts: v.timestamp ? Number(v.timestamp) * 1000 : now, bearing: v.position.bearing ?? null,
+          // velocità: dichiarata dal feed se c'è, altrimenti da due rilevamenti successivi / differenza dei loro timestamp
+          speed: (calc => Number.isFinite(v.position.speed) ? v.position.speed : calc)(motion.updateSpeed(s8.track, key, v.position.latitude, v.position.longitude, ts, now)),
+          stillS: motion.stillFor(s8.track, key), key, ts, bearing: v.position.bearing ?? null,
           status: v.currentStatus ?? null, seq: v.currentStopSequence ?? null,
           line: r.name || routeKey || '?', color: r.color || null, tripId,
           routeId: routeKey ? `${id}:${routeKey}` : null, headsign: trip.headsign || null };
       });
-    for (const [k, p] of s8.track) if (now - p.t > 600000) s8.track.delete(k);   // mezzi non più visti
+    for (const [k, p] of s8.track) if (now - p.arr > 600000) { s8.track.delete(k); s8.snap.delete(k); }   // mezzi non più visti
+    s8.match = { tripUpdates: { total: upd.length, collegati: tuOk }, veicoli: { total: pos.length, collegati: vOk } };
     s8.updated = now; s8.error = null;
     buildStates(id);
   } catch (err) {
-    s8.error = `${id}: ${err.message} (Fallback attivo)`;
+    s8.errCount++; s8.error = `${id}: ${err.message} (Fallback attivo)`;
     try {
       const scheduledFallback = schedule.positionsNow(D[id]);
       s8.vehicles = scheduledFallback.map(v => ({
@@ -171,13 +200,35 @@ async function refresh(id) {
 const tripNow = st => { const nowS = secsOfDayRome(Date.now()), fits = t => t >= st.start - 3600 && t <= st.end + 3600; return !fits(nowS) && fits(nowS + 86400) ? nowS + 86400 : nowS; };
 // Ricalcolato a ogni polling per tutte le corse con dati live (feed e/o GPS). Lo leggono pannello fermata e dettaglio corsa:
 // una sola fonte di verità, con memoria persistente per corsa (vedi tracker.js).
+// AGGANCIO AL TRACCIATO. Il GPS resta la verità: se il mezzo è a meno di 45 m dalla linea lo si disegna SULLA linea
+// (nei canali e nelle calli un rettilineo tra due punti attraverserebbe terra o acqua); oltre, resta la posizione grezza.
+// A ogni nuovo rilevamento si calcola il tratto di tracciato percorso dal rilevamento precedente: il client muove il mezzo
+// lungo quel tratto, mai in rettilineo e mai oltre l'ultimo punto realmente ricevuto.
+const SNAP_MAX_M = 45;
+function snapToRoute(i, G, trip, veh, ss) {
+  veh.rlat ??= veh.lat; veh.rlon ??= veh.lon;   // posizione GPS grezza, conservata
+  if (ss.sVeh == null || ss.lateral > SNAP_MAX_M) { S[i].snap.delete(veh.key); return; }
+  const sh = tracker.shapeInfo(G, trip.shape), prev = S[i].snap.get(veh.key), here = tracker.pointAt(sh, ss.sVeh);
+  veh.lat = +here[0].toFixed(5); veh.lon = +here[1].toFixed(5);
+  if (prev && prev.shape === trip.shape && prev.ts !== veh.ts) {
+    const d = ss.sVeh - prev.s;
+    if (d > 0.5 && d < 4000) veh.path = tracker.slice(sh, prev.s, ss.sVeh);
+  }
+  if (!prev || prev.ts !== veh.ts) S[i].snap.set(veh.key, { s: ss.sVeh, shape: trip.shape, ts: veh.ts });
+}
+
 function buildStates(i) {
   const G = D[i], out = {}, now = Date.now(), byTrip = new Map();
   for (const v of S[i].vehicles) if (v.tripId) { const o = byTrip.get(v.tripId); if (!o || (v.ts || 0) > (o.ts || 0)) byTrip.set(v.tripId, v); }   // doppioni: il rilevamento più fresco
   for (const tid of new Set([...Object.keys(S[i].live), ...byTrip.keys()])) {
     const st = G.stopTimes.get(tid), trip = G.trips[tid]; if (!st || !trip) continue;
     let vs = S[i].vs.get(tid); if (!vs) S[i].vs.set(tid, vs = {});
-    try { out[tid] = tracker.update({ G, trip, st, lv: S[i].live[tid], hist: S[i].hist.get(tid)?.delays, veh: byTrip.get(tid), tNow: tripNow(st), nowMs: now, vs }); }
+    const veh = byTrip.get(tid), tp = veh && S[i].track.get(veh.key);
+    if (veh) veh.ageS = tp ? (now - tp.arr) / 1000 : 0;               // secondi dall'ultimo rilevamento NUOVO (orologio nostro)
+    try {
+      out[tid] = tracker.update({ G, trip, st, lv: S[i].live[tid], hist: S[i].hist.get(tid)?.delays, veh, tNow: tripNow(st), nowMs: now, vs });
+      if (veh) snapToRoute(i, G, trip, veh, out[tid]);
+    }
     catch (e) { console.error('stato corsa', tid, e.message); }
   }
   for (const [k, vs] of S[i].vs) if (now - (vs.seen || 0) > 900000) S[i].vs.delete(k);
@@ -274,9 +325,18 @@ const API = {
   },
   '/api/vehicles': u => {
     const list = wanted(u), errors = list.map(i => S[i].error).filter(Boolean);
-    return { updated: Math.max(0, ...list.map(i => S[i].updated)), error: errors.join('; ') || null, version, ready,
-             vehicles: list.flatMap(i => S[i].vehicles) };
+    return { updated: Math.max(0, ...list.map(i => S[i].updated)), feedTs: Math.max(0, ...list.map(i => S[i].feedTs || 0)) || null,
+             error: errors.join('; ') || null, version, ready, vehicles: list.flatMap(i => S[i].vehicles) };
   },
+  // ANALISI FEED: campi standard compilati/mancanti, campi proprietari ACTV, collegamento con il GTFS statico.
+  // Apri /api/audit (o /api/audit?src=aut) e inviami il risultato per tarare il software sul feed reale.
+  '/api/audit': u => Object.fromEntries(wanted(u).map(i => [i, {
+    intervalloLetturaMs: REFRESH_MS, ultimoAggiornamento: S[i].updated ? new Date(S[i].updated).toISOString() : null,
+    etaFeedSecondi: S[i].feedTs ? Math.round((Date.now() - S[i].feedTs) / 1000) : null,
+    collegamentoGtfsStatico: S[i].match,                      // "collegati" vicino a "total" = versione GTFS statica corretta
+    veicoli: S[i].raw.vehiclePositions ? audit(S[i].raw.vehiclePositions.buf) : null,
+    tripUpdates: S[i].raw.tripUpdates ? audit(S[i].raw.tripUpdates.buf) : null
+  }])),
   '/api/scheduled': u => {
     const errors = [], vehicles = [];
     for (const i of wanted(u)) {
@@ -397,7 +457,7 @@ http.createServer(async (req, res) => {
 }).listen(PORT, () => console.log(`http://localhost:${PORT}`));
 
 // Ogni feed ha il proprio ciclo: indipendenti e in parallelo; un ciclo lento non ne blocca né ne sovrappone un altro.
-for (const id of IDS) (async function loop() { const t0 = Date.now(); await refresh(id); setTimeout(loop, Math.max(1000, REFRESH_MS - (Date.now() - t0))); })();
+for (const id of IDS) (async function loop() { const t0 = Date.now(); await refresh(id); setTimeout(loop, Math.max(500, Math.min(30000, REFRESH_MS * 2 ** Math.min(S[id].errCount, 4)) - (Date.now() - t0))); })();
 loadStatic();
 setInterval(loadStatic, 24 * 3600 * 1000);
 

@@ -237,7 +237,7 @@ button.chip:hover{background:color-mix(in srgb,var(--fg) 15%,transparent)}
 <script>
 const $ = id => document.getElementById(id);
 const ICON = { nav: '🚢', aut: '🚌' };
-const POLL_MS = 6000, MIN_STOP_ZOOM = 14;
+const POLL_MS = 3000, MIN_STOP_ZOOM = 14;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const p2 = n => String(n).padStart(2, '0');
 const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds(); };
@@ -456,15 +456,17 @@ resultsEl.addEventListener('click', e => {
 document.addEventListener('click', e => { if (!e.target.closest('.search-container')) resultsEl.classList.remove('active'); });
 map.on('click', () => { if (!openTrip && !filterEl.value) clearRoutes(); });
 
-// MOVIMENTO FLUIDO DEI MEZZI
-// La velocità si stima dagli ultimi due rilevamenti GPS e il marker viene proiettato in avanti (dead reckoning);
-// il marker visualizzato insegue il punto proiettato con smorzamento esponenziale. Nessun punto di arrivo fisso:
-// niente scatti né pause tra un aggiornamento e l'altro, e nessun salto quando arriva un dato nuovo.
+// MOVIMENTO DEI MEZZI (fedele ai dati ricevuti)
+// Regole: 1) la posizione vera è sempre l'ultimo rilevamento GPS; 2) il mezzo non va MAI oltre l'ultimo punto ricevuto
+// (nessuna previsione: in laguna e in calle una proiezione in rettilineo darebbe posizioni inventate);
+// 3) tra due rilevamenti percorre il tratto di linea inviato dal server (v.path, già agganciato al tracciato), a velocità
+// costante e calibrata perché arrivi quando è atteso il rilevamento successivo; senza tracciato, va in linea retta fra i due punti.
+// Il ritardo visivo è circa un intervallo di aggiornamento del feed: è il prezzo per non mostrare posizioni false.
 const markers = new Map();
-const TAU = 650;          // ms: morbidezza dell'inseguimento (più alto = più morbido ma più in ritardo)
-const MAX_EXTRAP = 1.4;   // la proiezione non supera 1,4 intervalli di aggiornamento; poi il mezzo attende il dato
-const SNAP_M = 250;       // salto superiore: il marker si sposta di colpo (cambio corsa, riconnessione)
+const SNAP_M = 300;        // distanza oltre la quale il marker salta direttamente (cambio corsa, riconnessione)
+const MAX_MPS = 30;        // limite di velocità visiva (108 km/h): evita scatti se si accumula ritardo
 const mDist = (aLat, aLon, bLat, bLon) => Math.hypot((aLat - bLat) * 111000, (aLon - bLon) * 78000);
+const polyLen = p => { let L = 0; for (let i = 1; i < p.length; i++) L += mDist(p[i - 1][0], p[i - 1][1], p[i][0], p[i][1]); return L; };
 
 function render() {
   const keep = new Set(), now = performance.now();
@@ -479,21 +481,28 @@ function render() {
       const m = L.marker([v.lat, v.lon], { icon: L.divIcon({ className: 'bus-marker', iconSize: null, html }) })
         .bindTooltip(tip(v), { direction: 'top', offset: [0, -12] }).addTo(map), id = v.id;
       m.on('click', () => { const c = vehicles.find(x => x.id === id); if (c) openTripPanel(c); });
-      markers.set(v.id, { m, html, tipContent: tip(v), lat: v.lat, lon: v.lon, fixLat: v.lat, fixLon: v.lon, fixT: now, dt: POLL_MS, vLat: 0, vLon: 0 });
+      markers.set(v.id, { m, html, tipContent: tip(v), lat: v.lat, lon: v.lon, poly: [[v.lat, v.lon]], mps: 0, lastTs: v.ts || 0, lastArr: now, iv: POLL_MS * 2 });
       continue;
     }
     if (e.html !== html) { e.m.setIcon(L.divIcon({ className: 'bus-marker', iconSize: null, html })); e.html = html; }
     const newTip = tip(v);
     if (e.tipContent !== newTip) { e.m.setTooltipContent(newTip); e.tipContent = newTip; }
 
-    if (mode !== 'live') { e.lat = e.fixLat = v.lat; e.lon = e.fixLon = v.lon; e.m.setLatLng([v.lat, v.lon]); continue; }   // orario: posizione diretta
-    if (v.lat !== e.fixLat || v.lon !== e.fixLon) {   // nuovo rilevamento GPS
-      const d = mDist(v.lat, v.lon, e.fixLat, e.fixLon), dtm = Math.min(60000, Math.max(1500, now - e.fixT));
-      if (d > SNAP_M) { e.lat = v.lat; e.lon = v.lon; e.vLat = e.vLon = 0; }
-      else if (d < 4) { e.vLat = e.vLon = 0; }                                     // entro il rumore GPS: fermo
-      else { e.vLat = (v.lat - e.fixLat) / dtm; e.vLon = (v.lon - e.fixLon) / dtm; }   // gradi/ms
-      e.dt = dtm; e.fixLat = v.lat; e.fixLon = v.lon; e.fixT = now;
-    }
+    if (mode !== 'live') { e.lat = v.lat; e.lon = v.lon; e.poly = [[v.lat, v.lon]]; e.m.setLatLng([v.lat, v.lon]); continue; }   // orario: posizione diretta
+
+    // nuovo rilevamento? (si confronta col punto finale del percorso già in coda)
+    const end = e.poly[e.poly.length - 1];
+    if (mDist(end[0], end[1], v.lat, v.lon) < 3) continue;           // entro il rumore GPS: fermo
+    if (mDist(e.lat, e.lon, v.lat, v.lon) > SNAP_M) { e.lat = v.lat; e.lon = v.lon; e.poly = [[v.lat, v.lon]]; e.m.setLatLng([v.lat, v.lon]); e.lastTs = v.ts || 0; e.lastArr = now; continue; }
+    // intervallo tra rilevamenti: dai timestamp del feed se plausibili, altrimenti dagli arrivi
+    const dFeed = v.ts && e.lastTs ? v.ts - e.lastTs : 0, dArr = now - e.lastArr;
+    e.iv = Math.min(30000, Math.max(1500, 0.5 * e.iv + 0.5 * (dFeed >= 800 && dFeed <= 60000 ? dFeed : dArr)));
+    e.lastTs = v.ts || e.lastTs; e.lastArr = now;
+    // percorso: resto di quello in corso + tratto di linea fino al nuovo punto (o retta se il server non lo fornisce)
+    const pts = Array.isArray(v.path) && v.path.length > 1 ? v.path.slice(1) : [];
+    if (!pts.length || mDist(pts[pts.length - 1][0], pts[pts.length - 1][1], v.lat, v.lon) > 3) pts.push([v.lat, v.lon]);
+    e.poly = e.poly.concat(pts);
+    e.mps = Math.min(MAX_MPS, polyLen(e.poly) / (e.iv * 1.05 / 1000));
   }
   for (const [id, e] of markers) if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
 }
@@ -502,12 +511,16 @@ let lastFrame = performance.now();
 requestAnimationFrame(function frame(t) {
   const dt = Math.min(100, t - lastFrame); lastFrame = t;
   if (mode === 'live' && !document.hidden) {
-    const k = 1 - Math.exp(-dt / TAU);
     for (const e of markers.values()) {
-      const age = Math.min(t - e.fixT, e.dt * MAX_EXTRAP);
-      const dLat = e.fixLat + e.vLat * age - e.lat, dLon = e.fixLon + e.vLon * age - e.lon;
-      if (Math.abs(dLat) < 2e-7 && Math.abs(dLon) < 2e-7) continue;                // già arrivato (~2 cm): nessun lavoro
-      e.lat += dLat * k; e.lon += dLon * k; e.m.setLatLng([e.lat, e.lon]);
+      if (e.poly.length < 2) continue;                                  // arrivato: nessun lavoro
+      let adv = e.mps * dt / 1000;                                      // metri da percorrere in questo fotogramma
+      while (adv > 0 && e.poly.length > 1) {
+        const a = e.poly[0], b = e.poly[1], seg = mDist(a[0], a[1], b[0], b[1]);
+        if (adv >= seg) { adv -= seg; e.poly.shift(); }
+        else { const f = adv / seg; e.poly[0] = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]; adv = 0; }
+      }
+      e.lat = e.poly[0][0]; e.lon = e.poly[0][1];
+      e.m.setLatLng([e.lat, e.lon]);
     }
   }
   requestAnimationFrame(frame);
@@ -551,7 +564,7 @@ function drawStops() {
 map.on('moveend', drawStops);
 
 const refreshPanel = () => { if (openStop) loadDepartures(); else if (openTrip) loadTrip(); };
-const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInterval(refreshPanel, 5000); };
+const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInterval(refreshPanel, 4000); };
 function resetTrip() {
   setFollow(false);
   const had = !!openTrip;

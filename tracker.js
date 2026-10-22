@@ -105,10 +105,10 @@ function update(x) {
 
   // 2) GPS: posizione lungo il tracciato
   const sp = veh && Number.isFinite(veh.speed) ? veh.speed : null, still = veh?.stillS || 0;
-  const fresh = !!veh && Number.isFinite(veh.lat) && !(veh.ts && nowMs - veh.ts > C.FRESH_MS);
+  const fresh = !!veh && Number.isFinite(veh.lat) && !(veh.ageS != null && veh.ageS * 1000 > C.FRESH_MS);   // età misurata col nostro orologio
   const offs = fresh ? stopOffsets(G, trip, st) : null;
-  let sv = null;
-  if (offs) { const pr = project(shapeInfo(G, trip.shape), veh.lat, veh.lon, vs.sMax ?? null); if (pr && pr.lat <= C.OFFROUTE_M) sv = pr.s; }
+  let sv = null, lateral = null;
+  if (offs) { const pr = project(shapeInfo(G, trip.shape), veh.lat, veh.lon, vs.sMax ?? null); if (pr && pr.lat <= C.OFFROUTE_M) { sv = pr.s; lateral = pr.lat; } }
   if (sp != null && sp >= C.MOVE) vs.moveSince ??= nowMs; else vs.moveSince = null;
   const sustained = vs.moveSince != null && nowMs - vs.moveSince >= C.MOVE_SUSTAIN_MS;
 
@@ -173,7 +173,21 @@ function update(x) {
   vs.cur = cur; vs.seen = nowMs; vs.delay = cur < n ? Math.round(etaCur - at(cur)) : vs.delay;
   if (sv != null) vs.sMax = Math.max(vs.sMax ?? 0, sv);
 
-  return { cur, atStop, phase, etaMs, src, sVeh: sv, delayS: vs.delay ?? 0,
+  return { cur, atStop, phase, etaMs, src, sVeh: sv, lateral, delayS: vs.delay ?? 0,
     atOrigin: atStop === 0 || (!veh && cur === 0 && tNow < at(0)), waiting: atStop === cur && etaCur - tNow > 0, speed: sp, dep: vs.dep };
 }
-module.exports = { update, project, stopOffsets, shapeInfo, C };
+// Punto del tracciato all'ascissa s, e tratto di tracciato tra due ascisse (per muovere il mezzo SULLA linea, non in rettilineo).
+const rnd = q => [+q[0].toFixed(5), +q[1].toFixed(5)];
+function seg(sh, s) { let lo = 0, hi = sh.n - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (sh.cum[m] <= s) lo = m; else hi = m; } return lo; }
+function pointAt(sh, s) {
+  s = clamp(s, 0, sh.cum[sh.n - 1]); const i = seg(sh, s), L = sh.cum[i + 1] - sh.cum[i], t = L > 0 ? (s - sh.cum[i]) / L : 0, p = sh.p;
+  return [p[2 * i] + (p[2 * i + 2] - p[2 * i]) * t, p[2 * i + 1] + (p[2 * i + 3] - p[2 * i + 1]) * t];
+}
+function slice(sh, s0, s1, maxPts = 60) {
+  const out = [pointAt(sh, s0)];
+  for (let i = seg(sh, s0) + 1; i < sh.n && sh.cum[i] < s1; i++) out.push([sh.p[2 * i], sh.p[2 * i + 1]]);
+  out.push(pointAt(sh, s1));
+  if (out.length <= maxPts) return out.map(rnd);
+  const step = (out.length - 1) / (maxPts - 1); return Array.from({ length: maxPts }, (_, k) => rnd(out[Math.round(k * step)]));
+}
+module.exports = { update, project, stopOffsets, shapeInfo, pointAt, slice, C };
