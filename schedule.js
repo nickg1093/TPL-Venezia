@@ -2,7 +2,8 @@
 // I tracciati sono Float32Array piatti: [lat0, lon0, lat1, lon1, ...].
 const pad = n => String(n).padStart(2, '0');
 const ymd = d => `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}`;
-const hhmm = s => { s = ((s % 86400) + 86400) % 86400; return `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s % 3600 / 60))}`; };
+const hhmm = s => { s = ((Math.round(s / 60) * 60 % 86400) + 86400) % 86400;   // al minuto più vicino: niente 00:12:59 -> 00:12
+  return `${pad(Math.floor(s / 3600))}:${pad(Math.floor(s % 3600 / 60))}`; };
 const DAY = 86400000;
 const dateOf = s => new Date(Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)));
 const dowOf = s => dateOf(s).getUTCDay();
@@ -157,22 +158,27 @@ function departures(G, live, stopId, secsParam = null, date = null, state = null
       const st = getStopTime(G, rawTripId);
       if (!st) continue;
       const last = i === st.s.length - 1, ts = last ? st.a[i] : st.d[i];
-      const lv = off >= 0 ? live?.[rawTripId] : null;
-      const ps = off === 0 ? state?.[rawTripId] : null;
+      // Quale istanza della corsa è quella VIVA? Dopo mezzanotte le corse del giorno di servizio precedente hanno orari 24:xx e
+      // compaiono con off = 86400: lo stato del tracker porta con sé il proprio giorno (dayOff) e si applica a quella istanza.
+      const ps0 = state?.[rawTripId], liveInst = ps0 ? ps0.dayOff === off : off >= 0;
+      const lv = liveInst && off >= 0 ? live?.[rawTripId] : null;
+      const ps = ps0 && liveInst ? ps0 : null;
       if (ps && i < ps.cur) continue;        // mezzo già transitato da questa fermata
       // Con stato live (tracker.js): ETA fusa feed + GPS + orario, e già corretta per le regole di partenza.
       let dl = lv ? lv.delays[i] : null, expMs = null;
-      if (ps && i >= ps.cur && ps.etaMs && Number.isFinite(ps.etaMs[i])) { expMs = ps.etaMs[i]; dl = (expMs - nowMs) / 1000 - (ts - tNow); }
-      const sm = ts - tNow, em = ts + (dl ?? 0) - tNow;
+      let em;
+      if (ps && i >= ps.cur && ps.etaMs && Number.isFinite(ps.etaMs[i])) { expMs = ps.etaMs[i]; em = (expMs - nowMs) / 1000; dl = em - (ts - tNow); }
+      const sm = ts - tNow; em ??= ts + (dl ?? 0) - tNow;
+      const dm = dl != null ? Math.round(dl / 60) : null;     // ritardo in minuti interi: l'orario previsto si ricava da questo, così sono sempre coerenti
       if ((sm < -180 || sm > 7200) && (em < -180 || em > 7200)) continue;
       const trip = getTrip(G, rawTripId);
       if (!trip || !serviceActive(G, trip.service, ds)) continue;
       const r = G.routes[trip.route] || {};
       out.push({ tripId: rawTripId, line: r.name || trip.route, color: r.color || null,
         headsign: trip.headsign || G.stops[st.s[st.s.length - 1]] || null,
-        sched: hhmm(ts), exp: hhmm(ts + (dl ?? 0)),
+        sched: hhmm(ts), exp: hhmm(ts + (dm ?? 0) * 60),
         schedIn: Math.round(sm / 60), expIn: Math.round(em / 60),
-        delay: dl != null ? Math.round(dl / 60) : null, live: dl != null,
+        delay: dm, live: dl != null,
         atStop: !!ps && ps.atStop === i, phase: ps && i >= ps.cur ? (i === ps.cur ? ps.phase : 'enroute') : null, expMs, expSec: em, cancel: lv?.cancelled ? 'trip' : (lv?.skipped.has(i) ? 'stop' : null), arrival: last });
     }
   }

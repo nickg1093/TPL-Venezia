@@ -63,3 +63,11 @@ Apri `https://<tuo-sito>/api/audit` (o `?src=aut`). Mostra, per ogni feed:
 - campi standard GTFS-RT compilati (con percentuale), campi standard mancanti e **campi proprietari ACTV** (con numero, tipo ed esempi);
 - note di coerenza (età del feed, timestamp per veicolo, velocità dichiarata, `current_status` presente o no).
 Intervallo di lettura: 3 s (variabile `RT_POLL_MS`); i feed invariati non vengono rielaborati e in caso di errori il server rallenta da solo.
+
+## Aggiornamento a spinta (/api/stream)
+Il server avvisa i browser collegati (Server-Sent Events) a ogni ciclo di lettura dei feed: mezzi e pannelli aperti si ricaricano subito
+(al massimo ogni 600 ms). I timer del browser restano come rete di sicurezza e scattano solo se lo stream tace da oltre 6 secondi.
+
+## Corse dopo mezzanotte
+Le corse con orari 24:xx appartengono al giorno di servizio precedente. Lo stato del tracker porta con sé il proprio giorno (`dayOff`)
+e `departures()` lo applica all'istanza corretta della corsa.

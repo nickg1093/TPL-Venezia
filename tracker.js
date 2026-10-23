@@ -162,7 +162,8 @@ function update(x) {
   if (veh && cur < n) {
     const k = cur, term = k === 0, dk = sv != null ? sv - offs[k] : null;
     const back = term ? C.TERM_BACK_M : C.ARR_BACK_M, fwd = term ? C.TERM_M : C.PASS_M;
-    const stopped = vi != null ? vi < C.STILL : (veh.status === 1 || (veh.stillS || 0) >= 5);
+    // fermo = velocità istantanea bassa; al capolinea basta non essere in movimento SOSTENUTO (manovre e rumore GPS non contano)
+    const stopped = term ? !sustained : (vi != null ? vi < C.STILL : (veh.status === 1 || (veh.stillS || 0) >= 5));
     const inZone = dk != null ? (dk >= -back && dk <= fwd) : dTo(k) <= (term ? 120 : 50);
     const sticky = vs.at && vs.at.k === k && (dk != null ? dk >= -back - 20 && dk <= fwd + 20 : dTo(k) <= (term ? 160 : 80));
     if ((inZone && stopped) || sticky || (veh.status === 1 && inZone)) atStop = k;
@@ -172,7 +173,10 @@ function update(x) {
   // 5) ETA per ogni fermata, in ms assoluti
   const pred = k => at(k) + dly(k);
   const remaining = sv != null && cur < n ? offs[cur] - sv : null;
-  const moving = atStop === cur && vs.at?.anchorS != null && sv != null && Math.abs(sv - vs.at.anchorS) > 8 && (vi ?? 0) >= 0.8;   // già in movimento dopo la sosta
+  // già in movimento dopo la sosta. Al capolinea un bus che si sposta di qualche metro (manovre) NON sta partendo prima dell'orario:
+  // lì il movimento conta solo nell'ultimo minuto prima della partenza programmata.
+  const moving = atStop === cur && vs.at?.anchorS != null && sv != null && Math.abs(sv - vs.at.anchorS) > 8 && (vi ?? 0) >= 0.8
+    && (cur > 0 || tNow >= at(0) - 60);
   let etaCur = cur < n ? pred(cur) : 0;
   if (atStop === cur && cur < n) etaCur = moving ? tNow : Math.max(at(cur) + Math.max(dly(cur), 0), tNow);   // non si parte prima dell'orario; oltre: ora
   else if (remaining != null && remaining > 0 && cur > 0) {
@@ -183,6 +187,7 @@ function update(x) {
     etaCur = w * gps + (1 - w) * pred(cur);
   } else if (cur === 0 && !veh) etaCur = Math.max(pred(0), at(0));                                        // niente partenza anticipata
   if (cur < n) etaCur = Math.max(etaCur, tNow);
+  if (cur === 0 && n > 0) etaCur = Math.max(etaCur, at(0));          // dal capolinea non si parte prima dell'orario programmato (il feed può dare anticipi irreali)
 
   const etaMs = new Float64Array(n).fill(NaN), effD = cur < n ? etaCur - at(cur) : 0;
   for (let k = cur, last = 0; k < n; k++) {
@@ -194,7 +199,7 @@ function update(x) {
   let target = 0;
   if (cur >= n) target = 4;
   else if (atStop === cur) target = (moving || etaCur - tNow <= C.DEPART_S) && cur < n - 1 ? 3 : 2;
-  else if (cur === 0 && sv != null && (vi ?? 0) >= C.MOVE && sv - offs[0] > 60) target = 3;                // lascia il capolinea
+  else if (cur === 0 && sv != null && sustained && sv - offs[0] > 60) target = 3;                          // lascia il capolinea (movimento sostenuto, non un salto GPS)
   else if (remaining != null ? (remaining <= 150 || (remaining <= C.APPROACH_M && etaCur - tNow <= C.APPROACH_S)) : etaCur - tNow <= 45) target = 1;
   let stage = vs.stage || 0;
   if (target > stage) stage = target;
@@ -208,7 +213,8 @@ function update(x) {
   vs.cur = cur; vs.seen = nowMs; vs.delay = cur < n ? Math.round(etaCur - at(cur)) : vs.delay;
   if (sv != null) vs.sMax = Math.max(vs.sMax ?? 0, sv);
 
-  return { cur, atStop, phase, stage, etaMs, src, sVeh: sv, lateral, delayS: vs.delay ?? 0,
+  // dayOff: a quale giorno di servizio appartiene l'istanza viva (0 = oggi, 86400 = ieri, orari 24:xx dopo mezzanotte)
+  return { cur, atStop, phase, stage, etaMs, dayOff: tNow >= 86400 ? 86400 : 0, src, sVeh: sv, lateral, delayS: vs.delay ?? 0,
     atOrigin: atStop === 0 || (!veh && cur === 0 && tNow < at(0)), waiting: atStop === cur && etaCur - tNow > 0, speed: sp, dep: vs.dep };
 }
 

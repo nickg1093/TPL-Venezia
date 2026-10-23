@@ -564,7 +564,7 @@ function drawStops() {
 map.on('moveend', drawStops);
 
 const refreshPanel = () => { if (openStop) loadDepartures(); else if (openTrip) loadTrip(); };
-const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInterval(refreshPanel, 4000); };
+const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInterval(() => { if (Date.now() - lastPushAt > 6000) refreshPanel(); }, 4000); };   // rete di sicurezza se lo stream non arriva
 function resetTrip() {
   setFollow(false);
   const had = !!openTrip;
@@ -849,7 +849,20 @@ document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('
   render(); drawStops(); load();
 }));
 
-drawStops(); updateClock(); load(); setInterval(load, POLL_MS);
+// AGGIORNAMENTO A SPINTA: il server avvisa (SSE) appena ci sono dati nuovi, così mezzi e pannelli si aggiornano subito.
+// I timer restano come rete di sicurezza e scattano solo se lo stream tace da oltre 6 s. Massimo un aggiornamento ogni 600 ms.
+let lastPushAt = 0, lastPushRun = 0, pushTimer = null;
+function onPush(changed) {
+  lastPushAt = Date.now();
+  if (document.hidden || mode !== 'live') return;
+  const wait = 600 - (Date.now() - lastPushRun);
+  if (wait > 0) { if (!pushTimer) pushTimer = setTimeout(() => { pushTimer = null; onPush(changed); }, wait); return; }
+  lastPushRun = Date.now();
+  if (changed) load();
+  if (typeof refreshPanel === 'function') refreshPanel();
+}
+try { const es = new EventSource('/api/stream'); es.onmessage = e => onPush(e.data === '1'); } catch (e) { /* si usano i timer */ }
+drawStops(); updateClock(); load(); setInterval(() => { if (Date.now() - lastPushAt > 6000) load(); }, POLL_MS);
 </script>
 </body>
 </html>

@@ -134,7 +134,7 @@ async function refresh(id) {
       s8.lastChange = now;
     }
     if (!P.changed && !U.changed && s8.vehicles.length && s8.updated) {   // nessun dato nuovo: si aggiorna solo il tempo trascorso
-      s8.updated = now; buildStates(id); return;
+      s8.updated = now; buildStates(id); push(false); return;
     }
     let tuOk = 0, vOk = 0;
     for (const e of upd) {
@@ -185,7 +185,7 @@ async function refresh(id) {
     for (const [k, p] of s8.track) if (now - p.arr > 600000) { s8.track.delete(k); s8.snap.delete(k); }   // mezzi non più visti
     s8.match = { tripUpdates: { total: upd.length, collegati: tuOk }, veicoli: { total: pos.length, collegati: vOk } };
     s8.updated = now; s8.error = null;
-    buildStates(id);
+    buildStates(id); push(true);
   } catch (err) {
     s8.errCount++; s8.error = `${id}: ${err.message} (Fallback attivo)`;
     try {
@@ -201,7 +201,7 @@ async function refresh(id) {
 //   cur = prossima fermata non ancora transitata; atStop = fermata in cui il mezzo è fermo ora (-1 se nessuna).
 // Ordine delle prove: 1) indicazione del feed (prima fermata con previsione), 2) orario programmato se non c'è feed,
 // 3) correzione con GPS + velocità + tracciato (motion.js), che prevale se il feed è in ritardo sul mezzo.
-const tripNow = st => { const nowS = secsOfDayRome(Date.now()), fits = t => t >= st.start - 3600 && t <= st.end + 3600; return !fits(nowS) && fits(nowS + 86400) ? nowS + 86400 : nowS; };
+const tripNow = st => { const ms = Date.now(), nowS = secsOfDayRome(ms) + (ms % 1000) / 1000, fits = t => t >= st.start - 3600 && t <= st.end + 3600; return !fits(nowS) && fits(nowS + 86400) ? nowS + 86400 : nowS; };
 // Ricalcolato a ogni polling per tutte le corse con dati live (feed e/o GPS). Lo leggono pannello fermata e dettaglio corsa:
 // una sola fonte di verità, con memoria persistente per corsa (vedi tracker.js).
 // AGGANCIO AL TRACCIATO. Il GPS resta la verità: se il mezzo è a meno di 45 m dalla linea lo si disegna SULLA linea
@@ -257,7 +257,7 @@ function tripDetail(i, tid, live) {
     stops[k] = {
       name: G.stops[sid] || sid,
       lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
-      sched: hhmm(ts), exp: dlS != null ? hhmm(ts + dlS) : null, delay: dlS != null ? Math.round(dlS / 60) : null,
+      sched: hhmm(ts), exp: dlS != null ? hhmm(ts + Math.round(dlS / 60) * 60) : null, delay: dlS != null ? Math.round(dlS / 60) : null,   // stessa regola del pannello fermata
       expMs: future ? Math.round(ss.etaMs[k]) : null,
       inMin: future ? Math.round((ss.etaMs[k] - nowMs) / 60000) : Math.round((ts - tNow) / 60),
       state: k < cur ? 'passed' : (k === atStop ? 'at' : k === cur ? 'next' : 'upcoming'),
@@ -320,6 +320,12 @@ function namesAreCompatible(n1, n2) {
   const tokens2 = clean2.split(/\s+/).filter(w => w.length > 2);
   return tokens1.some(t => tokens2.includes(t));
 }
+
+// AGGIORNAMENTO A SPINTA (Server-Sent Events): a ogni ciclo il server avvisa i browser collegati.
+// "1" = dati nuovi dal feed (ricaricare mezzi e pannelli); "0" = solo tempo trascorso (ricaricare i pannelli aperti).
+const sse = new Set();
+const push = changed => { const m = `data: ${changed ? 1 : 0}\n\n`; for (const r of sse) { try { r.write(m); } catch { sse.delete(r); } } };
+setInterval(() => { for (const r of sse) { try { r.write(': ping\n\n'); } catch { sse.delete(r); } } }, 20000);   // evita che i proxy chiudano la connessione
 
 const API = {
   // Endpoint per forzare il ricaricamento dei GTFS statici aggiornati
@@ -448,6 +454,10 @@ const page = pageFile ? fs.readFileSync(pageFile) : null;
 
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost'), handler = API[u.pathname];
+  if (u.pathname === '/api/stream') {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no' });
+    res.write('retry: 2000\n\n'); sse.add(res); req.on('close', () => sse.delete(res)); return;
+  }
   if (u.pathname === '/healthz') { res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' }); return res.end('ok'); }
   if (handler) {
     try {
