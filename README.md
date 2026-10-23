@@ -71,3 +71,9 @@ Il server avvisa i browser collegati (Server-Sent Events) a ogni ciclo di lettur
 ## Corse dopo mezzanotte
 Le corse con orari 24:xx appartengono al giorno di servizio precedente. Lo stato del tracker porta con sé il proprio giorno (`dayOff`)
 e `departures()` lo applica all'istanza corretta della corsa.
+
+## Più mezzi sulla stessa corsa
+Se più mezzi dichiarano la stessa corsa, il sistema li distingue dalla coerenza col percorso: il più coerente è il *principale*;
+gli altri sono *rinforzi* (stato e passaggio propri, max 3) se sono sul tracciato, nel tratto atteso (±600 m) e a meno di 2,5 km dal principale,
+altrimenti *doppioni* (restano sulla mappa senza corsa). La corsa resta nel pannello fermata finché non è passato l'ultimo mezzo.
+Soglie in `server.js`: `CO_GAP_M`, `CO_DEV_M`, `CO_MAX`.

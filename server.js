@@ -36,7 +36,7 @@ message VehiclePosition { optional TripDescriptor trip = 1; optional Position po
 const D = {}, S = {}, ready = {};
 for (const id of IDS) {
   D[id] = gtfs.empty(); ready[id] = false;
-  S[id] = { updated: 0, error: null, vehicles: [], live: {}, hist: new Map(), track: new Map(), vs: new Map(), state: {}, snap: new Map(), cache: {}, raw: {}, match: {}, errCount: 0, feedTs: null };
+  S[id] = { updated: 0, error: null, vehicles: [], live: {}, hist: new Map(), track: new Map(), vs: new Map(), state: {}, snap: new Map(), sig: new Map(), owner: new Map(), cache: {}, raw: {}, match: {}, errCount: 0, feedTs: null };
 }
 
 let cachedStopsGzip = null;
@@ -159,12 +159,14 @@ async function refresh(id) {
       let c = has(tu, 'delay') ? Number(tu.delay) : null;
       const delays = new Array(n);
       for (let k = 0; k < n; k++) { if (explicit[k] != null) c = explicit[k]; delays[k] = c; }
-      live[tid] = { delays, cancelled: tu.trip.scheduleRelationship === 3, skipped, firstJ };
+      // quando il feed ha cambiato per l'ultima volta i ritardi di questa corsa: ne misura l'"età" (peso nelle stime)
+      const sig = delays.join(','), pv = s8.sig.get(tid), changedAt = pv && pv.sig === sig ? pv.t : now; s8.sig.set(tid, { sig, t: changedAt });
+      live[tid] = { delays, cancelled: tu.trip.scheduleRelationship === 3, skipped, firstJ, changedAt };
       let h = s8.hist.get(tid); if (!h) s8.hist.set(tid, h = { delays: new Array(n).fill(null), seen: 0 });
       for (let k = 0; k < n; k++) if (explicit[k] != null) h.delays[k] = explicit[k];
       h.seen = now;
     }
-    for (const [k, h] of s8.hist) if (now - h.seen > 3 * 3600 * 1000) s8.hist.delete(k);
+    for (const [k, h] of s8.hist) if (now - h.seen > 3 * 3600 * 1000) { s8.hist.delete(k); s8.sig.delete(k); }
     s8.live = live;
     s8.vehicles = pos.filter(e => Number.isFinite(e.vehicle?.position?.latitude) && Number.isFinite(e.vehicle.position.longitude))
       .map(e => {
@@ -185,7 +187,7 @@ async function refresh(id) {
     for (const [k, p] of s8.track) if (now - p.arr > 600000) { s8.track.delete(k); s8.snap.delete(k); }   // mezzi non più visti
     s8.match = { tripUpdates: { total: upd.length, collegati: tuOk }, veicoli: { total: pos.length, collegati: vOk } };
     s8.updated = now; s8.error = null;
-    buildStates(id); push(true);
+    pickOwners(id); buildStates(id); push(true);
   } catch (err) {
     s8.errCount++; s8.error = `${id}: ${err.message} (Fallback attivo)`;
     try {
@@ -221,13 +223,56 @@ function snapToRoute(i, G, trip, veh, ss) {
   if (!prev || prev.ts !== veh.ts) S[i].snap.set(veh.key, { s: ss.sVeh, shape: trip.shape, ts: veh.ts });
 }
 
+// MEZZI MULTIPLI SULLA STESSA CORSA. Possono essere legittimi (rinforzi, due mezzi uno dietro l'altro) oppure un errore di assegnazione
+// (mezzo che non ha chiuso la corsa precedente, ID sbagliato). Si distinguono dalla COERENZA col percorso:
+//  - il PRINCIPALE è il più coerente: distanza dal tratto in cui la corsa dovrebbe trovarsi (secondo il feed; senza feed, l'orario),
+//    distanza dal tracciato, età del dato, bonus di continuità (nessun rimbalzo)
+//  - un altro mezzo è RINFORZO (v.co) se è sul tracciato, nel tratto atteso (tolleranza 600 m) e a non più di 2,5 km dal principale:
+//    mantiene la corsa, con stato e passaggio propri (max 3)
+//  - altrimenti è un DOPPIONE (v.dup): resta sulla mappa ma senza corsa, per non falsare nessuno stato
+const CO_GAP_M = 2500, CO_DEV_M = 600, CO_MAX = 3;
+function pickOwners(i) {
+  const G = D[i], s8 = S[i], now = Date.now(), groups = new Map();
+  for (const v of s8.vehicles) { v.co = false; v.dup = null; if (v.tripId) { let a = groups.get(v.tripId); if (!a) groups.set(v.tripId, a = []); a.push(v); } }
+  for (const [tid, list] of groups) {
+    if (list.length === 1) { s8.owner.set(tid, list[0].key); continue; }
+    const st = G.stopTimes.get(tid), trip = G.trips[tid], lv = s8.live[tid];
+    const offs = st && trip ? tracker.stopOffsets(G, trip, st) : null, sh = offs ? tracker.shapeInfo(G, trip.shape) : null;
+    let lo = 0, hi = Infinity;
+    if (offs) {
+      const n = st.s.length; let c = lv && lv.firstJ >= 0 ? lv.firstJ : 0;
+      if (!(lv && lv.firstJ >= 0)) { const t = tripNow(st); while (c < n - 1 && st.d[c] <= t) c++; }
+      const w = lv && lv.firstJ >= 0 ? 300 : 800;   // senza feed la finestra è più larga (il ritardo è ignoto)
+      lo = offs[Math.max(0, c - 1)] - w; hi = offs[Math.min(n - 1, c)] + w;
+    }
+    const prev = s8.owner.get(tid);
+    const info = v => {
+      let sc = Math.min(300, (now - (s8.track.get(v.key)?.arr || now)) / 1000) * 8, s = null, dev = Infinity;
+      const pr = sh ? tracker.project(sh, v.lat, v.lon, null) : null;
+      if (pr && pr.lat <= 120) { s = pr.s; dev = pr.s < lo ? lo - pr.s : pr.s > hi ? pr.s - hi : 0; sc += dev + pr.lat; } else sc += sh ? 3000 : 1000;
+      return { v, s, dev, sc: v.key === prev ? sc - 400 : sc };
+    };
+    const ranked = list.map(info).sort((a, b) => a.sc - b.sc), win = ranked[0];
+    s8.owner.set(tid, win.v.key);
+    let nco = 0;
+    for (const r of ranked.slice(1)) {
+      if (r.s != null && win.s != null && r.dev <= CO_DEV_M && Math.abs(r.s - win.s) <= CO_GAP_M && nco < CO_MAX) { r.v.co = true; nco++; }
+      else { r.v.dup = tid; r.v.dupWith = win.v.label || win.v.key; r.v.tripId = null; }
+    }
+  }
+  for (const k of [...s8.owner.keys()]) if (!groups.has(k)) s8.owner.delete(k);
+}
+
 function buildStates(i) {
   const G = D[i], out = {}, now = Date.now(), byTrip = new Map();
-  for (const v of S[i].vehicles) if (v.tripId) { const o = byTrip.get(v.tripId); if (!o || (v.ts || 0) > (o.ts || 0)) byTrip.set(v.tripId, v); }   // doppioni: il rilevamento più fresco
+  for (const v of S[i].vehicles) if (v.tripId && !v.co) { const o = byTrip.get(v.tripId); if (!o || (v.ts || 0) > (o.ts || 0)) byTrip.set(v.tripId, v); }   // doppioni: il rilevamento più fresco
   for (const tid of new Set([...Object.keys(S[i].live), ...byTrip.keys()])) {
     const st = G.stopTimes.get(tid), trip = G.trips[tid]; if (!st || !trip) continue;
     let vs = S[i].vs.get(tid); if (!vs) S[i].vs.set(tid, vs = {});
     const veh = byTrip.get(tid), tp = veh && S[i].track.get(veh.key);
+    if (veh && vs.ownerKey && vs.ownerKey !== veh.key) for (const k of Object.keys(vs)) delete vs[k];   // cambio di mezzo: la memoria dell'altro non vale
+    if (veh) vs.ownerKey = veh.key;
+    const lv0 = S[i].live[tid]; if (lv0) lv0.ageS = (now - (lv0.changedAt || now)) / 1000;
     if (veh) veh.ageS = tp ? (now - tp.arr) / 1000 : 0;               // secondi dall'ultimo rilevamento NUOVO (orologio nostro)
     try {
       out[tid] = tracker.update({ G, trip, st, lv: S[i].live[tid], hist: S[i].hist.get(tid)?.delays, veh, tNow: tripNow(st), nowMs: now, vs });
@@ -235,25 +280,47 @@ function buildStates(i) {
     }
     catch (e) { console.error('stato corsa', tid, e.message); }
   }
+  // rinforzi: stato proprio per ogni mezzo (senza trip update: il feed descrive il principale), annidato nello stato della corsa
+  for (const v of S[i].vehicles) {
+    if (!v.co || !v.tripId) continue;
+    const st = G.stopTimes.get(v.tripId), trip = G.trips[v.tripId], prim = out[v.tripId]; if (!st || !trip || !prim) continue;
+    const vk = v.tripId + '|' + v.key; let vs = S[i].vs.get(vk); if (!vs) S[i].vs.set(vk, vs = {});
+    const tp = S[i].track.get(v.key); v.ageS = tp ? (now - tp.arr) / 1000 : 0;
+    try { const r = tracker.update({ G, trip, st, lv: null, hist: null, veh: v, tNow: tripNow(st), nowMs: now, vs }); snapToRoute(i, G, trip, v, r); (prim.co ||= []).push(r); }
+    catch (e) { console.error('stato rinforzo', v.key, e.message); }
+  }
   for (const [k, vs] of S[i].vs) if (now - (vs.seen || 0) > 900000) S[i].vs.delete(k);
   S[i].state = out;
 }
 
-function tripDetail(i, tid, live) {
+function tripDetail(i, tid, live, vehKey = null) {
   const G = D[i], st = G.stopTimes.get(tid), trip = G.trips[tid], r = G.routes[trip.route] || {}, n = st.s.length;
   const tNow = tripNow(st), nowMs = Date.now();
-  const lv = live ? S[i].live[tid] : null, hist = live ? S[i].hist.get(tid)?.delays : null;
+  // mezzo di cui si mostra la corsa: quello richiesto (dal marker o dal pannello fermata) se è un rinforzo, altrimenti il principale
+  const prim = live ? S[i].state[tid] : null;
+  const pick = prim && vehKey && prim.vehKey !== vehKey ? (prim.co || []).find(c => c.vehKey === vehKey) : null;
+  const sel = pick || prim;
+  const lv = live ? S[i].live[tid] : null, hist = live && !pick ? S[i].hist.get(tid)?.delays : null;   // feed e storico descrivono il principale
   const at = k => (k === n - 1 ? st.a[k] : st.d[k]);
-  const veh = live ? S[i].vehicles.find(x => x.tripId === tid) : null;
+  const veh = live ? (sel?.vehKey ? S[i].vehicles.find(x => x.key === sel.vehKey) : S[i].vehicles.find(x => x.tripId === tid && !x.co)) : null;
   // stesso stato usato dal pannello fermata; in modalità orario si calcola solo da orario programmato
-  const ss = (live && S[i].state[tid]) || tracker.update({ G, trip, st, lv, hist, veh, tNow, nowMs, vs: {} });
+  const ss = sel || tracker.update({ G, trip, st, lv, hist, veh, tNow, nowMs, vs: {} });
+  const others = live && prim ? [prim, ...(prim.co || [])].filter(x => x.vehKey !== ss.vehKey).map(x => x.label).filter(Boolean) : [];
   const cur = ss.cur, atStop = ss.atStop, offs = tracker.stopOffsets(G, trip, st);
 
-  const stops = new Array(n);
+  const stops = new Array(n); let prevAct = -Infinity;
   for (let k = 0; k < n; k++) {
     const sid = st.s[k], ts = at(k), future = k >= cur && Number.isFinite(ss.etaMs[k]);
     // dopo la fermata corrente: ritardo/anticipo dall'ETA stimata (feed + GPS); prima: ultima stima nota
-    const dlS = live ? (future ? (ss.etaMs[k] - nowMs) / 1000 - (ts - tNow) : (hist?.[k] ?? null)) : null;
+    // ritardo: fermate future = ETA stimata; fermate transitate = istante in cui abbiamo visto il mezzo ripartire, altrimenti l'ultima
+    // stima del feed MAI nel futuro; i passaggi non possono tornare indietro nel tempo
+    let dlS = null;
+    if (live) {
+      if (future) dlS = (ss.etaMs[k] - nowMs) / 1000 - (ts - tNow);
+      else if (ss.dep?.[k]) dlS = (tNow - (nowMs - ss.dep[k]) / 1000) - ts;
+      else if (hist?.[k] != null) dlS = Math.min(hist[k], tNow - ts);
+      if (dlS != null && k < cur) { dlS = Math.max(dlS, prevAct - ts); prevAct = ts + dlS; }
+    }
     stops[k] = {
       name: G.stops[sid] || sid,
       lat: G.stopLoc[sid]?.[0] ?? null, lon: G.stopLoc[sid]?.[1] ?? null,
@@ -279,7 +346,7 @@ function tripDetail(i, tid, live) {
 
   const dn = live && cur < n ? ss.delayS : null;
   return {
-    live, progress, atStop, phase: ss.phase, speedKmh: ss.speed != null ? Math.round(ss.speed * 3.6) : null, cancelled: !!lv?.cancelled, note: noteOf(G),
+    live, progress, atStop, phase: ss.phase, vehKey: ss.vehKey ?? null, others, speedKmh: ss.speed != null ? Math.round(ss.speed * 3.6) : null, cancelled: !!lv?.cancelled, note: noteOf(G),
     delayNow: dn != null ? Math.round(dn / 60) : null,
     historyKnown: stops.some(s => s.state === 'passed' && s.delay != null),
     trip: { src: i, line: r.name || trip.route, color: r.color || null, headsign: trip.headsign || G.stops[st.s[n - 1]] || null, vehicle: veh?.label || null },
@@ -390,7 +457,7 @@ const API = {
     }
 
     const uniqueMap = new Map();
-    for (const d of allDepartures) uniqueMap.set(d.tripId, d);
+    for (const d of allDepartures) uniqueMap.set(`${d.tripId}|${d.veh ?? ''}`, d);   // stessa corsa con più mezzi: un passaggio per mezzo
     allDepartures = Array.from(uniqueMap.values());
     allDepartures.sort(byExpected);
 
@@ -400,7 +467,7 @@ const API = {
       stop: { id: full, name: cleanName, src: i }, 
       liveUpdated: S[i].updated, 
       note: noteOf(G, q(u, 'date')),
-      departures: allDepartures.map(x => ({ ...x, src: i, vehicle: labels.get(x.tripId) || null })) 
+      departures: allDepartures.map(x => ({ ...x, src: i, vehicle: x.vehLabel || labels.get(x.tripId) || null })) 
     };
   },
   '/api/zone': u => {
@@ -415,13 +482,13 @@ const API = {
       for (const equivSid of equivalentSids) {
         const isReq = G.stopIsRequest?.get(equivSid) || false;
         for (const x of schedule.departures(G, S[i].live, equivSid, q(u, 'secs'), q(u, 'date'), mode(u) === 'sched' ? null : S[i].state)) {
-          out.push({ ...x, src: i, stop: full, vehicle: lab[i].get(x.tripId) || null, isRequest: isReq });
+          out.push({ ...x, src: i, stop: full, vehicle: x.vehLabel || lab[i].get(x.tripId) || null, isRequest: isReq });
         }
       }
       note = noteOf(G, q(u, 'date')); liveUpdated = Math.max(liveUpdated, S[i].updated);
     }
     const zoneMap = new Map();
-    for (const d of out) zoneMap.set(`${d.tripId}_${d.schedIn}`, d);
+    for (const d of out) zoneMap.set(`${d.tripId}_${d.schedIn}_${d.veh ?? ''}`, d);
     const uniqueOut = Array.from(zoneMap.values());
     uniqueOut.sort(byExpected);
     return { liveUpdated, note, departures: uniqueOut.slice(0, 300) };
@@ -429,7 +496,7 @@ const API = {
   '/api/trip': u => {
     const [i, tid] = splitId(q(u, 'id'));
     if (!D[i] || !D[i].stopTimes.has(tid)) throw fail(404, 'corsa sconosciuta');
-    return tripDetail(i, tid, q(u, 'mode') !== 'sched');
+    return tripDetail(i, tid, q(u, 'mode') !== 'sched', q(u, 'veh'));
   },
   '/api/routes': () => {
     const out = {};

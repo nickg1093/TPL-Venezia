@@ -59,18 +59,28 @@ function onSeg(sh, i, lat, lon) {
 }
 // Posizione del mezzo sul tracciato. 'hint' = ultima ascissa nota: penalizza i salti all'indietro (percorsi sovrapposti / anelli).
 function project(sh, lat, lon, hint) {
-  let best = null;
-  for (let i = 0; i < sh.n - 1; i++) {
-    const r = onSeg(sh, i, lat, lon);
-    let score = r.d;
-    if (hint != null) { if (r.s < hint - 150) score += (hint - r.s) * 0.5; else if (r.s > hint + 2500) score += (r.s - hint - 2500) * 0.05; }
-    if (!best || score < best.score) best = { s: r.s, lat: r.d, score };
+  const scan = (i0, i1) => {
+    let best = null;
+    for (let i = i0; i < i1; i++) {
+      const r = onSeg(sh, i, lat, lon);
+      let score = r.d;
+      if (hint != null) { if (r.s < hint - 150) score += (hint - r.s) * 0.5; else if (r.s > hint + 2500) score += (r.s - hint - 2500) * 0.05; }
+      if (!best || score < best.score) best = { s: r.s, lat: r.d, score };
+    }
+    return best;
+  };
+  // con una posizione precedente nota si cerca solo nei dintorni (da 500 m prima a 3,5 km dopo): ~10 volte meno lavoro; se non torna, ricerca completa
+  if (hint != null) {
+    const b = scan(Math.max(0, seg(sh, Math.max(0, hint - 500))), Math.min(sh.n - 1, seg(sh, hint + 3500) + 2));
+    if (b && b.lat <= 60) return b;
   }
-  return best;
+  return scan(0, sh.n - 1);
 }
 // Ascissa di ogni fermata sul tracciato, in ordine crescente (gestisce fermate ripetute e anelli). Cache per corsa.
 function stopOffsets(G, trip, st) {
   if (st._off !== undefined && st._offShape === trip.shape) return st._off;
+  const pkey = trip.shape + '|' + st.s.join(','), pc = (G._offc ||= new Map());   // stesse fermate sullo stesso tracciato = stessi offset
+  if (pc.has(pkey)) { st._off = pc.get(pkey); st._offShape = trip.shape; return st._off; }
   const sh = trip.shape ? shapeInfo(G, trip.shape) : null;
   let off = null;
   if (sh) {
@@ -86,8 +96,16 @@ function stopOffsets(G, trip, st) {
     }
     if (bad > off.length / 3) off = null;           // tracciato inaffidabile per questa corsa
   }
-  st._off = off; st._offShape = trip.shape;
+  st._off = off; st._offShape = trip.shape; pc.set(pkey, off);
   return off;
+}
+
+// Orario programmato che corrisponde a una posizione lungo il tracciato (interpolazione tra le fermate).
+// Confrontato con l'ora attuale dà il ritardo REALE misurato dal GPS, indipendente da quello dichiarato dal feed.
+function schedAt(offs, st, s) {
+  const n = offs.length; if (s <= offs[0]) return st.d[0];
+  for (let k = 0; k < n - 1; k++) if (s < offs[k + 1]) { const L = offs[k + 1] - offs[k]; return L > 0 ? st.d[k] + (st.a[k + 1] - st.d[k]) * (s - offs[k]) / L : st.d[k]; }
+  return st.a[n - 1];
 }
 
 // ---- stima ----
@@ -125,6 +143,7 @@ function update(x) {
   if (offs) { const pr = project(shapeInfo(G, trip.shape), veh.lat, veh.lon, vs.sMax ?? null); if (pr && pr.lat <= C.OFFROUTE_M) { sv = pr.s; lateral = pr.lat; } }
   if (sv != null && veh.ts !== vs.curTs) { vs.prevS = vs.curS ?? null; vs.curS = sv; vs.curTs = veh.ts; }   // nuovo rilevamento
   const adv = sv != null && vs.prevS != null ? sv - vs.prevS : 0;                                        // avanzamento (m) fra gli ultimi due rilevamenti
+  const delayGps = sv != null ? tNow - schedAt(offs, st, sv) : null;                                    // ritardo misurato dal GPS (s)
   if (sp != null && sp >= C.MOVE) vs.moveSince ??= nowMs; else vs.moveSince = null;
   const sustained = vs.moveSince != null && nowMs - vs.moveSince >= C.MOVE_SUSTAIN_MS;
 
@@ -146,7 +165,7 @@ function update(x) {
     }
     cur = Math.max(prevCur, pc);
     // il feed più avanti di 2+ fermate mentre il bus corre = proiezione GPS dubbia (percorsi sovrapposti): ci si fida del feed
-    if (feedCur - pc >= 2 && (sp == null || sp >= C.MOVE)) { cur = Math.max(prevCur, feedCur); src = 'feed'; }
+    if (lv && feedCur - pc >= 2 && (sp == null || sp >= C.MOVE)) { cur = Math.max(prevCur, feedCur); src = 'feed'; }   // solo con un vero feed (non con l'orario)
   }
   // d) dichiarazione del mezzo: vale solo se coerente col GPS (o senza GPS)
   if (veh?.seq != null) {
@@ -182,9 +201,12 @@ function update(x) {
   else if (remaining != null && remaining > 0 && cur > 0) {
     const vSched = (offs[cur] - offs[cur - 1]) / Math.max(30, st.a[cur] - st.d[cur - 1]);
     const vEff = sp != null && sp >= C.STILL ? 0.5 * clamp(sp, 2.5, 14) + 0.5 * vSched : 0.6 * vSched;   // fermo in coda: ritmo ridotto
-    const gps = tNow + remaining / Math.max(1.5, vEff), stalePred = lv == null || pred(cur) < tNow - 30;  // senza feed o previsione superata: solo GPS
-    const w = stalePred ? 1 : clamp(1 - remaining / 1200, 0, 0.85);
-    etaCur = w * gps + (1 - w) * pred(cur);
+    // Tre stime con pesi: (1) distanza residua / velocità, più affidabile vicino alla fermata; (2) previsione del feed, che conta di
+    // meno quanto più è vecchia (non cambia da >3 min) e per niente se è già superata; (3) orario programmato + ritardo misurato dal GPS.
+    const comps = [[tNow + remaining / Math.max(1.5, vEff), clamp(1 - remaining / 1200, 0.25, 0.8)]];
+    if (lv && pred(cur) >= tNow - 30) comps.push([pred(cur), 0.5 * clamp(1 - (lv.ageS ?? 0) / 180, 0.2, 1)]);
+    if (delayGps != null && (sp ?? 0) >= C.STILL) comps.push([at(cur) + delayGps, 0.25]);
+    etaCur = comps.reduce((a, [v, w]) => a + v * w, 0) / comps.reduce((a, [, w]) => a + w, 0);
   } else if (cur === 0 && !veh) etaCur = Math.max(pred(0), at(0));                                        // niente partenza anticipata
   if (cur < n) etaCur = Math.max(etaCur, tNow);
   if (cur === 0 && n > 0) etaCur = Math.max(etaCur, at(0));          // dal capolinea non si parte prima dell'orario programmato (il feed può dare anticipi irreali)
@@ -214,7 +236,7 @@ function update(x) {
   if (sv != null) vs.sMax = Math.max(vs.sMax ?? 0, sv);
 
   // dayOff: a quale giorno di servizio appartiene l'istanza viva (0 = oggi, 86400 = ieri, orari 24:xx dopo mezzanotte)
-  return { cur, atStop, phase, stage, etaMs, dayOff: tNow >= 86400 ? 86400 : 0, src, sVeh: sv, lateral, delayS: vs.delay ?? 0,
+  return { vehKey: veh?.key ?? null, label: veh?.label ?? null, cur, atStop, phase, stage, etaMs, dayOff: tNow >= 86400 ? 86400 : 0, src, sVeh: sv, lateral, delayS: vs.delay ?? 0,
     atOrigin: atStop === 0 || (!veh && cur === 0 && tNow < at(0)), waiting: atStop === cur && etaCur - tNow > 0, speed: sp, dep: vs.dep };
 }
 
@@ -232,4 +254,4 @@ function slice(sh, s0, s1, maxPts = 60) {
   if (out.length <= maxPts) return out.map(rnd);
   const step = (out.length - 1) / (maxPts - 1); return Array.from({ length: maxPts }, (_, k) => rnd(out[Math.round(k * step)]));
 }
-module.exports = { update, project, stopOffsets, shapeInfo, pointAt, slice, C };
+module.exports = { update, schedAt, project, stopOffsets, shapeInfo, pointAt, slice, C };

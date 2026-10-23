@@ -161,25 +161,29 @@ function departures(G, live, stopId, secsParam = null, date = null, state = null
       // Quale istanza della corsa è quella VIVA? Dopo mezzanotte le corse del giorno di servizio precedente hanno orari 24:xx e
       // compaiono con off = 86400: lo stato del tracker porta con sé il proprio giorno (dayOff) e si applica a quella istanza.
       const ps0 = state?.[rawTripId], liveInst = ps0 ? ps0.dayOff === off : off >= 0;
-      const lv = liveInst && off >= 0 ? live?.[rawTripId] : null;
-      const ps = ps0 && liveInst ? ps0 : null;
-      if (ps && i < ps.cur) continue;        // mezzo già transitato da questa fermata
-      // Con stato live (tracker.js): ETA fusa feed + GPS + orario, e già corretta per le regole di partenza.
-      let dl = lv ? lv.delays[i] : null, expMs = null;
-      let em;
-      if (ps && i >= ps.cur && ps.etaMs && Number.isFinite(ps.etaMs[i])) { expMs = ps.etaMs[i]; em = (expMs - nowMs) / 1000; dl = em - (ts - tNow); }
-      const sm = ts - tNow; em ??= ts + (dl ?? 0) - tNow;
-      const dm = dl != null ? Math.round(dl / 60) : null;     // ritardo in minuti interi: l'orario previsto si ricava da questo, così sono sempre coerenti
-      if ((sm < -180 || sm > 7200) && (em < -180 || em > 7200)) continue;
+      const lv0 = liveInst && off >= 0 ? live?.[rawTripId] : null;
       const trip = getTrip(G, rawTripId);
       if (!trip || !serviceActive(G, trip.service, ds)) continue;
       const r = G.routes[trip.route] || {};
-      out.push({ tripId: rawTripId, line: r.name || trip.route, color: r.color || null,
-        headsign: trip.headsign || G.stops[st.s[st.s.length - 1]] || null,
-        sched: hhmm(ts), exp: hhmm(ts + (dm ?? 0) * 60),
-        schedIn: Math.round(sm / 60), expIn: Math.round(em / 60),
-        delay: dm, live: dl != null,
-        atStop: !!ps && ps.atStop === i, phase: ps && i >= ps.cur ? (i === ps.cur ? ps.phase : 'enroute') : null, expMs, expSec: em, cancel: lv?.cancelled ? 'trip' : (lv?.skipped.has(i) ? 'stop' : null), arrival: last });
+      // Una corsa può essere svolta da PIÙ mezzi insieme (rinforzi, uno dietro l'altro): ognuno ha il proprio stato e il proprio passaggio.
+      // La corsa resta in elenco finché NON è passato anche l'ultimo mezzo.
+      for (const ps of (ps0 && liveInst ? [ps0, ...(ps0.co || [])] : [null])) {
+        const lv = ps && ps !== ps0 ? null : lv0;            // il trip update del feed descrive il mezzo principale, non i rinforzi
+        if (ps && i < ps.cur) continue;                       // questo mezzo è già transitato da questa fermata
+        // Con stato live (tracker.js): ETA fusa feed + GPS + orario, già corretta per le regole di partenza.
+        let dl = lv ? lv.delays[i] : null, expMs = null, em;
+        if (ps && i >= ps.cur && ps.etaMs && Number.isFinite(ps.etaMs[i])) { expMs = ps.etaMs[i]; em = (expMs - nowMs) / 1000; dl = em - (ts - tNow); }
+        const sm = ts - tNow; em ??= ts + (dl ?? 0) - tNow;
+        const dm = dl != null ? Math.round(dl / 60) : null;     // ritardo in minuti interi: l'orario previsto si ricava da questo, così sono sempre coerenti
+        if ((sm < -180 || sm > 7200) && (em < -180 || em > 7200)) continue;
+        out.push({ tripId: rawTripId, line: r.name || trip.route, color: r.color || null,
+          headsign: trip.headsign || G.stops[st.s[st.s.length - 1]] || null,
+          sched: hhmm(ts), exp: hhmm(ts + (dm ?? 0) * 60),
+          schedIn: Math.round(sm / 60), expIn: Math.round(em / 60),
+          delay: dm, live: dl != null, veh: ps?.vehKey ?? null, vehLabel: ps?.label ?? null,
+          atStop: !!ps && ps.atStop === i, phase: ps && i >= ps.cur ? (i === ps.cur ? ps.phase : 'enroute') : null, expMs, expSec: em,
+          cancel: lv0?.cancelled ? 'trip' : (lv0?.skipped.has(i) ? 'stop' : null), arrival: last });
+      }
     }
   }
   return out.sort((a, b) => (a.expSec - b.expSec) || (a.schedIn - b.schedIn)).slice(0, 80);

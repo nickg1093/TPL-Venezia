@@ -661,7 +661,7 @@ function renderDepartures() {
 
     const minText = etaText(x.phase, x.expMs, x.tIn, live);
 
-    return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" role="button" tabindex="0" title="Segui il mezzo">`
+    return `<div class="dep go${x.cancel ? ' cx' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" data-veh="${esc(x.veh || '')}" role="button" tabindex="0" title="Segui il mezzo">`
       + `${badge(x.line, x.color, src)}`
       + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}${reqHtml}<span>${esc(infoLine)}</span></div></div>`
       + `<div class="dt">${timeDisplayHtml}<div class="in-min ${cls}" data-exp="${live && x.expMs ? Math.round(x.expMs) : ''}" data-ph="${live ? (x.phase || '') : ''}">${minText}</div></div></div>`;
@@ -674,21 +674,21 @@ function openTripPanel(v, back = null) {
   setFollow(false);
   openStop = null; openZone = null; clearInterval(panelTimer); lastTrip = null; tripLayer.clearLayers();
   selVeh = v.id;
-  openTrip = { src: v.src, tripId: v.tripId, routeId: v.routeId, line: v.line, label: v.label, back, drawn: false };
+  openTrip = { src: v.src, tripId: v.tripId, routeId: v.routeId, line: v.line, label: v.label, veh: v.key || null, back, drawn: false };
   panel.hidden = false;
   pbadge.innerHTML = badge(v.line, v.color, v.src);
   pname.textContent = v.headsign ? `→ ${v.headsign}` : `→ Linea ${v.line}`;
   psub.textContent = 'Caricamento dettagli…'; pstatus.textContent = '';
   chipsArea.innerHTML = '';
   render(); drawStops();
-  if (!v.tripId) { plist.innerHTML = '<p class="muted" style="padding:1rem">Dati corsa non disponibili per questo mezzo.</p>'; showRoutes([v.routeId]); return; }
+  if (!v.tripId) { plist.innerHTML = `<p class="muted" style="padding:1rem">${v.dup ? `La corsa di questo mezzo risulta assegnata anche al mezzo ${v.dupWith}: il sistema segue quello più coerente col percorso.` : 'Dati corsa non disponibili per questo mezzo.'}</p>`; showRoutes([v.routeId]); return; }
   plist.innerHTML = '<p class="muted" style="padding:1rem">Caricamento…</p>';
   loadTrip(); startPanelTimer();
 }
 async function loadTrip() {
   const t = openTrip; if (!t || !t.tripId) return;
   try {
-    const d = await (await fetch(`/api/trip?id=${encodeURIComponent(t.src + ':' + t.tripId)}&mode=${mode}`, { cache: 'no-store' })).json();
+    const d = await (await fetch(`/api/trip?id=${encodeURIComponent(t.src + ':' + t.tripId)}&mode=${mode}${t.veh ? '&veh=' + encodeURIComponent(t.veh) : ''}`, { cache: 'no-store' })).json();
     if (d.error) throw new Error(d.error);
     if (openTrip !== t) return;
     lastTrip = d; renderTrip(!t.drawn); t.drawn = true;
@@ -766,7 +766,7 @@ function renderTrip(first) {
   const o = d.stops[0];
   psub.innerHTML = (openTrip.back ? `<a href="#" id="pback">← ${esc(openTrip.back.name)}</a><br>` : '')
     + (o ? `da ${esc(o.name)}${o.sched ? ', ' + o.sched : ''}` : '') + (d.note ? `<br>${esc(d.note)}` : '');
-  pstatus.innerHTML = `${status} · ${vehName(d.trip.src, d.trip.vehicle || openTrip.label)}${d.live && d.speedKmh != null ? ` · ${d.speedKmh} km/h` : ''}`;
+  pstatus.innerHTML = `${status} · ${vehName(d.trip.src, d.trip.vehicle || openTrip.label)}${d.live && d.speedKmh != null ? ` · ${d.speedKmh} km/h` : ''}${d.others?.length ? ` · insieme a ${d.others.map(esc).join(', ')}` : ''}`;
   plist.innerHTML = (d.cancelled ? '<div class="banner">Corsa soppressa</div>' : '') + tripHtml(d)
     + (d.live && d.historyKnown ? '<p class="muted" style="margin-top:.4rem">Fermate passate: ultima stima.</p>' : '');
   placeVehicle(d, first);
@@ -792,7 +792,7 @@ chipsArea.addEventListener('click', e => {
 });
 plist.addEventListener('click', e => {
   const dep = e.target.closest('.dep.go');
-  if (dep && openStop) return followDeparture(dep.dataset.trip, dep.dataset.src, dep.dataset.stop);
+  if (dep && openStop) return followDeparture(dep.dataset.trip, dep.dataset.src, dep.dataset.stop, dep.dataset.veh);
   const row = e.target.closest('.st'); if (!row || !lastTrip) return;
   const s = lastTrip.stops[+row.dataset.i];
   if (s && s.lat != null) map.flyTo([s.lat, s.lon], Math.max(map.getZoom(), 15));
@@ -803,11 +803,12 @@ function followTarget(ll, z) {
   const p = map.project(ll, z), narrow = window.innerWidth <= 640;
   return map.unproject(p.add(narrow ? [0, map.getSize().y * .22] : [181, 0]), z);
 }
-function followDeparture(tripId, src, stop) {
+function followDeparture(tripId, src, stop, veh) {
   src = src || openSrc;
-  const x = lastDeps && lastDeps.departures.find(d => d.tripId === tripId && (d.src || openSrc) === src && (!stop || d.stop === stop)); if (!x) return;
+  const x = lastDeps && lastDeps.departures.find(d => d.tripId === tripId && (d.src || openSrc) === src && (!stop || d.stop === stop) && (!veh || (d.veh || '') === veh)); if (!x) return;
   const back = { id: openStop, name: openStopName, src: openSrc, zone: openZone };
-  const v = vehicles.find(c => c.src === src && c.tripId === tripId)
+  const v = (veh && vehicles.find(c => c.src === src && c.key === veh))
+    || vehicles.find(c => c.src === src && c.tripId === tripId && !c.co)
     || { id: null, src, tripId, routeId: null, line: x.line, label: x.vehicle, headsign: x.headsign, color: x.color };
   openTripPanel(v, back);
   if (!v.id) return;
