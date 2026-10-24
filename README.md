@@ -77,3 +77,18 @@ Se più mezzi dichiarano la stessa corsa, il sistema li distingue dalla coerenza
 gli altri sono *rinforzi* (stato e passaggio propri, max 3) se sono sul tracciato, nel tratto atteso (±600 m) e a meno di 2,5 km dal principale,
 altrimenti *doppioni* (restano sulla mappa senza corsa). La corsa resta nel pannello fermata finché non è passato l'ultimo mezzo.
 Soglie in `server.js`: `CO_GAP_M`, `CO_DEV_M`, `CO_MAX`.
+
+## Interfaccia, tema e app installabile
+- La pagina e i file statici stanno in `public/` (`index.html`, `manifest.webmanifest`, `sw.js`, `icons/`). Il server li legge all'avvio.
+- **Tema chiaro/scuro:** pulsante a forma di luna nella colonna a destra; segue il sistema finché non si sceglie (scelta salvata nel browser).
+- **Accessibilità:** testo mai sotto 13 px (12 px solo per l'attribuzione), bersagli di tocco >= 44 px, contrasti WCAG AA verificati in entrambi i temi,
+  navigazione da tastiera (Tab, Invio, Esc), etichette per lettori di schermo, rispetto di "riduci movimento" e "contrasto alto".
+- **Installazione:** il browser mostra "Installa" nella barra (Chrome/Edge/Android); in più c'è il pulsante con la freccia in basso nella colonna dei controlli
+  e un avviso la prima volta. Su iPhone/iPad (Safari) compaiono le istruzioni "Condividi > Aggiungi alla schermata Home". Serve HTTPS (Render lo fornisce).
+  Per aggiornare i file in cache dell'app dopo modifiche a `public/`, incrementare `VERSION` in `public/sw.js`.
+
+## Marea (/api/tide)
+Livello attuale e tendenza a Punta Salute, dagli open data del Centro Previsioni e Segnalazioni Maree (Comune di Venezia, licenza CC BY): `livello.json` ogni 5 minuti.
+La tendenza si calcola dalle letture raccolte dal server (servono ~15 minuti dopo un riavvio; nel frattempo si usa la direzione del prossimo estremo previsto).
+Alte/basse previste da `previsione.json`: il formato non è documentato, quindi il lettore è tollerante; se le "prossime maree" non compaiono apri
+`/api/tide?debug=1` e controlla `rawSample`. Orari dei dati in ora solare (UTC+1), convertiti nell'ora locale del browser.

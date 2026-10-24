@@ -10,6 +10,7 @@ const motion = require('./motion');
 const tracker = require('./tracker');
 const { audit } = require('./feedaudit');
 const crypto = require('crypto');
+const tide = require('./tide');
 const { secsOfDayRome, hhmm } = schedule;
 
 const PORT = process.env.PORT || 3000;
@@ -394,6 +395,13 @@ const sse = new Set();
 const push = changed => { const m = `data: ${changed ? 1 : 0}\n\n`; for (const r of sse) { try { r.write(m); } catch { sse.delete(r); } } };
 setInterval(() => { for (const r of sse) { try { r.write(': ping\n\n'); } catch { sse.delete(r); } } }, 20000);   // evita che i proxy chiudano la connessione
 
+// risposta marea con cache breve: più utenti = una sola richiesta al portale
+let tideCache = { t: 0, v: null };
+async function getTideCached(debug) {
+  if (!debug && tideCache.v && Date.now() - tideCache.t < 30000) return tideCache.v;
+  const v = await tide.getTide({ debug }); if (!debug) tideCache = { t: Date.now(), v }; return v;
+}
+
 const API = {
   // Endpoint per forzare il ricaricamento dei GTFS statici aggiornati
   '/api/reload-gtfs': async (u, req, res) => {
@@ -405,6 +413,8 @@ const API = {
     return { updated: Math.max(0, ...list.map(i => S[i].updated)), feedTs: Math.max(0, ...list.map(i => S[i].feedTs || 0)) || null,
              error: errors.join('; ') || null, version, ready, vehicles: list.flatMap(i => S[i].vehicles) };
   },
+  // MAREA: livello attuale, tendenza e prossimi estremi (CPSM Venezia, open data). ?debug=1 mostra un campione grezzo della previsione.
+  '/api/tide': async u => getTideCached(u.searchParams.get('debug') === '1'),
   // ANALISI FEED: campi standard compilati/mancanti, campi proprietari ACTV, collegamento con il GTFS statico.
   // Apri /api/audit (o /api/audit?src=aut) e inviami il risultato per tarare il software sul feed reale.
   '/api/audit': u => Object.fromEntries(wanted(u).map(i => [i, {
@@ -516,8 +526,29 @@ function send(req, res, obj, code = 200) {
   zlib.gzip(body, (err, z) => { res.writeHead(code, err ? head : { ...head, 'Content-Encoding': 'gzip' }); res.end(err ? body : z); });
 }
 
-const pageFile = ['public/index.html', 'index.html'].map(f => path.join(__dirname, f)).find(f => fs.existsSync(f));
-const page = pageFile ? fs.readFileSync(pageFile) : null;
+// FILE STATICI della cartella public/ (pagina, manifest, service worker, icone), letti una volta all'avvio e già compressi.
+// Il service worker e la pagina non vanno tenuti in cache dal browser (si aggiornano subito); le icone sì.
+const PUB = path.join(__dirname, 'public');
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+const statics = new Map();
+(function load(dir, base = '') {
+  if (!fs.existsSync(dir)) return;
+  for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, f.name), url = base + '/' + f.name;
+    if (f.isDirectory()) { load(full, url); continue; }
+    const ext = path.extname(f.name).toLowerCase(), body = fs.readFileSync(full), text = /^\.(html|js|webmanifest|json|svg)$/.test(ext);
+    const head = { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': ext === '.png' ? 'public, max-age=604800' : 'no-cache' };
+    if (f.name === 'sw.js') head['Service-Worker-Allowed'] = '/';
+    statics.set(url, { head, body, gz: text ? zlib.gzipSync(body) : null });
+  }
+})(PUB);
+const page = statics.get('/index.html');
+function serveStatic(req, res, ent) {
+  const gz = ent.gz && /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+  res.writeHead(200, gz ? { ...ent.head, 'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding' } : ent.head);
+  res.end(req.method === 'HEAD' ? undefined : (gz ? ent.gz : ent.body));
+}
 
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost'), handler = API[u.pathname];
@@ -533,14 +564,18 @@ http.createServer(async (req, res) => {
     } catch (e) { send(req, res, { error: e.message }, e.code || 500); }
     return;
   }
-  res.writeHead(page ? 200 : 500, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(page || 'index.html mancante');
+  const ent = statics.get(u.pathname === '/' ? '/index.html' : u.pathname);
+  if (ent) return serveStatic(req, res, ent);
+  if (u.pathname.includes('.') && !u.pathname.endsWith('.html')) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Non trovato'); }   // file inesistente: 404 vero
+  if (page) return serveStatic(req, res, page);
+  res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' }); res.end('public/index.html mancante');
 }).listen(PORT, () => console.log(`http://localhost:${PORT}`));
 
 // Ogni feed ha il proprio ciclo: indipendenti e in parallelo; un ciclo lento non ne blocca né ne sovrappone un altro.
 for (const id of IDS) (async function loop() { const t0 = Date.now(); await refresh(id); const base = Math.min(REFRESH_MS, Math.max(1000, (S[id].pubMs || REFRESH_MS * 3) / 3)); setTimeout(loop, Math.max(500, Math.min(30000, base * 2 ** Math.min(S[id].errCount, 4)) - (Date.now() - t0))); })();
 loadStatic();
 setInterval(loadStatic, 24 * 3600 * 1000);
+tide.start();   // raccolta periodica del livello di marea: costruisce la storia da cui si ricava la tendenza
 
 // KEEP-ALIVE Render (piano gratuito): si addormenta dopo 15 min senza richieste HTTP in ingresso.
 // Il server si auto-contatta dall'esterno (URL pubblico) ogni 10 min finché è sveglio;

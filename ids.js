@@ -53,8 +53,10 @@ function attach(G) {
   }
 }
 
-const resolveTripId = (G, id) => resolve(G.idx.trip, G.idx.tripSet, id);
+// Senza GTFS statico caricato (primo avvio, download fallito) non esiste l'indice: niente collegamento, ma nessun errore
+const resolveTripId = (G, id) => (G.idx ? resolve(G.idx.trip, G.idx.tripSet, id) : null);
 function resolveRouteId(G, id, shortName) {
+  if (!G.idx) return null;
   const r = resolve(G.idx.route, G.idx.routeSet, id);
   if (r) return r;
   return shortName ? (G.idx.routeByName.get(String(shortName).trim().toLowerCase()) || null) : null;
