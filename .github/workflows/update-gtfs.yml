@@ -1,0 +1,54 @@
+name: Aggiorna GTFS ACTV
+
+# Scarica i GTFS statici ACTV SENZA sovrascrivere nulla: ogni versione nuova viene aggiunta in data/gtfs/<nav|aut>/ (nome = data di inizio validità + hash).
+# Il server sceglie da solo quale usare in base al calendario (servizi attivi oggi) e alla coerenza col feed in tempo reale.
+# Le versioni future restano in archivio e si attivano da sole quando arriva la loro data. Vedi README, sezione «GTFS statici».
+on:
+  schedule:
+    - cron: '17 */6 * * *'   # controllo ogni 6 ore
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Scarica anche se il server dichiara il file invariato (1 = sì)'
+        required: false
+        default: '0'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-gtfs
+  cancel-in-progress: false
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Installa le dipendenze
+        run: npm ci || npm install --no-audit --no-fund
+
+      - name: Scarica le nuove versioni (senza sovrascrivere)
+        id: dl
+        env:
+          GTFS_FORCE: ${{ github.event.inputs.force }}
+        run: |
+          node scripts/update-gtfs.js | tee out.txt
+          echo "changes=$(grep -o 'CHANGES=[01]' out.txt | tail -1 | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Salva nel repository se ci sono novità
+        if: steps.dl.outputs.changes == '1'
+        run: |
+          git config user.name "Bot Aggiornamento GTFS"
+          git config user.email "bot@actions.github.io"
+          git add -A data/gtfs
+          if ! git diff --cached --quiet; then
+            git commit -m "GTFS ACTV: nuova versione in archivio ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+            git pull --rebase --autostash && git push
+          fi
