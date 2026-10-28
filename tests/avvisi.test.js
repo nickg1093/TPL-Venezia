@@ -1,5 +1,7 @@
 // Prove sugli avvisi: date in italiano, linee/fermate citate, lettura RSS e Telegram (esempi costruiti sulla struttura nota delle due fonti), unione delle fonti.
 const test = require('node:test'), assert = require('node:assert');
+const K = a => new Map(a.map(x => [x, [{ n: x, s: 'aut', c: '#d00000' }]]));
+const L = r => r.map(x => x.n).sort();
 const A = require('../avvisi');
 const pub = Date.UTC(2026, 9, 27, 13, 43);   // 27/10/2026 14:43 a Venezia
 const utc = (y, m, d, h = 0, mi = 0, s = 0) => Date.UTC(y, m - 1, d, h, mi, s);   // ora solare (CET = UTC+1) dopo il 25/10/2026: sottrarre 1 ora
@@ -28,10 +30,10 @@ test('validità: senza anno si sceglie il prossimo futuro (passaggio d\'anno)', 
   assert.equal(v.from, utc(2027, 1, 1, 23, 0));
 });
 test('linee: solo codici noti, mai le date', () => {
-  const known = new Map(['31', '31H', '32H', '43', '7E', 'T2'].map(x => [x, x]));
+  const known = K(['31', '31H', '32H', '43', '7E', 'T2']);
   const t = 'Sabato 31 ottobre 2026 dalle 9.30 alle 16.30 le linee 31H, 32H e 43 deviano. Bus sostitutivi per T2.';
-  assert.deepEqual(A.findLines(t, known).sort(), ['31H', '32H', '43']);
-  assert.deepEqual(A.findLines('Linea 7E deviata in via Cavin di Sala', known), ['7E']);
+  assert.deepEqual(L(A.findLines(t, known)), ['31H', '32H', '43']);
+  assert.deepEqual(L(A.findLines('Linea 7E deviata in via Cavin di Sala', known)), ['7E']);
 });
 test('fermate: nomi tra virgolette e dopo «fermata», solo uguaglianza di nome', () => {
   const by = new Map([[A.norm('Forte Marghera Gerlin'), ['aut:1', 'aut:2']], [A.norm('Cattaneo'), ['aut:3']]]);
@@ -57,7 +59,7 @@ test('Telegram: messaggi, testo, data, link', () => {
 test('unione: un messaggio che rimanda alla notizia ACTV non duplica; scaduti esclusi; fermate collegate', () => {
   const now = Date.now(), d = new Date(now + 864e5), ds = `${d.getUTCDate()} ${['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'][d.getUTCMonth()]} ${d.getUTCFullYear()}`;
   const by = new Map([[A.norm('Forte Marghera Gerlin'), ['aut:9']]]);
-  A.setContext(() => ({ known: new Map([['31H', '31H']]), byName: by }));
+  A.setContext(() => ({ known: K(['31H']), byName: by }));
   A._load({
     rss: [{ key: 'rss:1', title: 'Deviazione linea 31H', url: 'https://actv.avmspa.it/it/content/a', text: 'x', pubMs: now - 3600e3 },
           { key: 'rss:2', title: 'Vecchio avviso', url: 'https://actv.avmspa.it/it/content/b', text: '1 gennaio 2020', pubMs: now - 9e9 }],
@@ -67,10 +69,24 @@ test('unione: un messaggio che rimanda alla notizia ACTV non duplica; scaduti es
   });
   const r = A.getAvvisi().items;
   assert.equal(r.length, 2); const a = r.find(x => x.title.startsWith('Deviazione'));
-  assert.equal(a.source, 'both'); assert.deepEqual(a.stops, ['aut:9']); assert.deepEqual(a.lines, ['31H']); assert.equal(a.state, 'active');
+  assert.equal(a.source, 'both'); assert.deepEqual(a.stops, ['aut:9']); assert.deepEqual(L(a.lines), ['31H']); assert.equal(a.state, 'active');
   assert.ok(r.some(x => x.source === 'telegram'));
 });
 test('link: solo https verso domini ACTV/Telegram', () => {
   assert.ok(A.safeUrl('https://t.me/muoversivenezia/1')); assert.equal(A.safeUrl('http://actv.avmspa.it/x'), null);
   assert.equal(A.safeUrl('javascript:alert(1)'), null); assert.equal(A.safeUrl('https://actv.avmspa.it.evil.com/x'), null);
+});
+
+test('linee: elenco dopo i due punti, niente sigle da parole (Cimitero ≠ C), sciopero con più fasce = giornata intera', () => {
+  const known = K(['1', '2', '12', 'NLN', 'DE', 'C', '13']);
+  assert.deepEqual(L(A.findLines('linea 7 sospesa da lunedì 2 novembre 2026 Modifiche alle linee: 1, 2, 12, NLN: Nella news', known)), ['1', '12', '2', 'NLN']);
+  assert.deepEqual(L(A.findLines('con la linea DE inoltre fermata di Cimitero e linea 13', known)), ['13', 'DE']);
+  const v = A.parseValidity('30 ottobre 2026 dalle ore 06:00 e fino alle ore 08:59 e a partire dalle ore 16:30 fino alle ore 19:29', pub);
+  assert.ok(!v.open); assert.equal(v.to - v.from, 864e5 - 1000);
+});
+
+test('testi codificati due volte e linee solo da elenchi dopo "linea"', () => {
+  assert.equal(A.toText('&lt;img src="x" alt=""&gt; &lt;label&gt;Lingua &lt;/label&gt; Undefined fino al termine'), 'fino al termine');
+  const known = K(['17', 'N', '5', 'V', '9S', '21', '56E']);
+  assert.deepEqual(L(A.findLines('Garantite le linee 17 N 5 e V corse; Linea 9S: soppressa. Linea 21: nuova. Linea 56E La corsa', known)), ['17', '21', '56E', '9S']);
 });
