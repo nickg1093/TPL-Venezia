@@ -44,6 +44,16 @@ global.fetch = async (url, opts) => {
     if (/livello/.test(u)) { const d = new Date(Date.now() - 4 * 60e3 + 3600e3).toISOString().slice(0, 19).replace('T', ' '); return Response.json([{ ID_stazione: '1025', stazione: 'Punta Salute Canal Grande', data: d, valore: '0.62 m' }]); }
     return Response.json([]);
   }
-  if (/actv\.avmspa\.it/.test(u)) return new Response('no', { status: 503 });
+  // AVVISI: una notizia ACTV (con pagina) e un messaggio Telegram, costruiti su una fermata e una linea reali del GTFS caricato
+  if (/actv\.avmspa\.it|t\.me\//.test(u)) {
+    for (let i = 0; i < 120 && !Object.keys(live.D.aut.stopIndex || {}).length; i++) await new Promise(r => setTimeout(r, 500));   // attende il GTFS
+    const G = live.D.aut, sid = Object.keys(G.stopIndex || {}).find(k => (G.stopBaseNames?.get(k) || G.stops[k] || '').length > 6), name = G.stopBaseNames?.get(sid) || G.stops[sid];
+    const line = Object.values(G.routes)[0]?.name || '5', d = new Date(Date.now() + 864e5), mesi = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+    const until = `${d.getDate()} ${mesi[d.getMonth()]} ${d.getFullYear()}`, link = 'https://actv.avmspa.it/it/content/prova-avviso';
+    if (/rss-news/.test(u)) return new Response(`<rss><channel><item><title>Prova: fermata sospesa</title><link>${link}</link><description>Lingua</description><pubDate>${new Date().toUTCString()}</pubDate><guid isPermaLink="false">1 at https://actv.avmspa.it</guid></item></channel></rss>`, { status: 200 });
+    if (/content\/prova-avviso/.test(u)) return new Response(`<html><body><nav>menu</nav><h1>Prova: fermata sospesa</h1><p>Linea ${line} deviata. Sospesa la fermata "${name}" fino al ${until}.</p><footer>piè</footer></body></html>`, { status: 200 });
+    if (/t\.me\/s\//.test(u)) return new Response(`<div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="muoversivenezia/1"><div class="tgme_widget_message_text">Solo su Telegram: ritardi diffusi sulla rete.</div><time datetime="${new Date().toISOString()}"></time></div></div>`, { status: 200 });
+    return new Response('no', { status: 404 });
+  }
   return real(url, opts);
 };
