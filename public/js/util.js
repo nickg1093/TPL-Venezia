@@ -14,8 +14,9 @@ export const hm = ms => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digi
 export const SPRITE = '/icons/sprite.svg';
 export const icon = (name, cls = '') => `<svg class="ic${cls ? ' ' + cls : ''}" aria-hidden="true" focusable="false"><use href="${SPRITE}#i-${name}"/></svg>`;
 export const srcIcon = (src, cls = '') => icon(src === 'nav' ? 'ship' : 'bus', cls);                          // servizio: battello o autobus
-export const vehIconName = (src, label) => src === 'aut' ? (/^tram/i.test(String(label ?? '').trim()) ? 'tram' : 'bus') : 'ship';   // mezzo: tram, autobus o battello
-export const vehIcon = (src, label, cls = '') => icon(vehIconName(src, label), cls);
+export const isTram = (label, line) => /^tram/i.test(String(label ?? '').trim()) || /^T[12]$/i.test(String(line ?? '').trim());   // tram: etichetta TRAM_n oppure linee T1/T2
+export const vehIconName = (src, label, line) => src === 'aut' ? (isTram(label, line) ? 'tram' : 'bus') : 'ship';   // mezzo: tram, autobus o battello (gli stessi simboli dei pulsanti dei servizi)
+export const vehIcon = (src, label, cls = '', line = '') => icon(vehIconName(src, label, line), cls);
 
 // ---------- NOMI DEI MEZZI ----------
 // Il feed dà solo un'etichetta (es. "476", "Tram_12", "Lido di Venezia"): il prefisso dipende dal tipo di mezzo.
