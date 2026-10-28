@@ -39,12 +39,13 @@ function resolve(index, exactSet, rtId) {
   return null;
 }
 
-// Indice per le corse e per le linee di un feed statico G.
+// Indici per corse, linee e fermate di un feed statico G.
 function attach(G) {
   const tripIds = Object.keys(G.trips);
   G.idx = {
     tripSet: new Set(tripIds), trip: buildIndex(tripIds),
     routeSet: new Set(Object.keys(G.routes)), route: buildIndex(Object.keys(G.routes)),
+    stopSet: new Set(Object.keys(G.stops)), stop: buildIndex(Object.keys(G.stops)),
     routeByName: new Map()
   };
   for (const rid in G.routes) {
@@ -55,6 +56,7 @@ function attach(G) {
 
 // Senza GTFS statico caricato (primo avvio, download fallito) non esiste l'indice: niente collegamento, ma nessun errore
 const resolveTripId = (G, id) => (G.idx ? resolve(G.idx.trip, G.idx.tripSet, id) : null);
+const resolveStopId = (G, id) => (G.idx ? resolve(G.idx.stop, G.idx.stopSet, id) : null);
 function resolveRouteId(G, id, shortName) {
   if (!G.idx) return null;
   const r = resolve(G.idx.route, G.idx.routeSet, id);
@@ -62,4 +64,4 @@ function resolveRouteId(G, id, shortName) {
   return shortName ? (G.idx.routeByName.get(String(shortName).trim().toLowerCase()) || null) : null;
 }
 
-module.exports = { attach, resolveTripId, resolveRouteId, suffixes, buildIndex, resolve };
+module.exports = { attach, resolveTripId, resolveRouteId, resolveStopId, suffixes, buildIndex, resolve };

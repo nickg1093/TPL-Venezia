@@ -13,7 +13,7 @@
 //  3. Feed trip update (prima fermata con previsione), scartato se "stantio" (previsione passata da oltre 4 min)
 //  4. Orario programmato
 //  La fermata corrente NON torna mai indietro (monotona) salvo reset della corsa dopo 15 min di silenzio.
-const { dist } = require('./motion');
+const { dist, M_LAT, M_LON } = require('./geo');
 
 const C = {
   FRESH_MS: 90000,     // GPS più vecchio di così = non affidabile
@@ -29,9 +29,10 @@ const C = {
   STALE_S: 240,        // previsione del feed superata da oltre 4 min senza aggiornamenti = stantia
   DEPART_S: 30,        // ultimi secondi prima della partenza prevista: "in partenza"
   DEP_DISP_M: 15,      // spostamento dal punto di sosta che prova la partenza (m)
-  MOVE_PASS: 2.0       // m/s istantanei: mezzo che passa oltre la fermata senza sosta
+  MOVE_PASS: 2.0,      // m/s istantanei: mezzo che passa oltre la fermata senza sosta
+  DWELL_FWD_M: 140,    // un mezzo che ha già sostato alla fermata può restare fermo fino a 140 m dopo il palo (pensilina lunga, fila): finché non c'è una prova di partenza è ancora lì
+  HOLD_S: 20           // senza GPS, la fermata si considera lasciata solo 20 s dopo la partenza prevista (orario + ritardo del feed)
 };
-const M_LAT = 111000, M_LON = 78000;
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 
 // ---- geometria lungo il tracciato (distanze in metri dall'inizio del tracciato) ----
@@ -148,13 +149,14 @@ function update(x) {
   const sustained = vs.moveSince != null && nowMs - vs.moveSince >= C.MOVE_SUSTAIN_MS;
 
   // 3) FERMATA CORRENTE (monotona)
-  const prevCur = vs.cur ?? 0, a0 = vs.at;
+  const known = vs.cur !== undefined, prevCur = vs.cur ?? 0, a0 = vs.at;   // known = corsa già seguita nei cicli precedenti
   let cur = Math.max(prevCur, feedCur), src = 'feed';
+  const heldK = a0 && a0.k === prevCur && prevCur < n - 1 ? prevCur : -1;       // fermata in cui il mezzo è stato visto fermo e non ha ancora dato prova di partenza
   if (sv != null) {
     let pc = prevCur; src = 'gps';
     while (pc < n - 1) {
       const dk = sv - offs[pc], term = pc === 0, a = a0 && a0.k === pc ? a0 : null;
-      let gone = dk > (term ? C.TERM_M : C.PASS_M);                                                     // a) oltre la zona
+      let gone = dk > (term ? C.TERM_M : a ? C.DWELL_FWD_M : C.PASS_M);                                  // a) oltre la zona (più ampia se ha già sostato qui)
       if (!gone && a && a.anchorS != null) {                                                            // b) dopo una sosta
         const moved = sv - a.anchorS;
         gone = term ? (moved > 60 && sustained) : (moved > C.DEP_DISP_M && ((vi ?? 0) >= 0.8 || adv > 3));
@@ -167,10 +169,18 @@ function update(x) {
     // il feed più avanti di 2+ fermate mentre il bus corre = proiezione GPS dubbia (percorsi sovrapposti): ci si fida del feed
     if (lv && feedCur - pc >= 2 && (sp == null || sp >= C.MOVE)) { cur = Math.max(prevCur, feedCur); src = 'feed'; }   // solo con un vero feed (non con l'orario)
   }
-  // d) dichiarazione del mezzo: vale solo se coerente col GPS (o senza GPS)
-  if (veh?.seq != null) {
+  // d) dichiarazione del mezzo: vale solo se coerente col GPS (o senza GPS) e mai mentre il mezzo è ancora fermo in fermata
+  const stillHere = heldK === cur && (vi ?? 0) < C.STILL;
+  if (veh?.seq != null && !stillHere) {
     const j = st.q.indexOf(veh.seq);
     if (j > cur && (sv == null ? j - cur <= 3 : j === cur + 1 && sv - offs[cur] > 20)) cur = j;
+  }
+  // FERMATA TRATTENUTA. Se il mezzo era fermo alla fermata e il GPS non dà una prova di partenza, il solo feed o l'orario NON bastano a segnare
+  // già la fermata successiva (il feed toglie la fermata appena il mezzo arriva): si resta lì finché non passa la partenza prevista + HOLD_S.
+  // Così nel pannello fermata la corsa resta "in fermata/in partenza" fino alla vera partenza e non sparisce in anticipo.
+  if (heldK >= 0 && cur > heldK && sv == null && nowMs - a0.since < 600000) {
+    const planned = Math.max(at(heldK), at(heldK) + dly(heldK)) + C.HOLD_S;
+    if (tNow < planned) cur = heldK;
   }
   cur = clamp(cur, 0, n);
   const changed = cur !== prevCur;
@@ -184,7 +194,7 @@ function update(x) {
     // fermo = velocità istantanea bassa; al capolinea basta non essere in movimento SOSTENUTO (manovre e rumore GPS non contano)
     const stopped = term ? !sustained : (vi != null ? vi < C.STILL : (veh.status === 1 || (veh.stillS || 0) >= 5));
     const inZone = dk != null ? (dk >= -back && dk <= fwd) : dTo(k) <= (term ? 120 : 50);
-    const sticky = vs.at && vs.at.k === k && (dk != null ? dk >= -back - 20 && dk <= fwd + 20 : dTo(k) <= (term ? 160 : 80));
+    const sticky = vs.at && vs.at.k === k && (dk != null ? dk >= -back - 20 && dk <= Math.max(fwd + 20, C.DWELL_FWD_M) : dTo(k) <= (term ? 160 : 80));
     if ((inZone && stopped) || sticky || (veh.status === 1 && inZone)) atStop = k;
     if (atStop === k && !(vs.at && vs.at.k === k)) vs.at = { k, anchorS: dk != null ? sv : null, since: nowMs };
   }
@@ -231,7 +241,19 @@ function update(x) {
   const phase = stage >= 4 ? 'arrived' : stage === 3 ? 'departing' : stage === 2 ? (last ? 'arrived' : 'at') : stage === 1 ? 'approaching' : (veh ? 'enroute' : 'scheduled');
 
   // 7) MEMORIA
-  vs.dep ??= {}; for (let k = prevCur; k < cur && k < n; k++) vs.dep[k] ??= nowMs;
+  // istante di partenza da ogni fermata lasciata (serve alle righe "partito" del pannello fermata e ai passaggi del dettaglio corsa):
+  //   1) l'ultima fermata lasciata con GPS fresco sul tracciato: istante del rilevamento che ha provato la partenza (mai nel futuro);
+  //   2) altrimenti l'ultima previsione del feed per quella fermata (se non è nel futuro); 3) altrimenti l'istante in cui lo abbiamo capito.
+  // Una corsa vista per la prima volta a metà percorso NON ha partenze registrate: le fermate "già lasciate" non sono partenze osservate.
+  vs.dep ??= {};
+  for (let k = prevCur; k < cur && k < n; k++) {
+    if (vs.dep[k] != null || !known) continue;
+    let t = null;
+    if (k === cur - 1 && sv != null && veh?.ts && nowMs - veh.ts < 120000) t = Math.min(nowMs, veh.ts);
+    else if (hist?.[k] != null) t = Math.min(nowMs, nowMs - (tNow - (at(k) + hist[k])) * 1000);
+    else if (k === cur - 1) t = nowMs;
+    if (t != null) vs.dep[k] = t;
+  }
   vs.cur = cur; vs.seen = nowMs; vs.delay = cur < n ? Math.round(etaCur - at(cur)) : vs.delay;
   if (sv != null) vs.sMax = Math.max(vs.sMax ?? 0, sv);
 
