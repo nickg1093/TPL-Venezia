@@ -1,6 +1,6 @@
 // AVVISI DI INFOMOBILITÀ (client): pulsante con contatore, finestra con l'elenco, e interrogazioni per fermata (usate da mappa e pannello fermata).
 // I dati arrivano da /api/avvisi (sito ACTV + canale Telegram, già uniti e con linee/fermate collegate). Tutto il testo è mostrato come testo semplice (esc).
-import { $, esc, icon, api } from './util.js';
+import { $, esc, icon, api, badge } from './util.js';
 
 const btn = $('avvisi-btn'), card = $('avvisi'), body = $('avvisi-body'), cnt = $('avvisi-count');
 let data = null, err = null, timer = null, highlight = null, onChange = () => {};
@@ -42,7 +42,7 @@ function render() {
       a.tgUrl && a.tgUrl !== a.url && safeUrl(a.tgUrl) && `<a href="${esc(a.tgUrl)}" target="_blank" rel="noopener noreferrer">Messaggio Telegram</a>`].filter(Boolean).join('');
     return `<article class="av${a.id === highlight ? ' hl' : ''}" id="av-${esc(a.id)}"><div class="av-top"><span class="av-src">${esc(SRC[a.source] || '')}</span><span class="av-when">${esc(validity(a))}</span></div>`
       + `<h3>${esc(a.title)}</h3>${a.text ? `<p>${esc(a.text)}</p>` : ''}`
-      + ((a.lines || []).length ? `<div class="av-lines"><span class="muted">Linee</span>${a.lines.map(l => `<span class="pt">${esc(l)}</span>`).join('')}</div>` : '')
+      + ((a.lines || []).length ? `<div class="av-lines"><span class="muted">Linee</span>${a.lines.map(l => badge(l.n, l.c, l.s)).join('')}</div>` : '')
       + ((a.stops || []).length ? `<div class="muted">${a.stops.length} ${a.stops.length === 1 ? 'fermata interessata' : 'fermate interessate'}: segnalate con ${icon('warn', 'sm')} sulla mappa e nel loro pannello</div>` : '')
       + (links ? `<div class="av-links">${links}</div>` : '') + '</article>';
   };
