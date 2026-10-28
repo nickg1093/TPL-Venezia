@@ -29,9 +29,11 @@ const decode = s => String(s).replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) =>
 });
 // HTML -> testo semplice (a capo per <br> e paragrafi); niente tag, niente script
 function toText(html) {
-  return decode(String(html)
+  const strip = h => decode(String(h)
     .replace(/<(script|style|noscript|svg)[\s\S]*?<\/\1>/gi, ' ')
-    .replace(/<br\s*\/?>|<\/(p|div|li|h[1-6]|tr)>/gi, '\n').replace(/<[^>]*>/g, ' '))
+    .replace(/<br\s*\/?>|<\/(p|div|li|h[1-6]|tr)>/gi, '\n').replace(/<[^>]*>/g, ' '));
+  let t = strip(html); for (let i = 0; i < 2 && /<\/?[a-z][^>]*>/i.test(t); i++) t = strip(t);   // testi codificati due volte (&lt;img…&gt;)
+  return t.replace(/\bLingua\s+Undefined\b/gi, ' ')
     .replace(/[ \t ]+/g, ' ').replace(/ ?\n ?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 const noAccents = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -81,8 +83,11 @@ function findDates(text, pubMs) {
 // -> { from, to, open, dated } in ms. Senza date: dalla pubblicazione, con durata breve (Telegram) o media (sito).
 function parseValidity(text, pubMs, kind = 'rss') {
   const dates = findDates(text, pubMs), t = noAccents(text.toLowerCase());
-  const tm = /dalle?\s+(?:ore\s+)?(\d{1,2})[.:](\d{2})\s+(?:alle?|fino\s+alle?)\s+(?:ore\s+)?(\d{1,2})[.:](\d{2})/.exec(t);
-  const t0 = tm ? secsOf(tm[1], tm[2]) : 0, t1 = tm ? secsOf(tm[3], tm[4]) : 86399;
+  // orari: una sola fascia "dalle 9.30 alle 16.30" vale per il periodo; più fasce (es. sciopero con servizi garantiti) -> giornata intera
+  const tms = [...t.matchAll(/dalle?\s+(?:ore\s+)?(\d{1,2})[.:](\d{2})\s+(?:alle?|fino\s+alle?)\s+(?:ore\s+)?(\d{1,2})[.:](\d{2})/g)];
+  const times = (t.match(/\b\d{1,2}[.:]\d{2}\b/g) || []).length;
+  const one = tms.length === 1 && times <= 2 ? tms[0] : null;
+  const t0 = one ? secsOf(one[1], one[2]) : 0, t1 = one ? secsOf(one[3], one[4]) : 86399;
   if (!dates.length) {
     const len = kind === 'tg' ? UNDATED_TG_MS : UNDATED_RSS_MS;
     return { from: pubMs, to: pubMs + len, open: false, dated: false };
@@ -90,11 +95,13 @@ function parseValidity(text, pubMs, kind = 'rss') {
   const key = d => d.y * 10000 + d.m * 100 + d.d, sorted = dates.slice().sort((a, b) => key(a) - key(b));
   const first = sorted[0], last = sorted[sorted.length - 1];
   const upTo = /\b(fino al|sino al|fino a|entro il)\b/.test(t) && dates.length === 1;
-  const fromOpen = /\b(dal|da|a partire da|a decorrere da)\b/.test(t) && !/\b(al|fino)\b\s+(?:\w+\s+)?\d{1,2}\s/.test(t.slice(t.indexOf(String(first.d)))) && dates.length === 1;
+  const D = '\\d{1,2}\\s*(?:°|º)?\\s+' + MON_RE;
+  const fromDate = new RegExp('\\b(?:dal|da|a partire dal|a partire da|a decorrere dal)\\s+(?:inizio\\s+servizi\\s+di\\s+|inizio\\s+servizio\\s+di\\s+)?(?:[a-z]+\\s+)?' + D).test(t);
+  const toDate = new RegExp('\\b(?:al|fino al|sino al|entro il)\\s+(?:[a-z]+\\s+)?' + D + '|\\b\\d{1,2}\\s*(?:-|–|—)\\s*\\d{1,2}\\s+' + MON_RE).test(t);
   if (upTo) return { from: pubMs, to: romeMs(last.y, last.m, last.d, t1), open: false, dated: true };
-  if (dates.length === 1 && fromOpen) {
-    const from = romeMs(first.y, first.m, first.d, tm ? t0 : 0);
-    return { from, to: from + OPEN_ENDED_MS, open: true, dated: true };
+  if (fromDate && !toDate) {                                   // "dal 1 novembre", "da inizio servizi di lunedì 2 novembre": senza fine, vale a lungo
+    const from = romeMs(first.y, first.m, first.d, t0);
+    return { from, to: Math.max(from, romeMs(last.y, last.m, last.d, 0)) + OPEN_ENDED_MS, open: true, dated: true };
   }
   return { from: romeMs(first.y, first.m, first.d, t0), to: romeMs(last.y, last.m, last.d, t1), open: false, dated: true };
 }
@@ -104,17 +111,26 @@ function parseValidity(text, pubMs, kind = 'rss') {
 // ---------------------------------------------------------------------------------------------------------------------
 // Linee: nei tratti di testo che seguono "linea/linee/navetta" si prendono i codici maiuscoli e si tengono solo quelli che esistono nel GTFS.
 // Prima si tolgono le date ("31 ottobre"), che altrimenti sembrerebbero la linea 31.
+const LIST_TOK = '[A-Z0-9][A-Z0-9./]{0,5}';
+const LIST_RE = new RegExp(`^:?\\s*(${LIST_TOK}(?:\\s*(?:,|/|e|-|–)\\s*${LIST_TOK})*)`);
+const AUT_HINT = /automobilistic|\bbus\b|tranvia|\btram\b|mestre|terraferma|extraurban|urban[oa]|lido\b/i, NAV_HINT = /navigazione|vaporett|battell|lagun|pontil|\bm\/[bsn]\b|\bmotonav/i;
+// Ritorna oggetti {n: nome, s: 'nav'|'aut', c: colore} così il client può disegnare la stessa mattonella della mappa.
 function findLines(text, known) {
-  const out = new Set(); if (!known?.size) return [];
+  const out = new Map(); if (!known?.size) return [];
   const clean = text.replace(new RegExp(`\\d{1,2}\\s*(?:-|–|e)?\\s*\\d{0,2}\\s+${MON_RE}(?:\\s+\\d{4})?`, 'gi'), ' ').replace(/\b\d{1,2}[.:]\d{2}\b/g, ' ');
-  for (const seg of clean.matchAll(/\b(?:linee|linea|line|navetta|navette)\b([^\n.;:]{0,140})/gi)) {
-    for (const tok of seg[1].matchAll(/[A-Z0-9][A-Z0-9./]*[A-Z0-9]|[A-Z0-9]/g)) {
-      const k = tok[0].replace(/\/+$/, '').toUpperCase(); if (known.has(k)) out.add(known.get(k));
-    }
+  const hintAut = AUT_HINT.test(text), hintNav = NAV_HINT.test(text);
+  const add = tok => {
+    const k = tok.replace(/[./]+$/, '').toUpperCase(), c = known.get(k); if (!c) return;
+    let list = c; if (c.length > 1) { const f = c.filter(x => (x.s === 'aut' ? hintAut : hintNav)); if (f.length && !(hintAut && hintNav)) list = f; }
+    for (const x of list) out.set(x.s + ':' + x.n, { n: x.n, s: x.s, c: x.c || null });
+  };
+  // Solo elenchi che seguono "linea/linee/navetta" ("linee 9S, 21 e 56E"): niente sigle sparse nel testo
+  for (const m of clean.matchAll(/\b(?:linee|linea|navetta|navette)\b\s*/gi)) {
+    const rest = clean.slice(m.index + m[0].length), l = LIST_RE.exec(rest); if (!l) continue;
+    for (const tok of l[1].split(/\s*(?:,|\/|e|-|–)\s*/)) if (tok === tok.toUpperCase()) add(tok);
   }
-  // titolo del tipo "7E: ..." o "Linea 7E"
-  const lead = /^\s*(?:linea\s+)?([A-Z0-9][A-Z0-9.]{0,5})\s*[:–-]/.exec(text); if (lead && known.has(lead[1].toUpperCase())) out.add(known.get(lead[1].toUpperCase()));
-  return [...out].slice(0, 20);
+  const lead = /^\s*(?:linea\s+)?([A-Z0-9][A-Z0-9.]{0,5})\s*[:–-]/.exec(text); if (lead) add(lead[1]);
+  return [...out.values()].slice(0, 20);
 }
 // Fermate: nomi tra virgolette (“…”, «…», "...") o dopo "fermata/fermate/pontile", confrontati con i nomi del GTFS (uguaglianza dei nomi normalizzati)
 function stopCandidates(text) {
@@ -137,13 +153,24 @@ function findStops(text, byName) {
 // ---------------------------------------------------------------------------------------------------------------------
 // LETTURA DELLE FONTI
 // ---------------------------------------------------------------------------------------------------------------------
-async function fetchText(url) {
+const why = e => { const c = e && e.cause, d = c && (c.code || c.message); return (e && e.name === 'TimeoutError' ? 'timeout' : (e && e.message) || 'errore') + (d ? ` (${d})` : ''); };
+async function fetchOnce(url, ms) {
   const u = new URL(url); if (u.protocol !== 'https:' || !OK_HOSTS.has(u.hostname)) throw new Error('dominio non ammesso');
-  const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(10000), redirect: 'follow' });
+  const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(ms), redirect: 'follow' });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const fin = res.url ? new URL(res.url) : u; if (!OK_HOSTS.has(fin.hostname)) throw new Error('reindirizzamento non ammesso');
   const buf = Buffer.from(await res.arrayBuffer()); if (buf.length > MAX_BYTES) throw new Error('risposta troppo grande');
   return buf.toString('utf8');
+}
+// più indirizzi alternativi (stesso contenuto), timeout generoso (il piano gratuito di Render e il sito ACTV possono essere lenti) e un secondo tentativo
+async function fetchText(url, alts = [], ms = 25000) {
+  let last;
+  for (const [i, x] of [url, ...alts].entries()) {
+    for (let t = 0; t < (i === 0 ? 2 : 1); t++) {
+      try { return await fetchOnce(x, ms); } catch (e) { last = new Error(`${new URL(x).hostname}: ${why(e)}`); if (/HTTP 4|non ammesso/.test(last.message)) break; }
+    }
+  }
+  throw last;
 }
 const tag = (xml, name) => { const m = new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, 'i').exec(xml); return m ? m[1].replace(/^<!\[CDATA\[|\]\]>$/g, '').trim() : ''; };
 
@@ -190,12 +217,12 @@ function setContext(fn) { ST.ctx = fn; ST.cache = null; }
 async function refreshRss() {
   ST.rssAt = Date.now();
   try {
-    ST.rss = parseRss(await fetchText(SRC.rss)).slice(0, 40);
+    ST.rss = parseRss(await fetchText(SRC.rss, ['https://actv.avmspa.it/it/rss-news-feed'])).slice(0, 40);
     ST.rssOk = Date.now(); ST.errors.rss = null;
     let n = 0;
     for (const it of ST.rss) {                                              // pagina completa solo per le notizie nuove (max 12 a giro)
       if (ST.pages.has(it.url) || n >= 12 || Date.now() - it.pubMs > 30 * DAY) continue;
-      n++; try { ST.pages.set(it.url, articleText(await fetchText(it.url))); } catch { /* si usa il riassunto del feed */ }
+      n++; try { ST.pages.set(it.url, articleText(await fetchText(it.url, [], 12000))); } catch { /* si usa il riassunto del feed */ }
     }
     for (const k of [...ST.pages.keys()]) if (!ST.rss.some(i => i.url === k)) ST.pages.delete(k);
   } catch (e) { ST.errors.rss = e.message; }
@@ -203,7 +230,7 @@ async function refreshRss() {
 }
 async function refreshTg() {
   ST.tgAt = Date.now();
-  try { ST.tg = parseTelegram(await fetchText(SRC.tg)).slice(-40); ST.tgOk = Date.now(); ST.errors.tg = null; }
+  try { ST.tg = parseTelegram(await fetchText(SRC.tg, ['https://telegram.me/s/muoversivenezia'])).slice(-40); ST.tgOk = Date.now(); ST.errors.tg = null; }
   catch (e) { ST.errors.tg = e.message; }
   ST.cache = null;
 }

@@ -263,7 +263,7 @@ avvisi.setContext(() => {
   const known = new Map(), byName = new Map();
   for (const i of IDS) {
     const G = D[i]; if (!G?.routes) continue;
-    for (const r of Object.values(G.routes)) if (r?.name) known.set(String(r.name).toUpperCase(), r.name);
+    for (const r of Object.values(G.routes)) if (r?.name) { const k = String(r.name).toUpperCase(), l = known.get(k) || known.set(k, []).get(k); if (!l.some(x => x.s === i)) l.push({ n: r.name, s: i, c: r.color || null }); }
     for (const s in G.stopIndex || {}) { const n = avvisi.norm(G.stopBaseNames?.get(s) || G.stops[s] || ''); if (n) (byName.get(n) || byName.set(n, []).get(n)).push(`${i}:${s}`); }
   }
   return (avCtx = { v: live.version(), known, byName });
