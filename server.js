@@ -8,6 +8,7 @@ const live = require('./live');
 const schedule = require('./schedule');
 const gtfs = require('./gtfs');
 const tide = require('./tide');
+const avvisi = require('./avvisi');
 const sec = require('./security');
 const { equivalentStops } = require('./stopgroups');
 const { audit } = require('./feedaudit');
@@ -34,7 +35,7 @@ const byExpected = (a, b) => (a.expSec - b.expSec) || (a.schedIn - b.schedIn);
 const labelsOf = i => new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
 
 // Dati del veicolo esposti al pubblico: solo ciò che serve alla mappa (niente stati interni)
-const PUBLIC_VEH = ['id', 'src', 'label', 'lat', 'lon', 'bearing', 'speed', 'line', 'idle', 'color', 'tripId', 'routeId', 'headsign', 'key', 'ts', 'old', 'sim', 'co', 'dup', 'dupWith', 'path'];
+const PUBLIC_VEH = ['id', 'src', 'label', 'lat', 'lon', 'bearing', 'speed', 'line', 'color', 'tripId', 'routeId', 'headsign', 'key', 'ts', 'old', 'sim', 'co', 'dup', 'dupWith', 'path'];
 const publicVehicle = v => { const o = {}; for (const k of PUBLIC_VEH) if (v[k] !== undefined && v[k] !== null && v[k] !== false) o[k] = v[k]; if (o.speed != null) o.speed = +o.speed.toFixed(1); return o; };
 
 // marea con cache breve: più utenti = una sola richiesta al portale
@@ -128,6 +129,8 @@ const API = new Map(Object.entries({
   } },
   // MAREA: livello attuale, tendenza e prossimi estremi (CPSM Venezia, open data). Il campione grezzo (?debug=1) richiede DIAG_TOKEN.
   '/api/tide': { fn: u => getTideCached(q(u, 'debug') === '1' && sec.tokenOk(u._req, DIAG_TOKEN)) },
+  // AVVISI DI INFOMOBILITÀ (sito ACTV + canale Telegram), con linee e fermate collegate; aggiornati in automatico (avvisi.js)
+  '/api/avvisi': { fn: () => avvisi.getAvvisi() },
   // DIAGNOSI (riservata, DIAG_TOKEN): analisi dei feed realtime, collegamento col GTFS statico, versioni GTFS in archivio e scelta
   '/api/audit': { auth: 'diag', fn: u => Object.fromEntries(wanted(u).map(i => [i, {
     intervalloLetturaMs: live.REFRESH_MS, periodoPubblicazioneStimatoMs: S[i].pubMs ? Math.round(S[i].pubMs) : null,
@@ -253,6 +256,19 @@ server.listen(PORT, () => console.log(`http://localhost:${PORT}`));
 // ---- AVVIO ----
 live.startLoops();
 live.startStatic();
+// avvisi: linee e fermate si riconoscono con i GTFS in uso (indici ricostruiti solo quando cambia la versione dei dati)
+let avCtx = { v: -1 };
+avvisi.setContext(() => {
+  if (avCtx.v === live.version()) return avCtx;
+  const known = new Map(), byName = new Map();
+  for (const i of IDS) {
+    const G = D[i]; if (!G?.routes) continue;
+    for (const r of Object.values(G.routes)) if (r?.name) known.set(String(r.name).toUpperCase(), r.name);
+    for (const s in G.stopIndex || {}) { const n = avvisi.norm(G.stopBaseNames?.get(s) || G.stops[s] || ''); if (n) (byName.get(n) || byName.set(n, []).get(n)).push(`${i}:${s}`); }
+  }
+  return (avCtx = { v: live.version(), known, byName });
+});
+avvisi.start();
 tide.start();   // raccolta periodica del livello di marea: costruisce la storia da cui si ricava la tendenza
 
 // KEEP-ALIVE Render (piano gratuito): si addormenta dopo 15 min senza richieste in ingresso.
