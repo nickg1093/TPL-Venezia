@@ -77,3 +77,12 @@ export function tickEta() {
 
 // ritardo -> classe e testo (stessa regola ovunque)
 export const delayInfo = d => d >= 1 ? { cls: 'late', txt: `in ritardo di ${d} min` } : d <= -1 ? { cls: 'early', txt: `in anticipo di ${-d} min` } : { cls: 'ok', txt: 'in orario' };
+
+// Lettura JSON dal server. Una risposta "troppe richieste" (429, testo semplice) non è un errore dei dati: si segnala con busy = true
+// e il chiamante tiene a schermo ciò che già mostra e riprova al giro successivo.
+export async function api(url) {
+  const r = await fetch(url, { cache: 'no-store' });
+  if (r.status === 429) { const e = new Error('server occupato, riprovo'); e.busy = true; throw e; }
+  let d; try { d = await r.json(); } catch { throw new Error(`risposta non valida (HTTP ${r.status})`); }
+  return d;
+}

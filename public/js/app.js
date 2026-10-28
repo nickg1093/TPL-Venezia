@@ -1,6 +1,6 @@
 // APP PRINCIPALE: mappa, mezzi in movimento, ricerca, pannelli (fermata · zona · corsa) con navigazione e inseguimento.
 // Moduli: util.js (testo, icone, nomi, colori, etichette) · zones.js (zone di fermate) · tide.js (marea) · pwa.js (installazione).
-import { $, esc, p2, nowSecs, fmtSecs, localDate, icon, srcIcon, vehIcon, vehName, lum, colorInfo, badge, ptHtml, etaText, tickEta, delayInfo } from './util.js';
+import { $, esc, p2, nowSecs, fmtSecs, localDate, icon, srcIcon, vehIcon, vehName, lum, colorInfo, badge, ptHtml, etaText, tickEta, delayInfo, api } from './util.js';
 import { zones, zoneOf, snorm, buildZones, norm, unitOf } from './zones.js';
 import * as Tide from './tide.js';
 import * as Pwa from './pwa.js';
@@ -123,8 +123,10 @@ dateEl.onchange = () => applyTime(+range.value, true);
 // ---------------------------------------------------------------------------------------------------------------------
 // MEZZI SULLA MAPPA
 // ---------------------------------------------------------------------------------------------------------------------
-const busHtml = v => badge(v.line, v.color, v.src, `${mode === 'sched' || v.sim ? ' sched' : ''}${v.old ? ' old' : ''}${v.id === selVeh ? ' sel' : ''}`);
-const tip = v => `${vehIcon(v.src, v.label, 'sm')} <b>${esc(v.line)}</b>${v.headsign ? ' ' + icon('next', 'sm') + ' ' + esc(v.headsign) : ''}${v.label ? ' · ' + esc(vehName(v.src, v.label)) : ''}${v.old ? ' · dato non aggiornato' : ''}`;
+// mezzo senza corsa né linea nel feed (fuori servizio / non assegnato): pallino grigio con l'icona del mezzo, niente "?"
+const idleHtml = v => `<div class="bus idle${v.old ? ' old' : ''}${v.id === selVeh ? ' sel' : ''}">${vehIcon(v.src, v.label, 'sm')}</div>`;
+const busHtml = v => v.idle ? idleHtml(v) : badge(v.line, v.color, v.src, `${mode === 'sched' || v.sim ? ' sched' : ''}${v.old ? ' old' : ''}${v.id === selVeh ? ' sel' : ''}`);
+const tip = v => v.idle ? `${vehIcon(v.src, v.label, 'sm')} ${esc(vehName(v.src, v.label) || 'Mezzo')} · senza corsa assegnata` : `${vehIcon(v.src, v.label, 'sm')} <b>${esc(v.line)}</b>${v.headsign ? ' ' + icon('next', 'sm') + ' ' + esc(v.headsign) : ''}${v.label ? ' · ' + esc(vehName(v.src, v.label)) : ''}${v.old ? ' · dato non aggiornato' : ''}`;
 
 // MOVIMENTO (fedele ai dati ricevuti)
 // Regole: 1) la posizione vera è sempre l'ultimo rilevamento GPS; 2) il mezzo non va MAI oltre l'ultimo punto ricevuto
@@ -207,7 +209,7 @@ requestAnimationFrame(function frame(t) {
 async function load() {
   const m = mode, key = keyOf();
   try {
-    const d = await (await fetch(`/api/${m === 'sched' ? 'scheduled' : 'vehicles'}?src=${key}${schedQS()}`, { cache: 'no-store' })).json();
+    const d = await api(`/api/${m === 'sched' ? 'scheduled' : 'vehicles'}?src=${key}${schedQS()}`);
     if (m !== mode || key !== keyOf()) return;
     if (d.error && !d.vehicles) throw new Error(d.error);
     if (d.version !== undefined && d.version !== staticVer) { staticVer = d.version; loadStatics(); }
@@ -221,7 +223,7 @@ async function load() {
     if (d.error) notes.push(d.error);
     statusEl.className = notes.length ? 'warn' : '';
     statusEl.innerHTML = `${counts}<span>${m === 'sched' ? 'pianificato' : 'mezzi'} · ${new Date(d.updated).toLocaleTimeString('it-IT')}</span>${notes.map(n => `<span class="note">${esc(n)}</span>`).join('')}`;
-  } catch (e) { if (m === mode) { statusEl.className = 'err'; statusEl.textContent = 'Errore: ' + e.message; } }
+  } catch (e) { if (m === mode && !e.busy) { statusEl.className = 'err'; statusEl.textContent = 'Errore: ' + e.message; } }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -326,7 +328,7 @@ map.on('click', () => { if (!current && !searchOpen()) clearSearchState(); if (n
 // Aprire un pannello dalla mappa (mezzo, palo, ricerca) riparte da zero.
 // ---------------------------------------------------------------------------------------------------------------------
 const NAV_MAX = 20;
-const vehSnap = v => ({ id: v.id, key: v.key, src: v.src, tripId: v.tripId, routeId: v.routeId, line: v.line, color: v.color, label: v.label, headsign: v.headsign, dup: v.dup, dupWith: v.dupWith, lat: v.lat, lon: v.lon });
+const vehSnap = v => ({ id: v.id, key: v.key, src: v.src, tripId: v.tripId, routeId: v.routeId, line: v.line, idle: v.idle, color: v.color, label: v.label, headsign: v.headsign, dup: v.dup, dupWith: v.dupWith, lat: v.lat, lon: v.lon });
 function entryForStop(id, name, src) {
   const z = zoneOf.get(id);
   return z ? { t: 'zone', key: z.key, pick: z.letterOf.get(id) || '*' } : { t: 'stop', id, name, src };
@@ -334,7 +336,7 @@ function entryForStop(id, name, src) {
 function describe(e) {   // testo del link «indietro»
   if (e.t === 'stop') return e.name;
   if (e.t === 'zone') return zones.get(e.key)?.name || 'Zona';
-  return `Linea ${e.v.line}${e.v.headsign ? ' · ' + e.v.headsign : ''}`;
+  return e.v.idle ? (vehName(e.v.src, e.v.label) || 'Mezzo') : `Linea ${e.v.line}${e.v.headsign ? ' · ' + e.v.headsign : ''}`;
 }
 function updateBack() {
   const top = navStack[navStack.length - 1];
@@ -392,11 +394,11 @@ async function loadDepartures() {
   const z = e.t === 'zone' ? zones.get(e.key) : null;
   const url = z ? '/api/zone?ids=' + encodeURIComponent(z.items.map(i => i.id).join(',')) : '/api/stop?id=' + encodeURIComponent(e.id);
   try {
-    const d = await (await fetch(url + schedQS().replace('&', url.includes('?') ? '&' : '?'), { cache: 'no-store' })).json();
+    const d = await api(url + schedQS().replace('&', url.includes('?') ? '&' : '?'));
     if (d.error) throw new Error(d.error);
     if (current !== e) return;
     lastDeps = d; renderDepartures();
-  } catch (err) { if (current === e) plist.innerHTML = `<p class="late pad">Dati non disponibili: ${esc(err.message)}</p>`; }
+  } catch (err) { if (current === e && !(err.busy && lastDeps)) plist.innerHTML = `<p class="late pad">Dati non disponibili: ${esc(err.message)}</p>`; }
 }
 
 function depRow(x, z, live) {
@@ -462,13 +464,13 @@ function openDeparture(ds) {
 function showTrip(e) {
   const v = vehicles.find(x => x.id === e.v.id) || e.v;       // dati più freschi se il mezzo è ancora in elenco
   e.v = vehSnap(v); selVeh = v.id; render(); drawStops();
-  pbadge.innerHTML = badge(v.line, v.color, v.src);
-  pname.innerHTML = `${icon('next', 'sm')}<span>${v.headsign ? esc(v.headsign) : 'Linea ' + esc(v.line)}</span>`;
+  pbadge.innerHTML = v.idle ? idleHtml(v) : badge(v.line, v.color, v.src);
+  pname.innerHTML = v.idle ? `<span>${esc(vehName(v.src, v.label) || 'Mezzo')}</span>` : `${icon('next', 'sm')}<span>${v.headsign ? esc(v.headsign) : 'Linea ' + esc(v.line)}</span>`;
   psub.textContent = 'Caricamento dettagli…';
   pfollow.disabled = !v.id;
   keepInView = () => { const m = selVeh && markers.get(selVeh); return m ? m.m.getLatLng() : null; };
   if (!v.tripId) {
-    plist.innerHTML = `<p class="muted pad">${v.dup ? `La corsa di questo mezzo risulta assegnata anche al mezzo ${esc(v.dupWith)}: il sistema segue quello più coerente col percorso.` : 'Dati corsa non disponibili per questo mezzo.'}</p>`;
+    plist.innerHTML = `<p class="muted pad">${v.dup ? `La corsa di questo mezzo risulta assegnata anche al mezzo ${esc(v.dupWith)}: il sistema segue quello più coerente col percorso.` : (v.idle ? 'Questo mezzo non ha una corsa assegnata nel feed ACTV: probabilmente non è in servizio (deposito, trasferimento o fuori linea).' : 'Dati corsa non disponibili per questo mezzo.')}</p>`;
     psub.textContent = ''; showRoutes([v.routeId], tripLayer); if (v.id) ensureVisible(L.latLng(v.lat, v.lon)); return;
   }
   e.drawn = false; plist.innerHTML = '<p class="muted pad">Caricamento…</p>';
@@ -479,11 +481,11 @@ function showTrip(e) {
 async function loadTrip() {
   const e = current; if (!e || e.t !== 'trip' || !e.v.tripId) return;
   try {
-    const d = await (await fetch(`/api/trip?id=${encodeURIComponent(e.v.src + ':' + e.v.tripId)}&mode=${mode}${e.v.key ? '&veh=' + encodeURIComponent(e.v.key) : ''}`, { cache: 'no-store' })).json();
+    const d = await api(`/api/trip?id=${encodeURIComponent(e.v.src + ':' + e.v.tripId)}&mode=${mode}${e.v.key ? '&veh=' + encodeURIComponent(e.v.key) : ''}`);
     if (d.error) throw new Error(d.error);
     if (current !== e) return;
     lastTrip = d; renderTrip(!e.drawn); e.drawn = true;
-  } catch (err) { if (current === e) plist.innerHTML = `<p class="late pad">Dati non disponibili: ${esc(err.message)}</p>`; }
+  } catch (err) { if (current === e && !(err.busy && lastTrip)) plist.innerHTML = `<p class="late pad">Dati non disponibili: ${esc(err.message)}</p>`; }
 }
 function tripHtml(d) {
   const k = colorInfo(d.trip.color, d.trip.line), n = d.stops.length;
@@ -588,16 +590,16 @@ document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('
 }));
 
 // AGGIORNAMENTO A SPINTA: il server avvisa (SSE) appena ci sono dati nuovi, così mezzi e pannelli si aggiornano subito.
-// I timer restano come rete di sicurezza e scattano solo se lo stream tace da oltre 6 s. Massimo un aggiornamento ogni 600 ms.
-let lastPushAt = 0, lastPushRun = 0, pushTimer = null;
+// I timer restano come rete di sicurezza e scattano solo se lo stream tace da oltre 6 s. Massimo un aggiornamento ogni 1,5 s.
+let lastPushAt = 0, lastPushRun = 0, lastPanelAt = 0, pushTimer = null;
 function onPush(changed) {
   lastPushAt = Date.now();
   if (document.hidden || mode !== 'live') return;
-  const wait = 600 - (Date.now() - lastPushRun);
+  const wait = 1500 - (Date.now() - lastPushRun);
   if (wait > 0) { if (!pushTimer) pushTimer = setTimeout(() => { pushTimer = null; onPush(changed); }, wait); return; }
   lastPushRun = Date.now();
   if (changed) load();
-  refreshPanel();
+  if (Date.now() - lastPanelAt >= 4000) { lastPanelAt = Date.now(); refreshPanel(); }   // pannello: al massimo ogni 4 s (limita le richieste al server)
 }
 try { const es = new EventSource('/api/stream'); es.onmessage = e => onPush(e.data === '1'); } catch { /* si usano i timer */ }
 
