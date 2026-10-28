@@ -26,6 +26,16 @@ with sync_playwright() as p:
         page.on('console', lambda m: errs.append(m.text) if m.type == 'error' and 'tile' not in m.text else None)
         page.route('**/vendor/leaflet/leaflet.js', lambda r: r.fulfill(body=STUB, content_type='application/javascript'))
         page.route('**/vendor/leaflet/leaflet.css', lambda r: r.fulfill(body='', content_type='text/css'))
+        def tide_fake(route):
+            import time
+            n = int(time.time() * 1000); H = 3600000
+            obs = [[n - k * 600000, round(30 + 25 * __import__('math').sin((n - k * 600000) / H / 2)) ] for k in range(36, -1, -1)]
+            fc = [[n + k * 600000, round(30 + 25 * __import__('math').sin((n + k * 600000) / H / 2))] for k in range(0, 37)]
+            d = {'station': 'Punta Salute Canal Grande', 'cm': obs[-1][1], 'ts': n, 'ageMin': 1, 'stale': False, 'category': {'key': 'normale', 'label': 'Marea normale'}, 'trend': {'dir': 'up', 'rate': 4, 'basis': 'osservato'},
+                 'next': [{'type': 'max', 'cm': 58, 'ts': n + 3 * H}], 'history': obs, 'source': {'name': 'CPSM', 'license': 'CC BY', 'url': 'https://dati.venezia.it/'},
+                 'chart': {'from': n - 6 * H, 'to': n + 6 * H, 'now': n, 'observed': obs, 'forecast': fc, 'extremes': [{'type': 'max', 'cm': 58, 'ts': n + 3 * H}, {'type': 'min', 'cm': -8, 'ts': n - 3 * H}]}}
+            route.fulfill(body=json.dumps(d), content_type='application/json')
+        page.route('**/api/tide', tide_fake)
         page.route('https://tile.openstreetmap.org/**', lambda r: r.abort())
         page.goto(BASE); page.wait_for_selector('.bus-marker', timeout=20000); page.wait_for_timeout(1500)
         check(not errs, 'nessun errore in console/pagina ' + (str(errs[:2]) if errs else ''))
@@ -85,6 +95,43 @@ with sync_playwright() as p:
         check(rect(page, '#panel') is None, 'pannello chiuso')
         check(page.evaluate("window.__map._polys.size") == 0, 'X: nessuna shape di percorso rimasta')
         check(page.evaluate("document.querySelectorAll('.bus.sel').length") == 0, 'X: nessun mezzo selezionato')
+
+
+        # --- marea: grafico a 12 ore con cursore (dati sintetici: il server di prova non ha lo storico)
+        page.evaluate("document.querySelector('#search-container').classList.remove('expanded')")
+        page.click('#tide-btn'); page.wait_for_selector('#tide .tide-chart', timeout=8000)
+        tw = rect(page, '#tide'); check(tw['r'] <= w + 1 and tw['l'] >= -1, 'scheda marea entro lo schermo')
+        check(rect(page, '#tide svg') is not None and rect(page, '#tide .tide-range')['h'] >= 44, 'grafico presente, cursore >= 44px')
+        sz = page.evaluate("[...document.querySelectorAll('#tide svg text')].map(t=>parseFloat(getComputedStyle(t).fontSize)*t.ownerSVGElement.getBoundingClientRect().width/t.ownerSVGElement.viewBox.baseVal.width)")
+        check(min(sz) >= 12.5, f'testo del grafico leggibile (min {min(sz):.1f}px)')
+        page.evaluate("const r=document.querySelector('#tide .tide-range'); r.value=r.min; r.dispatchEvent(new Event('input'))")
+        a = page.inner_text('#tide .tide-read'); check('osservato' in a or 'nessun dato' in a, 'cursore a -6 h: ' + a.replace('\n', ' '))
+        page.evaluate("const r=document.querySelector('#tide .tide-range'); r.value=r.max; r.dispatchEvent(new Event('input'))")
+        b = page.inner_text('#tide .tide-read'); check('previsto' in b, 'cursore a +6 h: ' + b.replace('\n', ' '))
+        page.screenshot(path=str(OUT / f'{name}-5-tide.png'))
+        page.click('#tide-close')
+
+        # --- avvisi: contatore, finestra, fermata con (!) e rimando all'avviso
+        page.wait_for_selector('#avvisi-count:not([hidden])', timeout=15000)
+        check(page.inner_text('#avvisi-count') == '2', 'contatore avvisi in corso = 2')
+        page.click('#avvisi-btn'); page.wait_for_selector('#avvisi .av', timeout=5000)
+        check(page.evaluate("document.querySelectorAll('#avvisi .av').length") == 2, 'finestra: 2 avvisi')
+        aw = rect(page, '#avvisi'); check(aw['r'] <= w + 1 and aw['l'] >= -1 and aw['b'] <= h + 1, 'finestra avvisi entro lo schermo')
+        check(page.evaluate("[...document.querySelectorAll('#avvisi a')].every(a=>/^https:\\/\\/(actv|t)/.test(a.href) && a.rel.includes('noopener'))"), 'link degli avvisi sicuri')
+        page.screenshot(path=str(OUT / f'{name}-6-avvisi.png'))
+        page.click('#avvisi-close')
+        info = page.evaluate("""async()=>{const a=(await (await fetch('/api/avvisi')).json()).items.find(x=>x.stops&&x.stops.length);if(!a)return null;const id=a.stops[0];const s=(await (await fetch('/api/stops')).json()).find(x=>x[0]===id);return {id:a.id,name:s&&s[1]}}""")
+        check(info is not None and info['name'], 'un avviso è collegato a una fermata: ' + str(info))
+        if info and info['name']:
+            page.click('#search-toggle-btn'); page.fill('#filter', info['name'][:20]); page.wait_for_selector('#search-results .search-item[data-type]', timeout=5000)
+            page.evaluate("document.querySelector('#search-results .search-item[data-type]').click()")
+            page.wait_for_selector('#panel:not([hidden]) #pname', timeout=8000); page.wait_for_selector('#plist .alert-row', timeout=8000)
+            check(rect(page, '#pname .warn-i') is not None, 'simbolo (!) nel titolo della fermata')
+            page.screenshot(path=str(OUT / f'{name}-7-stopalert.png'))
+            page.click('#plist .alert-row'); page.wait_for_selector('#avvisi .av.hl', timeout=5000)
+            check(True, 'clic sull\'avviso della fermata apre l\'avviso evidenziato')
+            page.click('#avvisi-close')
+            if rect(page, '#panel'): page.click('#pclose')   # su schermi stretti l'avviso sostituisce il pannello
 
         # --- modalità pianificato
         page.evaluate("document.querySelector('input[name=mode][value=sched]').click()"); page.wait_for_timeout(1200)
