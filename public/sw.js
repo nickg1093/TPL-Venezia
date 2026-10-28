@@ -4,7 +4,7 @@
 //  - Leaflet (unpkg): dalla cache, aggiornata in background
 //  - /api/* e mattonelle della mappa: MAI intercettati (dati live sempre freschi; le mattonelle le gestisce il browser)
 // Per forzare l'aggiornamento della cache dopo modifiche ai file della shell: incrementare VERSION.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = `tpl-venezia-${VERSION}`;
 const SHELL = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/favicon-48.png'];
 
