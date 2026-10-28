@@ -34,7 +34,7 @@ const byExpected = (a, b) => (a.expSec - b.expSec) || (a.schedIn - b.schedIn);
 const labelsOf = i => new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
 
 // Dati del veicolo esposti al pubblico: solo ciò che serve alla mappa (niente stati interni)
-const PUBLIC_VEH = ['id', 'src', 'label', 'lat', 'lon', 'bearing', 'speed', 'line', 'color', 'tripId', 'routeId', 'headsign', 'key', 'ts', 'old', 'sim', 'co', 'dup', 'dupWith', 'path'];
+const PUBLIC_VEH = ['id', 'src', 'label', 'lat', 'lon', 'bearing', 'speed', 'line', 'idle', 'color', 'tripId', 'routeId', 'headsign', 'key', 'ts', 'old', 'sim', 'co', 'dup', 'dupWith', 'path'];
 const publicVehicle = v => { const o = {}; for (const k of PUBLIC_VEH) if (v[k] !== undefined && v[k] !== null && v[k] !== false) o[k] = v[k]; if (o.speed != null) o.speed = +o.speed.toFixed(1); return o; };
 
 // marea con cache breve: più utenti = una sola richiesta al portale
@@ -138,6 +138,8 @@ const API = new Map(Object.entries({
     tripUpdates: S[i].raw.tripUpdates ? audit(S[i].raw.tripUpdates.buf) : null
   }])) },
   '/api/gtfs': { auth: 'diag', fn: () => live.gtfsStatus() },
+  // quale IP vede il server per chi chiama (serve a scegliere TRUST_PROXY): intestazione X-Forwarded-For grezza e IP usato per i limiti
+  '/api/whoami': { auth: 'diag', fn: (u, req) => ({ xForwardedFor: req.headers['x-forwarded-for'] || null, remote: req.socket.remoteAddress, ipUsato: sec.clientIp(req), trustProxy: process.env.TRUST_PROXY ?? null }) },
   // RICARICA GTFS (riservata, ADMIN_TOKEN, solo POST): controlla il sito ACTV, archivia le versioni nuove e rivaluta quale usare
   '/api/reload-gtfs': { auth: 'admin', method: 'POST', fn: async () => {
     const res = {};
@@ -206,7 +208,7 @@ async function onRequest(req, res) {
   if (req.method !== 'GET' && req.method !== 'HEAD' && !(req.method === 'POST' && p === '/api/reload-gtfs')) return text(res, 405, 'Metodo non consentito', { Allow: 'GET, HEAD' });
 
   const wait = sec.limit(req, sec.classOf(p));
-  if (wait) return text(res, 429, 'Troppe richieste: riprova tra poco', { 'Retry-After': String(wait) });
+  if (wait) return text(res, 429, 'Troppe richieste', { 'Retry-After': String(wait) });
 
   if (p === '/api/stream') {
     const release = sec.sseAcquire(req);
