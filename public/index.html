@@ -51,6 +51,7 @@
     </div>
     <div class="group">
       <button id="theme-btn" class="ibtn" type="button" aria-label="Tema scuro" aria-pressed="false" title="Tema scuro"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-moon"/></svg></button>
+      <button id="avvisi-btn" class="ibtn" type="button" aria-label="Avvisi di servizio" aria-expanded="false" aria-controls="avvisi" title="Avvisi di servizio"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-warn"/></svg><span id="avvisi-count" class="cntb" aria-hidden="true" hidden></span></button>
       <button id="tide-btn" class="ibtn" type="button" aria-label="Marea a Venezia" aria-expanded="false" aria-controls="tide" title="Marea"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-tide"/></svg><span class="dotc" aria-hidden="true"></span></button>
       <button id="install-btn" class="ibtn" type="button" aria-label="Installa l'app" title="Installa l'app" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-download"/></svg></button>
     </div>
@@ -60,6 +61,12 @@
   <section id="tide" class="card" role="dialog" aria-modal="false" aria-labelledby="tide-title" tabindex="-1" hidden>
     <header class="card-h"><h2 id="tide-title">Marea a Venezia</h2><button id="tide-close" class="ibtn sm" type="button" aria-label="Chiudi marea"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-close"/></svg></button></header>
     <div id="tide-body" aria-live="polite">Caricamento…</div>
+  </section>
+
+  <!-- FINESTRA AVVISI DI INFOMOBILITÀ (sito ACTV + canale Telegram) -->
+  <section id="avvisi" class="card" role="dialog" aria-modal="false" aria-labelledby="avvisi-title" tabindex="-1" hidden>
+    <header class="card-h"><h2 id="avvisi-title">Avvisi di servizio</h2><button id="avvisi-close" class="ibtn sm" type="button" aria-label="Chiudi avvisi"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-close"/></svg></button></header>
+    <div id="avvisi-body" aria-live="polite">Caricamento…</div>
   </section>
 
   <!-- PANNELLO DETTAGLI (fermata / zona / corsa) -->
