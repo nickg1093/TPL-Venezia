@@ -4,7 +4,7 @@
   const ll = (a, b) => Array.isArray(a) ? { lat: a[0], lng: a[1], lon: a[1] } : (a && typeof a === 'object' ? { lat: a.lat, lng: a.lng ?? a.lon, lon: a.lng ?? a.lon } : { lat: a, lng: b, lon: b });
   const pt = (x, y) => ({ x, y, subtract(o) { return pt(x - o.x, y - o.y); } });
   class Ev { on(t, f) { (this._h ||= {})[t] = [...(this._h[t] || []), f]; return this; } fire(t, e) { for (const f of (this._h?.[t] || [])) f(e); } }
-  class Layer extends Ev { addTo(g) { g.addLayer(this); return this; } bindTooltip() { return this; } setTooltipContent() {} remove() { this._g?.removeLayer(this); } }
+  class Layer extends Ev { addTo(g) { g.addLayer(this); return this; } bindTooltip() { return this; } setTooltipContent() {} remove() { if (this._g) this._g.removeLayer(this); else this._rm?.(); } }
   class Group extends Layer {
     constructor() { super(); this.items = new Set(); }
     addLayer(l) { this.items.add(l); l._g = this; if (this._map) l._add?.(this._map); }
@@ -15,7 +15,7 @@
   }
   class Marker extends Layer {
     constructor(p, o = {}) { super(); this.p = ll(p); this.o = o; this.cls = 'leaflet-marker-icon'; }
-    _add(m) { this.m = m; this.el = document.createElement('div'); this.el.className = 'leaflet-marker-icon ' + (this.o.icon?.className || ''); this.el.style.position = 'absolute'; this._ic(); m._els.appendChild(this.el); m._all.add(this); this.pos();
+    _add(m) { this.el?.remove(); this.m = m; this.el = document.createElement('div'); this.el.className = 'leaflet-marker-icon ' + (this.o.icon?.className || ''); this.el.style.position = 'absolute'; this._ic(); m._els.appendChild(this.el); m._all.add(this); this.pos();
       this.el.addEventListener('click', e => { e.stopPropagation(); this.fire('click', e); }); }
     _ic() { if (this.el && this.o.icon) { this.el.innerHTML = this.o.icon.html || ''; this.el.className = 'leaflet-marker-icon ' + (this.o.icon.className || ''); } }
     _rm() { this.el?.remove(); this.m?._all.delete(this); }
@@ -46,7 +46,7 @@
     setView(p, z = this.z) { this.c = ll(p); this.z = z; this._moved(); return this; }
     panTo(p) { this.c = ll(p); this._moved(); } flyTo(p, z) { this.c = ll(p); this.z = z; this._moved(); }
     panBy(d) { const c = this.project(this.c); this.c = this.unproject(pt(c.x + d[0], c.y + d[1])); this._moved(); }
-    invalidateSize() { this._moved(); } locate() { this.fire('locationerror', {}); }
+    invalidateSize() { this._moved(); } locate() { window.__geo ? this.fire('locationfound', { latlng: ll(window.__geo), accuracy: 10 }) : this.fire('locationerror', {}); }
   }
   window.L = { map: (i, o) => new Map_(i, o), latLng: ll, point: pt, divIcon: o => o, tileLayer: () => ({ addTo() { return this; } }), layerGroup: () => new Group(),
     marker: (p, o) => new Marker(p, o), circleMarker: (p, o) => new Circle(p, o), polyline: (p, o) => new Poly(p, o),

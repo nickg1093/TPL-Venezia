@@ -33,7 +33,7 @@ with sync_playwright() as p:
             fc = [[n + k * 600000, round(30 + 25 * __import__('math').sin((n + k * 600000) / H / 2))] for k in range(0, 37)]
             d = {'station': 'Punta Salute Canal Grande', 'cm': obs[-1][1], 'ts': n, 'ageMin': 1, 'stale': False, 'category': {'key': 'normale', 'label': 'Marea normale'}, 'trend': {'dir': 'up', 'rate': 4, 'basis': 'osservato'},
                  'next': [{'type': 'max', 'cm': 58, 'ts': n + 3 * H}], 'history': obs, 'source': {'name': 'CPSM', 'license': 'CC BY', 'url': 'https://dati.venezia.it/'},
-                 'chart': {'from': n - 6 * H, 'to': n + 6 * H, 'now': n, 'observed': obs, 'forecast': fc, 'extremes': [{'type': 'max', 'cm': 58, 'ts': n + 3 * H}, {'type': 'min', 'cm': -8, 'ts': n - 3 * H}]}}
+                 'chart': {'from': n - 6 * H, 'to': n + 12 * H, 'now': n, 'observed': obs, 'forecast': fc, 'extremes': [{'type': 'max', 'cm': 58, 'ts': n + 3 * H}, {'type': 'min', 'cm': -8, 'ts': n - 3 * H}]}}
             route.fulfill(body=json.dumps(d), content_type='application/json')
         page.route('**/api/tide', tide_fake)
         page.route('https://tile.openstreetmap.org/**', lambda r: r.abort())
@@ -106,7 +106,7 @@ with sync_playwright() as p:
         check(min(sz) >= 12.5, f'testo del grafico leggibile (min {min(sz):.1f}px)')
         page.evaluate("const r=document.querySelector('#tide .tide-range'); r.value=r.min; r.dispatchEvent(new Event('input'))")
         a = page.inner_text('#tide .tide-read'); check('osservato' in a or 'nessun dato' in a, 'cursore a -6 h: ' + a.replace('\n', ' '))
-        page.evaluate("const r=document.querySelector('#tide .tide-range'); r.value=r.max; r.dispatchEvent(new Event('input'))")
+        page.evaluate("const r=document.querySelector('#tide .tide-range'); r.value=+r.min+12*3600000; r.dispatchEvent(new Event('input'))")
         b = page.inner_text('#tide .tide-read'); check('previsto' in b, 'cursore a +6 h: ' + b.replace('\n', ' '))
         page.screenshot(path=str(OUT / f'{name}-5-tide.png'))
         page.click('#tide-close')
@@ -132,6 +132,29 @@ with sync_playwright() as p:
             check(True, 'clic sull\'avviso della fermata apre l\'avviso evidenziato')
             page.click('#avvisi-close')
             if rect(page, '#panel'): page.click('#pclose')   # su schermi stretti l'avviso sostituisce il pannello
+
+        # --- ricerca per linea: divisa per servizio, filtro mezzi
+        page.click('#search-toggle-btn'); page.fill('#filter', '1'); page.wait_for_selector('#search-results .search-item[data-type=route]', timeout=5000)
+        cats = page.evaluate("[...document.querySelectorAll('#search-results .search-category')].map(e=>e.textContent)")
+        check(any('Linee' in c for c in cats), 'ricerca linee divisa per servizio: ' + str(cats))
+        check(page.evaluate("document.querySelectorAll('#search-results .search-item[data-type=route] .bus').length") > 0, 'risultati linee con mattonelle')
+        page.evaluate("document.querySelector('#search-results .search-item[data-type=route]').click()"); page.wait_for_timeout(600)
+        check(rect(page, '#linefilter') is not None, 'chip filtro linea visibile')
+        nl = page.evaluate("new Set([...document.querySelectorAll('.bus-marker .bus')].map(e=>e.textContent)).size"); check(nl <= 1, f'solo i mezzi della linea scelta ({nl} linee in mappa)')
+        page.click('#linefilter'); page.wait_for_timeout(500)
+        check(rect(page, '#linefilter') is None and page.evaluate("document.querySelectorAll('.bus-marker').length") > 1, 'filtro rimosso: tornano tutti i mezzi')
+        # --- fermate vicine (100 m)
+        st = page.evaluate("fetch('/api/stops').then(r=>r.json()).then(s=>s[0])")
+        page.evaluate(f"window.__geo=[{st[2]},{st[3]}]"); page.click('#locate'); page.wait_for_timeout(500)
+        check(rect(page, '#nearchip') is not None, 'pillola fermate vicine con posizione attiva: ' + (page.inner_text('#nearchip').strip() if rect(page, '#nearchip') else ''))
+        nc = rect(page, '#nearchip'); check(nc and nc['h'] >= 44 and nc['r'] <= w, 'pillola vicine >= 44px e dentro lo schermo')
+        page.click('#nearchip'); page.wait_for_timeout(500)
+        check(rect(page, '#panel') is not None or rect(page, '#search-results .search-item[data-type=near]') is not None, 'tocco sulla pillola apre fermata o elenco')
+        if rect(page, '#search-results .search-item[data-type=near]'): page.click('#search-results .search-item[data-type=near]'); page.wait_for_timeout(400)
+        if rect(page, '#panel'): page.click('#pclose')
+        # --- ordine dei blocchi di controllo
+        gr = page.evaluate("[...document.querySelectorAll('#controls .group')].map(g=>[...g.querySelectorAll('button,input')].map(b=>b.id||b.name))")
+        check(gr[1] == ['search-toggle-btn', 'locate', 'theme-btn'] and gr[2][:2] == ['avvisi-btn', 'tide-btn'], 'blocchi: servizi | cerca+posizione+tema | avvisi+marea ' + str(gr))
 
         # --- modalità pianificato
         page.evaluate("document.querySelector('input[name=mode][value=sched]').click()"); page.wait_for_timeout(1200)
