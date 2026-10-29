@@ -1,12 +1,23 @@
 // APP PRINCIPALE: mappa, mezzi in movimento, ricerca, pannelli (fermata · zona · corsa) con navigazione e inseguimento.
 // Moduli: util.js (testo, icone, nomi, colori, etichette) · zones.js (zone di fermate) · tide.js (marea) · pwa.js (installazione).
-import { $, esc, p2, nowSecs, fmtSecs, localDate, icon, srcIcon, vehIcon, vehName, lum, colorInfo, badge, ptHtml, etaText, tickEta, delayInfo, api } from './util.js';
-import { zones, zoneOf, snorm, buildZones, norm, unitOf } from './zones.js';
+import { $, esc, p2, nowSecs, fmtSecs, localDate, icon, srcIcon, vehIcon, vehName, lum, colorInfo, badge, ptHtml, etaText, tickEta, delayInfo, api, onBusy } from './util.js';
+import { zones, zoneOf, snorm, buildZones, norm, unitOf, mergeDuplicates, groups, aliasOf } from './zones.js';
 import * as Tide from './tide.js';
 import * as Avvisi from './avvisi.js';
 import * as Pwa from './pwa.js';
+import { createLocator } from './locate.js';
 
 const POLL_MS = 2000, MIN_STOP_ZOOM = 14;
+onBusy(b => { $('busybar').hidden = !b; document.body.classList.toggle('busy', b); });   // barra di caricamento per le richieste lente
+
+// Avviso breve in basso sulla mappa (si chiude da solo o con un tocco)
+let toastTimer = null;
+function toast(text, ms = 6000) {
+  const el = $('toast'); if (!el) return;
+  el.textContent = text; el.hidden = false; clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, ms);
+}
+$('toast').onclick = () => { $('toast').hidden = true; };
 
 // ---------------------------------------------------------------------------------------------------------------------
 // ELEMENTI E STATO
@@ -19,6 +30,7 @@ const searchContainer = $('search-container'), searchToggleBtn = $('search-toggl
 let mode = 'live', staticVer = -1, lastUpdate = Date.now(), lastLoadSecs = -1, isPlaying = false, playTimer = null;
 const active = new Set(['nav', 'aut']);
 let routesData = {}, stops = [], vehicles = [];
+const stopById = new Map();   // id principale -> voce dell'elenco fermate (senza doppioni)
 let lineFilter = null;   // {src, name, ids}: scelta dalla ricerca, mostra solo i mezzi (e il percorso) di quella linea
 let selVeh = null, follow = false, routeToken = 0, vehMemo = { trip: null, y: 0 };
 
@@ -31,7 +43,7 @@ range.value = nowSecs();
 const keyOf = () => [...active].join(',');
 // Date selezionabili in "Pianificato": solo quelle coperte dai GTFS in archivio (il server le legge da data/gtfs/<servizio>/)
 const ymdToIso = y => `${y.slice(0, 4)}-${y.slice(4, 6)}-${y.slice(6, 8)}`;
-fetch('/api/dates', { cache: 'no-store' }).then(r => r.json()).then(d => {
+api('/api/dates').then(d => {
   if (d.min) dateEl.min = ymdToIso(d.min);
   if (d.max) dateEl.max = ymdToIso(d.max);
   clampDate();
@@ -264,7 +276,7 @@ function drawStops() {
     const [id, name, lat, lon, src] = stops[i];
     if (!active.has(src) || !b.contains([lat, lon])) continue;
     if (++n > 2500) break;
-    const selected = isStopSelected(id), warn = Avvisi.hasAlert(id);
+    const selected = isStopSelected(id), warn = (groups.get(id) || [id]).some(Avvisi.hasAlert);
     L.circleMarker([lat, lon], { radius: selected ? 9 : warn ? 8 : 6, weight: selected ? 2.5 : warn ? 3.5 : 1.5, color: warn ? '#dc2626' : '#0f172a', fillColor: selected ? '#f5a623' : warn ? '#fde68a' : '#ffffff', fillOpacity: 0.95 })   // avviso in corso: bordo rosso e riempimento giallo
       .bindTooltip(`${srcIcon(src, 'sm')} ${esc(name)}${warn ? ' ' + icon('warn', 'sm') + ' avviso in corso' : ''}`).on('click', () => openFromMap(entryForStop(id, name, src))).addTo(stopLayer);
   }
@@ -277,8 +289,8 @@ map.on('moveend', drawStopsSoon);
 const shapeCache = new Map();
 function loadStatics() {
   shapeCache.clear();
-  fetch('/api/routes', { cache: 'no-store' }).then(r => r.json()).then(d => { if (d && !d.error) routesData = d; }).catch(() => {});
-  fetch('/api/stops', { cache: 'no-store' }).then(r => r.json()).then(d => { if (Array.isArray(d)) { stops = d; buildZones(stops); drawStops(); updateNear(); } }).catch(() => {});
+  api('/api/routes').then(d => { if (d && !d.error) routesData = d; }).catch(() => {});
+  api('/api/stops').then(d => { if (Array.isArray(d)) { buildZones(d); stops = mergeDuplicates(d); stopById.clear(); for (const s of stops) stopById.set(s[0], s); drawStops(); updateNear(); } }).catch(() => {});
 }
 async function showRoutes(ids, layer = lineLayer) {
   const tok = ++routeToken;
@@ -287,7 +299,7 @@ async function showRoutes(ids, layer = lineLayer) {
     if (!id) continue;
     let shapes = shapeCache.get(id);
     if (!shapes) {
-      try { shapes = (await (await fetch('/api/shapes?id=' + encodeURIComponent(id), { cache: 'no-store' })).json()).shapes; if (shapes?.length) shapeCache.set(id, shapes); }
+      try { shapes = (await api('/api/shapes?id=' + encodeURIComponent(id))).shapes; if (shapes?.length) shapeCache.set(id, shapes); }
       catch { continue; }
     }
     if (tok !== routeToken) return;
@@ -334,7 +346,7 @@ filterEl.addEventListener('input', () => {
   const mrBy = src => [...byLine.values()].filter(l => l.src === src).sort((x, y) => rank(x) - rank(y) || x.name.localeCompare(y.name, 'it', { numeric: true })).slice(0, 14);
   let hs = '', hl = '';
   if (mz.length || ms.length) hs += '<div class="search-category">Fermate</div>' + mz.map(zoneItem).join('') + ms.map(s =>
-    `<div class="search-item" role="option" tabindex="0" data-type="stop" data-id="${esc(s[0])}" data-name="${esc(s[1])}" data-lat="${+s[2]}" data-lon="${+s[3]}" data-src="${esc(s[4])}">${icon('pin')} <span>${esc(s[1])}</span></div>`).join('');
+    `<div class="search-item" role="option" tabindex="0" data-type="stop" data-id="${esc(s[0])}" data-name="${esc(s[1])}" data-lat="${+s[2]}" data-lon="${+s[3]}" data-src="${esc(s[4])}">${srcIcon(s[4])} <span>${esc(s[1])}</span></div>`).join('');
   for (const [src, title] of [['aut', 'Linee · Automobilistico e tram'], ['nav', 'Linee · Navigazione']]) {
     const list = mrBy(src); if (!list.length) continue;
     hl += `<div class="search-category">${title}</div>` + list.map(l =>
@@ -368,7 +380,9 @@ const NAV_MAX = 20;
 const vehSnap = v => ({ id: v.id, key: v.key, src: v.src, tripId: v.tripId, routeId: v.routeId, line: v.line, color: v.color, label: v.label, headsign: v.headsign, dup: v.dup, dupWith: v.dupWith, lat: v.lat, lon: v.lon });
 function entryForStop(id, name, src) {
   const z = zoneOf.get(id);
-  return z ? { t: 'zone', key: z.key, pick: z.letterOf.get(id) || '*' } : { t: 'stop', id, name, src };
+  if (z) return { t: 'zone', key: z.key, pick: z.letterOf.get(id) || '*' };
+  const pid = aliasOf.get(id) || id, p = stopById.get(pid);                 // un codice secondario (es. "a richiesta") apre il palo principale con tutti i suoi codici
+  return { t: 'stop', id: pid, name: p ? p[1] : name, src, ids: groups.get(pid) || null };
 }
 function describe(e) {   // testo del link «indietro»
   if (e.t === 'stop') return e.name;
@@ -390,7 +404,7 @@ pback.onclick = e => { e.preventDefault(); goBack(); };
 
 function show(e) {
   clearInterval(panelTimer); lastDeps = null; lastTrip = null;
-  tripLayer.clearLayers(); setFollow(false);
+  tripLayer.clearLayers(); setFollow(false); locator.release();          // aprire un pannello ferma l'inseguimento della mia posizione
   if (e.t !== 'trip') { selVeh = null; render(); }
   current = e; panel.hidden = false; document.body.classList.add('has-panel'); if (narrow()) { Tide.close(); Avvisi.close(); }
   chipsArea.innerHTML = ''; pstatus.textContent = ''; psub.textContent = ''; pbadge.innerHTML = '';
@@ -417,7 +431,7 @@ const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInter
 // PANNELLO FERMATA / ZONA
 // ---------------------------------------------------------------------------------------------------------------------
 // ids delle fermate del pannello aperto e relativi avvisi in corso
-const stopIds = e => (e.t === 'zone' ? (zones.get(e.key)?.items || []).map(i => i.id) : [e.id]);
+const stopIds = e => (e.t === 'zone' ? (zones.get(e.key)?.items || []).map(i => i.id) : (e.ids || [e.id]));
 const stopAlerts = e => Avvisi.forStops(stopIds(e));
 const stopTitle = (e, z = e.t === 'zone' ? zones.get(e.key) : null) => `${srcIcon(z ? z.src : e.src)}<span>${esc(z ? z.name : e.name)}</span>${stopAlerts(e).length ? `<span class="warn-i" title="Avviso in corso">${icon('warn')}</span>` : ''}`;
 function showStopPanel(e) {
@@ -433,7 +447,8 @@ function showStopPanel(e) {
 async function loadDepartures() {
   const e = current; if (!e || e.t === 'trip') return;
   const z = e.t === 'zone' ? zones.get(e.key) : null;
-  const url = z ? '/api/zone?ids=' + encodeURIComponent(z.items.map(i => i.id).join(',')) : '/api/stop?id=' + encodeURIComponent(e.id);
+  const url = z ? '/api/zone?ids=' + encodeURIComponent(z.items.map(i => i.id).join(','))
+    : e.ids?.length > 1 ? '/api/zone?ids=' + encodeURIComponent(e.ids.join(',')) : '/api/stop?id=' + encodeURIComponent(e.id);
   try {
     const d = await api(url + schedQS().replace('&', url.includes('?') ? '&' : '?'));
     if (d.error) throw new Error(d.error);
@@ -473,8 +488,8 @@ function renderDepartures() {
     .filter(x => !z || z.pick === '*' || z.letterOf.get(x.stop) === z.pick)
     .sort((a, b) => a.tSec - b.tSec).slice(0, z ? 60 : 30);
   chipsArea.innerHTML = z ? `<div class="chips"><span class="muted">${unitOf(z)[0]}</span>`
-    + `<button class="chip${z.pick === '*' ? ' on' : ''}" data-p="*">Tutti</button>`
-    + z.letters.map(l => `<button class="chip${z.pick === l ? ' on' : ''}" data-p="${esc(l)}">${ptHtml(l, true)}</button>`).join('') + '</div>' : '';
+    + `<button class="chip all${z.pick === '*' ? ' on' : ''}" data-p="*" aria-pressed="${z.pick === '*'}">Tutti</button>`
+    + z.letters.map(l => `<button class="chip sq${z.pick === l ? ' on' : ''}" data-p="${esc(l)}" aria-pressed="${z.pick === l}" aria-label="${unitOf(z)[0]} ${esc(l)}">${esc(l)}</button>`).join('') + '</div>' : '';
   const al = stopAlerts(current);                                                           // avvisi in corso su queste fermate: simbolo (!) nel titolo e righe cliccabili che aprono l'avviso
   pname.innerHTML = stopTitle(current, z);
   plist.innerHTML = al.map(Avvisi.rowHtml).join('') + (rows.map(x => depRow(x, z, live)).join('') || '<p class="muted pad center">Nessun passaggio.</p>');
@@ -601,7 +616,7 @@ function setFollow(on) {
   follow = !!on && !!selVeh;
   pfollow.setAttribute('aria-pressed', String(follow));
   pfollow.setAttribute('aria-label', follow ? 'Smetti di seguire il mezzo' : 'Segui il mezzo'); pfollow.title = follow ? 'Smetti di seguire il mezzo' : 'Segui il mezzo';
-  if (follow) followAfter = Date.now() + 900;                    // il tempo del volo iniziale
+  if (follow) { followAfter = Date.now() + 900; locator.release(); }   // il tempo del volo iniziale; inseguire un mezzo ferma l'inseguimento della mia posizione
 }
 pfollow.onclick = () => {
   setFollow(!follow);
@@ -612,20 +627,31 @@ map.on('dragstart', () => setFollow(false));                     // l'utente spo
 // ---------------------------------------------------------------------------------------------------------------------
 // POSIZIONE DELL'UTENTE, FILTRI, MODALITÀ
 // ---------------------------------------------------------------------------------------------------------------------
-let me = null;
-let meLL = null, watching = false, lowAcc = false;
-function startLocate() {
-  map.locate({ setView: true, maxZoom: 16, watch: true, enableHighAccuracy: !lowAcc, timeout: 20000, maximumAge: 5000 });
-  watching = true; $('locate').setAttribute('aria-pressed', 'true');
-}
-$('locate').onclick = () => {
-  if (watching && meLL) { map.setView(meLL, Math.max(map.getZoom(), 16)); return; }   // già attiva: ricentra
-  if (watching) return;                                                                  // in attesa del primo segnale
-  setNearNote('Cerco la tua posizione…'); startLocate();
-};
+// POSIZIONE E FERMATE VICINE. La lettura del GPS sta in locate.js (permessi, stati del pulsante); qui si disegna il punto e si cercano le fermate vicine.
+let me = null, meAcc = null, meLL = null, nearAt = 0, nearLL = null;
+const locator = createLocator({
+  button: $('locate'),
+  notify: toast,
+  centerOn: (ll, z) => focusOn(L.latLng(ll), Math.max(map.getZoom(), z || 16)),
+  onState: () => {},
+  onFix: f => {
+    if (!f) { me?.remove(); meAcc?.remove(); me = meAcc = meLL = null; nearAt = 0; updateNear(); return; }
+    meLL = L.latLng(f.lat, f.lng);
+    if (!me) {
+      meAcc = L.circle(meLL, { radius: Math.max(f.accuracy, 5), color: '#0284c7', weight: 1, fillColor: '#0284c7', fillOpacity: .12, interactive: false }).addTo(map);
+      me = L.circleMarker(meLL, { radius: 7, color: '#fff', weight: 2.5, fillColor: '#0284c7', fillOpacity: 1, interactive: false }).addTo(map);
+    } else { me.setLatLng(meLL); meAcc.setLatLng(meLL); meAcc.setRadius(Math.max(f.accuracy, 5)); }
+    if (f.follow) focusOn(meLL, map.getZoom());                     // solo nello stato «segue»
+    // le fermate vicine si ricalcolano se ti sei spostato di almeno 8 m o dopo 10 s (il GPS dà una lettura al secondo)
+    const now = Date.now();
+    if (!nearLL || now - nearAt > 10000 || mDist(nearLL.lat, nearLL.lng, f.lat, f.lng) >= 8) { nearAt = now; nearLL = meLL; updateNear(); }
+  }
+});
+// l'utente fa altro con la mappa: finisce l'inseguimento della posizione (il punto resta)
+map.on('dragstart', () => locator.release());
 // FERMATE VICINE: una piccola pillola accanto allo stato in alto a sinistra, che si apre con un tocco. Nessun elemento fisso in più sulla mappa.
 // Entro NEAR_M si elencano tutte le fermate; se non ce n'è nessuna, la pillola dice quanto dista la più vicina (così c'è sempre una risposta).
-const NEAR_M = 300, NEAR_FAR_M = 3000;
+const NEAR_M = 250, NEAR_FAR_M = 3000;
 let nearList = [], nearFar = null;
 function nearbyStops() {
   nearFar = null; if (!meLL) return [];
@@ -669,17 +695,6 @@ $('nearchip').onclick = e => {
     `<div class="search-item" role="option" tabindex="0" data-type="near" data-k="${i}">${srcIcon(nsrc(n))} <span>${esc(nm(n))}</span><span class="muted">${rnd(n.d)} m</span></div>`).join('');
   resultsEl.classList.add('active');
 };
-map.on('locationfound', e => {
-  if (me) me.remove();
-  meLL = e.latlng;
-  me = L.circleMarker(e.latlng, { radius: 6, color: '#fff', weight: 2, fillColor: '#0284c7', fillOpacity: 1 }).addTo(map);
-  updateNear();
-});
-map.on('locationerror', e => {
-  if (e && e.code === 1) { map.stopLocate(); watching = false; meLL = null; $('locate').setAttribute('aria-pressed', 'false'); updateNear(); statusEl.className = 'err'; statusEl.textContent = 'Permesso di posizione negato: abilitalo nelle impostazioni del browser'; return; }
-  if (!lowAcc) { lowAcc = true; map.stopLocate(); startLocate(); return; }                 // segnale GPS non disponibile (al chiuso, tempo scaduto): secondo tentativo con precisione ridotta
-  map.stopLocate(); watching = false; meLL = null; $('locate').setAttribute('aria-pressed', 'false'); updateNear(); statusEl.className = 'err'; statusEl.textContent = 'Posizione non disponibile';
-});
 
 document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener('change', () => {
   mode = el.value; vehicles = [];

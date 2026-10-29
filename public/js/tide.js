@@ -1,13 +1,16 @@
 // FINESTRA MAREA: livello attuale, categoria, tendenza, prossimi estremi e grafico delle ultime ore (dati CPSM Venezia tramite /api/tide).
-import { $, esc, icon, hm } from './util.js';
+import { $, esc, icon, hm, api } from './util.js';
 
 const btn = $('tide-btn'), card = $('tide'), body = $('tide-body');
 let data = null, err = null, timer = null;
 const fmtCm = cm => `${cm > 0 ? '+' : cm < 0 ? '−' : ''}${Math.abs(cm)}`;
 const dayTag = ms => { const a = new Date(ms), b = new Date(); return a.toDateString() === b.toDateString() ? '' : a.toLocaleDateString('it-IT', { weekday: 'short' }) + ' '; };
+// Promemoria breve: con la marea (attuale o prevista nel grafico) oltre 85 cm ACTV pubblica quali servizi di navigazione sono previsti
+const AA_URL = 'https://actv.avmspa.it/it/content/acqua-alta-servizi-di-navigazione-previsti', AA_CM = 85;
+const peakOf = d => Math.max(d.cm, ...(d.next || []).map(n => n.cm), ...((d.chart && d.chart.forecast) || []).map(p => p[1]));
 const safeUrl = u => (/^https:\/\//.test(u) ? u : '#');
 
-// ---- GRAFICO: 6 ore osservate + 6 ore previste, con cursore mobile (trascinando sul grafico oppure con il cursore sotto) ----
+// ---- GRAFICO: fino a 6 ore osservate + 18 ore previste, con cursore mobile (trascinando sul grafico oppure con il cursore sotto) ----
 const CH = { W: 300, H: 200, L: 42, R: 10, T: 14, B: 28 };   // W si adatta alla larghezza della scheda: il testo del grafico resta della grandezza prevista su ogni schermo
 let cursorT = null;                                           // istante scelto (null = adesso); resta anche se i dati si aggiornano
 const lerp = (pts, t) => {                                    // valore interpolato su una serie [[t, cm], …] ordinata; null fuori dalla serie
@@ -30,9 +33,9 @@ function chartHtml(c) {
   const path = pts => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p[0]).toFixed(1)} ${Y(p[1]).toFixed(1)}`).join('');
   let grid = '', xt = '';
   for (let v = lo; v <= hi; v += step) grid += `<line class="g${v === 0 ? ' z' : ''}" x1="${L}" x2="${W - R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}"/><text x="${L - 5}" y="${(Y(v) + 4.5).toFixed(1)}" text-anchor="end">${fmtCm(v)}</text>`;
-  for (let k = -6; k <= 12; k += (W < 340 ? 6 : 3)) { const t = c.now + k * 3600e3; xt += `<line class="g" x1="${X(t).toFixed(1)}" x2="${X(t).toFixed(1)}" y1="${T}" y2="${H - B}"/><text x="${X(t).toFixed(1)}" y="${H - 8}" text-anchor="${X(t) > W - 22 ? 'end' : 'middle'}">${k === 0 ? 'ora' : hm(t)}</text>`; }
+  for (let k = -6; k <= 18; k += (W < 420 ? 6 : 3)) { const t = c.now + k * 3600e3; xt += `<line class="g" x1="${X(t).toFixed(1)}" x2="${X(t).toFixed(1)}" y1="${T}" y2="${H - B}"/><text x="${X(t).toFixed(1)}" y="${H - 8}" text-anchor="${X(t) > W - 22 ? 'end' : 'middle'}">${k === 0 ? 'ora' : hm(t)}</text>`; }
   const marks = ext.filter(e => e.ts >= c.from && e.ts <= c.to).map(e => `<circle class="ex" cx="${X(e.ts).toFixed(1)}" cy="${Y(e.cm).toFixed(1)}" r="3.5"/><text class="exl" x="${X(e.ts).toFixed(1)}" y="${(Y(e.cm) + (e.type === 'max' ? -8 : 17)).toFixed(1)}" text-anchor="middle">${fmtCm(e.cm)}</text>`).join('');
-  const desc = `Grafico del livello di marea dalle ${hm(c.from)} alle ${hm(c.to)}: fino a sei ore osservate e dodici ore previste. Usa il cursore sotto il grafico per leggere il livello a ogni ora.`;
+  const desc = `Grafico del livello di marea dalle ${hm(c.from)} alle ${hm(c.to)}: fino a sei ore osservate e diciotto ore previste. Usa il cursore sotto il grafico per leggere il livello a ogni ora.`;
   return `<div class="tide-chart" data-lo="${lo}" data-hi="${hi}"><div class="tide-read" aria-live="polite"><span class="tr-time"></span><b class="tr-val"></b><span class="tr-kind"></span></div>`
     + `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(desc)}">${grid}${xt}`
     + `<line class="nowl" x1="${X(c.now).toFixed(1)}" x2="${X(c.now).toFixed(1)}" y1="${T}" y2="${H - B}"/>`
@@ -73,6 +76,7 @@ function render() {
   body.innerHTML = `<div class="tide-level"><span class="num">${fmtCm(d.cm)}</span><span class="unit">cm</span></div>`
     + `<div class="tide-cat" data-cat="${esc(d.category.key)}">${esc(d.category.label)}</div>`
     + `<div class="tide-trend">${icon(tr.icon)}<span>${tr.txt}${t && t.basis === 'previsione' ? ' <span class="muted">(da previsione)</span>' : ''}</span></div>`
+    + (peakOf(d) > AA_CM ? `<a class="tide-aa" href="${AA_URL}" target="_blank" rel="noopener noreferrer">${icon('warn', 'sm')}<span>Oltre ${AA_CM} cm: servizi di navigazione previsti</span></a>` : '')
     + (d.stale ? `<p class="tide-note" role="status">Ultimo dato di ${d.ageMin} minuti fa: potrebbe non essere aggiornato.</p>` : '')
     + (next ? `<ul class="tide-next" aria-label="Prossime alte e basse maree previste">${next}</ul>` : '')
     + (d.chart ? chartHtml(d.chart) : '')
@@ -83,7 +87,7 @@ function render() {
   btn.setAttribute('aria-label', label); btn.title = label;
 }
 async function load() {
-  try { const d = await (await fetch('/api/tide', { cache: 'no-store' })).json(); if (d.error) throw new Error(d.error); data = d; err = null; }
+  try { const d = await api('/api/tide'); if (d.error) throw new Error(d.error); data = d; err = null; }
   catch (e) { err = e.message; }
   render(); if (!card.hidden) position();
 }

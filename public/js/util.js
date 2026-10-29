@@ -81,10 +81,22 @@ export const delayInfo = d => d >= 1 ? { cls: 'late', txt: `in ritardo di ${d} m
 
 // Lettura JSON dal server. Una risposta "troppe richieste" (429, testo semplice) non è un errore dei dati: si segnala con busy = true
 // e il chiamante tiene a schermo ciò che già mostra e riprova al giro successivo.
+// Richieste in corso: se una dura più di BUSY_MS compare la barra di caricamento (onBusy), così chi aspetta vede sempre che l'app sta lavorando.
+const BUSY_MS = 350;
+let pending = 0, busyTimer = null, busyFn = null;
+export const onBusy = fn => { busyFn = fn; };
+const busyDelta = d => {
+  pending = Math.max(0, pending + d);
+  if (pending > 0 && !busyTimer) busyTimer = setTimeout(() => { busyTimer = null; if (pending > 0) busyFn?.(true); }, BUSY_MS);
+  if (pending === 0) { clearTimeout(busyTimer); busyTimer = null; busyFn?.(false); }
+};
 export async function api(url) {
-  const r = await fetch(url, { cache: 'no-store' });
-  if (r.status === 409) { const e = new Error('carico gli orari della data scelta…'); e.loading = true; throw e; }
-  if (r.status === 429) { const e = new Error('server occupato, riprovo'); e.busy = true; throw e; }
-  let d; try { d = await r.json(); } catch { throw new Error(`risposta non valida (HTTP ${r.status})`); }
-  return d;
+  busyDelta(1);
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (r.status === 409) { const e = new Error('carico gli orari della data scelta…'); e.loading = true; throw e; }
+    if (r.status === 429) { const e = new Error('server occupato, riprovo'); e.busy = true; throw e; }
+    let d; try { d = await r.json(); } catch { throw new Error(`risposta non valida (HTTP ${r.status})`); }
+    return d;
+  } finally { busyDelta(-1); }
 }

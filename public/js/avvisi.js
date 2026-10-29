@@ -10,9 +10,10 @@ const now = () => Date.now();
 const isActive = a => a.from <= now() && a.to >= now();
 const fmt = ms => new Date(ms).toLocaleString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const safeUrl = u => (/^https:\/\/(actv\.avmspa\.it|avm\.avmspa\.it|t\.me|telegram\.me)\//.test(u) ? u : null);
-const SRC = { actv: 'ACTV', telegram: 'Telegram', both: 'ACTV · Telegram' };
+const SRC = { actv: 'ACTV', telegram: 'Telegram', both: 'ACTV · Telegram', auto: 'Calcolato dal livello di marea' };
 
 function validity(a) {
+  if (a.source === 'auto') return 'In base alla marea';
   if (!a.dated) return `Pubblicato ${fmt(a.published)}`;
   return a.open ? `Dal ${fmt(a.from)}` : `Dal ${fmt(a.from)} al ${fmt(a.to)}`;
 }
@@ -42,6 +43,7 @@ function render() {
       a.tgUrl && a.tgUrl !== a.url && safeUrl(a.tgUrl) && `<a href="${esc(a.tgUrl)}" target="_blank" rel="noopener noreferrer">Messaggio Telegram</a>`].filter(Boolean).join('');
     return `<article class="av${a.id === highlight ? ' hl' : ''}" id="av-${esc(a.id)}"><div class="av-top"><span class="av-src">${esc(SRC[a.source] || '')}</span><span class="av-when">${esc(validity(a))}</span></div>`
       + `<h3>${esc(a.title)}</h3>${a.text ? `<p>${esc(a.text)}</p>` : ''}`
+      + (a.water ? `<div class="av-plan"><strong>Piano acqua alta ACTV per +${esc(a.water.level)} cm</strong>${a.water.measured != null ? ` <span class="muted">(livello misurato ora: ${esc(a.water.measured)} cm)</span>` : ''}<ul>${(a.water.plan || []).map(x => `<li>${esc(x)}</li>`).join('')}</ul><a href="${esc(a.water.url)}" target="_blank" rel="noopener noreferrer">Servizi di navigazione previsti</a> · verifica sempre l'avviso ufficiale.</div>` : '')
       + ((a.lines || []).length ? `<div class="av-lines"><span class="muted">Linee</span>${a.lines.map(l => badge(l.n, l.c, l.s)).join('')}</div>` : '')
       + ((a.stopNames || []).length ? `<div class="av-stops"><span class="muted">${a.stopNames.length === 1 ? 'Fermata' : 'Fermate'} ${icon('warn', 'sm')}</span>${a.stopNames.map(s => `<span class="av-stop">${srcIcon(s.s, 'sm')}${esc(s.n)}</span>`).join('')}</div>` : '')
       + (links ? `<div class="av-links">${links}</div>` : '') + '</article>';
