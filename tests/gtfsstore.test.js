@@ -43,3 +43,12 @@ test('calendar.activeServices applica giorno della settimana, periodo ed eccezio
   assert.equal(cal.activeServices(c, { '20261027': [['A', 1]] }, '20261027').size, 1);
   assert.equal(cal.activeServices(c, { '20261026': [['A', 2]] }, '20261026').size, 0);
 });
+
+test('per ogni data si sceglie la versione con servizi quel giorno; fuori da tutte le coperture nessuna è valida', () => {
+  const a = ver('a', '20261005', '20271004'), b = ver('b', '20271005', '20281004');
+  assert.equal(store.choose([a, b], '20270601').pick.hash, 'a');
+  assert.equal(store.choose([a, b], '20271105').pick.hash, 'b');
+  assert.equal(store.choose([a, b], '20271004').pick.hash, 'a');
+  assert.equal(store.choose([a, b], '20300101').approx, true);
+  assert.equal(store.choose([a, b], '20260101').approx, true);
+});
