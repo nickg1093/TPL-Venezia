@@ -27,6 +27,7 @@
     constructor(p, o) { super(p, o); }
     _add(m) { super._add(m); this.el.className = 'leaflet-circle'; this.el.dataset.sel = this.o.radius > 7 ? '1' : '0'; this.el.style.cssText += `;width:${this.o.radius * 2}px;height:${this.o.radius * 2}px;border-radius:50%;background:${this.o.fillColor || '#fff'};border:1px solid #000;pointer-events:auto`; }
   }
+  class Acc extends Circle { _add(m) { this.m = m; m._all.add(this); } _rm() { this.m?._all.delete(this); } pos() {} setRadius(r) { this.o.radius = r; } }   // cerchio di precisione: solo stato, nessun disegno
   class Poly extends Layer {
     constructor(p, o) { super(); this.pts = p; this.o = o; }
     _add(m) { this.m = m; m._polys.add(this); } _rm() { this.m?._polys.delete(this); }
@@ -49,7 +50,7 @@
     invalidateSize() { this._moved(); } stopLocate() {} locate() { window.__geo ? this.fire('locationfound', { latlng: ll(window.__geo), accuracy: 10 }) : this.fire('locationerror', {}); }
   }
   window.L = { map: (i, o) => new Map_(i, o), latLng: ll, point: pt, divIcon: o => o, tileLayer: () => ({ addTo() { return this; } }), layerGroup: () => new Group(),
-    marker: (p, o) => new Marker(p, o), circleMarker: (p, o) => new Circle(p, o), polyline: (p, o) => new Poly(p, o),
+    marker: (p, o) => new Marker(p, o), circleMarker: (p, o) => new Circle(p, o), circle: (p, o) => new Acc(p, o), polyline: (p, o) => new Poly(p, o),
     control: { zoom: () => ({ addTo() { return this; } }) } };
   // gli strati aggiunti alla mappa ricevono _add
   const addTo = Group.prototype.addTo; Group.prototype.addTo = function (m) { this._map = m; return addTo.call(this, m); };

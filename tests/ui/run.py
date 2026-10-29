@@ -20,7 +20,7 @@ with sync_playwright() as p:
     br = p.chromium.launch()
     for name, w, h in SIZES:
         print(f'== {name} {w}x{h}')
-        ctx = br.new_context(viewport={'width': w, 'height': h}, has_touch=name.startswith('phone'), device_scale_factor=1, extra_http_headers={'X-Forwarded-For': f'10.9.{w % 250}.{h % 250}'})   # IP diverso per schermo: i limiti di frequenza non falsano la prova (server con TRUST_PROXY=1)
+        ctx = br.new_context(viewport={'width': w, 'height': h}, has_touch=name.startswith('phone'), device_scale_factor=1, permissions=['geolocation'], geolocation={'latitude': 45.4375, 'longitude': 12.3358}, extra_http_headers={'X-Forwarded-For': f'10.9.{w % 250}.{h % 250}'})   # IP diverso per schermo: i limiti di frequenza non falsano la prova (server con TRUST_PROXY=1)
         page = ctx.new_page(); errs = []
         page.on('pageerror', lambda e: errs.append(str(e)))
         page.on('console', lambda m: errs.append(m.text) if m.type == 'error' and 'tile' not in m.text else None)
@@ -33,7 +33,7 @@ with sync_playwright() as p:
             fc = [[n + k * 600000, round(30 + 25 * __import__('math').sin((n + k * 600000) / H / 2))] for k in range(0, 37)]
             d = {'station': 'Punta Salute Canal Grande', 'cm': obs[-1][1], 'ts': n, 'ageMin': 1, 'stale': False, 'category': {'key': 'normale', 'label': 'Marea normale'}, 'trend': {'dir': 'up', 'rate': 4, 'basis': 'osservato'},
                  'next': [{'type': 'max', 'cm': 58, 'ts': n + 3 * H}], 'history': obs, 'source': {'name': 'CPSM', 'license': 'CC BY', 'url': 'https://dati.venezia.it/'},
-                 'chart': {'from': n - 6 * H, 'to': n + 12 * H, 'now': n, 'observed': obs, 'forecast': fc, 'extremes': [{'type': 'max', 'cm': 58, 'ts': n + 3 * H}, {'type': 'min', 'cm': -8, 'ts': n - 3 * H}]}}
+                 'chart': {'from': n - 6 * H, 'to': n + 18 * H, 'now': n, 'observed': obs, 'forecast': fc, 'extremes': [{'type': 'max', 'cm': 58, 'ts': n + 3 * H}, {'type': 'min', 'cm': -8, 'ts': n - 3 * H}]}}
             route.fulfill(body=json.dumps(d), content_type='application/json')
         page.route('**/api/tide', tide_fake)
         page.route('https://tile.openstreetmap.org/**', lambda r: r.abort())
@@ -144,15 +144,21 @@ with sync_playwright() as p:
         page.click('#linefilter'); page.wait_for_timeout(500)
         check(rect(page, '#linefilter') is None and page.evaluate("document.querySelectorAll('.bus-marker').length") > 1, 'filtro rimosso: tornano tutti i mezzi')
         check(page.evaluate("document.documentElement.style.getPropertyValue('--app-h') === Math.round(innerHeight)+'px'"), 'altezza app = altezza reale della finestra')
-        # --- fermate vicine (300 m)
+        # --- fermate vicine (250 m)
         st = page.evaluate("fetch('/api/stops').then(r=>r.json()).then(s=>s[0])")
-        page.evaluate(f"window.__geo=[{st[2]},{st[3]}]"); page.click('#locate'); page.wait_for_timeout(500)
+        ctx.set_geolocation({'latitude': st[2], 'longitude': st[3]})
+        check(page.get_attribute('#locate', 'data-state') == 'off', 'posizione spenta all\'apertura (nessuna richiesta automatica)')
+        page.click('#locate'); page.wait_for_selector('#locate[data-state=on]', timeout=8000); page.wait_for_timeout(500)
         check(rect(page, '#nearchip') is not None, 'pillola fermate vicine con posizione attiva: ' + (page.inner_text('#nearchip').strip() if rect(page, '#nearchip') else ''))
         nc = rect(page, '#nearchip'); check(nc and nc['h'] >= 44 and nc['r'] <= w, 'pillola vicine >= 44px e dentro lo schermo')
         page.click('#nearchip'); page.wait_for_timeout(500)
         check(rect(page, '#panel') is not None or rect(page, '#search-results .search-item[data-type=near]') is not None, 'tocco sulla pillola apre fermata o elenco')
         if rect(page, '#search-results .search-item[data-type=near]'): page.click('#search-results .search-item[data-type=near]'); page.wait_for_timeout(400)
         if rect(page, '#panel'): page.click('#pclose')
+        page.click('#locate'); page.wait_for_selector('#locate[data-state=follow]', timeout=3000)
+        page.click('#locate'); page.wait_for_selector('#locate[data-state=off]', timeout=3000)
+        check(rect(page, '#nearchip') is None, 'terzo tocco: posizione spenta e pillola rimossa')
+        check(page.evaluate("!!document.getElementById('busybar') && !!document.getElementById('toast')"), 'barra di attesa e avviso presenti')
         # --- ordine dei blocchi di controllo
         gr = page.evaluate("[...document.querySelectorAll('#controls .group')].map(g=>[...g.querySelectorAll('button,input')].map(b=>b.id||b.name))")
         check(gr[1] == ['search-toggle-btn', 'locate', 'theme-btn'] and gr[2][:2] == ['avvisi-btn', 'tide-btn'], 'blocchi: servizi | cerca+posizione+tema | avvisi+marea ' + str(gr))
