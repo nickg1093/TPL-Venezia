@@ -159,6 +159,7 @@ with sync_playwright() as p:
 
         # --- modalità pianificato
         page.evaluate("document.querySelector('input[name=mode][value=sched]').click()"); page.wait_for_timeout(1200)
+        check(page.evaluate("!!document.getElementById('tl-date').min && !!document.getElementById('tl-date').max"), 'selettore data limitato ai GTFS in archivio (min/max)')
         dock = rect(page, '#bottom-bar'); lim = 230 if w < 560 else 160; check(dock['h'] <= lim, f"dock Pianificato compatto ({dock['h']:.0f}px, limite {lim})")
         di = rect(page, '.dock-in'); check(di['w'] <= 761, f"dock-in Pianificato <= 760 ({di['w']:.0f}px)")
         tc = rect(page, '#timeline-controls'); check(tc['r'] <= w + 1 and tc['l'] >= -1, 'controlli orario entro lo schermo')
