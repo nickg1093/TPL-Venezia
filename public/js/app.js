@@ -593,41 +593,60 @@ map.on('dragstart', () => setFollow(false));                     // l'utente spo
 // POSIZIONE DELL'UTENTE, FILTRI, MODALITÀ
 // ---------------------------------------------------------------------------------------------------------------------
 let me = null;
-let meLL = null, watching = false;
+let meLL = null, watching = false, lowAcc = false;
+function startLocate() {
+  map.locate({ setView: true, maxZoom: 16, watch: true, enableHighAccuracy: !lowAcc, timeout: 20000, maximumAge: 5000 });
+  watching = true; $('locate').setAttribute('aria-pressed', 'true');
+}
 $('locate').onclick = () => {
   if (watching && meLL) { map.setView(meLL, Math.max(map.getZoom(), 16)); return; }   // già attiva: ricentra
-  map.locate({ setView: true, maxZoom: 16, watch: true, enableHighAccuracy: true });
-  watching = true; $('locate').setAttribute('aria-pressed', 'true');
+  if (watching) return;                                                                  // in attesa del primo segnale
+  setNearNote('Cerco la tua posizione…'); startLocate();
 };
-// FERMATE VICINE (entro 100 m): una piccola pillola accanto allo stato in alto a sinistra, che si apre con un tocco. Nessun elemento fisso in più sulla mappa.
-const NEAR_M = 100;
-let nearList = [];
+// FERMATE VICINE: una piccola pillola accanto allo stato in alto a sinistra, che si apre con un tocco. Nessun elemento fisso in più sulla mappa.
+// Entro NEAR_M si elencano tutte le fermate; se non ce n'è nessuna, la pillola dice quanto dista la più vicina (così c'è sempre una risposta).
+const NEAR_M = 300, NEAR_FAR_M = 3000;
+let nearList = [], nearFar = null;
 function nearbyStops() {
-  if (!meLL) return [];
+  nearFar = null; if (!meLL) return [];
   const by = new Map();
   for (const s of stops) {
     if (!active.has(s[4])) continue;
-    const d = mDist(meLL.lat, meLL.lng, +s[2], +s[3]); if (d > NEAR_M) continue;
+    const d = mDist(meLL.lat, meLL.lng, +s[2], +s[3]); if (d > NEAR_FAR_M) continue;
     const z = zoneOf.get(s[0]), key = z ? 'z:' + z.key : 's:' + s[0], o = by.get(key);
     if (!o || d < o.d) by.set(key, { d, zone: z || null, stop: s });
   }
-  return [...by.values()].sort((x, y) => x.d - y.d);
+  const all = [...by.values()].sort((x, y) => x.d - y.d), near = all.filter(n => n.d <= NEAR_M);
+  if (!near.length && all.length) nearFar = all[0];
+  return near;
 }
+const nm = n => (n.zone ? n.zone.name : n.stop[1]), nsrc = n => (n.zone ? n.zone.src : n.stop[4]), rnd = d => (d < 100 ? Math.round(d / 5) * 5 : Math.round(d / 10) * 10);
+function setNearNote(txt) { const chip = $('nearchip'); chip.hidden = false; chip.innerHTML = `${icon('pin', 'sm')}<span>${esc(txt)}</span>`; chip.dataset.k = 'note'; chip.setAttribute('aria-label', txt); }
 function updateNear() {
-  const chip = $('nearchip'); nearList = nearbyStops();
-  if (!nearList.length) { chip.hidden = true; chip.innerHTML = ''; return; }
-  const n = nearList[0], name = n.zone ? n.zone.name : n.stop[1], src = n.zone ? n.zone.src : n.stop[4];
-  chip.hidden = false;
-  chip.innerHTML = `${srcIcon(src, 'sm')}<span>${esc(name)} · ${Math.round(n.d / 10) * 10} m</span>${nearList.length > 1 ? `<span class="more">+${nearList.length - 1}</span>` : ''}`;
-  chip.setAttribute('aria-label', nearList.length > 1 ? `Fermate vicine: ${nearList.length}, la più vicina è ${name}` : `Fermata vicina: ${name}, a circa ${Math.round(n.d)} metri`);
+  const chip = $('nearchip'); nearList = nearbyStops(); chip.dataset.k = '';
+  if (!meLL) { chip.hidden = true; chip.innerHTML = ''; return; }
+  if (!stops.length) { setNearNote('Cerco le fermate vicine…'); return; }
+  if (nearList.length) {
+    const n = nearList[0];
+    chip.hidden = false;
+    chip.innerHTML = `${srcIcon(nsrc(n), 'sm')}<span>${esc(nm(n))} · ${rnd(n.d)} m</span>${nearList.length > 1 ? `<span class="more">+${nearList.length - 1}</span>` : ''}`;
+    chip.setAttribute('aria-label', nearList.length > 1 ? `Fermate vicine: ${nearList.length}, la più vicina è ${nm(n)}` : `Fermata vicina: ${nm(n)}, a circa ${Math.round(n.d)} metri`);
+  } else if (nearFar) {
+    chip.hidden = false; chip.dataset.k = 'far';
+    chip.innerHTML = `${srcIcon(nsrc(nearFar), 'sm')}<span>Nessuna fermata entro ${NEAR_M} m · più vicina: ${esc(nm(nearFar))}, ${rnd(nearFar.d)} m</span>`;
+    chip.setAttribute('aria-label', `Nessuna fermata entro ${NEAR_M} metri. La più vicina è ${nm(nearFar)}, a circa ${Math.round(nearFar.d)} metri`);
+  } else setNearNote('Nessuna fermata vicina ai servizi attivi');
 }
 const openNear = n => { if (n.zone) { openFromMap({ t: 'zone', key: n.zone.key, pick: '*' }); focusOn(L.latLng(n.zone.center), 17); } else { openFromMap(entryForStop(n.stop[0], n.stop[1], n.stop[4])); focusOn(L.latLng(+n.stop[2], +n.stop[3]), 17); } };
 $('nearchip').onclick = e => {
   e.stopPropagation();
+  const k = $('nearchip').dataset.k;
+  if (k === 'note') return;
+  if (k === 'far') { openNear(nearFar); return; }
   if (nearList.length === 1) { openNear(nearList[0]); return; }
   setSearch(true);                                                        // più fermate: si riusa l'elenco della ricerca
-  resultsEl.innerHTML = '<div class="search-category">Vicino a te (entro 100 m)</div>' + nearList.map((n, k) =>
-    `<div class="search-item" role="option" tabindex="0" data-type="near" data-k="${k}">${srcIcon(n.zone ? n.zone.src : n.stop[4])} <span>${esc(n.zone ? n.zone.name : n.stop[1])}</span><span class="muted">${Math.round(n.d / 10) * 10} m</span></div>`).join('');
+  resultsEl.innerHTML = `<div class="search-category">Vicino a te (entro ${NEAR_M} m)</div>` + nearList.map((n, i) =>
+    `<div class="search-item" role="option" tabindex="0" data-type="near" data-k="${i}">${srcIcon(nsrc(n))} <span>${esc(nm(n))}</span><span class="muted">${rnd(n.d)} m</span></div>`).join('');
   resultsEl.classList.add('active');
 };
 map.on('locationfound', e => {
@@ -636,7 +655,11 @@ map.on('locationfound', e => {
   me = L.circleMarker(e.latlng, { radius: 6, color: '#fff', weight: 2, fillColor: '#0284c7', fillOpacity: 1 }).addTo(map);
   updateNear();
 });
-map.on('locationerror', () => { watching = false; meLL = null; $('locate').setAttribute('aria-pressed', 'false'); updateNear(); statusEl.className = 'err'; statusEl.textContent = 'Posizione non disponibile'; });
+map.on('locationerror', e => {
+  if (e && e.code === 1) { map.stopLocate(); watching = false; meLL = null; $('locate').setAttribute('aria-pressed', 'false'); updateNear(); statusEl.className = 'err'; statusEl.textContent = 'Permesso di posizione negato: abilitalo nelle impostazioni del browser'; return; }
+  if (!lowAcc) { lowAcc = true; map.stopLocate(); startLocate(); return; }                 // segnale GPS non disponibile (al chiuso, tempo scaduto): secondo tentativo con precisione ridotta
+  map.stopLocate(); watching = false; meLL = null; $('locate').setAttribute('aria-pressed', 'false'); updateNear(); statusEl.className = 'err'; statusEl.textContent = 'Posizione non disponibile';
+});
 
 document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener('change', () => {
   mode = el.value; vehicles = [];
