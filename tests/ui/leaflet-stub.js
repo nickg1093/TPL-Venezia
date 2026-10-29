@@ -46,7 +46,7 @@
     setView(p, z = this.z) { this.c = ll(p); this.z = z; this._moved(); return this; }
     panTo(p) { this.c = ll(p); this._moved(); } flyTo(p, z) { this.c = ll(p); this.z = z; this._moved(); }
     panBy(d) { const c = this.project(this.c); this.c = this.unproject(pt(c.x + d[0], c.y + d[1])); this._moved(); }
-    invalidateSize() { this._moved(); } locate() { window.__geo ? this.fire('locationfound', { latlng: ll(window.__geo), accuracy: 10 }) : this.fire('locationerror', {}); }
+    invalidateSize() { this._moved(); } stopLocate() {} locate() { window.__geo ? this.fire('locationfound', { latlng: ll(window.__geo), accuracy: 10 }) : this.fire('locationerror', {}); }
   }
   window.L = { map: (i, o) => new Map_(i, o), latLng: ll, point: pt, divIcon: o => o, tileLayer: () => ({ addTo() { return this; } }), layerGroup: () => new Group(),
     marker: (p, o) => new Marker(p, o), circleMarker: (p, o) => new Circle(p, o), polyline: (p, o) => new Poly(p, o),
