@@ -53,12 +53,23 @@ async function readStopTimes(buf, intern) {
 // Legge la versione scelta da gtfsstore.js. Ritorna null se è la stessa già in memoria (nessun lavoro inutile).
 // opts.sample = campione del realtime { tripId, routeId }[] per scegliere tra più versioni valide; opts.force rilegge comunque.
 async function load(srcId, opts = {}) {
-  const t0 = Date.now(), log = m => console.log(`GTFS [${srcId}]: ${m} (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
   const sel = await store.select(srcId, { sample: opts.sample });
   if (!sel.pick) throw new Error('nessun GTFS valido in archivio: attendo il download (o copia lo ZIP in data/)');
   if (!opts.force && loaded[srcId] === sel.pick.hash) return null;
-  log(`versione scelta ${path.basename(sel.pick.file)}: ${sel.reason}`);
-  const buf = fs.readFileSync(sel.pick.file), sig = sel.pick.hash;
+  const G = await build(srcId, sel.pick, sel);
+  loaded[srcId] = sel.pick.hash;
+  return G;
+}
+// Legge una versione ARCHIVIATA qualsiasi (per la modalità "Pianificato" con date fuori dalla versione in uso). Non cambia la versione in uso.
+async function loadVersion(srcId, cand, ymd) {
+  return build(srcId, cand, { reason: `versione per la data ${ymd}`, approx: false, today: ymd });
+}
+
+// Costruisce le strutture dal file scelto (cand = voce di gtfsstore.list).
+async function build(srcId, pick, sel) {
+  const t0 = Date.now(), log = m => console.log(`GTFS [${srcId}]: ${m} (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
+  log(`versione scelta ${path.basename(pick.file)}: ${sel.reason}`);
+  const buf = fs.readFileSync(pick.file), sig = pick.hash;
 
   const entries = new AdmZip(buf).getEntries();
   const read = name => { const e = entries.find(x => { const n = x.entryName.toLowerCase(); return n === name || n.endsWith('/' + name); }); return e ? e.getData() : null; };
@@ -111,7 +122,7 @@ async function load(srcId, opts = {}) {
     shapePts[id] = f; delete raw[id];
   }
 
-  G.calendar = sel.pick.info.calendar; G.exByDate = sel.pick.info.exByDate;   // già letti da gtfsstore (stessi dati usati per scegliere la versione)
+  G.calendar = pick.info.calendar; G.exByDate = pick.info.exByDate;   // già letti da gtfsstore (stessi dati usati per scegliere la versione)
 
   log('leggo gli orari (stop_times)');
   G.stopTimes = await readStopTimes(read('stop_times.txt'), intern);
@@ -131,10 +142,9 @@ async function load(srcId, opts = {}) {
     G.routeShapes[rid] = [...shapesByRoute[rid]].filter(s => shapePts[s]).sort((a, b) => shapePts[b].length - shapePts[a].length).slice(0, 4).map(s => shapePts[s]);
   }
   ids.attach(G);
-  G.meta = { file: path.basename(sel.pick.file), hash: sig, from: sel.pick.info.from, feedEnd: sel.pick.info.feedEnd, coverage: sel.pick.info.cover,
+  G.meta = { file: path.basename(pick.file), hash: sig, from: pick.info.from, feedEnd: pick.info.feedEnd, coverage: pick.info.cover,
     approx: sel.approx, reason: sel.reason, today: sel.today, loadedAt: Date.now() };
-  loaded[srcId] = sig;
   log(`PRONTO: ${Object.keys(routes).length} linee, ${Object.keys(trips).length} viaggi, ${Object.keys(stops).length} fermate, ${stopTimes.size} corse con orari`);
   return G;
 }
-module.exports = { load, empty, toLL, loaded };
+module.exports = { load, loadVersion, empty, toLL, loaded };

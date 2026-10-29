@@ -10,7 +10,7 @@ Server Node.js senza database; pensato per il piano gratuito di Render.
 ### 1.1 Prima installazione o dopo aver sostituito i file
 1. Copia tutti i file di questo progetto nel repository (la cartella `data/` esistente **resta com'è**: contiene i GTFS già scaricati).
 2. `npm install` — **obbligatorio**: Leaflet ora è una dipendenza npm (serve in locale da `/vendor/leaflet`, non più da unpkg) e `package-lock.json` va rigenerato. Fai commit anche di `package-lock.json`.
-3. `npm test` — deve passare tutto (42 test).
+3. `npm test` — deve passare tutto (43 test).
 4. `npm start`, apri `http://localhost:3000`.
 
 ### 1.2 Variabili d'ambiente su Render (Dashboard → Environment)
@@ -130,6 +130,7 @@ Il feed toglie la fermata appena il mezzo arriva e indicherebbe già la successi
 - **Pannelli** (fermata, zona, corsa): cliccando una riga si passa all'altro pannello (fermata → corsa, corsa → fermata) e in alto compare il **link blu «indietro»** con il nome del pannello precedente (fino a 20 livelli). Aprire un pannello dalla mappa riparte da zero.
 - **X**: chiude il pannello, deseleziona il mezzo e **toglie la shape del percorso** (due livelli separati: percorsi della ricerca e percorso della corsa).
 - **Segui** (pulsante accanto alla X, solo nel pannello della corsa, stesso stile degli altri pulsanti, `aria-pressed`): il mezzo viene tenuto al centro della **zona libera della mappa**, cioè il rettangolo non coperto da pannello, colonna controlli, scheda marea e ricerca, ricalcolato dalle misure reali (vale per ogni schermo e orientamento). Scorrimento morbido; trascinare la mappa a mano ferma l'inseguimento; passando a un altro pannello si spegne.
+- **Pianificato e GTFS per data**: il selettore di data ammette solo i giorni coperti dai GTFS in archivio (`/api/dates`: dal primo all'ultimo giorno dei calendari in `data/gtfs/aut|nav`). Per ogni data il server sceglie la versione con servizi in quel giorno (la più recente tra le valide). Quella in uso oggi è sempre in memoria; se la data richiede un'altra versione, questa si carica a richiesta (una sola alternativa per servizio, per la memoria di Render) e l'interfaccia mostra «Carico gli orari della data scelta…» riprovando da sola. Senza una versione che copra la data, la barra di stato lo dice. L'archivio si compatta da solo (`prune`): restano le versioni valide oggi, quelle future, la più recente scaduta e quelle scadute da meno di 60 giorni (massimo 6).
 - **Pianificato**: barra compatta (selettore + data/velocità, una riga con play · ora · cursore · ORA), contenuto largo al massimo 760 px e centrato, uguale su schermi grandi.
 - **Controlli a destra**, in tre blocchi: servizi · cerca, posizione, tema scuro · avvisi, marea (e «Installa» quando disponibile).
 - **Ricerca**: scrivendo un numero le linee passano prima delle fermate, divise in «Automobilistico e tram» (mattonelle) e «Navigazione» (cerchi). Scegliendo una linea la mappa mostra solo i suoi mezzi e il suo percorso (pillola «solo linea X» in alto a sinistra per tornare a tutto).
@@ -156,7 +157,7 @@ tests/           test unitari (node --test) e prove dell'interfaccia (tests/ui)
 ```
 
 ## 7. Test
-- `npm test` — 42 test (tracker, orari, archivio GTFS, sicurezza, marea, avvisi).
+- `npm test` — 43 test (tracker, orari, archivio GTFS, sicurezza, marea, avvisi).
 - Simulazione completa: `node -r ./tests/fakefeed.js server.js` (feed finto costruito dalle corse in servizio adesso, con fantasmi e rilevamenti vecchi).
 - Interfaccia: con quel server avviato (`TRUST_PROXY=1`), `python3 tests/ui/run.py http://localhost:3000 <cartella>` (Playwright; usa un Leaflet finto in `tests/ui/leaflet-stub.js`): 6 formati di schermo, X, indietro, segui, dock, nessuno script in linea.
 

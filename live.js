@@ -3,6 +3,7 @@
 // L'HTTP sta in server.js; qui non c'è nulla di web. Gli aggiornamenti si annunciano con l'evento 'push' (vedi events).
 const { EventEmitter } = require('events');
 const crypto = require('crypto');
+const path = require('path');
 const protobuf = require('protobufjs');
 const gtfs = require('./gtfs');
 const store = require('./gtfsstore');
@@ -332,8 +333,8 @@ function buildStates(i) {
   S[i].state = out;
 }
 
-function tripDetail(i, tid, live, vehKey = null) {
-  const G = D[i], st = G.stopTimes.get(tid), trip = G.trips[tid], r = G.routes[trip.route] || {}, n = st.s.length;
+function tripDetail(i, tid, live, vehKey = null, G = D[i]) {
+  const st = G.stopTimes.get(tid), trip = G.trips[tid], r = G.routes[trip.route] || {}, n = st.s.length;
   const tNow = tripNow(st), nowMs = Date.now();
   // mezzo di cui si mostra la corsa: quello richiesto (dal marker o dal pannello fermata) se è un rinforzo, altrimenti il principale
   const prim = live ? S[i].state[tid] : null;
@@ -404,16 +405,51 @@ function rtSample(id) {
   for (const e of S[id].cache.vehiclePositions?.ents || []) { if (out.length >= 300) break; push(e.vehicle?.trip?.tripId, e.vehicle?.trip?.routeId); }
   return out;
 }
+// ---- GTFS PER DATA (modalità "Pianificato") ----
+// In memoria c'è la versione in uso OGGI (D). Per una data diversa si sceglie nell'archivio la versione con servizi quel giorno (più recente tra le valide);
+// se è un'altra si carica a richiesta in `alt` (UNA sola alternativa per servizio: la memoria di Render gratuito è limitata) e intanto si risponde "in caricamento".
+const catalog = {};   // servizio -> versioni in archivio (con calendari), aggiornato a ogni rivalutazione
+const alt = {}, altBusy = {}, altErr = {};
+async function refreshCatalog(id) { try { catalog[id] = await store.list(id); } catch (e) { console.error(`archivio GTFS [${id}]:`, e.message); } }
+// Ritorna { G } pronto, { loading: true } (caricamento in corso), { none: true } (nessuna versione copre la data) o { error }
+function dataFor(id, date) {
+  if (!cal.isYmd(date) || date === cal.romeYmd()) return { G: D[id] };
+  const r = store.choose(catalog[id] || [], date);
+  if (!r.pick || r.approx) return { none: true };
+  const hash = r.pick.hash;
+  if (D[id].meta?.hash === hash) return { G: D[id] };
+  if (alt[id]?.hash === hash) return { G: alt[id].G };
+  if (altErr[id]?.hash === hash && Date.now() - altErr[id].t < 30000) return { error: altErr[id].msg };
+  if (!altBusy[id]) {
+    alt[id] = null;                                                         // libera la precedente prima di caricare la nuova
+    altBusy[id] = gtfs.loadVersion(id, r.pick, date).then(G => { alt[id] = { hash, G }; delete altErr[id]; })
+      .catch(e => { altErr[id] = { hash, t: Date.now(), msg: e.message }; console.error(`GTFS [${id}] versione per ${date}:`, e.message); })
+      .finally(() => { delete altBusy[id]; });
+  }
+  return { loading: true };
+}
+// Date selezionabili: dal primo all'ultimo giorno coperto dalle versioni in archivio (calendari + eccezioni), per ciascun servizio e in totale.
+function dateRange() {
+  const per = {}; let min = '99999999', max = '00000000';
+  for (const id of IDS) {
+    const c = (catalog[id] || []).filter(x => x.info), a = c.map(x => x.info.cover.min).sort()[0], b = c.map(x => x.info.cover.max).sort().pop();
+    per[id] = { min: a || null, max: b || null, versions: c.map(x => ({ file: path.basename(x.file), from: x.info.from, to: x.info.cover.max })).sort((p, q) => p.from.localeCompare(q.from)) };
+    if (a && a < min) min = a;
+    if (b && b > max) max = b;
+  }
+  return { min: min < '99999999' ? min : null, max: max > '00000000' ? max : null, today: cal.romeYmd(), per };
+}
 const busy = {};      // un solo caricamento alla volta per servizio (rivalutazione periodica, ricarica manuale)
 async function adopt(id, { force = false } = {}) {
   if (busy[id]) return busy[id];
   return (busy[id] = (async () => {
     try {
+      await refreshCatalog(id);
       const g = await gtfs.load(id, { sample: rtSample(id), force });
       if (!g) return false;
       D[id] = g; const s8 = S[id];
       s8.hist.clear(); s8.vs.clear(); s8.snap.clear(); s8.sig.clear(); s8.owner.clear(); s8.state = {}; s8.live = {};
-      ready[id] = true; version++; dropStopsCache();
+      ready[id] = true; version++; dropStopsCache(); alt[id] = null;
       refresh(id);
       console.log(`GTFS statico [${id}] in uso: ${g.meta.file} (${g.meta.reason})`);
       return true;
@@ -458,5 +494,5 @@ function startLoops() {
   })();
 }
 
-module.exports = { Feed, events, D, S, ready, IDS, REFRESH_MS, refresh, tripDetail, noteOf, startStatic, startLoops, adopt, syncStatic, gtfsStatus,
+module.exports = { Feed, events, D, S, ready, IDS, REFRESH_MS, refresh, tripDetail, noteOf, dataFor, dateRange, startStatic, startLoops, adopt, syncStatic, gtfsStatus,
   version: () => version, stopsCache: () => cachedStopsGzip, setStopsCache: v => { cachedStopsGzip = v; } };

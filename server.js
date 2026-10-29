@@ -29,6 +29,14 @@ function timeParams(u) {   // { secs, date } già validati; valori invalidi = er
   if (date === false) throw sec.bad('parametro date non valido');
   return { secs, date };
 }
+// GTFS da usare per la data richiesta (modalità "Pianificato"): { G } oppure errore 409 "in caricamento" / nota "nessun GTFS per quella data"
+function gtfsFor(i, date) {
+  const r = live.dataFor(i, date);
+  if (r.loading) throw fail(409, 'Carico gli orari della data scelta, un momento…');
+  if (r.error) throw fail(503, 'Orari della data scelta non disponibili: ' + r.error);
+  return r;
+}
+const NO_GTFS = 'Nessun GTFS in archivio copre questa data';
 const fullId = (u, key) => { const r = sec.vFullId(q(u, key), IDS); if (!r) throw sec.bad(`parametro ${key} non valido`); return r; };
 // Ordine di passaggio: per orario PREVISTO (con ritardo/anticipo reale), poi per orario programmato.
 const byExpected = (a, b) => (a.expSec - b.expSec) || (a.schedIn - b.schedIn);
@@ -50,16 +58,19 @@ function departuresFor(fulls, u) {
   const { secs, date } = timeParams(u), liveMode = mode(u) === 'live', out = [], seen = new Set();
   let note = null, liveUpdated = 0;
   for (const [i, sid] of fulls) {
-    const G = D[i], lab = labelsOf(i), full = `${i}:${sid}`;
+    const r = gtfsFor(i, date);
+    if (r.none) { note = NO_GTFS; continue; }
+    const G = r.G, own = G === D[i], lab = own ? labelsOf(i) : new Map(), full = `${i}:${sid}`;
+    if (!has(G.stopIndex, sid)) continue;                                        // fermata che in quella versione non esiste
     for (const eq of equivalentStops(G, sid)) {
       const isRequest = G.stopIsRequest?.get(eq) || false;
-      for (const d of schedule.departures(G, S[i].live, eq, secs, date, liveMode ? S[i].state : null)) {
+      for (const d of schedule.departures(G, own ? S[i].live : {}, eq, secs, date, liveMode && own ? S[i].state : null)) {
         const k = `${full}|${d.tripId}|${d.seq}|${d.veh ?? ''}|${d.done ? 1 : 0}`;
         if (seen.has(k)) continue; seen.add(k);
         out.push({ ...d, src: i, stop: full, vehicle: d.vehLabel || lab.get(d.tripId) || null, isRequest });
       }
     }
-    note = live.noteOf(G, date); liveUpdated = Math.max(liveUpdated, S[i].updated);
+    note = live.noteOf(G, date) || note; liveUpdated = Math.max(liveUpdated, S[i].updated);
   }
   return { out: out.sort(byExpected), note, liveUpdated };
 }
@@ -77,9 +88,10 @@ const API = new Map(Object.entries({
     const errors = [], vehicles = [], { secs, date } = timeParams(u);
     for (const i of wanted(u)) {
       try {
-        for (const v of schedule.positionsNow(D[i], secs, date))
+        const r = gtfsFor(i, date); if (r.none) { errors.push(`${i === 'nav' ? 'navigazione' : 'automobilistico'}: nessun GTFS in archivio copre questa data`); continue; }
+        for (const v of schedule.positionsNow(r.G, secs, date))
           vehicles.push({ ...v, tripId: v.id, id: `${i}:${v.id}`, src: i, routeId: v.routeId ? `${i}:${v.routeId}` : null });
-      } catch (e) { errors.push(`${i}: errore`); console.error('scheduled', i, e.message); }
+      } catch (e) { if (e.code === 409) { errors.push(e.message); continue; } errors.push(`${i}: errore`); console.error('scheduled', i, e.message); }
     }
     return { updated: Date.now(), error: errors.join('; ') || null, version: live.version(), ready, vehicles };
   } },
@@ -115,9 +127,12 @@ const API = new Map(Object.entries({
   '/api/trip': { fn: u => {
     const [i, tid] = fullId(u, 'id'), veh = q(u, 'veh');
     if (!sec.vVeh(veh)) throw sec.bad('parametro veh non valido');
-    if (!D[i].stopTimes.has(tid)) throw fail(404, 'corsa sconosciuta');
-    return live.tripDetail(i, tid, q(u, 'mode') !== 'sched', veh || null);
+    const sched = q(u, 'mode') === 'sched', G = sched ? (gtfsFor(i, timeParams(u).date).G || D[i]) : D[i];
+    if (!G.stopTimes.has(tid)) throw fail(404, 'corsa sconosciuta');
+    return live.tripDetail(i, tid, !sched, veh || null, G);
   } },
+  // date selezionabili in modalità Pianificato: solo quelle coperte dai GTFS in archivio
+  '/api/dates': { fn: () => live.dateRange() },
   '/api/routes': { fn: () => {
     const out = {};
     for (const i of IDS) for (const r in D[i].routes) out[`${i}:${r}`] = { ...D[i].routes[r], src: i };

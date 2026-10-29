@@ -12,7 +12,8 @@
 //   3. La più recente tra quelle già entrate in vigore (feed_start_date / primo giorno dei calendari più alto), poi la più recente scaricata.
 //   Se nessuna ha servizi oggi si usa la più vicina nel tempo e il sistema lo segnala (orari indicativi).
 // Le versioni con inizio futuro restano in archivio e si attivano da sole quando arriva la data (la scelta si rifà ogni pochi minuti).
-// Si compatta l'archivio: restano le versioni valide oggi, quelle future e la più recente scaduta (massimo 5).
+// Si compatta l'archivio: restano le versioni valide oggi, quelle future, la più recente scaduta e quelle scadute da meno di 60 giorni (massimo 6).
+// In modalità "Pianificato" le date selezionabili sono solo quelle coperte da queste versioni, e per ogni data si usa la versione con servizi quel giorno.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -28,7 +29,7 @@ const SOURCES = {
   aut: { url: BASE + 'automobilistico/actv_aut.zip', legacy: 'actv_aut.zip' }
 };
 const REQUIRED = ['trips.txt', 'stop_times.txt', 'stops.txt', 'routes.txt'];
-const KEEP_MAX = 5;
+const KEEP_MAX = 6, KEEP_DAYS = 60;   // archivio: massimo 6 versioni; le scadute restano 60 giorni (si possono ancora consultare in "Pianificato")
 // il sito ACTV rifiuta le richieste senza User-Agent da browser
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
@@ -190,12 +191,14 @@ async function download(src, { force = false } = {}) {
   return { status: 'errore', error: lastErr };
 }
 
-// Compatta l'archivio: tiene le versioni valide oggi, quelle future e la più recente scaduta (max KEEP_MAX). Non tocca mai la copia storica in data/.
+// Compatta l'archivio: tiene le versioni valide oggi, quelle future, la più recente scaduta e quelle scadute da meno di KEEP_DAYS giorni (max KEEP_MAX). Non tocca mai la copia storica in data/.
 async function prune(src, ymd = cal.romeYmd()) {
   const rows = (await list(src)).filter(c => c.info && !c.legacy).map(c => ({ c, valid: cal.activeServices(c.info.calendar, c.info.exByDate, ymd).size > 0, future: c.info.from > ymd }));
   const keep = new Set(rows.filter(r => r.valid || r.future).map(r => r.c.hash));
   const expired = rows.filter(r => !keep.has(r.c.hash)).sort((a, b) => b.c.info.cover.max.localeCompare(a.c.info.cover.max));
   if (expired[0]) keep.add(expired[0].c.hash);
+  const limit = cal.addDays(ymd, -KEEP_DAYS);
+  for (const r of expired) if (r.c.info.cover.max >= limit) keep.add(r.c.hash);
   const order = rows.slice().sort((a, b) => b.c.info.from.localeCompare(a.c.info.from));
   let n = 0; const removed = [];
   for (const r of order) {
