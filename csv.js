@@ -20,7 +20,7 @@ async function eachRow(buf, fields, fn) {
   let nl = buf.indexOf(10); if (nl < 0) nl = buf.length;
   const head = splitLine(buf.toString('utf8', 0, nl).replace(/^﻿/, '').replace(/\r$/, '')).map(h => h.trim());
   const idx = fields.map(f => head.indexOf(f));
-  let n = 0;
+  let n = 0, last = Date.now();
   for (let s = nl + 1; s < buf.length;) {
     let e = buf.indexOf(10, s); if (e < 0) e = buf.length;
     let ln = buf.toString('utf8', s, e); s = e + 1;
@@ -29,7 +29,8 @@ async function eachRow(buf, fields, fn) {
     const f = splitLine(ln), o = {};
     fields.forEach((k, j) => { o[k] = idx[j] >= 0 ? f[idx[j]] : undefined; });
     fn(o);
-    if (++n % 20000 === 0) await tick();
+    // cede il passo ogni ~8 ms di lavoro continuo (non ogni N righe): su CPU lente (piano gratuito) le richieste degli utenti non restano bloccate
+    if (++n % 500 === 0 && Date.now() - last > 8) { await tick(); last = Date.now(); }
   }
 }
 module.exports = { splitLine, eachRow, tick };

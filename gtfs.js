@@ -5,7 +5,7 @@ const path = require('path');
 const AdmZip = require('adm-zip');
 const ids = require('./ids');
 const store = require('./gtfsstore');
-const { eachRow } = require('./csv');
+const { eachRow, tick } = require('./csv');
 const { inArea } = require('./geo');
 
 const loaded = {};   // servizio -> hash del file attualmente in memoria
@@ -71,7 +71,9 @@ async function build(srcId, pick, sel) {
   log(`versione scelta ${path.basename(pick.file)}: ${sel.reason}`);
   const buf = fs.readFileSync(pick.file), sig = pick.hash;
 
+  await tick();
   const entries = new AdmZip(buf).getEntries();
+  await tick();
   const read = name => { const e = entries.find(x => { const n = x.entryName.toLowerCase(); return n === name || n.endsWith('/' + name); }); return e ? e.getData() : null; };
   const pool = new Map(), intern = x => { let v = pool.get(x); if (v === undefined) pool.set(x, v = x); return v; };
   const G = empty(), { routes, trips, stops, stopLoc, shapePts, nameToStopIds, stopBaseNames, stopIsRequest } = G;

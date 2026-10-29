@@ -153,6 +153,9 @@ function stopMentions(text, byName) {
 //  · se le fermate sicure del testo sono tutte di un servizio, una linea dell'altro servizio che non ne serve nessuna viene scartata;
 //  · con linee nell'avviso restano solo le fermate (id) realmente servite da quelle linee.
 function analyze(title, text, ctx) {
+  const r = analyzeBase(title, text, ctx); return withWater(r, title + '\n' + text, ctx);
+}
+function analyzeBase(title, text, ctx) {
   const full = title + '\n' + text, empty = { lines: [], stops: [], stopNames: [] };
   if (/sciopero/i.test(title) || /^\s*[^\n]{0,80}\bsciopero\b/i.test(text)) return empty;
   const known = ctx.known, mentions = stopMentions(full, ctx.byName), strongIds = new Set(), mSrc = new Set();
@@ -202,6 +205,81 @@ function analyze(title, text, ctx) {
   // avvisi generali sugli orari (centinaia di fermate citate di passaggio): niente segnalazione sulle fermate
   const general = /\borari\b|modifiche ai? serviz/i.test(title) || names.size > 30;
   return { lines: lineList, stops: general ? [] : ids.slice(0, 80), stopNames: general ? [] : [...names.values()].slice(0, 30) };
+}
+
+
+// ---------------------------------------------------------------------------------------------------------------------
+// ACQUA ALTA — piano ACTV «Acqua alta: servizi di navigazione previsti» (https://actv.avmspa.it/it/content/acqua-alta-servizi-di-navigazione-previsti)
+// Quando un avviso (sito o Telegram) parla di acqua alta con un livello previsto, si applicano le disposizioni della pagina ACTV per quel livello:
+// i limiti valgono "oltre" la soglia e sono cumulativi. Le linee e i pontili sono quelli del GTFS di navigazione; il testo dell'avviso ufficiale resta sempre prevalente.
+// ---------------------------------------------------------------------------------------------------------------------
+const AA_URL = 'https://actv.avmspa.it/it/content/acqua-alta-servizi-di-navigazione-previsti';
+const AA_RE = /acqua\s+alta|alta\s+marea|picco\s+di\s+marea|\bmarea\b/i;
+// livello previsto (cm): "+120", "110 cm", "tra 100 e 120 cm" -> il massimo. Si ignorano le soglie ("oltre 85 cm", "sopra i 110", ">100") e valori fuori scala.
+function waterLevel(text) {
+  const t = String(text), vals = [];
+  for (const m of t.matchAll(/(?:\+\s*(\d{2,3})\b|\b(\d{2,3})\s*(?:cm|centimetri)\b)/gi)) {
+    const v = +(m[1] || m[2]), before = t.slice(Math.max(0, m.index - 22), m.index).toLowerCase();
+    if (/(oltre|sopra|superiore\s+a|superiori\s+a|soglia|>|almeno|da)\s*(?:i|a|di|ai|ad)?\s*$/.test(before) && !/\+/.test(m[0])) continue;
+    if (v >= 80 && v <= 200) vals.push(v);
+  }
+  return vals.length ? Math.max(...vals) : null;
+}
+// disposizioni cumulative per soglia. lines: numeri di linea di navigazione; stops: [espressione sul nome normalizzato]; txt: riga mostrata
+const AA_RULES = [
+  { over: 85, stops: [/^s marcuola casino b$/], txt: 'S. Marcuola (direzione Rialto / S. Marco): fermata sospesa.' },
+  { over: 95, lines: ['2', '3', '4.1', '4.2', '5.1', '5.2', '6'], stops: [/^ferrovia c$/, /^ferrovia d$/],
+    txt: 'Linea 2 limitata a S. Zaccaria "B" – Tronchetto e S. Marco Giardinetti – P.le Roma (spola fino a +135 cm); linea 3 sospesa; 4.1 da Fondamente Nove a Tre Archi; 4.2 da Fondamente Nove a S. Zaccaria; 5.1 limitata a Lido S.M.E. "A" – Ospedale – Fondamente Nove – Tre Archi; 5.2 e 6 deviate via Canal Grande tra P.le Roma "D" e Lido S.M.E. "B" (a Ferrovia fermano a "C" verso P.le Roma e a "D" verso Lido). Le altre linee sono regolari. Di notte (20–7) sospesi gli approdi Murano Colonna "A" e "B".' },
+  { over: 120, stops: [/^zattere b$/], txt: 'Zattere (direzione S. Marco – Lido): fermata sospesa.' },
+  { over: 125, stops: [/^rialto c$/, /^rialto d$/], txt: 'Rialto "C" e "D" (linea 2): passerelle non più agibili.' },
+  { over: 135, stops: [/^murano colonna [abc]$/, /^murano venier$/], txt: 'Murano: stop al transito sotto il ponte Vivarini; linee 4.1 e 4.2 sospese tra Colonna e Venier.' },
+  { over: 140, allNav: true, txt: 'Servizio di linea sospeso: restano solo collegamenti con le isole dagli impianti ancora accessibili.' },
+];
+function waterPlan(full, ctx) {
+  if (!AA_RE.test(full)) return null;
+  const level = waterLevel(full); if (level == null) return null;
+  return planForLevel(level, ctx);
+}
+function planForLevel(level, ctx) {
+  if (!(level > 85)) return null;
+  const lines = new Map(), ids = [], names = new Map(), plan = [];
+  for (const r of AA_RULES) {
+    if (level <= r.over) continue;
+    plan.push(r.txt);
+    for (const n of r.lines || []) for (const x of ctx.known?.get(n.toUpperCase()) || []) if (x.s === 'nav') lines.set('nav:' + x.n, { n: x.n, s: 'nav', c: x.c || null });
+    if (r.allNav) for (const l of ctx.known?.values() || []) for (const x of l) if (x.s === 'nav') lines.set('nav:' + x.n, { n: x.n, s: 'nav', c: x.c || null });
+    for (const re of r.stops || []) for (const [k, list] of ctx.byName || []) if (re.test(k)) for (const id of list) {
+      if (!id.startsWith('nav:') || ids.includes(id)) continue;
+      const nm = ctx.nameOf ? ctx.nameOf(id) : k; ids.push(id); names.set('nav|' + nm, { n: nm, s: 'nav' });
+    }
+  }
+  return { level, lines: [...lines.values()], stops: ids, stopNames: [...names.values()], plan, planUrl: AA_URL };
+}
+// AVVISO AUTOMATICO dal livello di marea (misurato ora o previsto nelle prossime 12 ore): serve quando ACTV non pubblica nulla.
+// Ha la precedenza ogni comunicazione ufficiale con un piano acqua alta (sito ACTV o Telegram): in quel caso l'automatico sparisce e l'avviso ufficiale riporta il livello misurato come conferma.
+let tideSource = () => null;
+function setTideSource(fn) { tideSource = fn; ST.cache = null; }
+const hhmm = ms => { const p = cal.romeParts(ms), s = p.secs; return String(Math.floor(s / 3600)).padStart(2, '0') + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0'); };
+function autoWater(now, ctx, official) {
+  let snap = null; try { snap = tideSource(); } catch { /* dato non disponibile */ }
+  if (!snap) return { measured: null, item: null };
+  const measured = snap.stale ? null : snap.cm, peak = snap.peak && snap.peak.cm > 85 ? snap.peak : null;
+  const level = Math.max(measured ?? -999, peak ? peak.cm : -999), plan = planForLevel(level, ctx);
+  if (!plan || official) return { measured, item: null };
+  const nowHigh = measured != null && measured > 85, from = nowHigh ? now - 60e3 : Math.max(now - 60e3, peak.ts - 2 * 3600e3);
+  const parts = [measured != null ? `Livello misurato ${measured} cm` : null, peak ? `picco previsto ${peak.cm} cm alle ${hhmm(peak.ts)}` : null].filter(Boolean).join(', ');
+  return { measured, item: { id: 'auto-acqua-alta', source: 'auto', title: `Acqua alta: marea oltre 85 cm (${level} cm)`, text: `${parts}. Nessun avviso ufficiale rilevato: sono indicate le disposizioni del piano ACTV per questo livello. Fa fede la comunicazione ufficiale.`,
+    url: AA_URL, published: now, from, to: nowHigh ? now + 20 * 60e3 : peak.ts + 2 * 3600e3, open: false, dated: false,
+    lines: plan.lines, stops: plan.stops, stopNames: plan.stopNames, water: { level, plan: plan.plan, url: AA_URL, measured } } };
+}
+// unisce il piano acqua alta al risultato di analyze()
+function withWater(res, full, ctx) {
+  const w = waterPlan(full, ctx); if (!w) return res;
+  const lines = new Map(res.lines.map(l => [l.s + ':' + l.n, l]));
+  for (const l of w.lines) if (!lines.has(l.s + ':' + l.n)) lines.set(l.s + ':' + l.n, l);
+  const names = new Map(res.stopNames.map(s => [s.s + '|' + s.n, s])); for (const s of w.stopNames) names.set(s.s + '|' + s.n, s);
+  return { lines: [...lines.values()].slice(0, 40), stops: [...new Set([...res.stops, ...w.stops])].slice(0, 100), stopNames: [...names.values()].slice(0, 40),
+    water: { level: w.level, plan: w.plan, url: w.planUrl } };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -312,6 +390,10 @@ function build(now = Date.now()) {
     items.push({ id: idOf(m.key), source: 'telegram', title, text: short(lines.slice(title === lines[0] ? 1 : 0).join(' ') || m.text, 700), url: m.links.find(l => /actv|avm/.test(l)) || m.url, tgUrl: m.url,
       published: m.pubMs, ...v, ...analyze(title, m.text, ctx) });
   }
+  const officialWater = items.some(it => it.water && it.from <= now + UPCOMING_MS && it.to >= now);
+  const aw = autoWater(now, ctx, officialWater);
+  if (aw.item) items.push(aw.item);
+  else if (aw.measured != null) for (const it of items) if (it.water) it.water.measured = aw.measured;     // conferma con il livello misurato
   const out = [];
   for (const it of items) {
     if (it.to < now - KEEP_EXPIRED_MS) continue;                            // scaduto
@@ -337,4 +419,4 @@ function start() {
 }
 // per i test
 function _load({ rss = [], tg = [], pages = {} } = {}) { ST.rss = rss; ST.tg = tg; ST.pages = new Map(Object.entries(pages)); ST.rssOk = ST.tgOk = Date.now(); }
-module.exports = { analyze, stopMentions, start, getAvvisi, setContext, parseRss, parseTelegram, parseValidity, articleText, toText, safeUrl, norm, build, _load, refreshRss, refreshTg };
+module.exports = { setTideSource, planForLevel, autoWater, analyze, waterLevel, waterPlan, stopMentions, start, getAvvisi, setContext, parseRss, parseTelegram, parseValidity, articleText, toText, safeUrl, norm, build, _load, refreshRss, refreshTg };

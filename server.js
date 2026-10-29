@@ -55,7 +55,7 @@ async function getTideCached(debug) {
 
 // Elenco passaggi di una fermata (o di più fermate = zona), con i mezzi equivalenti e senza doppioni
 function departuresFor(fulls, u) {
-  const { secs, date } = timeParams(u), liveMode = mode(u) === 'live', out = [], seen = new Set();
+  const { secs, date } = timeParams(u), liveMode = mode(u) === 'live', out = [], seen = new Set(), doneEq = new Set();
   let note = null, liveUpdated = 0;
   for (const [i, sid] of fulls) {
     const r = gtfsFor(i, date);
@@ -63,6 +63,7 @@ function departuresFor(fulls, u) {
     const G = r.G, own = G === D[i], lab = own ? labelsOf(i) : new Map(), full = `${i}:${sid}`;
     if (!has(G.stopIndex, sid)) continue;                                        // fermata che in quella versione non esiste
     for (const eq of equivalentStops(G, sid)) {
+      if (doneEq.has(i + ':' + eq)) continue; doneEq.add(i + ':' + eq);           // codici dello stesso palo richiesti più volte (zona o fermata unita): una sola volta
       const isRequest = G.stopIsRequest?.get(eq) || false;
       for (const d of schedule.departures(G, own ? S[i].live : {}, eq, secs, date, liveMode && own ? S[i].state : null)) {
         const k = `${full}|${d.tripId}|${d.seq}|${d.veh ?? ''}|${d.done ? 1 : 0}`;
@@ -111,13 +112,13 @@ const API = new Map(Object.entries({
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Encoding': 'gzip', 'Cache-Control': 'no-store' });
     res.end(gz);
   } },
-  '/api/stop': { fn: u => {
+  '/api/stop': { cache: true, fn: u => {
     const [i, sid] = fullId(u, 'id'), G = D[i];
     if (!has(G.stopIndex, sid)) throw fail(404, 'fermata sconosciuta');
     const { out, note, liveUpdated } = departuresFor([[i, sid]], u);
     return { stop: { id: `${i}:${sid}`, name: G.stopBaseNames?.get(sid) || G.stops[sid] || sid, src: i }, liveUpdated, note, departures: out.slice(0, 120) };
   } },
-  '/api/zone': { fn: u => {
+  '/api/zone': { cache: true, fn: u => {
     const list = (q(u, 'ids') || '').split(',').slice(0, 24).map(f => sec.vFullId(f, IDS));
     if (!list.length || list.some(x => !x)) throw sec.bad('parametro ids non valido');
     if (list.some(([i, sid]) => !has(D[i].stopIndex, sid))) throw fail(404, 'zona sconosciuta');
@@ -166,6 +167,7 @@ const API = new Map(Object.entries({
   } }
 }));
 
+const respCache = new Map();
 // ---- risposte ----
 function send(req, res, obj, code = 200, extra = {}) {
   const body = Buffer.from(typeof obj === 'string' ? obj : JSON.stringify(obj));
@@ -247,6 +249,8 @@ async function onRequest(req, res) {
     try {
       u._req = req;
       if (api.raw) return api.raw(u, req, res);
+      // risposte di /api/stop e /api/zone: stessa richiesta (stessa fermata/zona, stessa ora) nello stesso secondo e mezzo = un solo calcolo, anche con molti utenti
+      if (api.cache) { const k = req.url, hit = respCache.get(k), now = Date.now(); if (hit && now - hit.t < 1500) return send(req, res, await hit.p); const p = Promise.resolve().then(() => api.fn(u, req)); respCache.set(k, { t: now, p }); p.catch(() => respCache.delete(k)); if (respCache.size > 200) for (const [kk, v] of respCache) if (now - v.t >= 1500) respCache.delete(kk); return send(req, res, await p); }
       send(req, res, await api.fn(u, req));
     } catch (e) {
       const code = e.code >= 400 && e.code < 500 ? e.code : 500;
@@ -301,6 +305,7 @@ avvisi.setContext(() => {
   }
   return (avCtx = { v: live.version(), known, byName, lineStops, nameOf: id => names.get(id) || id });
 });
+avvisi.setTideSource(() => tide.snapshot());
 avvisi.start();
 tide.start();   // raccolta periodica del livello di marea: costruisce la storia da cui si ricava la tendenza
 

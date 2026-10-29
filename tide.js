@@ -85,7 +85,7 @@ function parseForecast(json) {
 // CURVA PREVISTA: il portale dà solo gli estremi (alte/basse maree). Fra due estremi consecutivi la marea segue con buona approssimazione una
 // mezza cosinusoide (semplice e standard); fino al primo estremo futuro si parte dal livello misurato adesso. La differenza fra il livello misurato
 // e quello che il modello darebbe ora (effetto di vento e pressione) si porta avanti smorzandola in ~3 ore. Oltre l'ultimo estremo noto la curva si ferma.
-const STEP_MS = 10 * 60e3, AHEAD_MS = 12 * 3600e3, DECAY_MS = 3 * 3600e3;
+const STEP_MS = 10 * 60e3, AHEAD_MS = 18 * 3600e3, DECAY_MS = 3 * 3600e3;
 function buildCurve(extremes, hist, now) {
   const ex = extremes.filter(e => e.ts > now - 12 * 3600e3).sort((a, b) => a.ts - b.ts), last = hist[hist.length - 1];
   const nowCm = last && now - last.t < 30 * 60e3 ? last.cm : null;
@@ -144,6 +144,13 @@ async function refresh(force = false) {
   return busy;
 }
 
+// Istantanea SENZA rete (per gli avvisi automatici): livello misurato e picco previsto nelle prossime ore. null se manca il dato.
+function snapshot(ahead = 12 * 3600e3) {
+  const lv = S.level; if (!lv) return null;
+  const now = Date.now(), peaks = S.forecast.filter(f => f.type === 'max' && f.ts > now - 30 * 60e3 && f.ts < now + ahead).sort((a, b) => b.cm - a.cm);
+  return { cm: lv.cm, ts: lv.ts, stale: now - lv.ts > 45 * 60e3, peak: peaks[0] ? { cm: peaks[0].cm, ts: peaks[0].ts } : null };
+}
+
 // Risposta per il client
 async function getTide({ debug = false } = {}) {
   await refresh();
@@ -156,7 +163,7 @@ async function getTide({ debug = false } = {}) {
     station: lv.name, cm, ts: lv.ts, ageMin: Math.max(0, Math.round((now - lv.ts) / 60000)), stale: now - lv.ts > STALE_MS,
     category: categoryOf(cm), trend, next: next.map(n => ({ ...n, cat: categoryOf(n.cm).key })),
     history: S.hist.map(p => [p.t, p.cm]),
-    // grafico: 6 ore osservate (storia raccolta dal server) + 6 ore previste (curva ricavata dagli estremi previsti)
+    // grafico: 6 ore osservate (storia raccolta dal server) + 18 ore previste (curva ricavata dagli estremi previsti)
     chart: { from: now - HIST_MS, to: now + AHEAD_MS, now, observed: S.hist.map(p => [p.t, p.cm]), forecast: buildCurve(S.forecast, S.hist, now),
       extremes: S.forecast.filter(f => f.ts > now - HIST_MS && f.ts < now + AHEAD_MS).map(f => ({ type: f.type, cm: f.cm, ts: f.ts })) },
     source: { name: 'Centro Previsioni e Segnalazioni Maree – Comune di Venezia', license: 'CC BY', url: 'https://dati.venezia.it/?q=content/cpsm-dati-meteomarini-laguna-e-litorale-veneziano' }
@@ -167,4 +174,4 @@ async function getTide({ debug = false } = {}) {
 
 // Raccolta periodica: serve a costruire la storia da cui si ricava la tendenza anche senza utenti collegati
 function start() { refresh(true).catch(() => {}); setInterval(() => refresh(true).catch(() => {}), 150000).unref?.(); }
-module.exports = { buildCurve, getTide, start, parseLevels, parseForecast, trendOf, categoryOf, solarToMs, toCm };
+module.exports = { snapshot, buildCurve, getTide, start, parseLevels, parseForecast, trendOf, categoryOf, solarToMs, toCm };

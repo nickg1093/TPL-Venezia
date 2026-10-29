@@ -10,7 +10,7 @@ Server Node.js senza database; pensato per il piano gratuito di Render.
 ### 1.1 Prima installazione o dopo aver sostituito i file
 1. Copia tutti i file di questo progetto nel repository (la cartella `data/` esistente **resta com'è**: contiene i GTFS già scaricati).
 2. `npm install` — **obbligatorio**: Leaflet ora è una dipendenza npm (serve in locale da `/vendor/leaflet`, non più da unpkg) e `package-lock.json` va rigenerato. Fai commit anche di `package-lock.json`.
-3. `npm test` — deve passare tutto (43 test).
+3. `npm test` — deve passare tutto (47 test).
 4. `npm start`, apri `http://localhost:3000`.
 
 ### 1.2 Variabili d'ambiente su Render (Dashboard → Environment)
@@ -134,8 +134,14 @@ Il feed toglie la fermata appena il mezzo arriva e indicherebbe già la successi
 - **Pianificato**: barra compatta (selettore + data/velocità, una riga con play · ora · cursore · ORA), contenuto largo al massimo 760 px e centrato, uguale su schermi grandi.
 - **Controlli a destra**, in tre blocchi: servizi · cerca, posizione, tema scuro · avvisi, marea (e «Installa» quando disponibile).
 - **Ricerca**: scrivendo un numero le linee passano prima delle fermate, divise in «Automobilistico e tram» (mattonelle) e «Navigazione» (cerchi). Scegliendo una linea la mappa mostra solo i suoi mezzi e il suo percorso (pillola «solo linea X» in alto a sinistra per tornare a tutto).
-- **Fermate vicine**: con la posizione attiva, in alto a sinistra compare una pillola con la fermata più vicina entro 300 m e la distanza (con «+N» se sono di più; al tocco si apre la fermata o l'elenco). Se non ce ne sono, la pillola dice quanto dista la più vicina; se la posizione non arriva, mostra il motivo (permesso negato, segnale assente: secondo tentativo con precisione ridotta).
-- **Marea**: livello, tendenza, prossime alte/basse con pallino di colore (stesse soglie del dato corrente) e grafico da 6 ore prima a 12 ore dopo con cursore (osservato / previsto). La parte futura è ricavata dagli estremi pubblicati da CPSM (interpolazione), quella passata dalla storia che il server accumula dal suo avvio.
+- **Posizione (GPS)** (`public/js/locate.js`): parte solo da un tocco, chiede il permesso al sistema e ne rispetta il rifiuto (messaggio con cosa fare); tre stati del pulsante: spento → acceso (punto sulla mappa, una sola centratura) → segue → spento. Trascinare la mappa, aprire una fermata o seguire un mezzo termina «segue»: niente più rimbalzo tra la tua posizione e il mezzo. Sospesa a pagina nascosta.
+- **Attesa visibile**: ogni richiesta lenta (`api()` in `util.js`) accende una barra in alto (`#busybar`); gli avvisi brevi usano `#toast`.
+- **Fermate doppie**: la stessa fermata presente due volte (entro ~25 m, stesso nome) è unificata in ricerca e mappa; il pannello mostra le partenze di entrambi i codici (`mergeDuplicates` in `zones.js`). Corsie fisse in `FIXED` (Piazzale Roma A1…C da linee GTFS, PM a parte; Tronchetto Mercato A = 5075, B = 5210): dipendono dagli id del GTFS in uso.
+- **Acqua alta**: oltre 85 cm (attuale o prevista) la scheda marea mostra il link ai servizi di navigazione previsti. Gli avvisi che citano acqua alta con un livello (`+110 cm`) ricevono il piano ACTV per quel livello (linee e pontili, tabella `AA_RULES` in `avvisi.js`, trascritta dalla pagina ACTV: da verificare se la pagina cambia).
+- **Avviso acqua alta automatico**: se ACTV/Telegram non pubblicano nulla, con marea misurata o prevista (prossime 12 h) oltre 85 cm compare un avviso «Calcolato dal livello di marea» con il piano ACTV per quel livello (stessa tabella `AA_RULES`). Se esiste già un avviso ufficiale con piano acqua alta, l'automatico non compare e quello ufficiale mostra il livello misurato come conferma.
+- **Prestazioni**: la lettura dei GTFS cede il passo ogni ~8 ms; `/api/stop` e `/api/zone` identiche entro 1,5 s condividono un solo calcolo.
+- **Fermate vicine**: con la posizione attiva, in alto a sinistra compare una pillola con la fermata più vicina entro 250 m e la distanza (con «+N» se sono di più; al tocco si apre la fermata o l'elenco). Se non ce ne sono, la pillola dice quanto dista la più vicina; se la posizione non arriva, mostra il motivo (permesso negato, segnale assente: secondo tentativo con precisione ridotta).
+- **Marea**: livello, tendenza, prossime alte/basse con pallino di colore (stesse soglie del dato corrente) e grafico da 6 ore prima a 18 ore dopo, con promemoria breve ai servizi di navigazione previsti quando la marea supera 85 cm con cursore (osservato / previsto). La parte futura è ricavata dagli estremi pubblicati da CPSM (interpolazione), quella passata dalla storia che il server accumula dal suo avvio.
 - **Avvisi di servizio** (`avvisi.js`, `public/js/avvisi.js`): raccolta automatica dalle notizie del sito ACTV (RSS + pagina) e dal canale Telegram pubblico, ogni 5-10 minuti. Per ogni avviso si ricavano validità (date in italiano), linee e fermate con regole generali: la linea deve seguire «linea/linee/navetta» ed esistere nel GTFS; numeri presenti in entrambi i servizi si risolvono dalle fermate citate e da ciò che le linee servono davvero (altrimenti si scartano); le fermate valgono solo se servite da quelle linee; nomi di una sola parola e strade («via Torino») non bastano da soli; scioperi e avvisi generali sugli orari non segnano fermate. Le fermate con avviso in corso hanno il simbolo (!) in mappa e nel pannello, con riga che apre l'avviso.
 - **Altezza all'avvio** (`theme-init.js`): l'altezza dell'app è la misura reale della finestra, riletta alcune volte nei primi secondi, così su Android i tasti di sistema non coprono la barra in basso.
 - Installazione (PWA), tema chiaro/scuro (segue il sistema finché non scegli).
@@ -153,11 +159,12 @@ stopgroups.js    fermate equivalenti                geo.js, csv.js  utilità
 tide.js, avvisi.js, feedaudit.js  marea / avvisi di servizio / verifica del feed
 scripts/update-gtfs.js   aggiornamento archivio (usato dal workflow)
 public/index.html (solo struttura) · css/app.css · js/{app,util,zones,tide,avvisi,pwa,theme-init}.js · icons/ · sw.js · manifest.webmanifest
+public/js/locate.js  GPS e stati del pulsante
 tests/           test unitari (node --test) e prove dell'interfaccia (tests/ui)
 ```
 
 ## 7. Test
-- `npm test` — 43 test (tracker, orari, archivio GTFS, sicurezza, marea, avvisi).
+- `npm test` — 47 test (tracker, orari, archivio GTFS, sicurezza, marea, avvisi).
 - Simulazione completa: `node -r ./tests/fakefeed.js server.js` (feed finto costruito dalle corse in servizio adesso, con fantasmi e rilevamenti vecchi).
 - Interfaccia: con quel server avviato (`TRUST_PROXY=1`), `python3 tests/ui/run.py http://localhost:3000 <cartella>` (Playwright; usa un Leaflet finto in `tests/ui/leaflet-stub.js`): 6 formati di schermo, X, indietro, segui, dock, nessuno script in linea.
 
