@@ -90,3 +90,16 @@ test('testi codificati due volte e linee solo da elenchi dopo "linea"', () => {
   const known = K(['17', 'N', '5', 'V', '9S', '21', '56E']);
   assert.deepEqual(L(A.findLines('Garantite le linee 17 N 5 e V corse; Linea 9S: soppressa. Linea 21: nuova. Linea 56E La corsa', known)), ['17', '21', '56E', '9S']);
 });
+
+test('linea 13 bus o battello dalle fermate citate; pontili “B” non sono linee; sciopero senza linee né fermate', () => {
+  const known = new Map([['13', [{ n: '13', s: 'aut', c: '#d00000' }, { n: '13', s: 'nav', c: '#e5a000' }]], ['DE', [{ n: 'DE', s: 'nav', c: '#999999' }]], ['B', [{ n: 'B', s: 'nav', c: '#111111' }]]]);
+  const byName = new Map([[A.norm('Fondamente Nove'), ['nav:1']], [A.norm('Cimitero'), ['nav:2', 'aut:7']], [A.norm('Corso del Popolo'), ['aut:3']]]);
+  const lineStops = new Map([['nav:13', new Set([A.norm('Fondamente Nove'), A.norm('Cimitero')])], ['aut:13', new Set([A.norm('Corso del Popolo')])], ['nav:DE', new Set([A.norm('Cimitero')])]]);
+  const ctx = { known, byName, lineStops, nameOf: id => id };
+  const r = A.analyze('Commemorazione dei defunti: fermata straordinaria di linea 13', 'Da Fondamente Nove “B” a Cimitero “B”. LINEA ‘DE’ Fondamente Nove – Cimitero. Fermata straordinaria linea 13 a Cimitero.', ctx);
+  assert.deepEqual(r.lines.map(l => l.s + ':' + l.n).sort(), ['nav:13', 'nav:DE']);
+  assert.ok(r.stops.every(i => i.startsWith('nav:')) && r.stops.length === 2);
+  assert.equal(r.stopNames.length, 2);
+  const s = A.analyze('Sciopero generale 30 ottobre', 'Linea 13 e fermata Cimitero garantite', ctx);
+  assert.deepEqual([s.lines, s.stops], [[], []]);
+});
