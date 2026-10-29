@@ -29,6 +29,19 @@ const navStack = [];
 dateEl.value = localDate();
 range.value = nowSecs();
 const keyOf = () => [...active].join(',');
+// Date selezionabili in "Pianificato": solo quelle coperte dai GTFS in archivio (il server le legge da data/gtfs/<servizio>/)
+const ymdToIso = y => `${y.slice(0, 4)}-${y.slice(4, 6)}-${y.slice(6, 8)}`;
+fetch('/api/dates', { cache: 'no-store' }).then(r => r.json()).then(d => {
+  if (d.min) dateEl.min = ymdToIso(d.min);
+  if (d.max) dateEl.max = ymdToIso(d.max);
+  clampDate();
+}).catch(() => {});
+function clampDate() {
+  const v = dateEl.value; if (!v) { dateEl.value = localDate(); return false; }
+  if (dateEl.min && v < dateEl.min) { dateEl.value = dateEl.min; return true; }
+  if (dateEl.max && v > dateEl.max) { dateEl.value = dateEl.max; return true; }
+  return false;
+}
 const schedQS = () => mode === 'sched' ? `&secs=${range.value}&date=${dateEl.value.replace(/-/g, '')}` : '';
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -120,7 +133,11 @@ $('tl-play').onclick = () => {
 };
 $('tl-now').onclick = () => { stopPlay(); dateEl.value = localDate(); applyTime(nowSecs(), true); };
 range.oninput = () => applyTime(+range.value);
-dateEl.onchange = () => applyTime(+range.value, true);
+dateEl.onchange = () => {
+  const moved = clampDate();
+  if (moved) { statusEl.className = 'warn'; statusEl.textContent = `Orari disponibili dal ${dateEl.min.split('-').reverse().join('/')} al ${dateEl.max.split('-').reverse().join('/')}`; }
+  applyTime(+range.value, true);
+};
 
 // ---------------------------------------------------------------------------------------------------------------------
 // MEZZI SULLA MAPPA
@@ -222,6 +239,7 @@ async function load() {
     if (m === 'live' && d.stale?.length) notes.push('il feed ACTV non si aggiorna da diversi minuti');
     if (wait.length) notes.push(`in caricamento: ${wait.join(', ')}`);
     if (d.error) notes.push(d.error);
+    if (m === 'sched' && /Carico gli orari/.test(d.error || '')) setTimeout(() => { if (mode === 'sched') load(); }, 3000);   // versione del GTFS per quella data in caricamento
     statusEl.className = notes.length ? 'warn' : '';
     statusEl.innerHTML = `${counts}<span>${m === 'sched' ? 'pianificato' : 'mezzi'} · ${new Date(d.updated).toLocaleTimeString('it-IT')}</span>${notes.map(n => `<span class="note">${esc(n)}</span>`).join('')}`;
   } catch (e) { if (m === mode && !e.busy) { statusEl.className = 'err'; statusEl.textContent = 'Errore: ' + e.message; } }
@@ -507,11 +525,13 @@ function showTrip(e) {
 async function loadTrip() {
   const e = current; if (!e || e.t !== 'trip' || !e.v.tripId) return;
   try {
-    const d = await api(`/api/trip?id=${encodeURIComponent(e.v.src + ':' + e.v.tripId)}&mode=${mode}${e.v.key ? '&veh=' + encodeURIComponent(e.v.key) : ''}`);
+    const d = await api(`/api/trip?id=${encodeURIComponent(e.v.src + ':' + e.v.tripId)}&mode=${mode}${e.v.key ? '&veh=' + encodeURIComponent(e.v.key) : ''}${schedQS()}`);
     if (d.error) throw new Error(d.error);
     if (current !== e) return;
     lastTrip = d; renderTrip(!e.drawn); e.drawn = true;
-  } catch (err) { if (current === e && !(err.busy && lastTrip)) plist.innerHTML = `<p class="late pad">Dati non disponibili: ${esc(err.message)}</p>`; }
+  } catch (err) {
+    if (err.loading) { if (current === e) setTimeout(() => { if (current === e) loadTrip(); }, 3000); return; }
+    if (current === e && !(err.busy && lastTrip)) plist.innerHTML = `<p class="late pad">Dati non disponibili: ${esc(err.message)}</p>`; }
 }
 function tripHtml(d) {
   const k = colorInfo(d.trip.color, d.trip.line), n = d.stops.length;
