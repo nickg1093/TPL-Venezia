@@ -2,6 +2,8 @@
 const test = require('node:test'), assert = require('node:assert');
 const K = a => new Map(a.map(x => [x, [{ n: x, s: 'aut', c: '#d00000' }]]));
 const L = r => r.map(x => x.n).sort();
+const FL = (text, known) => A.analyze(text, '', { known }).lines;
+const FS = (text, byName) => [...new Set([...A.stopMentions(text, byName).values()].flatMap(v => v.ids))].sort();
 const A = require('../avvisi');
 const pub = Date.UTC(2026, 9, 27, 13, 43);   // 27/10/2026 14:43 a Venezia
 const utc = (y, m, d, h = 0, mi = 0, s = 0) => Date.UTC(y, m - 1, d, h, mi, s);   // ora solare (CET = UTC+1) dopo il 25/10/2026: sottrarre 1 ora
@@ -32,14 +34,14 @@ test('validità: senza anno si sceglie il prossimo futuro (passaggio d\'anno)', 
 test('linee: solo codici noti, mai le date', () => {
   const known = K(['31', '31H', '32H', '43', '7E', 'T2']);
   const t = 'Sabato 31 ottobre 2026 dalle 9.30 alle 16.30 le linee 31H, 32H e 43 deviano. Bus sostitutivi per T2.';
-  assert.deepEqual(L(A.findLines(t, known)), ['31H', '32H', '43']);
-  assert.deepEqual(L(A.findLines('Linea 7E deviata in via Cavin di Sala', known)), ['7E']);
+  assert.deepEqual(L(FL(t, known)), ['31H', '32H', '43']);
+  assert.deepEqual(L(FL('Linea 7E deviata in via Cavin di Sala', known)), ['7E']);
 });
 test('fermate: nomi tra virgolette e dopo «fermata», solo uguaglianza di nome', () => {
   const by = new Map([[A.norm('Forte Marghera Gerlin'), ['aut:1', 'aut:2']], [A.norm('Cattaneo'), ['aut:3']]]);
   const t = 'Sospesa la fermata "Forte Marghera Gerlin" in entrambe le direzioni. Usare la fermata Cattaneo.';
-  assert.deepEqual(A.findStops(t, by).sort(), ['aut:1', 'aut:2', 'aut:3']);
-  assert.deepEqual(A.findStops('Fermata “Inventata Nome Lungo”', by), []);
+  assert.deepEqual(FS(t, by).sort(), ['aut:1', 'aut:2', 'aut:3']);
+  assert.deepEqual(FS('Fermata “Inventata Nome Lungo”', by), []);
 });
 test('RSS: elementi, entità, data di pubblicazione, link ammessi', () => {
   const xml = `<rss><channel><item><title>Mestre: chiusura &amp; deviazioni</title><link>https://actv.avmspa.it/it/content/x</link>
@@ -79,8 +81,8 @@ test('link: solo https verso domini ACTV/Telegram', () => {
 
 test('linee: elenco dopo i due punti, niente sigle da parole (Cimitero ≠ C), sciopero con più fasce = giornata intera', () => {
   const known = K(['1', '2', '12', 'NLN', 'DE', 'C', '13']);
-  assert.deepEqual(L(A.findLines('linea 7 sospesa da lunedì 2 novembre 2026 Modifiche alle linee: 1, 2, 12, NLN: Nella news', known)), ['1', '12', '2', 'NLN']);
-  assert.deepEqual(L(A.findLines('con la linea DE inoltre fermata di Cimitero e linea 13', known)), ['13', 'DE']);
+  assert.deepEqual(L(FL('linea 7 sospesa da lunedì 2 novembre 2026 Modifiche alle linee: 1, 2, 12, NLN: Nella news', known)), ['1', '12', '2', 'NLN']);
+  assert.deepEqual(L(FL('con la linea DE inoltre fermata di Cimitero e linea 13', known)), ['13', 'DE']);
   const v = A.parseValidity('30 ottobre 2026 dalle ore 06:00 e fino alle ore 08:59 e a partire dalle ore 16:30 fino alle ore 19:29', pub);
   assert.ok(!v.open); assert.equal(v.to - v.from, 864e5 - 1000);
 });
@@ -88,13 +90,13 @@ test('linee: elenco dopo i due punti, niente sigle da parole (Cimitero ≠ C), s
 test('testi codificati due volte e linee solo da elenchi dopo "linea"', () => {
   assert.equal(A.toText('&lt;img src="x" alt=""&gt; &lt;label&gt;Lingua &lt;/label&gt; Undefined fino al termine'), 'fino al termine');
   const known = K(['17', 'N', '5', 'V', '9S', '21', '56E']);
-  assert.deepEqual(L(A.findLines('Garantite le linee 17 N 5 e V corse; Linea 9S: soppressa. Linea 21: nuova. Linea 56E La corsa', known)), ['17', '21', '56E', '9S']);
+  assert.deepEqual(L(FL('Garantite le linee 17 N 5 e V corse; Linea 9S: soppressa. Linea 21: nuova. Linea 56E La corsa', known)), ['17', '21', '56E', '9S']);
 });
 
 test('linea 13 bus o battello dalle fermate citate; pontili “B” non sono linee; sciopero senza linee né fermate', () => {
   const known = new Map([['13', [{ n: '13', s: 'aut', c: '#d00000' }, { n: '13', s: 'nav', c: '#e5a000' }]], ['DE', [{ n: 'DE', s: 'nav', c: '#999999' }]], ['B', [{ n: 'B', s: 'nav', c: '#111111' }]]]);
   const byName = new Map([[A.norm('Fondamente Nove'), ['nav:1']], [A.norm('Cimitero'), ['nav:2', 'aut:7']], [A.norm('Corso del Popolo'), ['aut:3']]]);
-  const lineStops = new Map([['nav:13', new Set([A.norm('Fondamente Nove'), A.norm('Cimitero')])], ['aut:13', new Set([A.norm('Corso del Popolo')])], ['nav:DE', new Set([A.norm('Cimitero')])]]);
+  const lineStops = new Map([['nav:13', new Set(['nav:1', 'nav:2'])], ['aut:13', new Set(['aut:3'])], ['nav:DE', new Set(['nav:2'])]]);
   const ctx = { known, byName, lineStops, nameOf: id => id };
   const r = A.analyze('Commemorazione dei defunti: fermata straordinaria di linea 13', 'Da Fondamente Nove “B” a Cimitero “B”. LINEA ‘DE’ Fondamente Nove – Cimitero. Fermata straordinaria linea 13 a Cimitero.', ctx);
   assert.deepEqual(r.lines.map(l => l.s + ':' + l.n).sort(), ['nav:13', 'nav:DE']);
@@ -107,11 +109,26 @@ test('linea 13 bus o battello dalle fermate citate; pontili “B” non sono lin
 test('precisione: la fermata Crea di terraferma non entra con la linea DE; "Lido" in un testo su Mestre non è una fermata; numeri ambigui senza prove sono scartati', () => {
   const known = new Map([['DE', [{ n: 'DE', s: 'nav', c: '#999' }]], ['9', [{ n: '9', s: 'aut', c: '#d00' }, { n: '9', s: 'nav', c: '#fa0' }]]]);
   const byName = new Map([[A.norm('Crea'), ['nav:5', 'aut:8']], [A.norm('Lido'), ['nav:9']], [A.norm('Corso del Popolo'), ['aut:3']]]);
-  const lineStops = new Map([['nav:DE', new Set([A.norm('Crea')])], ['aut:9', new Set([A.norm('Corso del Popolo')])]]);
+  const lineStops = new Map([['nav:DE', new Set(['nav:5'])], ['aut:9', new Set(['aut:3'])]]);
   const ctx = { known, byName, lineStops, nameOf: id => id };
   const r = A.analyze('Cimitero', 'LINEA ‘DE’ P.le Roma – Crea – Cimitero. Fermata Crea.', ctx);
   assert.deepEqual(r.stops, ['nav:5']);
   const m = A.analyze('Mestre: deviazione', 'Gli autobus della linea 9 in Corso del Popolo deviano. Il Lido non è interessato.', ctx);
   assert.deepEqual(m.lines.map(l => l.s), ['aut']); assert.deepEqual(m.stops, ['aut:3']);
   assert.deepEqual(A.analyze('Avviso', 'La linea 9 subisce ritardi', ctx).lines, []);
+});
+
+test('regole generali: "A partire" non è la linea A; pontile senza lettera = pontile della linea; strade non sono fermate; un servizio estraneo viene scartato', () => {
+  const known = new Map([['13', [{ n: '13', s: 'nav', c: '#57419A' }]], ['DE', [{ n: 'DE', s: 'nav', c: null }]], ['A', [{ n: 'A', s: 'aut', c: '#EF7F1A' }]], ['31H', [{ n: '31H', s: 'aut', c: '#E31E24' }]]]);
+  const byName = new Map([
+    [A.norm('Riva de Biasio "A"'), ['nav:10']], [A.norm('Riva de Biasio "B"'), ['nav:11']], [A.norm('Riva de Biasio'), ['nav:10', 'nav:11']],
+    [A.norm('Ferrovia'), ['nav:20']], [A.norm('Guglie'), ['nav:21']], [A.norm('Torino'), ['aut:30']], [A.norm('Corso del Popolo'), ['aut:31']]]);
+  const lineStops = new Map([['nav:DE', new Set(['nav:11', 'nav:20', 'nav:21'])], ['nav:13', new Set(['nav:21'])], ['aut:A', new Set(['aut:99'])], ['aut:31H', new Set(['aut:31'])]]);
+  const ctx = { known, byName, lineStops, nameOf: id => ({ 'nav:10': 'Riva de Biasio "A"', 'nav:11': 'Riva de Biasio "B"' }[id] || id) };
+  const r = A.analyze('Defunti', 'Linea 13 - A partire da sabato. LINEA ‘DE’ Ferrovia – Riva de Biasio – Guglie – Cimitero (e ritorno).', ctx);
+  assert.deepEqual(L(r.lines), ['13', 'DE']);
+  assert.deepEqual(r.stops.sort(), ['nav:11', 'nav:20', 'nav:21']);                     // solo il pontile B di Riva de Biasio: è quello servito dalla linea DE
+  assert.deepEqual(r.stopNames.map(s => s.n).sort(), ['Riva de Biasio "B"', 'nav:20', 'nav:21']);
+  const m = A.analyze('Mestre', 'Linea 31H: deviazione in via Torino e Corso del Popolo.', ctx);
+  assert.deepEqual(m.stops, ['aut:31']);                                                   // "via Torino" è una strada
 });
