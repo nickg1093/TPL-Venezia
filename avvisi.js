@@ -109,8 +109,7 @@ function parseValidity(text, pubMs, kind = 'rss') {
 // ---------------------------------------------------------------------------------------------------------------------
 // LINEE E FERMATE CITATE
 // ---------------------------------------------------------------------------------------------------------------------
-// Linee: nei tratti di testo che seguono "linea/linee/navetta" si prendono i codici maiuscoli e si tengono solo quelli che esistono nel GTFS.
-// Prima si tolgono le date ("31 ottobre"), che altrimenti sembrerebbero la linea 31.
+// Le regole sono generali, non per singolo avviso: vedi i commenti di analyze(). Prima di cercare le linee si tolgono date e orari ("31 ottobre", "9.30"), che sembrerebbero linee.
 const LIST_TOK = '[A-Z0-9][A-Z0-9./]{0,5}';
 const LIST_RE = new RegExp(`^[:'‘’]?\\s*(${LIST_TOK}(?:\\s*(?:,|/|e|-|–)\\s*${LIST_TOK})*)`);
 // parole che indicano il tipo di servizio (usate solo per scegliere tra due linee con lo stesso numero, e come indizio per le fermate)
@@ -118,11 +117,14 @@ const AUT_WORDS = /\b(bus|autobus|automobilistic\w*|tranvia\w*|tram|mestre|margh
 const NAV_WORDS = /\b(pontil\w*|imbarcader\w*|vaporett\w*|battell\w*|navigazione|lagun\w*|motonav\w*|lido|giudecca|murano|burano|pellestrina|torcello|san michele|cimitero di s\.?)\b/gi;
 const count = (re, t) => (t.match(re) || []).length;
 
-// Fermate citate in qualunque punto del testo: si cercano sequenze di 1-5 parole che iniziano con la maiuscola e coincidono con il nome di una fermata del GTFS.
-// Ritorna { name (normalizzato): [id,…] }
+// Fermate citate in qualunque punto del testo: sequenze di 1-5 parole che iniziano con la maiuscola e coincidono con il nome di una fermata del GTFS.
+// byName contiene il nome completo ("Riva de Biasio "A"") e il nome senza lettera di pontile ("Riva de Biasio"): senza lettera valgono tutti i pontili omonimi.
+// Ritorna Map(nome normalizzato -> { ids, strong }): "strong" = nome sicuro (più parole, tra virgolette, dopo "fermata/pontile/capolinea", o in un percorso "A – B – C").
+const STREET = /(?:\b(?:via|viale|v\.le|piazza|p\.za|piazzale|p\.le|corso|largo|calle|strada|ponte|rio|riva|campo|fondamenta|salizada)\s+)$/i;   // "via Torino", "rio Terà": una strada, non la fermata omonima
+const CUE = /(?:fermat\w*|pontil\w*|capolinea|capilinea|stazione|[“«"'‘])\s*(?:di\s+|del\s+|della\s+|dello\s+|dei\s+|a\s+)?$/i;
 function stopMentions(text, byName) {
-  const found = new Map(); if (!byName?.size) return found;
-  const toks = [...text.matchAll(/[A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9.'’]*/g)].map(m => ({ w: m[0], at: m.index }));
+  const found = new Map(), hits = []; if (!byName?.size) return found;
+  const toks = [...text.matchAll(/[A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9.'’]*/g)].map(m => ({ w: m[0], at: m.index, end: m.index + m[0].length }));
   for (let i = 0; i < toks.length;) {
     let hit = null;
     if (/^[A-ZÀ-Ý]/.test(toks[i].w)) for (let n = Math.min(5, toks.length - i); n >= 1; n--) {
@@ -130,23 +132,34 @@ function stopMentions(text, byName) {
       if (byName.has(k)) { hit = { k, n }; break; }
     }
     if (hit) {
-      // nome di una sola parola ("Lido", "Crea", "Ferrovia"): vale solo se introdotto da fermata/pontile/capolinea/… o tra virgolette, altrimenti è un luogo, non una fermata
-      const before = text.slice(Math.max(0, toks[i].at - 40), toks[i].at);
-      const strong = hit.n > 1 || /(fermat\w*|pontil\w*|capolinea|capilinea|stazione|[“«"'‘])\s*(?:di\s+|del\s+|della\s+|dello\s+|dei\s+|a\s+)?$/i.test(before);
-      const prev = found.get(hit.k); found.set(hit.k, { ids: byName.get(hit.k), strong: strong || !!prev?.strong });
-      i += hit.n;
+      const first = toks[i], last = toks[i + hit.n - 1], before = text.slice(Math.max(0, first.at - 40), first.at);
+      if (hit.n === 1 && STREET.test(before)) { i++; continue; }
+      hits.push({ k: hit.k, n: hit.n, at: first.at, end: last.end, cue: CUE.test(before) }); i += hit.n;
     } else i++;
   }
+  // un nome di una sola parola ("Crea", "Lido") è un luogo, non una fermata, a meno che sia introdotto da un indizio o stia in un percorso "Ferrovia – Riva de Biasio – Guglie"
+  hits.forEach((h, j) => {
+    const linked = (x, y) => x && y && /^\s*(?:[–—→>-]|,)\s*$/.test(text.slice(x.end, y.at));
+    h.strong = h.n > 1 || h.cue || linked(h, hits[j + 1]) || linked(hits[j - 1], h);
+    const prev = found.get(h.k); found.set(h.k, { ids: byName.get(h.k), strong: h.strong || !!prev?.strong });
+  });
   return found;
 }
 
 // Analisi completa del testo di un avviso: linee (con servizio corretto), fermate (con nome e servizio). Sciopero: nessuna linea né fermata.
+// Regole generali (valgono per qualunque avviso):
+//  · una linea è tale solo se segue "linea/linee/navetta" ed esiste nel GTFS; una lettera sola ("A") solo in prima posizione e non seguita da una parola minuscola ("A partire dalle…");
+//  · se il numero esiste in entrambi i servizi, si sceglie dalle fermate citate che la linea serve davvero; senza prove, nessuna delle due;
+//  · se le fermate sicure del testo sono tutte di un servizio, una linea dell'altro servizio che non ne serve nessuna viene scartata;
+//  · con linee nell'avviso restano solo le fermate (id) realmente servite da quelle linee.
 function analyze(title, text, ctx) {
   const full = title + '\n' + text, empty = { lines: [], stops: [], stopNames: [] };
   if (/sciopero/i.test(title) || /^\s*[^\n]{0,80}\bsciopero\b/i.test(text)) return empty;
-  const known = ctx.known, mentions = stopMentions(full, ctx.byName), mNames = new Set([...mentions].filter(([, v]) => v.strong).map(([k]) => k));
+  const known = ctx.known, mentions = stopMentions(full, ctx.byName), strongIds = new Set(), mSrc = new Set();
+  for (const v of mentions.values()) if (v.strong) for (const id of v.ids) { strongIds.add(id); mSrc.add(id.split(':')[0]); }
   const gAut = count(AUT_WORDS, full), gNav = count(NAV_WORDS, full);
-  const mSrc = new Set(); for (const v of mentions.values()) if (v.strong) for (const id of v.ids) mSrc.add(id.split(':')[0]);
+  const served = x => ctx.lineStops?.get(x.s + ':' + String(x.n).toUpperCase());
+  const hits = x => { const sv = served(x); let n = 0; if (sv) for (const id of strongIds) if (sv.has(id)) n++; return n; };
   const lines = new Map();
   const clean = full.replace(new RegExp(`\\d{1,2}\\s*(?:-|–|e)?\\s*\\d{0,2}\\s+${MON_RE}(?:\\s+\\d{4})?`, 'gi'), ' ').replace(/\b\d{1,2}[.:]\d{2}\b/g, ' ')
     .replace(/[“"]\s*[A-Z]\s*[”"]/g, ' ');                      // "B", "D" tra virgolette doppie = lettera del pontile, non una linea
@@ -155,40 +168,41 @@ function analyze(title, text, ctx) {
     let pick = c;
     if (c.length > 1) {
       const la = count(AUT_WORDS, around), ln = count(NAV_WORDS, around);
-      const sc = c.map(x => {
-        const served = ctx.lineStops?.get(x.s + ':' + String(x.n).toUpperCase());
-        let st = 0; if (served) for (const k of mNames) if (served.has(k)) st++;
-        return st * 4 + (mSrc.size === 1 && mSrc.has(x.s) ? 3 : 0) + (x.s === 'aut' ? 2 * la + gAut : 2 * ln + gNav);
-      });
+      const sc = c.map(x => hits(x) * 4 + (mSrc.size === 1 && mSrc.has(x.s) ? 3 : 0) + (x.s === 'aut' ? 2 * la + gAut : 2 * ln + gNav));
       const best = Math.max(...sc), top = c.filter((_, i) => sc[i] === best);
       pick = top.length === 1 && best > 0 ? top : [];   // numero ambiguo senza prove: meglio non indicare la linea che indicarne una sbagliata
     }
-    for (const x of pick) lines.set(x.s + ':' + x.n, { n: x.n, s: x.s, c: x.c || null });
+    for (const x of pick) {
+      if (mSrc.size === 1 && !mSrc.has(x.s) && served(x) && !hits(x)) continue;   // altro servizio, e nessuna delle fermate citate è sua
+      lines.set(x.s + ':' + x.n, { n: x.n, s: x.s, c: x.c || null });
+    }
   };
   // linee: solo elenchi che seguono "linea/linee/navetta" ("linee 9S, 21 e 56E")
   for (const m of clean.matchAll(/\b(?:linee|linea|navetta|navette)\b\s*/gi)) {
     const rest = clean.slice(m.index + m[0].length), l = LIST_RE.exec(rest); if (!l) continue;
-    const around = clean.slice(Math.max(0, m.index - 150), m.index + 250);
-    for (const tok of l[1].split(/\s*(?:,|\/|e|-|–)\s*/)) if (tok === tok.toUpperCase()) decide(tok, around);
+    const around = clean.slice(Math.max(0, m.index - 150), m.index + 250), after = rest.slice(l[0].length);
+    l[1].split(/\s*(?:,|\/|e|-|–)\s*/).forEach((tok, j) => {
+      if (tok !== tok.toUpperCase()) return;
+      if (/^[A-Z]$/.test(tok) && (j > 0 || /^\s*[a-zà-ÿ]/.test(after))) return;   // "linea 13 e A partire…": non è la linea A
+      decide(tok, around);
+    });
   }
-  const lead = /^\s*(?:linea\s+)?([A-Z0-9][A-Z0-9.]{0,5})\s*[:–-]/.exec(text); if (lead) decide(lead[1], full.slice(0, 400));
+  const lead = /^\s*(?:linea\s+)?([A-Z0-9][A-Z0-9.]{0,5})\s*[:–-]/.exec(text); if (lead && !/^[A-Z]$/.test(lead[1])) decide(lead[1], full.slice(0, 400));
   const lineList = [...lines.values()].slice(0, 20), srcs = new Set(lineList.map(l => l.s));
-  // fermate: con linee nell'avviso valgono solo le fermate effettivamente servite da quelle linee (stesso servizio); senza linee, solo nomi sicuri del servizio indicato dal testo
+  // fermate: con linee nell'avviso, solo le fermate (id) servite da almeno una di quelle linee; senza linee, solo nomi sicuri del servizio indicato dal testo
   let want = null; if (!srcs.size) { if (gNav >= gAut + 2) want = new Set(['nav']); else if (gAut >= gNav + 2) want = new Set(['aut']); }
   const ids = [], names = new Map();
   for (const [k, v] of mentions) for (const id of v.ids) {
     const src = id.split(':')[0];
     if (srcs.size) {
-      if (!lineList.some(l => l.s === src && (ctx.lineStops?.get(src + ':' + String(l.n).toUpperCase())?.has(k) ?? true))) continue;
+      if (!lineList.some(l => l.s === src && (served(l)?.has(id) ?? true))) continue;
     } else if (!v.strong || (want && !want.has(src))) continue;
-    ids.push(id); const nm = ctx.nameOf ? ctx.nameOf(id) : k; names.set(src + '|' + k, { n: nm, s: src });
+    const nm = ctx.nameOf ? ctx.nameOf(id) : k; ids.push(id); names.set(src + '|' + nm, { n: nm, s: src });
   }
   // avvisi generali sugli orari (centinaia di fermate citate di passaggio): niente segnalazione sulle fermate
   const general = /\borari\b|modifiche ai? serviz/i.test(title) || names.size > 30;
   return { lines: lineList, stops: general ? [] : ids.slice(0, 80), stopNames: general ? [] : [...names.values()].slice(0, 30) };
 }
-function findLines(text, known) { return analyze(text, '', { known }).lines; }   // (usata dai test: solo linee)
-function findStops(text, byName) { return [...new Set([...stopMentions(text, byName).values()].flatMap(v => v.ids))].slice(0, 80); }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // LETTURA DELLE FONTI
@@ -248,30 +262,35 @@ function articleText(html) {
 // ---------------------------------------------------------------------------------------------------------------------
 // STATO E CICLO DI AGGIORNAMENTO
 // ---------------------------------------------------------------------------------------------------------------------
-const ST = { rss: [], tg: [], pages: new Map(), rssAt: 0, tgAt: 0, rssOk: 0, tgOk: 0, errors: {}, ctx: () => ({ known: new Map(), byName: new Map() }) };
+const ST = { rss: [], tg: [], pages: new Map(), rssAt: 0, tgAt: 0, rssOk: 0, tgOk: 0, errors: {}, logged: {}, ctx: () => ({ known: new Map(), byName: new Map() }) };
 const idOf = key => crypto.createHash('sha1').update(key).digest('hex').slice(0, 10);
 
 // contesto per riconoscere linee e fermate: forniti da server.js (dipendono dai GTFS in uso)
 function setContext(fn) { ST.ctx = fn; ST.cache = null; }
 
+// una riga di log solo quando lo stato cambia (nuovo errore, errore risolto, primo caricamento)
+function note(src, err, ok) {
+  const prev = ST.errors[src], first = !ST.logged[src]; ST.errors[src] = err; ST.logged[src] = true;
+  if (err ? err !== prev : (prev || first)) console.log(`avvisi [${src === 'rss' ? 'sito ACTV' : 'Telegram'}]: ${err ? 'errore: ' + err : 'ok, ' + ok}`);
+}
 async function refreshRss() {
   ST.rssAt = Date.now();
   try {
     ST.rss = parseRss(await fetchText(SRC.rss, ['https://actv.avmspa.it/it/rss-news-feed'])).slice(0, 40);
-    ST.rssOk = Date.now(); ST.errors.rss = null;
+    ST.rssOk = Date.now(); note('rss', null, `${ST.rss.length} notizie`);
     let n = 0;
     for (const it of ST.rss) {                                              // pagina completa solo per le notizie nuove (max 12 a giro)
       if (ST.pages.has(it.url) || n >= 12 || Date.now() - it.pubMs > 30 * DAY) continue;
       n++; try { ST.pages.set(it.url, articleText(await fetchText(it.url, [], 12000))); } catch { /* si usa il riassunto del feed */ }
     }
     for (const k of [...ST.pages.keys()]) if (!ST.rss.some(i => i.url === k)) ST.pages.delete(k);
-  } catch (e) { ST.errors.rss = e.message; }
+  } catch (e) { note('rss', e.message); }
   ST.cache = null;
 }
 async function refreshTg() {
   ST.tgAt = Date.now();
-  try { ST.tg = parseTelegram(await fetchText(SRC.tg, ['https://telegram.me/s/muoversivenezia'])).slice(-40); ST.tgOk = Date.now(); ST.errors.tg = null; }
-  catch (e) { ST.errors.tg = e.message; }
+  try { ST.tg = parseTelegram(await fetchText(SRC.tg, ['https://telegram.me/s/muoversivenezia'])).slice(-40); ST.tgOk = Date.now(); note('tg', null, `${ST.tg.length} messaggi`); }
+  catch (e) { note('tg', e.message); }
   ST.cache = null;
 }
 
@@ -318,4 +337,4 @@ function start() {
 }
 // per i test
 function _load({ rss = [], tg = [], pages = {} } = {}) { ST.rss = rss; ST.tg = tg; ST.pages = new Map(Object.entries(pages)); ST.rssOk = ST.tgOk = Date.now(); }
-module.exports = { analyze, stopMentions, start, getAvvisi, setContext, parseRss, parseTelegram, parseValidity, findLines, findStops, articleText, toText, safeUrl, norm, build, _load, refreshRss, refreshTg };
+module.exports = { analyze, stopMentions, start, getAvvisi, setContext, parseRss, parseTelegram, parseValidity, articleText, toText, safeUrl, norm, build, _load, refreshRss, refreshTg };

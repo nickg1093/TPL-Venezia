@@ -261,23 +261,27 @@ let avCtx = { v: -1 };
 avvisi.setContext(() => {
   if (avCtx.v === live.version()) return avCtx;
   const known = new Map(), byName = new Map(), lineStops = new Map(), names = new Map();
+  const add = (k, id) => { if (k) (byName.get(k) || byName.set(k, []).get(k)).push(id); };
   for (const i of IDS) {
     const G = D[i]; if (!G?.routes) continue;
     for (const r of Object.values(G.routes)) if (r?.name) { const k = String(r.name).toUpperCase(), l = known.get(k) || known.set(k, []).get(k); if (!l.some(x => x.s === i)) l.push({ n: r.name, s: i, c: r.color || null }); }
     const nm = s => G.stopBaseNames?.get(s) || G.stops[s] || '';
-    for (const s in G.stopIndex || {}) { const n = avvisi.norm(nm(s)); if (n) (byName.get(n) || byName.set(n, []).get(n)).push(`${i}:${s}`); names.set(`${i}:${s}`, nm(s)); }
-    // quali fermate (per nome) serve ciascuna linea: serve a capire se "linea 13" è un battello o un bus dalle fermate citate nell'avviso
+    for (const s in G.stopIndex || {}) {
+      const id = `${i}:${s}`, full = nm(s), bare = full.replace(/\s*[“"'‘’”]\s*[A-Za-z0-9]{1,2}\s*[“"'‘’”]\s*$/, '');   // "Riva de Biasio "A"" risponde anche a "Riva de Biasio"
+      names.set(id, full); const k1 = avvisi.norm(full), k2 = avvisi.norm(bare); add(k1, id); if (k2 && k2 !== k1) add(k2, id);
+    }
+    // quali fermate (id) serve ciascuna linea: serve a capire se "linea 13" è un battello o un bus e quali fermate dell'avviso la riguardano davvero
     const byRoute = new Map(), seen = new Set();
     for (const tid of G.tripIds || []) {
       const tr = G.trips[tid], st = G.stopTimes.get(tid); if (!tr || !st) continue;
       const key = `${tr.route}|${tr.shape}|${st.s.length}`; if (seen.has(key)) continue; seen.add(key);
       const set = byRoute.get(tr.route) || byRoute.set(tr.route, new Set()).get(tr.route);
-      for (const sid of st.s) set.add(sid);
+      for (const sid of st.s) set.add(`${i}:${sid}`);
     }
     for (const [rid, set] of byRoute) {
       const r = G.routes[rid]; if (!r?.name) continue;
       const k = `${i}:${String(r.name).toUpperCase()}`, out = lineStops.get(k) || lineStops.set(k, new Set()).get(k);
-      for (const sid of set) { const n = avvisi.norm(nm(sid)); if (n) out.add(n); }
+      for (const id of set) out.add(id);
     }
   }
   return (avCtx = { v: live.version(), known, byName, lineStops, nameOf: id => names.get(id) || id });

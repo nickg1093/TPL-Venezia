@@ -10,7 +10,7 @@ Server Node.js senza database; pensato per il piano gratuito di Render.
 ### 1.1 Prima installazione o dopo aver sostituito i file
 1. Copia tutti i file di questo progetto nel repository (la cartella `data/` esistente **resta com'è**: contiene i GTFS già scaricati).
 2. `npm install` — **obbligatorio**: Leaflet ora è una dipendenza npm (serve in locale da `/vendor/leaflet`, non più da unpkg) e `package-lock.json` va rigenerato. Fai commit anche di `package-lock.json`.
-3. `npm test` — deve passare tutto (24 test).
+3. `npm test` — deve passare tutto (42 test).
 4. `npm start`, apri `http://localhost:3000`.
 
 ### 1.2 Variabili d'ambiente su Render (Dashboard → Environment)
@@ -114,7 +114,7 @@ Il feed toglie la fermata appena il mezzo arriva e indicherebbe già la successi
 ## 4. Sicurezza (`security.js`, `server.js`)
 - **Intestazioni**: Content-Security-Policy rigida (`script-src 'self'`: **nessuno script in linea**; stili in linea ammessi solo per gli attributi generati dalla mappa), HSTS (con HTTPS), `nosniff`, `X-Frame-Options: DENY` + `frame-ancestors 'none'`, Referrer-Policy, Permissions-Policy (solo geolocalizzazione), COOP/CORP `same-origin`.
 - **HTTPS** forzato con `FORCE_HTTPS=1`; **TRUST_PROXY** per l'IP reale (l'intestazione `X-Forwarded-For` è ignorata se non c'è proxy fidato, altrimenti chiunque potrebbe falsificarla).
-- **Limiti di frequenza** per IP e classe: API 600/min, pesanti 60/min, statici 900/min, amministrazione 6/min (risposta 429 con `Retry-After`). Tabella con tetto di memoria.
+- **Limiti di frequenza** per IP e classe: API 1200/min, pesanti 300/min, statici 900/min, amministrazione 6/min (risposta 429 con `Retry-After`). Tabella con tetto di memoria.
 - **SSE** (`/api/stream`): max 10 connessioni per IP e 400 totali.
 - **Endpoint sensibili** con token `Bearer` (≥ 16 caratteri, confronto a tempo costante): `/api/audit`, `/api/gtfs`, debug marea (`DIAG_TOKEN`); ricarica GTFS solo `POST` con `ADMIN_TOKEN`. Senza token impostato: disattivati.
 - **Validazione dei parametri** (id, orari, date, liste) con regole rigide; routing con `hasOwn` (nessun accesso a proprietà ereditate); errori interni mascherati ("errore interno"), dettagli solo nei log.
@@ -131,7 +131,13 @@ Il feed toglie la fermata appena il mezzo arriva e indicherebbe già la successi
 - **X**: chiude il pannello, deseleziona il mezzo e **toglie la shape del percorso** (due livelli separati: percorsi della ricerca e percorso della corsa).
 - **Segui** (pulsante accanto alla X, solo nel pannello della corsa, stesso stile degli altri pulsanti, `aria-pressed`): il mezzo viene tenuto al centro della **zona libera della mappa**, cioè il rettangolo non coperto da pannello, colonna controlli, scheda marea e ricerca, ricalcolato dalle misure reali (vale per ogni schermo e orientamento). Scorrimento morbido; trascinare la mappa a mano ferma l'inseguimento; passando a un altro pannello si spegne.
 - **Pianificato**: barra compatta (selettore + data/velocità, una riga con play · ora · cursore · ORA), contenuto largo al massimo 760 px e centrato, uguale su schermi grandi.
-- Marea, installazione (PWA), tema chiaro/scuro (segue il sistema finché non scegli).
+- **Controlli a destra**, in tre blocchi: servizi · cerca, posizione, tema scuro · avvisi, marea (e «Installa» quando disponibile).
+- **Ricerca**: scrivendo un numero le linee passano prima delle fermate, divise in «Automobilistico e tram» (mattonelle) e «Navigazione» (cerchi). Scegliendo una linea la mappa mostra solo i suoi mezzi e il suo percorso (pillola «solo linea X» in alto a sinistra per tornare a tutto).
+- **Fermate vicine**: con la posizione attiva, in alto a sinistra compare una pillola con la fermata più vicina entro 300 m e la distanza (con «+N» se sono di più; al tocco si apre la fermata o l'elenco). Se non ce ne sono, la pillola dice quanto dista la più vicina; se la posizione non arriva, mostra il motivo (permesso negato, segnale assente: secondo tentativo con precisione ridotta).
+- **Marea**: livello, tendenza, prossime alte/basse con pallino di colore (stesse soglie del dato corrente) e grafico da 6 ore prima a 12 ore dopo con cursore (osservato / previsto). La parte futura è ricavata dagli estremi pubblicati da CPSM (interpolazione), quella passata dalla storia che il server accumula dal suo avvio.
+- **Avvisi di servizio** (`avvisi.js`, `public/js/avvisi.js`): raccolta automatica dalle notizie del sito ACTV (RSS + pagina) e dal canale Telegram pubblico, ogni 5-10 minuti. Per ogni avviso si ricavano validità (date in italiano), linee e fermate con regole generali: la linea deve seguire «linea/linee/navetta» ed esistere nel GTFS; numeri presenti in entrambi i servizi si risolvono dalle fermate citate e da ciò che le linee servono davvero (altrimenti si scartano); le fermate valgono solo se servite da quelle linee; nomi di una sola parola e strade («via Torino») non bastano da soli; scioperi e avvisi generali sugli orari non segnano fermate. Le fermate con avviso in corso hanno il simbolo (!) in mappa e nel pannello, con riga che apre l'avviso.
+- **Altezza all'avvio** (`theme-init.js`): l'altezza dell'app è la misura reale della finestra, riletta alcune volte nei primi secondi, così su Android i tasti di sistema non coprono la barra in basso.
+- Installazione (PWA), tema chiaro/scuro (segue il sistema finché non scegli).
 
 ---
 
@@ -143,21 +149,21 @@ schedule.js      orari, posizioni teoriche, passaggi   motion.js     velocità d
 gtfs.js          lettura di un GTFS                 gtfsstore.js  archivio e scelta delle versioni
 calendar.js      servizi attivi, data di Venezia    ids.js        collegamento universale degli ID
 stopgroups.js    fermate equivalenti                geo.js, csv.js  utilità
-tide.js, feedaudit.js  marea / verifica del feed
+tide.js, avvisi.js, feedaudit.js  marea / avvisi di servizio / verifica del feed
 scripts/update-gtfs.js   aggiornamento archivio (usato dal workflow)
-public/index.html (solo struttura) · css/app.css · js/{app,util,zones,tide,pwa,theme-init}.js · icons/ · sw.js · manifest.webmanifest
+public/index.html (solo struttura) · css/app.css · js/{app,util,zones,tide,avvisi,pwa,theme-init}.js · icons/ · sw.js · manifest.webmanifest
 tests/           test unitari (node --test) e prove dell'interfaccia (tests/ui)
 ```
 
 ## 7. Test
-- `npm test` — 24 test (tracker, orari, archivio GTFS, sicurezza).
+- `npm test` — 42 test (tracker, orari, archivio GTFS, sicurezza, marea, avvisi).
 - Simulazione completa: `node -r ./tests/fakefeed.js server.js` (feed finto costruito dalle corse in servizio adesso, con fantasmi e rilevamenti vecchi).
 - Interfaccia: con quel server avviato (`TRUST_PROXY=1`), `python3 tests/ui/run.py http://localhost:3000 <cartella>` (Playwright; usa un Leaflet finto in `tests/ui/leaflet-stub.js`): 6 formati di schermo, X, indietro, segui, dock, nessuno script in linea.
 
 ## 8. Limiti noti
 - Le soglie (distanze, secondi) sono stime ragionate, non tarate sui dati reali ACTV: osserva i primi giorni e correggi `C` in `tracker.js` se serve.
 - Le prove dell'interfaccia usano un Leaflet finto: la mappa vera (tessere, gesti) va verificata a mano una volta.
-- Il formato della marea (`tide.js`) non è stato verificato con la fonte reale in questo ambiente.
+- Il formato della marea (`tide.js`) e le pagine reali di ACTV/Telegram (`avvisi.js`) non sono stati verificati con le fonti vere in questo ambiente: dopo il deploy controlla `/api/tide` e `/api/avvisi`. Lo storico della marea riparte da zero a ogni riavvio del server.
 - Su Render gratuito il server si addormenta senza traffico: serve il pinger esterno; dopo il risveglio i primi secondi non hanno dati.
 
 Dati: © OpenStreetMap contributors · ACTV (GTFS/GTFS-RT) · CPSM Venezia.
