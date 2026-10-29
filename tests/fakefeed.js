@@ -48,7 +48,7 @@ global.fetch = async (url, opts) => {
   if (/actv\.avmspa\.it|t\.me\//.test(u)) {
     for (let i = 0; i < 120 && !Object.keys(live.D.aut.stopIndex || {}).length; i++) await new Promise(r => setTimeout(r, 500));   // attende il GTFS
     const G = live.D.aut, sid = Object.keys(G.stopIndex || {}).find(k => (G.stopBaseNames?.get(k) || G.stops[k] || '').length > 6), name = G.stopBaseNames?.get(sid) || G.stops[sid];
-    const line = Object.values(G.routes)[0]?.name || '5', d = new Date(Date.now() + 864e5), mesi = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+    const line = G.routes[G.trips[G.tripIds[G.stopIndex[sid][0]]]?.route]?.name || '5', d = new Date(Date.now() + 864e5), mesi = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
     const until = `${d.getDate()} ${mesi[d.getMonth()]} ${d.getFullYear()}`, link = 'https://actv.avmspa.it/it/content/prova-avviso';
     if (/rss-news/.test(u)) return new Response(`<rss><channel><item><title>Prova: fermata sospesa</title><link>${link}</link><description>Lingua</description><pubDate>${new Date().toUTCString()}</pubDate><guid isPermaLink="false">1 at https://actv.avmspa.it</guid></item></channel></rss>`, { status: 200 });
     if (/content\/prova-avviso/.test(u)) return new Response(`<html><body><nav>menu</nav><h1>Prova: fermata sospesa</h1><p>Linea ${line} deviata. Sospesa la fermata "${name}" fino al ${until}.</p><footer>piè</footer></body></html>`, { status: 200 });

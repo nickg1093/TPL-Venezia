@@ -103,3 +103,15 @@ test('linea 13 bus o battello dalle fermate citate; pontili “B” non sono lin
   const s = A.analyze('Sciopero generale 30 ottobre', 'Linea 13 e fermata Cimitero garantite', ctx);
   assert.deepEqual([s.lines, s.stops], [[], []]);
 });
+
+test('precisione: la fermata Crea di terraferma non entra con la linea DE; "Lido" in un testo su Mestre non è una fermata; numeri ambigui senza prove sono scartati', () => {
+  const known = new Map([['DE', [{ n: 'DE', s: 'nav', c: '#999' }]], ['9', [{ n: '9', s: 'aut', c: '#d00' }, { n: '9', s: 'nav', c: '#fa0' }]]]);
+  const byName = new Map([[A.norm('Crea'), ['nav:5', 'aut:8']], [A.norm('Lido'), ['nav:9']], [A.norm('Corso del Popolo'), ['aut:3']]]);
+  const lineStops = new Map([['nav:DE', new Set([A.norm('Crea')])], ['aut:9', new Set([A.norm('Corso del Popolo')])]]);
+  const ctx = { known, byName, lineStops, nameOf: id => id };
+  const r = A.analyze('Cimitero', 'LINEA ‘DE’ P.le Roma – Crea – Cimitero. Fermata Crea.', ctx);
+  assert.deepEqual(r.stops, ['nav:5']);
+  const m = A.analyze('Mestre: deviazione', 'Gli autobus della linea 9 in Corso del Popolo deviano. Il Lido non è interessato.', ctx);
+  assert.deepEqual(m.lines.map(l => l.s), ['aut']); assert.deepEqual(m.stops, ['aut:3']);
+  assert.deepEqual(A.analyze('Avviso', 'La linea 9 subisce ritardi', ctx).lines, []);
+});
