@@ -19,6 +19,7 @@ const searchContainer = $('search-container'), searchToggleBtn = $('search-toggl
 let mode = 'live', staticVer = -1, lastUpdate = Date.now(), lastLoadSecs = -1, isPlaying = false, playTimer = null;
 const active = new Set(['nav', 'aut']);
 let routesData = {}, stops = [], vehicles = [];
+let lineFilter = null;   // {src, name, ids}: scelta dalla ricerca, mostra solo i mezzi (e il percorso) di quella linea
 let selVeh = null, follow = false, routeToken = 0, vehMemo = { trip: null, y: 0 };
 
 // Pannello aperto: current = { t:'stop'|'zone'|'trip', ... }; navStack = i pannelli da cui si è arrivati (per il link "indietro")
@@ -144,6 +145,7 @@ function render() {
   for (let i = 0; i < vehicles.length; i++) {
     const v = vehicles[i];
     if (!active.has(v.src) || !Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
+    if (lineFilter && (v.src !== lineFilter.src || String(v.line) !== lineFilter.name)) continue;
     keep.add(v.id);
     const html = busHtml(v);
     let e = markers.get(v.id);
@@ -258,7 +260,7 @@ const shapeCache = new Map();
 function loadStatics() {
   shapeCache.clear();
   fetch('/api/routes', { cache: 'no-store' }).then(r => r.json()).then(d => { if (d && !d.error) routesData = d; }).catch(() => {});
-  fetch('/api/stops', { cache: 'no-store' }).then(r => r.json()).then(d => { if (Array.isArray(d)) { stops = d; buildZones(stops); drawStops(); } }).catch(() => {});
+  fetch('/api/stops', { cache: 'no-store' }).then(r => r.json()).then(d => { if (Array.isArray(d)) { stops = d; buildZones(stops); drawStops(); updateNear(); } }).catch(() => {});
 }
 async function showRoutes(ids, layer = lineLayer) {
   const tok = ++routeToken;
@@ -275,6 +277,13 @@ async function showRoutes(ids, layer = lineLayer) {
     for (const pts of shapes || []) drawLine(pts, colorInfo(r.color, r.name), layer, .9);
   }
 }
+$('linefilter').onclick = () => clearSearchState(true);
+function setLineFilter(f) {
+  lineFilter = f; const chip = $('linefilter');
+  if (f) { chip.hidden = false; chip.innerHTML = `${badge(f.name, routesData[f.ids[0]]?.color, f.src)}<span>solo linea ${esc(f.name)}</span>${icon('close', 'sm')}`; chip.setAttribute('aria-label', `Mostra di nuovo tutte le linee (ora solo la ${f.name})`); showRoutes(f.ids); }
+  else { chip.hidden = true; chip.innerHTML = ''; }
+  render();
+}
 const clearRoutes = () => { routeToken++; lineLayer.clearLayers(); };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -283,10 +292,10 @@ const clearRoutes = () => { routeToken++; lineLayer.clearLayers(); };
 const searchOpen = () => searchContainer.classList.contains('expanded');
 function collapseSearch() { searchContainer.classList.remove('expanded'); searchToggleBtn.setAttribute('aria-expanded', 'false'); resultsEl.classList.remove('active'); }
 // azzera testo, risultati e percorso scelto dalla ricerca
-function clearSearchState() { filterEl.value = ''; $('search-clear').hidden = true; resultsEl.classList.remove('active'); resultsEl.innerHTML = ''; clearRoutes(); }
+function clearSearchState(force = false) { if (lineFilter && !force) return; setLineFilter(null); filterEl.value = ''; $('search-clear').hidden = true; resultsEl.classList.remove('active'); resultsEl.innerHTML = ''; clearRoutes(); }
 function setSearch(on) {
   searchContainer.classList.toggle('expanded', on); searchToggleBtn.setAttribute('aria-expanded', String(on));
-  if (on) { Tide.close(); Avvisi.close(); filterEl.focus(); } else clearSearchState();
+  if (on) { Tide.close(); Avvisi.close(); filterEl.focus(); } else clearSearchState(true);
 }
 searchToggleBtn.onclick = e => { e.stopPropagation(); setSearch(!searchOpen()); };
 document.addEventListener('click', e => { if (searchOpen() && !searchContainer.contains(e.target) && !searchToggleBtn.contains(e.target)) collapseSearch(); });
@@ -296,26 +305,37 @@ const zoneItem = z => `<div class="search-item" role="option" tabindex="0" data-
 filterEl.addEventListener('input', () => {
   $('search-clear').hidden = !filterEl.value;
   const q = filterEl.value.trim().toLowerCase().slice(0, 80), qn = norm(q);
-  if (!q) { resultsEl.classList.remove('active'); resultsEl.innerHTML = ''; clearRoutes(); return; }
+  if (!q) { resultsEl.classList.remove('active'); resultsEl.innerHTML = ''; setLineFilter(null); clearRoutes(); return; }
   const mzAll = [...zones.values()].filter(z => active.has(z.src) && z.norm.includes(qn)), mz = mzAll.slice(0, 8);
   const ms = stops.filter(s => active.has(s[4]) && snorm.get(s[0])?.includes(qn) && !mzAll.includes(zoneOf.get(s[0]))).slice(0, 8);
-  const mr = Object.entries(routesData).filter(([, r]) => active.has(r.src) && String(r.name).toLowerCase().includes(q)).slice(0, 8);
-  let html = '';
-  if (mz.length || ms.length) html += '<div class="search-category">Fermate</div>' + mz.map(zoneItem).join('') + ms.map(s =>
+  const byLine = new Map();                                        // una voce per linea e servizio (le varianti con lo stesso numero si uniscono)
+  for (const [id, r] of Object.entries(routesData)) if (active.has(r.src) && String(r.name).toLowerCase().includes(q)) {
+    const k = r.src + '|' + r.name; (byLine.get(k) || byLine.set(k, { src: r.src, name: String(r.name), color: r.color, ids: [] }).get(k)).ids.push(id);
+  }
+  const rank = l => (l.name.toLowerCase() === q ? 0 : l.name.toLowerCase().startsWith(q) ? 1 : 2);
+  const mrBy = src => [...byLine.values()].filter(l => l.src === src).sort((x, y) => rank(x) - rank(y) || x.name.localeCompare(y.name, 'it', { numeric: true })).slice(0, 14);
+  let hs = '', hl = '';
+  if (mz.length || ms.length) hs += '<div class="search-category">Fermate</div>' + mz.map(zoneItem).join('') + ms.map(s =>
     `<div class="search-item" role="option" tabindex="0" data-type="stop" data-id="${esc(s[0])}" data-name="${esc(s[1])}" data-lat="${+s[2]}" data-lon="${+s[3]}" data-src="${esc(s[4])}">${icon('pin')} <span>${esc(s[1])}</span></div>`).join('');
-  if (mr.length) html += '<div class="search-category">Linee</div>' + mr.map(([id, r]) =>
-    `<div class="search-item" role="option" tabindex="0" data-type="route" data-id="${esc(id)}" data-name="${esc(r.name)}">${badge(r.name, r.color, r.src)} <span>Linea ${esc(r.name)}</span></div>`).join('');
+  for (const [src, title] of [['aut', 'Linee · Automobilistico e tram'], ['nav', 'Linee · Navigazione']]) {
+    const list = mrBy(src); if (!list.length) continue;
+    hl += `<div class="search-category">${title}</div>` + list.map(l =>
+      `<div class="search-item" role="option" tabindex="0" data-type="route" data-src="${src}" data-ids="${esc(l.ids.join('\u0001'))}" data-name="${esc(l.name)}">${badge(l.name, l.color, src)} <span>Linea ${esc(l.name)}</span><span class="muted">solo questa linea</span></div>`).join('');
+  }
+  const linesFirst = [...byLine.values()].some(l => l.name.toLowerCase().startsWith(q));   // chi scrive "12" o "4L" cerca una linea: prima le linee
+  const html = linesFirst ? hl + hs : hs + hl;
   resultsEl.innerHTML = html || '<div class="search-item muted">Nessun risultato trovato</div>';
   resultsEl.classList.add('active');
 });
 resultsEl.addEventListener('click', e => {
   const it = e.target.closest('.search-item');
   if (!it || !it.dataset.type) return;
+  if (it.dataset.type === 'near') { collapseSearch(); const n = nearList[+it.dataset.k]; if (n) openNear(n); return; }
   filterEl.value = it.dataset.name; resultsEl.classList.remove('active');
   collapseSearch();
   if (it.dataset.type === 'zone') { const z = zones.get(it.dataset.key); if (z) { openFromMap({ t: 'zone', key: z.key, pick: '*' }); focusOn(L.latLng(z.center), 16); } }
   else if (it.dataset.type === 'stop') { openFromMap(entryForStop(it.dataset.id, it.dataset.name, it.dataset.src)); focusOn(L.latLng(+it.dataset.lat, +it.dataset.lon), 16); }
-  else showRoutes([it.dataset.id]);
+  else setLineFilter({ src: it.dataset.src, name: it.dataset.name, ids: it.dataset.ids.split('\u0001') });
 });
 // un tocco sulla mappa vuota chiude i percorsi della ricerca (se nessun pannello è aperto) e le finestre troppo grandi
 map.on('click', () => { if (!current && !searchOpen()) clearSearchState(); if (narrow()) { Tide.close(); Avvisi.close(); } });
@@ -497,13 +517,13 @@ function tripHtml(d) {
   const k = colorInfo(d.trip.color, d.trip.line), n = d.stops.length;
   const rows = d.stops.map((s, i) => {
     let timeHtml = '', sub = '';
-    if (d.live && s.delay != null) {
+    if (d.live && d.detected !== false && s.delay != null) {
       const di = delayInfo(s.delay); sub = di.txt;
       timeHtml = Math.abs(s.delay) >= 1
         ? `<div class="tm-time-wrap"><span class="sched-crossed">${esc(s.sched)}</span><strong class="${di.cls}">${esc(s.exp)}</strong></div>`
         : `<div class="tm-time-wrap"><strong class="${di.cls}">${esc(s.exp)}</strong></div>`;
-    } else { sub = d.live ? 'da orario' : ''; timeHtml = `<div class="tm-time-wrap"><strong>${esc(s.sched)}</strong></div>`; }
-    const meta = s.skipped ? 'Fermata saltata' : (s.state === 'at' || s.state === 'next') ? etaText(s.phase, s.expMs, s.inMin, d.live) : (s.state === 'upcoming' && d.live && s.expMs ? `tra ${Math.max(1, Math.round((s.expMs - Date.now()) / 60000))} min` : '');
+    } else { sub = d.live && d.detected !== false ? 'da orario' : (d.live ? 'non rilevato' : ''); timeHtml = `<div class="tm-time-wrap"><strong>${esc(s.sched)}</strong></div>`; }
+    const meta = s.skipped ? 'Fermata saltata' : (s.state === 'at' || s.state === 'next') ? etaText(s.phase, s.expMs, s.inMin, d.live && d.detected !== false) : (s.state === 'upcoming' && d.live && s.expMs ? `tra ${Math.max(1, Math.round((s.expMs - Date.now()) / 60000))} min` : '');
     return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === 0 ? ' first' : ''}${i === n - 1 ? ' last' : ''}" data-i="${i}" role="button" tabindex="0" title="Apri la fermata">`
       + `<div class="rail-col"><div class="rail-line"></div><span class="dot">${s.state === 'passed' ? icon('check') : ''}</span></div>`
       + `<div class="sn"><div class="nm">${esc(s.name)}</div>${meta ? `<div class="muted">${esc(meta)}</div>` : ''}</div>`
@@ -534,11 +554,12 @@ function placeVehicle(d, first) {
 function renderTrip(first) {
   const d = lastTrip; if (!d || !current || current.t !== 'trip') return;
   let status = 'programmato';
-  if (d.live) status = d.delayNow == null ? 'live' : `<span class="${delayInfo(d.delayNow).cls}">${esc(delayInfo(d.delayNow).txt)}</span>`;
+  if (d.live && d.detected === false) status = 'Non rilevato';
+  else if (d.live) status = d.delayNow == null ? 'live' : `<span class="${delayInfo(d.delayNow).cls}">${esc(delayInfo(d.delayNow).txt)}</span>`;
   pname.innerHTML = `${icon('next', 'sm')}<span>${d.trip.headsign ? esc(d.trip.headsign) : 'Linea ' + esc(d.trip.line)}</span>`;
   const o = d.stops[0];
   psub.innerHTML = (o ? `da ${esc(o.name)}${o.sched ? ', ' + esc(o.sched) : ''}` : '') + (d.note ? `<br>${esc(d.note)}` : '');
-  pstatus.innerHTML = `${status} · ${esc(vehName(d.trip.src, d.trip.vehicle || current.v.label))}${d.live && d.speedKmh != null ? ` · ${+d.speedKmh} km/h` : ''}${d.others?.length ? ` · insieme a ${d.others.map(esc).join(', ')}` : ''}`;
+  pstatus.innerHTML = d.live && d.detected === false ? 'Non rilevato' : `${status} · ${esc(vehName(d.trip.src, d.trip.vehicle || current.v.label))}${d.live && d.detected !== false && d.speedKmh != null ? ` · ${+d.speedKmh} km/h` : ''}${d.others?.length ? ` · insieme a ${d.others.map(esc).join(', ')}` : ''}`;
   plist.innerHTML = (d.cancelled ? '<div class="banner">Corsa soppressa</div>' : '') + tripHtml(d)
     + (d.live && d.historyKnown ? '<p class="muted note-hist">Fermate passate: ultima stima.</p>' : '');
   placeVehicle(d, first);
@@ -572,12 +593,50 @@ map.on('dragstart', () => setFollow(false));                     // l'utente spo
 // POSIZIONE DELL'UTENTE, FILTRI, MODALITÀ
 // ---------------------------------------------------------------------------------------------------------------------
 let me = null;
-$('locate').onclick = () => map.locate({ setView: true, maxZoom: 16 });
+let meLL = null, watching = false;
+$('locate').onclick = () => {
+  if (watching && meLL) { map.setView(meLL, Math.max(map.getZoom(), 16)); return; }   // già attiva: ricentra
+  map.locate({ setView: true, maxZoom: 16, watch: true, enableHighAccuracy: true });
+  watching = true; $('locate').setAttribute('aria-pressed', 'true');
+};
+// FERMATE VICINE (entro 100 m): una piccola pillola accanto allo stato in alto a sinistra, che si apre con un tocco. Nessun elemento fisso in più sulla mappa.
+const NEAR_M = 100;
+let nearList = [];
+function nearbyStops() {
+  if (!meLL) return [];
+  const by = new Map();
+  for (const s of stops) {
+    if (!active.has(s[4])) continue;
+    const d = mDist(meLL.lat, meLL.lng, +s[2], +s[3]); if (d > NEAR_M) continue;
+    const z = zoneOf.get(s[0]), key = z ? 'z:' + z.key : 's:' + s[0], o = by.get(key);
+    if (!o || d < o.d) by.set(key, { d, zone: z || null, stop: s });
+  }
+  return [...by.values()].sort((x, y) => x.d - y.d);
+}
+function updateNear() {
+  const chip = $('nearchip'); nearList = nearbyStops();
+  if (!nearList.length) { chip.hidden = true; chip.innerHTML = ''; return; }
+  const n = nearList[0], name = n.zone ? n.zone.name : n.stop[1], src = n.zone ? n.zone.src : n.stop[4];
+  chip.hidden = false;
+  chip.innerHTML = `${srcIcon(src, 'sm')}<span>${esc(name)} · ${Math.round(n.d / 10) * 10} m</span>${nearList.length > 1 ? `<span class="more">+${nearList.length - 1}</span>` : ''}`;
+  chip.setAttribute('aria-label', nearList.length > 1 ? `Fermate vicine: ${nearList.length}, la più vicina è ${name}` : `Fermata vicina: ${name}, a circa ${Math.round(n.d)} metri`);
+}
+const openNear = n => { if (n.zone) { openFromMap({ t: 'zone', key: n.zone.key, pick: '*' }); focusOn(L.latLng(n.zone.center), 17); } else { openFromMap(entryForStop(n.stop[0], n.stop[1], n.stop[4])); focusOn(L.latLng(+n.stop[2], +n.stop[3]), 17); } };
+$('nearchip').onclick = e => {
+  e.stopPropagation();
+  if (nearList.length === 1) { openNear(nearList[0]); return; }
+  setSearch(true);                                                        // più fermate: si riusa l'elenco della ricerca
+  resultsEl.innerHTML = '<div class="search-category">Vicino a te (entro 100 m)</div>' + nearList.map((n, k) =>
+    `<div class="search-item" role="option" tabindex="0" data-type="near" data-k="${k}">${srcIcon(n.zone ? n.zone.src : n.stop[4])} <span>${esc(n.zone ? n.zone.name : n.stop[1])}</span><span class="muted">${Math.round(n.d / 10) * 10} m</span></div>`).join('');
+  resultsEl.classList.add('active');
+};
 map.on('locationfound', e => {
   if (me) me.remove();
+  meLL = e.latlng;
   me = L.circleMarker(e.latlng, { radius: 6, color: '#fff', weight: 2, fillColor: '#0284c7', fillOpacity: 1 }).addTo(map);
+  updateNear();
 });
-map.on('locationerror', () => { statusEl.className = 'err'; statusEl.textContent = 'Posizione non disponibile'; });
+map.on('locationerror', () => { watching = false; meLL = null; $('locate').setAttribute('aria-pressed', 'false'); updateNear(); statusEl.className = 'err'; statusEl.textContent = 'Posizione non disponibile'; });
 
 document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener('change', () => {
   mode = el.value; vehicles = [];
@@ -592,7 +651,7 @@ document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('
   if (el.checked) active.add(el.value); else active.delete(el.value);
   if (!active.size) { active.add(el.value); el.checked = true; }
   vehicles = vehicles.filter(v => active.has(v.src));
-  render(); drawStops(); load();
+  render(); drawStops(); load(); updateNear();
 }));
 
 // AGGIORNAMENTO A SPINTA: il server avvisa (SSE) appena ci sono dati nuovi, così mezzi e pannelli si aggiornano subito.

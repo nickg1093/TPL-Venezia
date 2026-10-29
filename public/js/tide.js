@@ -30,16 +30,16 @@ function chartHtml(c) {
   const path = pts => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p[0]).toFixed(1)} ${Y(p[1]).toFixed(1)}`).join('');
   let grid = '', xt = '';
   for (let v = lo; v <= hi; v += step) grid += `<line class="g${v === 0 ? ' z' : ''}" x1="${L}" x2="${W - R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}"/><text x="${L - 5}" y="${(Y(v) + 4.5).toFixed(1)}" text-anchor="end">${fmtCm(v)}</text>`;
-  for (let k = -6; k <= 6; k += 3) { const t = c.now + k * 3600e3; xt += `<line class="g" x1="${X(t).toFixed(1)}" x2="${X(t).toFixed(1)}" y1="${T}" y2="${H - B}"/><text x="${X(t).toFixed(1)}" y="${H - 8}" text-anchor="middle">${k === 0 ? 'ora' : hm(t)}</text>`; }
+  for (let k = -6; k <= 12; k += (W < 340 ? 6 : 3)) { const t = c.now + k * 3600e3; xt += `<line class="g" x1="${X(t).toFixed(1)}" x2="${X(t).toFixed(1)}" y1="${T}" y2="${H - B}"/><text x="${X(t).toFixed(1)}" y="${H - 8}" text-anchor="${X(t) > W - 22 ? 'end' : 'middle'}">${k === 0 ? 'ora' : hm(t)}</text>`; }
   const marks = ext.filter(e => e.ts >= c.from && e.ts <= c.to).map(e => `<circle class="ex" cx="${X(e.ts).toFixed(1)}" cy="${Y(e.cm).toFixed(1)}" r="3.5"/><text class="exl" x="${X(e.ts).toFixed(1)}" y="${(Y(e.cm) + (e.type === 'max' ? -8 : 17)).toFixed(1)}" text-anchor="middle">${fmtCm(e.cm)}</text>`).join('');
-  const desc = `Grafico del livello di marea dalle ${hm(c.from)} alle ${hm(c.to)}: sei ore osservate e sei ore previste. Usa il cursore sotto il grafico per leggere il livello a ogni ora.`;
+  const desc = `Grafico del livello di marea dalle ${hm(c.from)} alle ${hm(c.to)}: fino a sei ore osservate e dodici ore previste. Usa il cursore sotto il grafico per leggere il livello a ogni ora.`;
   return `<div class="tide-chart" data-lo="${lo}" data-hi="${hi}"><div class="tide-read" aria-live="polite"><span class="tr-time"></span><b class="tr-val"></b><span class="tr-kind"></span></div>`
     + `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(desc)}">${grid}${xt}`
     + `<line class="nowl" x1="${X(c.now).toFixed(1)}" x2="${X(c.now).toFixed(1)}" y1="${T}" y2="${H - B}"/>`
     + (obs.length > 1 ? `<path class="obs" d="${path(obs)}"/>` : '') + (fc.length > 1 ? `<path class="fc" d="${path(fc)}"/>` : '') + marks
     + `<line class="cur" y1="${T}" y2="${H - B}" x1="-10" x2="-10"/><circle class="curd" r="5" cx="-10" cy="-10"/></svg>`
     + `<input class="tide-range" type="range" min="${c.from}" max="${c.to}" step="300000" value="${c.now}" aria-label="Cursore orario: scorri per leggere il livello di marea">`
-    + `<p class="tide-legend"><span class="lg obs"></span>osservato <span class="lg fc"></span>previsto (ricavato dagli estremi)</p></div>`;
+    + `<p class="tide-legend" title="La curva prevista è ricavata dagli estremi di marea previsti da CPSM"><span class="lgi"><span class="lg obs"></span>osservato</span><span class="lgi"><span class="lg fc"></span>previsto</span></p></div>`;
 }
 function bindChart(c) {                                       // collega cursore e grafico; si richiama a ogni disegno
   const box = body.querySelector('.tide-chart'); if (!box) return;
@@ -69,7 +69,7 @@ function render() {
     : t.dir === 'up' ? { icon: 'up', txt: `In crescita${t.rate != null ? ` · +${Math.abs(t.rate)} cm/h` : ''}` }
     : t.dir === 'down' ? { icon: 'down', txt: `In calo${t.rate != null ? ` · −${Math.abs(t.rate)} cm/h` : ''}` }
     : { icon: 'steady', txt: 'Stazionaria' };
-  const next = (d.next || []).map(n => `<li><b>${n.type === 'max' ? 'Alta' : 'Bassa'}</b><span class="v">${fmtCm(n.cm)} cm · ${dayTag(n.ts)}${hm(n.ts)}</span></li>`).join('');
+  const next = (d.next || []).map(n => `<li><b>${n.type === 'max' ? 'Alta' : 'Bassa'}</b><span class="v"><i class="cdot" data-cat="${esc(n.cat || '')}" aria-hidden="true"></i>${fmtCm(n.cm)} cm · ${dayTag(n.ts)}${hm(n.ts)}</span></li>`).join('');
   body.innerHTML = `<div class="tide-level"><span class="num">${fmtCm(d.cm)}</span><span class="unit">cm</span></div>`
     + `<div class="tide-cat" data-cat="${esc(d.category.key)}">${esc(d.category.label)}</div>`
     + `<div class="tide-trend">${icon(tr.icon)}<span>${tr.txt}${t && t.basis === 'previsione' ? ' <span class="muted">(da previsione)</span>' : ''}</span></div>`
