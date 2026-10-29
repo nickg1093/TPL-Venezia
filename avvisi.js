@@ -122,14 +122,20 @@ const count = (re, t) => (t.match(re) || []).length;
 // Ritorna { name (normalizzato): [id,…] }
 function stopMentions(text, byName) {
   const found = new Map(); if (!byName?.size) return found;
-  const toks = [...text.matchAll(/[A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9.'’]*/g)].map(m => m[0]);
+  const toks = [...text.matchAll(/[A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9.'’]*/g)].map(m => ({ w: m[0], at: m.index }));
   for (let i = 0; i < toks.length;) {
     let hit = null;
-    if (/^[A-ZÀ-Ý]/.test(toks[i])) for (let n = Math.min(5, toks.length - i); n >= 1; n--) {
-      const k = norm(toks.slice(i, i + n).join(' ')); if (k.length < 4) continue;
+    if (/^[A-ZÀ-Ý]/.test(toks[i].w)) for (let n = Math.min(5, toks.length - i); n >= 1; n--) {
+      const k = norm(toks.slice(i, i + n).map(t => t.w).join(' ')); if (k.length < 4) continue;
       if (byName.has(k)) { hit = { k, n }; break; }
     }
-    if (hit) { found.set(hit.k, byName.get(hit.k)); i += hit.n; } else i++;
+    if (hit) {
+      // nome di una sola parola ("Lido", "Crea", "Ferrovia"): vale solo se introdotto da fermata/pontile/capolinea/… o tra virgolette, altrimenti è un luogo, non una fermata
+      const before = text.slice(Math.max(0, toks[i].at - 40), toks[i].at);
+      const strong = hit.n > 1 || /(fermat\w*|pontil\w*|capolinea|capilinea|stazione|[“«"'‘])\s*(?:di\s+|del\s+|della\s+|dello\s+|dei\s+|a\s+)?$/i.test(before);
+      const prev = found.get(hit.k); found.set(hit.k, { ids: byName.get(hit.k), strong: strong || !!prev?.strong });
+      i += hit.n;
+    } else i++;
   }
   return found;
 }
@@ -138,9 +144,9 @@ function stopMentions(text, byName) {
 function analyze(title, text, ctx) {
   const full = title + '\n' + text, empty = { lines: [], stops: [], stopNames: [] };
   if (/sciopero/i.test(title) || /^\s*[^\n]{0,80}\bsciopero\b/i.test(text)) return empty;
-  const known = ctx.known, mentions = stopMentions(full, ctx.byName), mNames = new Set(mentions.keys());
+  const known = ctx.known, mentions = stopMentions(full, ctx.byName), mNames = new Set([...mentions].filter(([, v]) => v.strong).map(([k]) => k));
   const gAut = count(AUT_WORDS, full), gNav = count(NAV_WORDS, full);
-  const mSrc = new Set(); for (const l of mentions.values()) for (const id of l) mSrc.add(id.split(':')[0]);
+  const mSrc = new Set(); for (const v of mentions.values()) if (v.strong) for (const id of v.ids) mSrc.add(id.split(':')[0]);
   const lines = new Map();
   const clean = full.replace(new RegExp(`\\d{1,2}\\s*(?:-|–|e)?\\s*\\d{0,2}\\s+${MON_RE}(?:\\s+\\d{4})?`, 'gi'), ' ').replace(/\b\d{1,2}[.:]\d{2}\b/g, ' ')
     .replace(/[“"]\s*[A-Z]\s*[”"]/g, ' ');                      // "B", "D" tra virgolette doppie = lettera del pontile, non una linea
@@ -155,7 +161,7 @@ function analyze(title, text, ctx) {
         return st * 4 + (mSrc.size === 1 && mSrc.has(x.s) ? 3 : 0) + (x.s === 'aut' ? 2 * la + gAut : 2 * ln + gNav);
       });
       const best = Math.max(...sc), top = c.filter((_, i) => sc[i] === best);
-      if (top.length === 1 && best > 0) pick = top;
+      pick = top.length === 1 && best > 0 ? top : [];   // numero ambiguo senza prove: meglio non indicare la linea che indicarne una sbagliata
     }
     for (const x of pick) lines.set(x.s + ':' + x.n, { n: x.n, s: x.s, c: x.c || null });
   };
@@ -167,11 +173,14 @@ function analyze(title, text, ctx) {
   }
   const lead = /^\s*(?:linea\s+)?([A-Z0-9][A-Z0-9.]{0,5})\s*[:–-]/.exec(text); if (lead) decide(lead[1], full.slice(0, 400));
   const lineList = [...lines.values()].slice(0, 20), srcs = new Set(lineList.map(l => l.s));
-  // fermate: se ci sono linee si tengono quelle del loro servizio; altrimenti quelle del servizio indicato dalle parole del testo (se chiaro)
-  let want = null; if (srcs.size) want = srcs; else if (gNav >= gAut + 2) want = new Set(['nav']); else if (gAut >= gNav + 2) want = new Set(['aut']);
+  // fermate: con linee nell'avviso valgono solo le fermate effettivamente servite da quelle linee (stesso servizio); senza linee, solo nomi sicuri del servizio indicato dal testo
+  let want = null; if (!srcs.size) { if (gNav >= gAut + 2) want = new Set(['nav']); else if (gAut >= gNav + 2) want = new Set(['aut']); }
   const ids = [], names = new Map();
-  for (const [k, list] of mentions) for (const id of list) {
-    const src = id.split(':')[0]; if (want && !want.has(src)) continue;
+  for (const [k, v] of mentions) for (const id of v.ids) {
+    const src = id.split(':')[0];
+    if (srcs.size) {
+      if (!lineList.some(l => l.s === src && (ctx.lineStops?.get(src + ':' + String(l.n).toUpperCase())?.has(k) ?? true))) continue;
+    } else if (!v.strong || (want && !want.has(src))) continue;
     ids.push(id); const nm = ctx.nameOf ? ctx.nameOf(id) : k; names.set(src + '|' + k, { n: nm, s: src });
   }
   // avvisi generali sugli orari (centinaia di fermate citate di passaggio): niente segnalazione sulle fermate
@@ -179,7 +188,7 @@ function analyze(title, text, ctx) {
   return { lines: lineList, stops: general ? [] : ids.slice(0, 80), stopNames: general ? [] : [...names.values()].slice(0, 30) };
 }
 function findLines(text, known) { return analyze(text, '', { known }).lines; }   // (usata dai test: solo linee)
-function findStops(text, byName) { return [...new Set([...stopMentions(text, byName).values()].flat())].slice(0, 80); }
+function findStops(text, byName) { return [...new Set([...stopMentions(text, byName).values()].flatMap(v => v.ids))].slice(0, 80); }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // LETTURA DELLE FONTI

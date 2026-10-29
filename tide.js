@@ -85,7 +85,7 @@ function parseForecast(json) {
 // CURVA PREVISTA: il portale dà solo gli estremi (alte/basse maree). Fra due estremi consecutivi la marea segue con buona approssimazione una
 // mezza cosinusoide (semplice e standard); fino al primo estremo futuro si parte dal livello misurato adesso. La differenza fra il livello misurato
 // e quello che il modello darebbe ora (effetto di vento e pressione) si porta avanti smorzandola in ~3 ore. Oltre l'ultimo estremo noto la curva si ferma.
-const STEP_MS = 10 * 60e3, AHEAD_MS = 6 * 3600e3, DECAY_MS = 3 * 3600e3;
+const STEP_MS = 10 * 60e3, AHEAD_MS = 12 * 3600e3, DECAY_MS = 3 * 3600e3;
 function buildCurve(extremes, hist, now) {
   const ex = extremes.filter(e => e.ts > now - 12 * 3600e3).sort((a, b) => a.ts - b.ts), last = hist[hist.length - 1];
   const nowCm = last && now - last.t < 30 * 60e3 ? last.cm : null;
@@ -154,7 +154,7 @@ async function getTide({ debug = false } = {}) {
   if (!trend && next.length) trend = { dir: next[0].type === 'max' ? 'up' : 'down', rate: null, basis: 'previsione' };   // senza storia: direzione dal prossimo estremo
   const out = {
     station: lv.name, cm, ts: lv.ts, ageMin: Math.max(0, Math.round((now - lv.ts) / 60000)), stale: now - lv.ts > STALE_MS,
-    category: categoryOf(cm), trend, next,
+    category: categoryOf(cm), trend, next: next.map(n => ({ ...n, cat: categoryOf(n.cm).key })),
     history: S.hist.map(p => [p.t, p.cm]),
     // grafico: 6 ore osservate (storia raccolta dal server) + 6 ore previste (curva ricavata dagli estremi previsti)
     chart: { from: now - HIST_MS, to: now + AHEAD_MS, now, observed: S.hist.map(p => [p.t, p.cm]), forecast: buildCurve(S.forecast, S.hist, now),
