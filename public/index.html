@@ -27,7 +27,7 @@
   <div id="map" role="application" aria-label="Mappa dei mezzi pubblici in tempo reale" tabindex="0"></div>
 
   <!-- ALTO A SINISTRA: stato dei dati -->
-  <div id="topleft"><span id="status" aria-live="off">Caricamento…</span></div>
+  <div id="topleft"><span id="status" aria-live="off">Caricamento…</span><button id="linefilter" class="chip-f" type="button" hidden></button><button id="nearchip" class="chip-f near" type="button" hidden></button></div>
 
   <!-- RICERCA (si apre a barra in alto) -->
   <div id="search-container" role="search">
@@ -39,7 +39,7 @@
     <div id="search-results" role="listbox" aria-label="Risultati della ricerca"></div>
   </div>
 
-  <!-- COLONNA CONTROLLI A DESTRA: servizi · ricerca/posizione · impostazioni (tema, marea, installa) -->
+  <!-- COLONNA CONTROLLI A DESTRA: servizi · ricerca/posizione/tema · avvisi/marea/installa -->
   <nav id="controls" aria-label="Strumenti della mappa">
     <div class="group" role="group" aria-label="Servizi da mostrare">
       <label class="ibtn" title="Battelli"><input type="checkbox" name="src" value="nav" checked><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-ship"/></svg><span class="sr-only">Battelli</span></label>
@@ -48,9 +48,9 @@
     <div class="group">
       <button id="search-toggle-btn" class="ibtn" type="button" aria-label="Cerca fermata o linea" aria-expanded="false" aria-controls="search-container" title="Cerca"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-search"/></svg></button>
       <button id="locate" class="ibtn" type="button" aria-label="Mostra la mia posizione" title="La mia posizione"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-locate"/></svg></button>
+      <button id="theme-btn" class="ibtn" type="button" aria-label="Tema scuro" aria-pressed="false" title="Tema scuro"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-moon"/></svg></button>
     </div>
     <div class="group">
-      <button id="theme-btn" class="ibtn" type="button" aria-label="Tema scuro" aria-pressed="false" title="Tema scuro"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-moon"/></svg></button>
       <button id="avvisi-btn" class="ibtn" type="button" aria-label="Avvisi di servizio" aria-expanded="false" aria-controls="avvisi" title="Avvisi di servizio"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-warn"/></svg><span id="avvisi-count" class="cntb" aria-hidden="true" hidden></span></button>
       <button id="tide-btn" class="ibtn" type="button" aria-label="Marea a Venezia" aria-expanded="false" aria-controls="tide" title="Marea"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-tide"/></svg><span class="dotc" aria-hidden="true"></span></button>
       <button id="install-btn" class="ibtn" type="button" aria-label="Installa l'app" title="Installa l'app" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-download"/></svg></button>
