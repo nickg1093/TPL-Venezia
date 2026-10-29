@@ -24,6 +24,7 @@
 <body>
 <!-- Le icone stanno tutte in /icons/sprite.svg e si usano con <use href="/icons/sprite.svg#i-nome">. Sono decorative (aria-hidden): ogni pulsante ha un nome testuale. -->
 <div id="wrap">
+  <div id="busybar" class="busybar" role="progressbar" aria-label="Caricamento in corso" aria-busy="true" hidden><span></span></div>
   <div id="map" role="application" aria-label="Mappa dei mezzi pubblici in tempo reale" tabindex="0"></div>
 
   <!-- ALTO A SINISTRA: stato dei dati -->
@@ -90,6 +91,9 @@
     </div>
     <div id="plist"></div>
   </aside>
+
+  <!-- AVVISO BREVE (posizione, ecc.) -->
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
   <!-- INVITO A INSTALLARE -->
   <div id="snack" class="snack" role="status" hidden>
