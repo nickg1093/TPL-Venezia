@@ -1,6 +1,6 @@
 // AVVISI DI INFOMOBILITÀ (client): pulsante con contatore, finestra con l'elenco, e interrogazioni per fermata (usate da mappa e pannello fermata).
 // I dati arrivano da /api/avvisi (sito ACTV + canale Telegram, già uniti e con linee/fermate collegate). Tutto il testo è mostrato come testo semplice (esc).
-import { $, esc, icon, api, badge } from './util.js';
+import { $, esc, icon, srcIcon, api, badge } from './util.js';
 
 const btn = $('avvisi-btn'), card = $('avvisi'), body = $('avvisi-body'), cnt = $('avvisi-count');
 let data = null, err = null, timer = null, highlight = null, onChange = () => {};
@@ -43,7 +43,7 @@ function render() {
     return `<article class="av${a.id === highlight ? ' hl' : ''}" id="av-${esc(a.id)}"><div class="av-top"><span class="av-src">${esc(SRC[a.source] || '')}</span><span class="av-when">${esc(validity(a))}</span></div>`
       + `<h3>${esc(a.title)}</h3>${a.text ? `<p>${esc(a.text)}</p>` : ''}`
       + ((a.lines || []).length ? `<div class="av-lines"><span class="muted">Linee</span>${a.lines.map(l => badge(l.n, l.c, l.s)).join('')}</div>` : '')
-      + ((a.stops || []).length ? `<div class="muted">${a.stops.length} ${a.stops.length === 1 ? 'fermata interessata' : 'fermate interessate'}: segnalate con ${icon('warn', 'sm')} sulla mappa e nel loro pannello</div>` : '')
+      + ((a.stopNames || []).length ? `<div class="av-stops"><span class="muted">${a.stopNames.length === 1 ? 'Fermata' : 'Fermate'} ${icon('warn', 'sm')}</span>${a.stopNames.map(s => `<span class="av-stop">${srcIcon(s.s, 'sm')}${esc(s.n)}</span>`).join('')}</div>` : '')
       + (links ? `<div class="av-links">${links}</div>` : '') + '</article>';
   };
   body.innerHTML = (data.stale ? '<p class="av-note" role="status">Gli avvisi non si aggiornano da un po\': potrebbero non essere completi.</p>' : '')
