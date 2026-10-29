@@ -260,13 +260,27 @@ live.startStatic();
 let avCtx = { v: -1 };
 avvisi.setContext(() => {
   if (avCtx.v === live.version()) return avCtx;
-  const known = new Map(), byName = new Map();
+  const known = new Map(), byName = new Map(), lineStops = new Map(), names = new Map();
   for (const i of IDS) {
     const G = D[i]; if (!G?.routes) continue;
     for (const r of Object.values(G.routes)) if (r?.name) { const k = String(r.name).toUpperCase(), l = known.get(k) || known.set(k, []).get(k); if (!l.some(x => x.s === i)) l.push({ n: r.name, s: i, c: r.color || null }); }
-    for (const s in G.stopIndex || {}) { const n = avvisi.norm(G.stopBaseNames?.get(s) || G.stops[s] || ''); if (n) (byName.get(n) || byName.set(n, []).get(n)).push(`${i}:${s}`); }
+    const nm = s => G.stopBaseNames?.get(s) || G.stops[s] || '';
+    for (const s in G.stopIndex || {}) { const n = avvisi.norm(nm(s)); if (n) (byName.get(n) || byName.set(n, []).get(n)).push(`${i}:${s}`); names.set(`${i}:${s}`, nm(s)); }
+    // quali fermate (per nome) serve ciascuna linea: serve a capire se "linea 13" è un battello o un bus dalle fermate citate nell'avviso
+    const byRoute = new Map(), seen = new Set();
+    for (const tid of G.tripIds || []) {
+      const tr = G.trips[tid], st = G.stopTimes.get(tid); if (!tr || !st) continue;
+      const key = `${tr.route}|${tr.shape}|${st.s.length}`; if (seen.has(key)) continue; seen.add(key);
+      const set = byRoute.get(tr.route) || byRoute.set(tr.route, new Set()).get(tr.route);
+      for (const sid of st.s) set.add(sid);
+    }
+    for (const [rid, set] of byRoute) {
+      const r = G.routes[rid]; if (!r?.name) continue;
+      const k = `${i}:${String(r.name).toUpperCase()}`, out = lineStops.get(k) || lineStops.set(k, new Set()).get(k);
+      for (const sid of set) { const n = avvisi.norm(nm(sid)); if (n) out.add(n); }
+    }
   }
-  return (avCtx = { v: live.version(), known, byName });
+  return (avCtx = { v: live.version(), known, byName, lineStops, nameOf: id => names.get(id) || id });
 });
 avvisi.start();
 tide.start();   // raccolta periodica del livello di marea: costruisce la storia da cui si ricava la tendenza

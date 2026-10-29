@@ -112,43 +112,74 @@ function parseValidity(text, pubMs, kind = 'rss') {
 // Linee: nei tratti di testo che seguono "linea/linee/navetta" si prendono i codici maiuscoli e si tengono solo quelli che esistono nel GTFS.
 // Prima si tolgono le date ("31 ottobre"), che altrimenti sembrerebbero la linea 31.
 const LIST_TOK = '[A-Z0-9][A-Z0-9./]{0,5}';
-const LIST_RE = new RegExp(`^:?\\s*(${LIST_TOK}(?:\\s*(?:,|/|e|-|–)\\s*${LIST_TOK})*)`);
-const AUT_HINT = /automobilistic|\bbus\b|tranvia|\btram\b|mestre|terraferma|extraurban|urban[oa]|lido\b/i, NAV_HINT = /navigazione|vaporett|battell|lagun|pontil|\bm\/[bsn]\b|\bmotonav/i;
-// Ritorna oggetti {n: nome, s: 'nav'|'aut', c: colore} così il client può disegnare la stessa mattonella della mappa.
-function findLines(text, known) {
-  const out = new Map(); if (!known?.size) return [];
-  const clean = text.replace(new RegExp(`\\d{1,2}\\s*(?:-|–|e)?\\s*\\d{0,2}\\s+${MON_RE}(?:\\s+\\d{4})?`, 'gi'), ' ').replace(/\b\d{1,2}[.:]\d{2}\b/g, ' ');
-  const hintAut = AUT_HINT.test(text), hintNav = NAV_HINT.test(text);
-  const add = tok => {
-    const k = tok.replace(/[./]+$/, '').toUpperCase(), c = known.get(k); if (!c) return;
-    let list = c; if (c.length > 1) { const f = c.filter(x => (x.s === 'aut' ? hintAut : hintNav)); if (f.length && !(hintAut && hintNav)) list = f; }
-    for (const x of list) out.set(x.s + ':' + x.n, { n: x.n, s: x.s, c: x.c || null });
+const LIST_RE = new RegExp(`^[:'‘’]?\\s*(${LIST_TOK}(?:\\s*(?:,|/|e|-|–)\\s*${LIST_TOK})*)`);
+// parole che indicano il tipo di servizio (usate solo per scegliere tra due linee con lo stesso numero, e come indizio per le fermate)
+const AUT_WORDS = /\b(bus|autobus|automobilistic\w*|tranvia\w*|tram|mestre|marghera|favaro|chirignago|terraferma|extraurban\w*|urban[oa]|rotatoria|deviazion\w*|capolinea)\b/gi;
+const NAV_WORDS = /\b(pontil\w*|imbarcader\w*|vaporett\w*|battell\w*|navigazione|lagun\w*|motonav\w*|lido|giudecca|murano|burano|pellestrina|torcello|san michele|cimitero di s\.?)\b/gi;
+const count = (re, t) => (t.match(re) || []).length;
+
+// Fermate citate in qualunque punto del testo: si cercano sequenze di 1-5 parole che iniziano con la maiuscola e coincidono con il nome di una fermata del GTFS.
+// Ritorna { name (normalizzato): [id,…] }
+function stopMentions(text, byName) {
+  const found = new Map(); if (!byName?.size) return found;
+  const toks = [...text.matchAll(/[A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9.'’]*/g)].map(m => m[0]);
+  for (let i = 0; i < toks.length;) {
+    let hit = null;
+    if (/^[A-ZÀ-Ý]/.test(toks[i])) for (let n = Math.min(5, toks.length - i); n >= 1; n--) {
+      const k = norm(toks.slice(i, i + n).join(' ')); if (k.length < 4) continue;
+      if (byName.has(k)) { hit = { k, n }; break; }
+    }
+    if (hit) { found.set(hit.k, byName.get(hit.k)); i += hit.n; } else i++;
+  }
+  return found;
+}
+
+// Analisi completa del testo di un avviso: linee (con servizio corretto), fermate (con nome e servizio). Sciopero: nessuna linea né fermata.
+function analyze(title, text, ctx) {
+  const full = title + '\n' + text, empty = { lines: [], stops: [], stopNames: [] };
+  if (/sciopero/i.test(title) || /^\s*[^\n]{0,80}\bsciopero\b/i.test(text)) return empty;
+  const known = ctx.known, mentions = stopMentions(full, ctx.byName), mNames = new Set(mentions.keys());
+  const gAut = count(AUT_WORDS, full), gNav = count(NAV_WORDS, full);
+  const mSrc = new Set(); for (const l of mentions.values()) for (const id of l) mSrc.add(id.split(':')[0]);
+  const lines = new Map();
+  const clean = full.replace(new RegExp(`\\d{1,2}\\s*(?:-|–|e)?\\s*\\d{0,2}\\s+${MON_RE}(?:\\s+\\d{4})?`, 'gi'), ' ').replace(/\b\d{1,2}[.:]\d{2}\b/g, ' ')
+    .replace(/[“"]\s*[A-Z]\s*[”"]/g, ' ');                      // "B", "D" tra virgolette doppie = lettera del pontile, non una linea
+  const decide = (tok, around) => {
+    const c = known?.get(tok.replace(/[./]+$/, '').toUpperCase()); if (!c) return;
+    let pick = c;
+    if (c.length > 1) {
+      const la = count(AUT_WORDS, around), ln = count(NAV_WORDS, around);
+      const sc = c.map(x => {
+        const served = ctx.lineStops?.get(x.s + ':' + String(x.n).toUpperCase());
+        let st = 0; if (served) for (const k of mNames) if (served.has(k)) st++;
+        return st * 4 + (mSrc.size === 1 && mSrc.has(x.s) ? 3 : 0) + (x.s === 'aut' ? 2 * la + gAut : 2 * ln + gNav);
+      });
+      const best = Math.max(...sc), top = c.filter((_, i) => sc[i] === best);
+      if (top.length === 1 && best > 0) pick = top;
+    }
+    for (const x of pick) lines.set(x.s + ':' + x.n, { n: x.n, s: x.s, c: x.c || null });
   };
-  // Solo elenchi che seguono "linea/linee/navetta" ("linee 9S, 21 e 56E"): niente sigle sparse nel testo
+  // linee: solo elenchi che seguono "linea/linee/navetta" ("linee 9S, 21 e 56E")
   for (const m of clean.matchAll(/\b(?:linee|linea|navetta|navette)\b\s*/gi)) {
     const rest = clean.slice(m.index + m[0].length), l = LIST_RE.exec(rest); if (!l) continue;
-    for (const tok of l[1].split(/\s*(?:,|\/|e|-|–)\s*/)) if (tok === tok.toUpperCase()) add(tok);
+    const around = clean.slice(Math.max(0, m.index - 150), m.index + 250);
+    for (const tok of l[1].split(/\s*(?:,|\/|e|-|–)\s*/)) if (tok === tok.toUpperCase()) decide(tok, around);
   }
-  const lead = /^\s*(?:linea\s+)?([A-Z0-9][A-Z0-9.]{0,5})\s*[:–-]/.exec(text); if (lead) add(lead[1]);
-  return [...out.values()].slice(0, 20);
-}
-// Fermate: nomi tra virgolette (“…”, «…», "...") o dopo "fermata/fermate/pontile", confrontati con i nomi del GTFS (uguaglianza dei nomi normalizzati)
-function stopCandidates(text) {
-  const c = new Set();
-  for (const r of text.matchAll(/[“«"]([^”»"\n]{4,60})[”»"]/g)) c.add(r[1]);
-  for (const r of text.matchAll(/\b(?:fermata|fermate|pontile|pontili)\s+(?:di\s+|del\s+|della\s+|dello\s+|dei\s+)?([A-ZÀ-Ý][^,.;:()\n]{3,50})/g)) c.add(r[1]);
-  return [...c].map(s => norm(s)).filter(s => s.length >= 4);
-}
-function findStops(text, byName) {
-  const ids = new Set();
-  if (!byName?.size) return [];
-  for (const c of stopCandidates(text)) {
-    const hit = byName.get(c); if (hit) { hit.forEach(i => ids.add(i)); continue; }
-    const words = c.split(' ');                                               // "Forte Marghera Gerlin in entrambe le direzioni": si accorcia da destra
-    for (let n = words.length - 1; n >= 2; n--) { const h = byName.get(words.slice(0, n).join(' ')); if (h) { h.forEach(i => ids.add(i)); break; } }
+  const lead = /^\s*(?:linea\s+)?([A-Z0-9][A-Z0-9.]{0,5})\s*[:–-]/.exec(text); if (lead) decide(lead[1], full.slice(0, 400));
+  const lineList = [...lines.values()].slice(0, 20), srcs = new Set(lineList.map(l => l.s));
+  // fermate: se ci sono linee si tengono quelle del loro servizio; altrimenti quelle del servizio indicato dalle parole del testo (se chiaro)
+  let want = null; if (srcs.size) want = srcs; else if (gNav >= gAut + 2) want = new Set(['nav']); else if (gAut >= gNav + 2) want = new Set(['aut']);
+  const ids = [], names = new Map();
+  for (const [k, list] of mentions) for (const id of list) {
+    const src = id.split(':')[0]; if (want && !want.has(src)) continue;
+    ids.push(id); const nm = ctx.nameOf ? ctx.nameOf(id) : k; names.set(src + '|' + k, { n: nm, s: src });
   }
-  return [...ids].slice(0, 80);
+  // avvisi generali sugli orari (centinaia di fermate citate di passaggio): niente segnalazione sulle fermate
+  const general = /\borari\b|modifiche ai? serviz/i.test(title) || names.size > 30;
+  return { lines: lineList, stops: general ? [] : ids.slice(0, 80), stopNames: general ? [] : [...names.values()].slice(0, 30) };
 }
+function findLines(text, known) { return analyze(text, '', { known }).lines; }   // (usata dai test: solo linee)
+function findStops(text, byName) { return [...new Set([...stopMentions(text, byName).values()].flat())].slice(0, 80); }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // LETTURA DELLE FONTI
@@ -243,7 +274,7 @@ function build(now = Date.now()) {
   for (const r of ST.rss) {
     const body = ST.pages.get(r.url) || r.text, full = r.title + '\n' + body, v = parseValidity(full, r.pubMs, 'rss');
     const it = { id: idOf(r.key), source: 'actv', title: r.title, text: short(body.replace(r.title, '').trim() || r.text, 700), url: r.url, published: r.pubMs, ...v,
-      lines: findLines(full, ctx.known), stops: findStops(full, ctx.byName) };
+      ...analyze(r.title, body, ctx) };
     items.push(it); byUrl.set(r.url, it);
   }
   for (const m of ST.tg) {
@@ -251,7 +282,7 @@ function build(now = Date.now()) {
     if (first) { const it = byUrl.get(first); it.source = 'both'; it.tgUrl = m.url; continue; }   // già presente dal sito ACTV
     const lines = m.text.split('\n').filter(Boolean), title = short(lines[0] || 'Avviso', 110), v = parseValidity(m.text, m.pubMs, 'tg');
     items.push({ id: idOf(m.key), source: 'telegram', title, text: short(lines.slice(title === lines[0] ? 1 : 0).join(' ') || m.text, 700), url: m.links.find(l => /actv|avm/.test(l)) || m.url, tgUrl: m.url,
-      published: m.pubMs, ...v, lines: findLines(m.text, ctx.known), stops: findStops(m.text, ctx.byName) });
+      published: m.pubMs, ...v, ...analyze(title, m.text, ctx) });
   }
   const out = [];
   for (const it of items) {
@@ -278,4 +309,4 @@ function start() {
 }
 // per i test
 function _load({ rss = [], tg = [], pages = {} } = {}) { ST.rss = rss; ST.tg = tg; ST.pages = new Map(Object.entries(pages)); ST.rssOk = ST.tgOk = Date.now(); }
-module.exports = { start, getAvvisi, setContext, parseRss, parseTelegram, parseValidity, findLines, findStops, articleText, toText, safeUrl, norm, build, _load, refreshRss, refreshTg };
+module.exports = { analyze, stopMentions, start, getAvvisi, setContext, parseRss, parseTelegram, parseValidity, findLines, findStops, articleText, toText, safeUrl, norm, build, _load, refreshRss, refreshTg };
