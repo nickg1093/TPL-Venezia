@@ -431,9 +431,23 @@ const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInter
 // PANNELLO FERMATA / ZONA
 // ---------------------------------------------------------------------------------------------------------------------
 // ids delle fermate del pannello aperto e relativi avvisi in corso
-const stopIds = e => (e.t === 'zone' ? (zones.get(e.key)?.items || []).map(i => i.id) : (e.ids || [e.id]));
-const stopAlerts = e => Avvisi.forStops(stopIds(e));
-const stopTitle = (e, z = e.t === 'zone' ? zones.get(e.key) : null) => `${srcIcon(z ? z.src : e.src)}<span>${esc(z ? z.name : e.name)}</span>${stopAlerts(e).length ? `<span class="warn-i" title="Avviso in corso">${icon('warn')}</span>` : ''}`;
+// Come nelle app di navigazione: in una fermata valgono (1) gli avvisi che la citano e (2) quelli sulle linee che vi fermano.
+// In una zona con un pontile/corsia scelto valgono solo quelli di quel pontile e delle sue linee (a Piazzale Roma un avviso sulla linea per Martellago
+// compare solo nella corsia di quella linea, non in tutta la zona).
+const stopIds = e => {
+  if (e.t !== 'zone') return e.ids || [e.id];
+  const z = zones.get(e.key); if (!z) return [];
+  return z.items.map(i => i.id).filter(id => !z.pick || z.pick === '*' || z.letterOf.get(id) === z.pick);
+};
+// linee che fermano qui (dai passaggi caricati, nel filtro scelto): chiavi "src:NOME" + elenco per la ricerca degli avvisi
+function stopLines(e) {
+  if (!lastDeps || lastDeps._e !== e) return [];                          // passaggi di un'altra fermata (ancora in caricamento): nessuna linea
+  const ids = new Set(stopIds(e)), seen = new Map();
+  for (const x of lastDeps.departures) if ((!x.stop || ids.has(x.stop)) && active.has(x.src)) seen.set(Avvisi.keyOf(x.src, x.line), { s: x.src, n: x.line });
+  return [...seen.values()];
+}
+const stopAlerts = e => { const ls = stopLines(e); return { list: [...Avvisi.forStops(stopIds(e)), ...Avvisi.forLines(ls)].filter((a, i, l) => l.findIndex(b => b.id === a.id) === i), keys: new Set(ls.map(l => Avvisi.keyOf(l.s, l.n))) }; };
+const stopTitle = (e, z = e.t === 'zone' ? zones.get(e.key) : null) => `${srcIcon(z ? z.src : e.src)}<span>${esc(z ? z.name : e.name)}</span>${stopAlerts(e).list.length ? `<span class="warn-i" title="Avviso in corso">${icon('warn')}</span>` : ''}`;
 function showStopPanel(e) {
   const z = e.t === 'zone' ? zones.get(e.key) : null;
   if (e.t === 'zone' && !z) { plist.innerHTML = '<p class="muted pad">Zona non più disponibile.</p>'; return; }
@@ -453,7 +467,7 @@ async function loadDepartures() {
     const d = await api(url + schedQS().replace('&', url.includes('?') ? '&' : '?'));
     if (d.error) throw new Error(d.error);
     if (current !== e) return;
-    lastDeps = d; renderDepartures();
+    lastDeps = d; d._e = e; renderDepartures();
   } catch (err) { if (current === e && !(err.busy && lastDeps)) plist.innerHTML = `<p class="late pad">Dati non disponibili: ${esc(err.message)}</p>`; }
 }
 
@@ -476,7 +490,7 @@ function depRow(x, z, live) {
   // l'indicatore sotto l'orario ha SEMPRE il colore neutro (come nel pannello della corsa): il colore di stato è solo sull'orario
   return `<div class="dep go${x.cancel ? ' cx' : ''}${done ? ' gone' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" data-veh="${esc(x.veh || '')}" role="button" tabindex="0" title="${done ? 'Corsa già partita: apri il percorso' : 'Apri il percorso della corsa'}">`
     + badge(x.line, x.color, src)
-    + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}${reqHtml}<span>${esc(info)}</span></div></div>`
+    + `<div class="dm"><div class="dh">${Avvisi.lineHasAlert(src, x.line) ? `<span class="dw" title="Avviso sulla linea ${esc(x.line)}">${icon('warn', 'sm')}</span>` : ''}${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}${reqHtml}<span>${esc(info)}</span></div></div>`
     + `<div class="dt">${timeHtml}<div class="in-min" data-exp="${live && x.expMs ? Math.round(x.expMs) : ''}" data-ph="${live ? (x.phase || '') : ''}">${esc(label)}</div></div></div>`;
 }
 function renderDepartures() {
@@ -490,9 +504,9 @@ function renderDepartures() {
   chipsArea.innerHTML = z ? `<div class="chips"><span class="muted">${unitOf(z)[0]}</span>`
     + `<button class="chip all${z.pick === '*' ? ' on' : ''}" data-p="*" aria-pressed="${z.pick === '*'}">Tutti</button>`
     + z.letters.map(l => `<button class="chip sq${z.pick === l ? ' on' : ''}" data-p="${esc(l)}" aria-pressed="${z.pick === l}" aria-label="${unitOf(z)[0]} ${esc(l)}">${esc(l)}</button>`).join('') + '</div>' : '';
-  const al = stopAlerts(current);                                                           // avvisi in corso su queste fermate: simbolo (!) nel titolo e righe cliccabili che aprono l'avviso
+  const al = stopAlerts(current);                                                           // avvisi in corso su queste fermate e sulle loro linee: (!) nel titolo e righe cliccabili
   pname.innerHTML = stopTitle(current, z);
-  plist.innerHTML = al.map(Avvisi.rowHtml).join('') + (rows.map(x => depRow(x, z, live)).join('') || '<p class="muted pad center">Nessun passaggio.</p>');
+  plist.innerHTML = al.list.map(a => Avvisi.rowHtml(a, al.keys)).join('') + (rows.map(x => depRow(x, z, live)).join('') || '<p class="muted pad center">Nessun passaggio.</p>');
 }
 chipsArea.addEventListener('click', e => {
   const chip = e.target.closest('.chip');
@@ -561,7 +575,7 @@ function tripHtml(d) {
     const meta = s.skipped ? 'Fermata saltata' : (s.state === 'at' || s.state === 'next') ? etaText(s.phase, s.expMs, s.inMin, d.live && d.detected !== false) : (s.state === 'upcoming' && d.live && s.expMs ? `tra ${Math.max(1, Math.round((s.expMs - Date.now()) / 60000))} min` : '');
     return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === 0 ? ' first' : ''}${i === n - 1 ? ' last' : ''}" data-i="${i}" role="button" tabindex="0" title="Apri la fermata">`
       + `<div class="rail-col"><div class="rail-line"></div><span class="dot">${s.state === 'passed' ? icon('check') : ''}</span></div>`
-      + `<div class="sn"><div class="nm">${esc(s.name)}</div>${meta ? `<div class="muted">${esc(meta)}</div>` : ''}</div>`
+      + `<div class="sn"><div class="nm">${esc(s.name)}${Avvisi.hasAlert(s.id) ? `<span class="dw" title="Avviso su questa fermata">${icon('warn', 'sm')}</span>` : ''}</div>${meta ? `<div class="muted">${esc(meta)}</div>` : ''}</div>`
       + `<div class="tm">${timeHtml}<div class="muted">${esc(sub)}</div></div></div>`;
   }).join('');
   const weak = lum(k.rail) > .8 || lum(k.rail) < .03;   // bianco o nero puro non si vedono su uno dei due temi: si usa il colore del testo
@@ -595,7 +609,11 @@ function renderTrip(first) {
   const o = d.stops[0];
   psub.innerHTML = (o ? `da ${esc(o.name)}${o.sched ? ', ' + esc(o.sched) : ''}` : '') + (d.note ? `<br>${esc(d.note)}` : '');
   pstatus.innerHTML = d.live && d.detected === false ? 'Non rilevato' : `${status} · ${esc(vehName(d.trip.src, d.trip.vehicle || current.v.label))}${d.live && d.detected !== false && d.speedKmh != null ? ` · ${+d.speedKmh} km/h` : ''}${d.others?.length ? ` · insieme a ${d.others.map(esc).join(', ')}` : ''}`;
-  plist.innerHTML = (d.cancelled ? '<div class="banner">Corsa soppressa</div>' : '') + tripHtml(d)
+  // avvisi del mezzo: quelli sulla sua linea e quelli che citano una sua fermata (se non riguardano solo altre linee)
+  const key = Avvisi.keyOf(d.trip.src, d.trip.line), only = new Set([key]);
+  const tal = [...Avvisi.forLines([{ s: d.trip.src, n: d.trip.line }]), ...Avvisi.forStops(d.stops.map(s => s.id)).filter(a => !a.lines?.length || a.lines.some(l => Avvisi.keyOf(l.s, l.n) === key))]
+    .filter((a, i, l) => l.findIndex(b => b.id === a.id) === i);
+  plist.innerHTML = tal.map(a => Avvisi.rowHtml(a, only)).join('') + (d.cancelled ? '<div class="banner">Corsa soppressa</div>' : '') + tripHtml(d)
     + (d.live && d.historyKnown ? '<p class="muted note-hist">Fermate passate: ultima stima.</p>' : '');
   placeVehicle(d, first);
   if (!first) return;
@@ -742,8 +760,10 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', e => {  
   try { if (localStorage.getItem('theme')) return; } catch { /* ignora */ }
   applyTheme(e.matches ? 'dark' : 'light');
 });
+// dal pannello della marea (triangolo accanto a una marea oltre le soglie del piano ACTV) all'avviso di acqua alta
+window.addEventListener('tpl:water-alert', () => { Tide.close(); const id = Avvisi.waterAlertId(); Avvisi.openAlert(id); });
 Tide.init(() => { Avvisi.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
-Avvisi.init(() => { Tide.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); }, () => { drawStops(); if (current && current.t !== 'trip') renderDepartures(); });   // quando arrivano avvisi nuovi si aggiornano mappa e pannello fermata
+Avvisi.init(() => { Tide.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); }, () => { drawStops(); if (current && current.t !== 'trip') renderDepartures(); else if (current?.t === 'trip' && lastTrip) renderTrip(false); });   // quando arrivano avvisi nuovi si aggiornano mappa e pannello fermata
 Pwa.init();
 
 document.addEventListener('keydown', e => {

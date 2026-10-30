@@ -8,6 +8,8 @@ const dayTag = ms => { const a = new Date(ms), b = new Date(); return a.toDateSt
 // Promemoria breve: con la marea (attuale o prevista nel grafico) oltre 85 cm ACTV pubblica quali servizi di navigazione sono previsti
 const AA_URL = 'https://actv.avmspa.it/it/content/acqua-alta-servizi-di-navigazione-previsti', AA_CM = 85;
 const peakOf = d => Math.max(d.cm, ...(d.next || []).map(n => n.cm), ...((d.chart && d.chart.forecast) || []).map(p => p[1]));
+// triangolo accanto alle maree oltre la prima soglia del piano ACTV: apre l'avviso di acqua alta (ufficiale o calcolato dal livello)
+const warnBtn = `<button type="button" class="tide-warn" aria-label="Acqua alta oltre ${AA_CM} cm: apri l'avviso sui servizi di navigazione" title="Apri l'avviso di acqua alta">${icon('warn', 'sm')}</button>`;
 const safeUrl = u => (/^https:\/\//.test(u) ? u : '#');
 
 // ---- GRAFICO: fino a 6 ore osservate + 18 ore previste, con cursore mobile (trascinando sul grafico oppure con il cursore sotto) ----
@@ -33,7 +35,13 @@ function chartHtml(c) {
   const path = pts => pts.map((p, i) => `${i ? 'L' : 'M'}${X(p[0]).toFixed(1)} ${Y(p[1]).toFixed(1)}`).join('');
   let grid = '', xt = '';
   for (let v = lo; v <= hi; v += step) grid += `<line class="g${v === 0 ? ' z' : ''}" x1="${L}" x2="${W - R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}"/><text x="${L - 5}" y="${(Y(v) + 4.5).toFixed(1)}" text-anchor="end">${fmtCm(v)}</text>`;
-  for (let k = -6; k <= 18; k += (W < 420 ? 6 : 3)) { const t = c.now + k * 3600e3; xt += `<line class="g" x1="${X(t).toFixed(1)}" x2="${X(t).toFixed(1)}" y1="${T}" y2="${H - B}"/><text x="${X(t).toFixed(1)}" y="${H - 8}" text-anchor="${X(t) > W - 22 ? 'end' : 'middle'}">${k === 0 ? 'ora' : hm(t)}</text>`; }
+  // etichette dell'asse orario: solo se c'è spazio dalla precedente (circa 44 px per "19:10"); l'ultima linea resta anche senza etichetta
+  let lastX = -1e9;
+  for (let k = -6; k <= 18; k += (W < 420 ? 6 : 3)) {
+    const t = c.now + k * 3600e3, x = X(t), anchor = x > W - 22 ? 'end' : 'middle', left = anchor === 'end' ? x - 36 : x - 18;
+    xt += `<line class="g" x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${T}" y2="${H - B}"/>`;
+    if (left - lastX >= 8) { xt += `<text x="${x.toFixed(1)}" y="${H - 8}" text-anchor="${anchor}">${k === 0 ? 'ora' : hm(t)}</text>`; lastX = anchor === 'end' ? x : x + 18; }
+  }
   const marks = ext.filter(e => e.ts >= c.from && e.ts <= c.to).map(e => `<circle class="ex" cx="${X(e.ts).toFixed(1)}" cy="${Y(e.cm).toFixed(1)}" r="3.5"/><text class="exl" x="${X(e.ts).toFixed(1)}" y="${(Y(e.cm) + (e.type === 'max' ? -8 : 17)).toFixed(1)}" text-anchor="middle">${fmtCm(e.cm)}</text>`).join('');
   const desc = `Grafico del livello di marea dalle ${hm(c.from)} alle ${hm(c.to)}: fino a sei ore osservate e diciotto ore previste. Usa il cursore sotto il grafico per leggere il livello a ogni ora.`;
   return `<div class="tide-chart" data-lo="${lo}" data-hi="${hi}"><div class="tide-read" aria-live="polite"><span class="tr-time"></span><b class="tr-val"></b><span class="tr-kind"></span></div>`
@@ -72,9 +80,9 @@ function render() {
     : t.dir === 'up' ? { icon: 'up', txt: `In crescita${t.rate != null ? ` · +${Math.abs(t.rate)} cm/h` : ''}` }
     : t.dir === 'down' ? { icon: 'down', txt: `In calo${t.rate != null ? ` · −${Math.abs(t.rate)} cm/h` : ''}` }
     : { icon: 'steady', txt: 'Stazionaria' };
-  const next = (d.next || []).map(n => `<li><b>${n.type === 'max' ? 'Alta' : 'Bassa'}</b><span class="v">${fmtCm(n.cm)} cm · ${dayTag(n.ts)}${hm(n.ts)}<i class="cdot" data-cat="${esc(n.cat || '')}" aria-hidden="true"></i></span></li>`).join('');
+  const next = (d.next || []).map(n => `<li><b>${n.type === 'max' ? 'Alta' : 'Bassa'}</b><span class="v">${fmtCm(n.cm)} cm · ${dayTag(n.ts)}${hm(n.ts)}<i class="cdot" data-cat="${esc(n.cat || '')}" aria-hidden="true"></i>${n.type === 'max' && n.cm > AA_CM ? warnBtn : ''}</span></li>`).join('');
   body.innerHTML = `<div class="tide-level"><span class="num">${fmtCm(d.cm)}</span><span class="unit">cm</span></div>`
-    + `<div class="tide-cat" data-cat="${esc(d.category.key)}">${esc(d.category.label)}</div>`
+    + `<div class="tide-cat" data-cat="${esc(d.category.key)}">${esc(d.category.label)}${d.cm > AA_CM ? warnBtn : ''}</div>`
     + `<div class="tide-trend">${icon(tr.icon)}<span>${tr.txt}${t && t.basis === 'previsione' ? ' <span class="muted">(da previsione)</span>' : ''}</span></div>`
     + (peakOf(d) > AA_CM ? `<a class="tide-aa" href="${AA_URL}" target="_blank" rel="noopener noreferrer">${icon('warn', 'sm')}<span>Oltre ${AA_CM} cm: servizi di navigazione previsti</span></a>` : '')
     + (d.stale ? `<p class="tide-note" role="status">Ultimo dato di ${d.ageMin} minuti fa: potrebbe non essere aggiornato.</p>` : '')
@@ -103,6 +111,7 @@ export function open(beforeOpen) {
 }
 export function close() { if (card.hidden) return; card.hidden = true; btn.setAttribute('aria-expanded', 'false'); clearInterval(timer); }
 export function init(beforeOpen) {
+  body.addEventListener('click', e => { if (e.target.closest('.tide-warn')) window.dispatchEvent(new CustomEvent('tpl:water-alert')); });
   btn.onclick = () => (card.hidden ? open(beforeOpen) : close());
   $('tide-close').onclick = () => { close(); btn.focus(); };
   window.addEventListener('resize', () => { if (!card.hidden) { render(); position(); } });
