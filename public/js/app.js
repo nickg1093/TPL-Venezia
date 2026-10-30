@@ -482,8 +482,8 @@ function depRow(x, z, live) {
   else if (live) {
     if (!x.live) subNote = 'da orario';
     else {                                                                    // stato breve: l'orario barrato e quello nuovo dicono già il resto
-      const di = delayInfo(x.delay), d = Math.round(x.delay || 0), s = d >= 1 ? `+${d} min` : d <= -1 ? `−${-d} min` : 'in orario';
-      cls = di.cls; subNote = done ? `partito ${s}` : s; fullNote = done ? `partito, ${di.txt}` : di.txt;
+      const di = delayInfo(x.delay);
+      cls = di.cls; subNote = done ? `partito · ${di.txt}` : di.txt; fullNote = done ? `partito, ${di.long}` : di.long;
     }
   }
   if (done) cls = '';                                                         // riga grigia: nessun colore di stato
@@ -588,9 +588,9 @@ async function loadTrip() {
 function tripHtml(d) {
   const k = colorInfo(d.trip.color, d.trip.line), n = d.stops.length;
   const rows = d.stops.map((s, i) => {
-    let timeHtml = '', sub = '';
+    let timeHtml = '', sub = '', cls = '';
     if (d.live && d.detected !== false && s.delay != null) {
-      const di = delayInfo(s.delay); sub = di.txt;
+      const di = delayInfo(s.delay); sub = di.txt; cls = di.cls;
       timeHtml = Math.abs(s.delay) >= 1
         ? `<div class="tm-time-wrap"><span class="sched-crossed">${esc(s.sched)}</span><strong class="${di.cls}">${esc(s.exp)}</strong></div>`
         : `<div class="tm-time-wrap"><strong class="${di.cls}">${esc(s.exp)}</strong></div>`;
@@ -598,8 +598,10 @@ function tripHtml(d) {
     const meta = s.skipped ? 'Fermata saltata' : (s.state === 'at' || s.state === 'next') ? etaText(s.phase, s.expMs, s.inMin, d.live && d.detected !== false) : (s.state === 'upcoming' && d.live && s.expMs ? `tra ${Math.max(1, Math.round((s.expMs - Date.now()) / 60000))} min` : '');
     return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === 0 ? ' first' : ''}${i === n - 1 ? ' last' : ''}" data-i="${i}" role="button" tabindex="0" title="Apri la fermata">`
       + `<div class="rail-col"><div class="rail-line"></div><span class="dot">${s.state === 'passed' ? icon('check') : ''}</span></div>`
-      + `<div class="sn"><div class="nm">${esc(s.name)}${Avvisi.hasAlert(s.id) ? `<span class="dw" title="Avviso su questa fermata">${icon('warn', 'sm')}</span>` : ''}</div>${meta ? `<div class="muted">${esc(meta)}</div>` : ''}</div>`
-      + `<div class="tm">${timeHtml}<div class="muted">${esc(sub)}</div></div></div>`;
+      // stessa impaginazione del pannello fermata: a sinistra nome e stato (ritardo/anticipo), a destra orario e "tra N min"
+      + `<div class="sn"><div class="nm">${esc(s.name)}${Avvisi.hasAlert(s.id) ? `<span class="dw" title="Avviso su questa fermata">${icon('warn', 'sm')}</span>` : ''}</div>`
+      + `<div class="dn ${s.state === 'passed' ? '' : cls}"><span>${esc(s.skipped ? 'Fermata saltata' : sub)}</span></div></div>`
+      + `<div class="tm">${timeHtml}<div class="in-min">${esc(s.skipped ? '' : meta)}</div></div></div>`;
   }).join('');
   const weak = lum(k.rail) > .8 || lum(k.rail) < .03;   // bianco o nero puro non si vedono su uno dei due temi: si usa il colore del testo
   return `<div class="tl" style="--rc:${weak ? 'var(--fg)' : k.rail};--check-fg:${weak ? 'var(--bg)' : k.contrast}"><div class="trav"></div><div class="veh">${vehIcon(d.trip.src, d.trip.vehicle, '', d.trip.line)}</div>${rows}</div>`;
@@ -629,13 +631,16 @@ function renderTrip(first) {
   if (first) renderNotifyBar();
   let status = 'programmato';
   if (d.live && d.detected === false) status = 'Non rilevato';
-  else if (d.live) status = d.delayNow == null ? 'live' : `<span class="${delayInfo(d.delayNow).cls}">${esc(delayInfo(d.delayNow).txt)}</span>`;
+  else if (d.live) status = d.delayNow == null ? 'live' : `<span class="${delayInfo(d.delayNow).cls}" title="${esc(delayInfo(d.delayNow).long)}">${esc(delayInfo(d.delayNow).txt)}</span>`;
   pname.innerHTML = `${icon('next', 'sm')}<span>${d.trip.headsign ? esc(d.trip.headsign) : 'Linea ' + esc(d.trip.line)}</span>`;
   const o = d.stops[0];
   psub.innerHTML = (o ? `da ${esc(o.name)}${o.sched ? ', ' + esc(o.sched) : ''}` : '') + (d.note ? `<br>${esc(d.note)}` : '');
   // corsa verificata (assign.js): il mezzo trasmetteva un'altra corsa; lo si dice, in modo trasparente
   if (d.reassigned) psub.innerHTML += `<span class="reassign">${icon('info', 'sm')} Corsa riconosciuta ${d.reassigned.why === 'feed' ? 'dai dati ACTV' : 'da posizione e orario'}: il mezzo trasmetteva la corsa delle ${esc(d.reassigned.from || '?')}.</span>`;
-  pstatus.innerHTML = d.live && d.detected === false ? 'Non rilevato' : `${status} · ${esc(vehName(d.trip.src, d.trip.vehicle || current.v.label))}${d.live && d.detected !== false && d.speedKmh != null ? ` <span class="spd" title="Velocità stimata dalle posizioni GPS: il feed ACTV non trasmette la velocità reale" aria-label="velocità stimata circa ${+d.speedKmh} chilometri orari">≈ ${+d.speedKmh} km/h · stima</span>` : ''}${d.others?.length ? ` · insieme a ${d.others.map(esc).join(', ')}` : ''}`;
+  // UNA riga: stato · mezzo (con "insieme a…", accorciato se serve) · velocità stimata (etichetta che non va mai a capo)
+  const vtxt = vehName(d.trip.src, d.trip.vehicle || current.v.label) + (d.others?.length ? ` · insieme a ${d.others.join(', ')}` : '');
+  const spd = d.live && d.detected !== false && d.speedKmh != null ? `<span class="spd" title="Velocità stimata dalle posizioni GPS: il feed ACTV non trasmette la velocità reale" aria-label="velocità stimata circa ${+d.speedKmh} chilometri orari">≈ ${+d.speedKmh} km/h · stima</span>` : '';
+  pstatus.innerHTML = d.live && d.detected === false ? 'Non rilevato' : `<span class="stx">${status}</span><span class="vn">· ${esc(vtxt)}</span>${spd}`;
   // avvisi del mezzo: quelli sulla sua linea e quelli che citano una sua fermata (se non riguardano solo altre linee)
   const key = Avvisi.keyOf(d.trip.src, d.trip.line), only = new Set([key]);
   const tal = [...Avvisi.forLines([{ s: d.trip.src, n: d.trip.line }]), ...Avvisi.forStops(d.stops.map(s => s.id)).filter(a => !a.lines?.length || a.lines.some(l => Avvisi.keyOf(l.s, l.n) === key))]
