@@ -90,10 +90,11 @@ const busyDelta = d => {
   if (pending > 0 && !busyTimer) busyTimer = setTimeout(() => { busyTimer = null; if (pending > 0) busyFn?.(true); }, BUSY_MS);
   if (pending === 0) { clearTimeout(busyTimer); busyTimer = null; busyFn?.(false); }
 };
-export async function api(url) {
+// cache: 'no-cache' = il browser rivalida (ETag): se il server risponde 304 riusa la copia già scaricata (meno dati, stessi contenuti)
+export async function api(url, { cache = 'no-store' } = {}) {
   busyDelta(1);
   try {
-    const r = await fetch(url, { cache: 'no-store' });
+    const r = await fetch(url, { cache });
     if (r.status === 409) { const e = new Error('carico gli orari della data scelta…'); e.loading = true; throw e; }
     if (r.status === 429) { const e = new Error('server occupato, riprovo'); e.busy = true; throw e; }
     let d; try { d = await r.json(); } catch { throw new Error(`risposta non valida (HTTP ${r.status})`); }

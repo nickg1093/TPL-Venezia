@@ -52,8 +52,13 @@ const uniq = list => { const seen = new Set(); return list.filter(a => isWarn(a)
 export const forStops = ids => uniq(ids.flatMap(id => byStop.get(id) || []));
 // avvisi in corso su una delle linee indicate ([{ s: 'aut', n: '7E' }]): valgono in ogni fermata in cui la linea ferma e sul mezzo
 export const forLines = list => uniq(list.flatMap(l => byLine.get(lineKey(l.s, l.n)) || []));
-export const lineHasAlert = (s, n) => (byLine.get(lineKey(s, n)) || []).some(isWarn);
-export const hasAlert = id => (byStop.get(id) || []).some(isWarn);
+// triangolo (mappa, titolo della fermata, riga del passaggio): solo avvisi gravi o di attenzione, non quelli informativi
+const isAlarm = a => isWarn(a) && a.severity !== 'info';
+export const lineHasAlert = (s, n) => (byLine.get(lineKey(s, n)) || []).some(isAlarm);
+export const hasAlert = id => (byStop.get(id) || []).some(isAlarm);
+export const anyAlarm = list => list.some(isAlarm);
+const sevIcon = a => icon(a.severity === 'info' ? 'info' : 'warn', 'sm');
+const effTag = a => (a.effectLabel ? `<span class="av-eff" data-sev="${esc(a.severity || 'warning')}">${esc(a.effectLabel)}</span>` : '');
 // avviso di acqua alta da aprire dal pannello della marea: prima quello ufficiale, poi quello automatico (in corso o in arrivo)
 export const waterAlertId = () => { const l = (data?.items || []).filter(a => a.water && a.to >= now()); return (l.find(a => a.source !== 'auto') || l[0])?.id || null; };
 // riga cliccabile per il pannello di una fermata: apre l'avviso nella finestra
@@ -61,7 +66,7 @@ export const waterAlertId = () => { const l = (data?.items || []).filter(a => a.
 export const rowHtml = (a, only = null) => {
   const ls = (a.lines || []).filter(l => !only || only.has(lineKey(l.s, l.n))).map(l => l.n);
   const ln = ls.length ? `${ls.length === 1 ? 'Linea' : 'Linee'} ${ls.slice(0, 4).join(', ')}${ls.length > 4 ? '…' : ''} · ` : '';
-  return `<button type="button" class="alert-row" data-av="${esc(a.id)}">${icon('warn', 'sm')}<span><b>${esc(a.title)}</b><small>${esc(ln + validity(a))} · tocca per leggere</small></span></button>`;
+  return `<button type="button" class="alert-row" data-av="${esc(a.id)}" data-sev="${esc(a.severity || 'warning')}">${sevIcon(a)}<span>${effTag(a)}<b>${esc(a.title)}</b><small>${esc(ln + validity(a))} · tocca per leggere</small></span></button>`;
 };
 export const keyOf = lineKey;
 
@@ -75,7 +80,7 @@ function render() {
   const item = a => {
     const links = [safeUrl(a.url) && `<a href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${a.source === 'telegram' ? 'Apri il messaggio' : 'Leggi l\'avviso completo'}</a>`,
       a.tgUrl && a.tgUrl !== a.url && safeUrl(a.tgUrl) && `<a href="${esc(a.tgUrl)}" target="_blank" rel="noopener noreferrer">Messaggio Telegram</a>`].filter(Boolean).join('');
-    return `<article class="av${a.id === highlight ? ' hl' : ''}${a.resolved ? ' ok' : ''}" id="av-${esc(a.id)}"><div class="av-top"><span class="av-src">${a.resolved ? icon('check', 'sm') : ''}${esc(SRC[a.source] || '')}</span><span class="av-when">${esc(validity(a))}</span></div>`
+    return `<article class="av${a.id === highlight ? ' hl' : ''}${a.resolved ? ' ok' : ''}" id="av-${esc(a.id)}"><div class="av-top"><span class="av-src">${a.resolved ? icon('check', 'sm') : ''}${esc(SRC[a.source] || '')}</span>${effTag(a)}<span class="av-when">${esc(validity(a))}</span></div>`
       + `<h3>${esc(a.title)}</h3>${a.text ? `<p>${esc(a.text)}</p>` : ''}`
       + (a.water ? `<div class="av-plan"><strong>Piano acqua alta ACTV per +${esc(a.water.level)} cm</strong>${waterSrc(a.water)}<ul>${(a.water.plan || []).map(x => `<li>${esc(x)}</li>`).join('')}</ul><a href="${esc(a.water.url)}" target="_blank" rel="noopener noreferrer">Servizi di navigazione previsti</a> · verifica sempre l'avviso ufficiale.</div>` : '')
       + ((a.lines || []).length ? `<div class="av-lines"><span class="muted">Linee</span>${a.lines.map(l => badge(l.n, l.c, l.s)).join('')}</div>` : '')

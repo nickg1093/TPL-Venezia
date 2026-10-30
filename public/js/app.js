@@ -6,6 +6,8 @@ import * as Tide from './tide.js';
 import * as Avvisi from './avvisi.js';
 import * as Pwa from './pwa.js';
 import { createLocator } from './locate.js';
+import * as Fav from './fav.js';
+import * as Notify from './notify.js';
 
 const POLL_MS = 2000, MIN_STOP_ZOOM = 14;
 onBusy(b => { $('busybar').hidden = !b; document.body.classList.toggle('busy', b); });   // barra di caricamento per le richieste lente
@@ -23,7 +25,7 @@ $('toast').onclick = () => { $('toast').hidden = true; };
 // ELEMENTI E STATO
 // ---------------------------------------------------------------------------------------------------------------------
 const statusEl = $('status'), filterEl = $('filter'), resultsEl = $('search-results'), panel = $('panel'), plist = $('plist'), chipsArea = $('chips-area');
-const pname = $('pname'), psub = $('psub'), pstatus = $('pstatus'), pbadge = $('pbadge'), pback = $('pback'), pfollow = $('pfollow');
+const pname = $('pname'), psub = $('psub'), pstatus = $('pstatus'), pbadge = $('pbadge'), pback = $('pback'), pfollow = $('pfollow'), pfav = $('pfav'), pnotify = $('pnotify');
 const range = $('tl-range'), dateEl = $('tl-date');
 const searchContainer = $('search-container'), searchToggleBtn = $('search-toggle-btn');
 
@@ -239,7 +241,7 @@ requestAnimationFrame(function frame(t) {
 async function load() {
   const m = mode, key = keyOf();
   try {
-    const d = await api(`/api/${m === 'sched' ? 'scheduled' : 'vehicles'}?src=${key}${schedQS()}`);
+    const d = await api(`/api/${m === 'sched' ? 'scheduled' : 'vehicles'}?src=${key}${schedQS()}`, { cache: m === 'sched' ? 'no-store' : 'no-cache' });
     if (m !== mode || key !== keyOf()) return;
     if (d.error && !d.vehicles) throw new Error(d.error);
     if (d.version !== undefined && d.version !== staticVer) { staticVer = d.version; loadStatics(); }
@@ -325,7 +327,7 @@ function collapseSearch() { searchContainer.classList.remove('expanded'); search
 function clearSearchState(force = false) { if (lineFilter && !force) return; setLineFilter(null); filterEl.value = ''; $('search-clear').hidden = true; resultsEl.classList.remove('active'); resultsEl.innerHTML = ''; clearRoutes(); }
 function setSearch(on) {
   searchContainer.classList.toggle('expanded', on); searchToggleBtn.setAttribute('aria-expanded', String(on));
-  if (on) { Tide.close(); Avvisi.close(); filterEl.focus(); } else clearSearchState(true);
+  if (on) { Tide.close(); Avvisi.close(); filterEl.focus(); if (!filterEl.value) showFavs(); } else clearSearchState(true);
 }
 searchToggleBtn.onclick = e => { e.stopPropagation(); setSearch(!searchOpen()); };
 document.addEventListener('click', e => { if (searchOpen() && !searchContainer.contains(e.target) && !searchToggleBtn.contains(e.target)) collapseSearch(); });
@@ -335,7 +337,7 @@ const zoneItem = z => `<div class="search-item" role="option" tabindex="0" data-
 filterEl.addEventListener('input', () => {
   $('search-clear').hidden = !filterEl.value;
   const q = filterEl.value.trim().toLowerCase().slice(0, 80), qn = norm(q);
-  if (!q) { resultsEl.classList.remove('active'); resultsEl.innerHTML = ''; setLineFilter(null); clearRoutes(); return; }
+  if (!q) { setLineFilter(null); clearRoutes(); showFavs(); return; }
   const mzAll = [...zones.values()].filter(z => active.has(z.src) && z.norm.includes(qn)), mz = mzAll.slice(0, 8);
   const ms = stops.filter(s => active.has(s[4]) && snorm.get(s[0])?.includes(qn) && !mzAll.includes(zoneOf.get(s[0]))).slice(0, 8);
   const byLine = new Map();                                        // una voce per linea e servizio (le varianti con lo stesso numero si uniscono)
@@ -361,6 +363,7 @@ resultsEl.addEventListener('click', e => {
   const it = e.target.closest('.search-item');
   if (!it || !it.dataset.type) return;
   if (it.dataset.type === 'near') { collapseSearch(); const n = nearList[+it.dataset.k]; if (n) openNear(n); return; }
+  if (it.dataset.type === 'fav') { collapseSearch(); openFav(it.dataset.k); return; }
   filterEl.value = it.dataset.name; resultsEl.classList.remove('active');
   collapseSearch();
   if (it.dataset.type === 'zone') { const z = zones.get(it.dataset.key); if (z) { openFromMap({ t: 'zone', key: z.key, pick: '*' }); focusOn(L.latLng(z.center), 16); } }
@@ -409,7 +412,8 @@ function show(e) {
   current = e; panel.hidden = false; document.body.classList.add('has-panel'); if (narrow()) { Tide.close(); Avvisi.close(); }
   chipsArea.innerHTML = ''; pstatus.textContent = ''; psub.textContent = ''; pbadge.innerHTML = '';
   pfollow.hidden = e.t !== 'trip';
-  updateBack();
+  pfav.hidden = e.t === 'trip'; pnotify.hidden = !(e.t === 'trip' && e.stop); notifyPick = false; rowPick = null;
+  updateBack(); updateFav(); updateBell();
   if (e.t === 'trip') showTrip(e); else showStopPanel(e);
   drawStops();
 }
@@ -447,7 +451,7 @@ function stopLines(e) {
   return [...seen.values()];
 }
 const stopAlerts = e => { const ls = stopLines(e); return { list: [...Avvisi.forStops(stopIds(e)), ...Avvisi.forLines(ls)].filter((a, i, l) => l.findIndex(b => b.id === a.id) === i), keys: new Set(ls.map(l => Avvisi.keyOf(l.s, l.n))) }; };
-const stopTitle = (e, z = e.t === 'zone' ? zones.get(e.key) : null) => `${srcIcon(z ? z.src : e.src)}<span>${esc(z ? z.name : e.name)}</span>${stopAlerts(e).list.length ? `<span class="warn-i" title="Avviso in corso">${icon('warn')}</span>` : ''}`;
+const stopTitle = (e, z = e.t === 'zone' ? zones.get(e.key) : null) => `${srcIcon(z ? z.src : e.src)}<span>${esc(z ? z.name : e.name)}</span>${Avvisi.anyAlarm(stopAlerts(e).list) ? `<span class="warn-i" title="Avviso in corso">${icon('warn')}</span>` : ''}`;
 function showStopPanel(e) {
   const z = e.t === 'zone' ? zones.get(e.key) : null;
   if (e.t === 'zone' && !z) { plist.innerHTML = '<p class="muted pad">Zona non più disponibile.</p>'; return; }
@@ -491,8 +495,19 @@ function depRow(x, z, live) {
   return `<div class="dep go${x.cancel ? ' cx' : ''}${done ? ' gone' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" data-veh="${esc(x.veh || '')}" role="button" tabindex="0" title="${done ? 'Corsa già partita: apri il percorso' : 'Apri il percorso della corsa'}">`
     + badge(x.line, x.color, src)
     + `<div class="dm"><div class="dh">${Avvisi.lineHasAlert(src, x.line) ? `<span class="dw" title="Avviso sulla linea ${esc(x.line)}">${icon('warn', 'sm')}</span>` : ''}${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}${reqHtml}<span>${esc(info)}</span></div></div>`
-    + `<div class="dt">${timeHtml}<div class="in-min" data-exp="${live && x.expMs ? Math.round(x.expMs) : ''}" data-ph="${live ? (x.phase || '') : ''}">${esc(label)}</div></div></div>`;
+    + `<div class="dt">${timeHtml}<div class="in-min" data-exp="${live && x.expMs ? Math.round(x.expMs) : ''}" data-ph="${live ? (x.phase || '') : ''}">${esc(label)}</div></div>`
+    + bellHtml(x, live) + '</div>' + (rowPick && rowPick.trip === `${src}:${x.tripId}` && rowPick.stop === x.stop ? pickHtml(x.stop) : '');
 }
+// campanella su ogni passaggio (solo tempo reale, corse non ancora partite né soppresse): avviso di arrivo di QUELLA corsa a QUESTA fermata
+function bellHtml(x, live) {
+  if (!live || x.done || x.cancel || !x.stop) return '<span class="dep-bell-sp" aria-hidden="true"></span>';
+  const w = Notify.find(`${x.src}:${x.tripId}`, x.stop), lab = w ? `Avviso attivo (${w.lead} min prima): tocca per disattivarlo` : `Avvisami dell'arrivo della linea ${x.line} delle ${x.sched}`;
+  return `<button type="button" class="dep-bell${w ? ' on' : ''}" data-bell aria-pressed="${!!w}" aria-label="${esc(lab)}" title="${esc(lab)}">${icon('bell', 'sm')}</button>`;
+}
+const pickHtml = stop => `<div class="dep-pick" role="group" aria-label="Quando avvisarti"><span>${icon('bell', 'sm')}Avvisami prima dell'arrivo a <b>${esc(stopLabel(stop))}</b>:</span>`
+  + `<div class="chips">${[2, 5, 10, 15].map(m => `<button type="button" class="chip all" data-lead="${m}">${m} min</button>`).join('')}<button type="button" class="nlink" data-ncancel>Annulla</button></div></div>`;
+let rowPick = null;
+const styleOf = (line, color, src) => { const k = colorInfo(color, line); return { shape: src === 'aut' ? 'tile' : 'circle', bg: k.c, fg: k.ink }; };
 function renderDepartures() {
   if (!lastDeps || !current || current.t === 'trip') return;
   const live = mode === 'live', z = current.t === 'zone' ? zones.get(current.key) : null;
@@ -509,11 +524,13 @@ function renderDepartures() {
   plist.innerHTML = al.list.map(a => Avvisi.rowHtml(a, al.keys)).join('') + (rows.map(x => depRow(x, z, live)).join('') || '<p class="muted pad center">Nessun passaggio.</p>');
 }
 chipsArea.addEventListener('click', e => {
+  if (e.target.closest('[data-lead],[data-nstop],[data-ncancel]')) return onNotifyBar(e);
   const chip = e.target.closest('.chip');
   if (chip && current?.t === 'zone') { const z = zones.get(current.key); if (z) { z.pick = current.pick = chip.dataset.p; drawStops(); renderDepartures(); } }
 });
 plist.addEventListener('click', e => {
   const av = e.target.closest('.alert-row'); if (av) return Avvisi.openAlert(av.dataset.av);
+  if (e.target.closest('[data-bell],.dep-pick')) return onRowBell(e);
   const dep = e.target.closest('.dep.go');
   if (dep && current && current.t !== 'trip') return openDeparture(dep.dataset);
   const row = e.target.closest('.st'); if (!row || !lastTrip) return;
@@ -528,7 +545,7 @@ function openDeparture(ds) {
   const x = lastDeps && lastDeps.departures.find(d => d.tripId === tripId && d.src === src && (!stop || d.stop === stop) && (!veh || (d.veh || '') === veh)); if (!x) return;
   const v = (veh && vehicles.find(c => c.src === src && c.key === veh)) || vehicles.find(c => c.src === src && c.tripId === tripId && !c.co)
     || { id: null, src, tripId, routeId: null, line: x.line, label: x.vehicle, headsign: x.headsign, color: x.color };
-  openFromPanel({ t: 'trip', v: vehSnap(v), follow: !!v.id });
+  openFromPanel({ t: 'trip', v: vehSnap(v), follow: !!v.id, stop: x.stop && !x.done ? x.stop : null, stopName: x.stop ? stopLabel(x.stop) : null });   // corsa già partita da qui: niente campanella
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -602,13 +619,17 @@ function placeVehicle(d, first) {
 }
 function renderTrip(first) {
   const d = lastTrip; if (!d || !current || current.t !== 'trip') return;
+  if (!current.v.line) { current.v.line = d.trip.line; current.v.color = d.trip.color; current.v.headsign = d.trip.headsign; pbadge.innerHTML = badge(d.trip.line, d.trip.color, d.trip.src); }
+  if (first) renderNotifyBar();
   let status = 'programmato';
   if (d.live && d.detected === false) status = 'Non rilevato';
   else if (d.live) status = d.delayNow == null ? 'live' : `<span class="${delayInfo(d.delayNow).cls}">${esc(delayInfo(d.delayNow).txt)}</span>`;
   pname.innerHTML = `${icon('next', 'sm')}<span>${d.trip.headsign ? esc(d.trip.headsign) : 'Linea ' + esc(d.trip.line)}</span>`;
   const o = d.stops[0];
   psub.innerHTML = (o ? `da ${esc(o.name)}${o.sched ? ', ' + esc(o.sched) : ''}` : '') + (d.note ? `<br>${esc(d.note)}` : '');
-  pstatus.innerHTML = d.live && d.detected === false ? 'Non rilevato' : `${status} · ${esc(vehName(d.trip.src, d.trip.vehicle || current.v.label))}${d.live && d.detected !== false && d.speedKmh != null ? ` · ${+d.speedKmh} km/h` : ''}${d.others?.length ? ` · insieme a ${d.others.map(esc).join(', ')}` : ''}`;
+  // corsa verificata (assign.js): il mezzo trasmetteva un'altra corsa; lo si dice, in modo trasparente
+  if (d.reassigned) psub.innerHTML += `<span class="reassign">${icon('info', 'sm')} Corsa riconosciuta ${d.reassigned.why === 'feed' ? 'dai dati ACTV' : 'da posizione e orario'}: il mezzo trasmetteva la corsa delle ${esc(d.reassigned.from || '?')}.</span>`;
+  pstatus.innerHTML = d.live && d.detected === false ? 'Non rilevato' : `${status} · ${esc(vehName(d.trip.src, d.trip.vehicle || current.v.label))}${d.live && d.detected !== false && d.speedKmh != null ? ` · <span class="spd" title="Velocità stimata dalle posizioni GPS: il feed ACTV non trasmette la velocità reale">≈ ${+d.speedKmh} km/h (stimata)</span>` : ''}${d.others?.length ? ` · insieme a ${d.others.map(esc).join(', ')}` : ''}`;
   // avvisi del mezzo: quelli sulla sua linea e quelli che citano una sua fermata (se non riguardano solo altre linee)
   const key = Avvisi.keyOf(d.trip.src, d.trip.line), only = new Set([key]);
   const tal = [...Avvisi.forLines([{ s: d.trip.src, n: d.trip.line }]), ...Avvisi.forStops(d.stops.map(s => s.id)).filter(a => !a.lines?.length || a.lines.some(l => Avvisi.keyOf(l.s, l.n) === key))]
@@ -765,6 +786,111 @@ window.addEventListener('tpl:water-alert', () => { Tide.close(); const id = Avvi
 Tide.init(() => { Avvisi.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
 Avvisi.init(() => { Tide.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); }, () => { drawStops(); if (current && current.t !== 'trip') renderDepartures(); else if (current?.t === 'trip' && lastTrip) renderTrip(false); });   // quando arrivano avvisi nuovi si aggiornano mappa e pannello fermata
 Pwa.init();
+
+// ---------------------------------------------------------------------------------------------------------------------
+// PREFERITI (stella nel pannello fermata; elenco nella ricerca vuota). Restano nel dispositivo anche dopo gli aggiornamenti dell'app.
+// ---------------------------------------------------------------------------------------------------------------------
+const favName = e => (e.t === 'zone' ? zones.get(e.key)?.name : e.name) || 'Fermata', favSrc = e => (e.t === 'zone' ? zones.get(e.key)?.src : e.src);
+const favEntry = e => (e.t === 'zone' ? { t: 'zone', key: e.key } : { t: 'stop', id: e.id });
+function updateFav() {
+  if (!current || current.t === 'trip') return;
+  const on = Fav.has(favEntry(current)), lab = on ? 'Togli dai preferiti' : 'Aggiungi ai preferiti';
+  pfav.setAttribute('aria-pressed', String(on)); pfav.setAttribute('aria-label', lab); pfav.title = lab;
+}
+pfav.onclick = () => {
+  if (!current || current.t === 'trip') return;
+  const r = Fav.toggle(favEntry(current), favName(current), favSrc(current)); updateFav();
+  toast(r === null ? 'Impossibile salvare: la memoria del browser non è disponibile (navigazione privata?).' : r ? 'Aggiunta ai preferiti: la trovi aprendo la ricerca.' : 'Tolta dai preferiti.', 3500);
+};
+function showFavs() {
+  const l = Fav.all();
+  resultsEl.innerHTML = '<div class="search-category">Preferiti</div>' + (l.length ? l.map(f =>
+    `<div class="search-item" role="option" tabindex="0" data-type="fav" data-k="${esc(f.k)}">${icon('star', 'sm fav-ic')}${srcIcon(f.src)} <span>${esc(f.name)}</span></div>`).join('')
+    : `<div class="search-item muted">Nessun preferito: tocca ${icon('star', 'sm')} nel pannello di una fermata per salvarla qui.</div>`);
+  resultsEl.classList.add('active');
+}
+function openFav(k) {
+  if (k.startsWith('zone:')) { const z = zones.get(k.slice(5)); if (z) { openFromMap({ t: 'zone', key: z.key, pick: '*' }); focusOn(L.latLng(z.center), 16); return; } }
+  else { const id = k.slice(5), s = stopById.get(aliasOf.get(id) || id); if (s) { openFromMap(entryForStop(s[0], s[1], s[4])); focusOn(L.latLng(+s[2], +s[3]), 16); return; } }
+  toast('Questa fermata non è negli orari in uso adesso (resta nei preferiti).', 5000);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// AVVISO DI ARRIVO (campanella nel pannello della corsa aperta da una fermata). Si attiva solo su richiesta; vedi notify.js.
+// ---------------------------------------------------------------------------------------------------------------------
+let notifyPick = false;
+function stopLabel(id) {
+  const z = zoneOf.get(id), s = stopById.get(aliasOf.get(id) || id);
+  return z ? `${z.name} ${z.letterOf.get(id) || ''}`.trim() : (s ? s[1] : id);
+}
+const tripKey = e => `${e.v.src}:${e.v.tripId}`;
+const curWatch = () => (current?.t === 'trip' && current.stop ? Notify.find(tripKey(current), current.stop) : null);
+function updateBell() {
+  if (!current || current.t !== 'trip' || !current.stop) return;
+  const w = curWatch(), lab = w ? `Avviso attivo: ${w.lead} min prima dell'arrivo a ${w.stopName}. Tocca per disattivarlo` : `Avvisami dell'arrivo a ${current.stopName}`;
+  pnotify.setAttribute('aria-pressed', String(!!w)); pnotify.setAttribute('aria-label', lab); pnotify.title = lab;
+}
+function renderNotifyBar() {
+  if (!current || current.t !== 'trip' || !current.stop) { return; }
+  const w = curWatch();
+  if (w) chipsArea.innerHTML = `<div class="nbar on"><span>${icon('bell', 'sm')}Ti avviso <b>${w.lead} min</b> prima dell'arrivo a <b>${esc(w.stopName)}</b>${w.mode === 'poll' ? ' (con l\'app aperta)' : ''}</span><button type="button" class="nlink" data-nstop>Disattiva</button></div>`;
+  else if (notifyPick) chipsArea.innerHTML = `<div class="nbar"><span>${icon('bell', 'sm')}Avvisami prima dell'arrivo a <b>${esc(current.stopName)}</b>:</span>`
+    + `<div class="chips">${[2, 5, 10, 15].map(m => `<button type="button" class="chip all" data-lead="${m}">${m} min</button>`).join('')}<button type="button" class="nlink" data-ncancel>Annulla</button></div></div>`;
+  else chipsArea.innerHTML = '';
+}
+async function onNotifyBar(e) {
+  if (e.target.closest('[data-ncancel]')) { notifyPick = false; renderNotifyBar(); return; }
+  if (e.target.closest('[data-nstop]')) { const w = curWatch(); if (w) { await Notify.stopWatch(w); toast('Avviso disattivato.', 2500); } renderNotifyBar(); updateBell(); return; }
+  const b = e.target.closest('[data-lead]'); if (!b || !current?.stop) return;
+  const e0 = current; b.disabled = true;
+  try {
+    const r = await Notify.start({ trip: tripKey(e0), stop: e0.stop, stopName: e0.stopName, lead: +b.dataset.lead, line: e0.v.line, headsign: e0.v.headsign, style: styleOf(e0.v.line, e0.v.color, e0.v.src) });
+    if (!r.ok) toast(r.msg, 10000); else toast(r.note || `Avviso attivo: ${b.dataset.lead} min prima dell'arrivo. Riceverai la notifica anche ad app chiusa.`, r.note ? 9000 : 4500);
+  } catch (err) { toast('Avviso non attivato: ' + err.message, 6000); }
+  if (current === e0) { notifyPick = false; renderNotifyBar(); updateBell(); }
+}
+pnotify.onclick = async () => {
+  if (!current?.stop) return;
+  const w = curWatch();
+  if (w) { await Notify.stopWatch(w); toast('Avviso disattivato.', 2500); notifyPick = false; }
+  else notifyPick = !notifyPick;
+  renderNotifyBar(); updateBell();
+};
+async function onRowBell(e) {
+  if (e.target.closest('[data-ncancel]')) { rowPick = null; renderDepartures(); return; }
+  const lb = e.target.closest('[data-lead]');
+  if (lb && rowPick) {
+    const x = lastDeps?.departures.find(d => `${d.src}:${d.tripId}` === rowPick.trip && d.stop === rowPick.stop); if (!x) { rowPick = null; renderDepartures(); return; }
+    lb.disabled = true;
+    try {
+      const r = await Notify.start({ trip: rowPick.trip, stop: x.stop, stopName: stopLabel(x.stop), lead: +lb.dataset.lead, line: x.line, headsign: x.headsign, style: styleOf(x.line, x.color, x.src) });
+      toast(r.ok ? (r.note || `Ti avviso ${lb.dataset.lead} min prima dell'arrivo della linea ${x.line} delle ${x.sched}, anche ad app chiusa.`) : r.msg, r.ok && !r.note ? 4500 : 9000);
+    } catch (err) { toast('Avviso non attivato: ' + err.message, 6000); }
+    rowPick = null; renderDepartures(); return;
+  }
+  const row = e.target.closest('.dep'); if (!row) return;
+  const trip = `${row.dataset.src}:${row.dataset.trip}`, stop = row.dataset.stop, w = Notify.find(trip, stop);
+  if (w) { await Notify.stopWatch(w); toast('Avviso disattivato.', 2500); rowPick = null; }
+  else rowPick = rowPick && rowPick.trip === trip && rowPick.stop === stop ? null : { trip, stop };
+  renderDepartures();
+}
+Notify.init(() => { if (current?.t === 'trip') { renderNotifyBar(); updateBell(); } else if (current) renderDepartures(); },
+  m => toast(`${m.title}: ${m.body}`, m.silent ? 4000 : 9000));
+// apertura da una notifica: /?trip=src:id&stop=src:id (anche con l'app già aperta, tramite il service worker)
+function openFromUrl(href) {
+  let u; try { u = new URL(href, location.href); } catch { return; }
+  const t = u.searchParams.get('trip'), st = u.searchParams.get('stop'); if (!t || !st) return;
+  const k = t.indexOf(':'), src = t.slice(0, k), tripId = t.slice(k + 1); if (!src || !tripId) return;
+  const v = vehicles.find(c => c.src === src && c.tripId === tripId && !c.co) || { id: null, src, tripId, routeId: null, line: '', headsign: '', color: null };
+  openFromMap({ t: 'trip', v: vehSnap(v), follow: !!v.id, stop: st, stopName: stopLabel(st) });
+  try { history.replaceState(null, '', '/'); } catch { /* ignora */ }
+}
+navigator.serviceWorker?.addEventListener('message', ev => {
+  if (ev.data?.type === 'tpl-open') openFromUrl(ev.data.url);
+  else if (ev.data?.type === 'tpl-watch-ended') Notify.ended(ev.data.id);
+  else if (ev.data?.type === 'tpl-push' && ev.data.msg) { const m = ev.data.msg; toast(`${m.title}: ${m.body}`, m.silent ? 4000 : 9000); }
+});
+if (new URLSearchParams(location.search).has('trip')) setTimeout(() => openFromUrl(location.href), 1200);   // dopo il primo caricamento dei mezzi
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {   // chiude la finestra più "in alto": marea, poi ricerca, poi pannello
