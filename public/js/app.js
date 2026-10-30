@@ -451,7 +451,7 @@ function stopLines(e) {
   return [...seen.values()];
 }
 const stopAlerts = e => { const ls = stopLines(e); return { list: [...Avvisi.forStops(stopIds(e)), ...Avvisi.forLines(ls)].filter((a, i, l) => l.findIndex(b => b.id === a.id) === i), keys: new Set(ls.map(l => Avvisi.keyOf(l.s, l.n))) }; };
-const stopTitle = (e, z = e.t === 'zone' ? zones.get(e.key) : null) => `${srcIcon(z ? z.src : e.src)}<span>${esc(z ? z.name : e.name)}</span>${Avvisi.anyAlarm(stopAlerts(e).list) ? `<span class="warn-i" title="Avviso in corso">${icon('warn')}</span>` : ''}`;
+const stopTitle = (e, z = e.t === 'zone' ? zones.get(e.key) : null) => `${srcIcon(z ? z.src : e.src)}<span>${esc(z ? z.name : e.name)}${Avvisi.anyAlarm(stopAlerts(e).list) ? `<span class="warn-i" title="Avviso in corso">${icon('warn', 'sm')}</span>` : ''}</span>`;
 function showStopPanel(e) {
   const z = e.t === 'zone' ? zones.get(e.key) : null;
   if (e.t === 'zone' && !z) { plist.innerHTML = '<p class="muted pad">Zona non più disponibile.</p>'; return; }
@@ -477,11 +477,14 @@ async function loadDepartures() {
 
 function depRow(x, z, live) {
   const src = x.src, done = !!x.done;
-  let cls = '', subNote = '';
+  let cls = '', subNote = '', fullNote = '';
   if (x.cancel) { cls = 'late'; subNote = x.cancel === 'trip' ? 'Soppressa' : 'Saltata'; }
   else if (live) {
     if (!x.live) subNote = 'da orario';
-    else { const di = delayInfo(x.delay); cls = di.cls; subNote = done ? di.txt.replace('in ', 'partito in ').replace('partito in orario', 'partito in orario') : di.txt; }
+    else {                                                                    // stato breve: l'orario barrato e quello nuovo dicono già il resto
+      const di = delayInfo(x.delay), d = Math.round(x.delay || 0), s = d >= 1 ? `+${d} min` : d <= -1 ? `−${-d} min` : 'in orario';
+      cls = di.cls; subNote = done ? `partito ${s}` : s; fullNote = done ? `partito, ${di.txt}` : di.txt;
+    }
   }
   if (done) cls = '';                                                         // riga grigia: nessun colore di stato
   const reqHtml = x.isRequest ? '<span class="req-tag">A richiesta</span>' : '';
@@ -493,8 +496,9 @@ function depRow(x, z, live) {
   const label = etaText(x.phase, x.expMs, x.tIn, live);
   // l'indicatore sotto l'orario ha SEMPRE il colore neutro (come nel pannello della corsa): il colore di stato è solo sull'orario
   return `<div class="dep go${x.cancel ? ' cx' : ''}${done ? ' gone' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" data-veh="${esc(x.veh || '')}" role="button" tabindex="0" title="${done ? 'Corsa già partita: apri il percorso' : 'Apri il percorso della corsa'}">`
-    + badge(x.line, x.color, src)
-    + `<div class="dm"><div class="dh">${Avvisi.lineHasAlert(src, x.line) ? `<span class="dw" title="Avviso sulla linea ${esc(x.line)}">${icon('warn', 'sm')}</span>` : ''}${esc(x.headsign || '')}</div><div class="dn ${cls}">${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}${reqHtml}<span>${esc(info)}</span></div></div>`
+    // avviso sulla linea: triangolo sull'angolo della mattonella (il nome della destinazione resta libero)
+    + `<span class="bw">${badge(x.line, x.color, src)}${Avvisi.lineHasAlert(src, x.line) ? `<span class="bdot" title="Avviso sulla linea ${esc(x.line)}">${icon('warn', 'sm')}</span>` : ''}</span>`
+    + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}"${fullNote ? ` title="${esc(fullNote)}"` : ''}>${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}${reqHtml}<span>${esc(info)}</span></div></div>`
     + `<div class="dt">${timeHtml}<div class="in-min" data-exp="${live && x.expMs ? Math.round(x.expMs) : ''}" data-ph="${live ? (x.phase || '') : ''}">${esc(label)}</div></div>`
     + bellHtml(x, live) + '</div>' + (rowPick && rowPick.trip === `${src}:${x.tripId}` && rowPick.stop === x.stop ? pickHtml(x.stop) : '');
 }
@@ -516,9 +520,11 @@ function renderDepartures() {
     .filter(x => !x.arrival && x.tIn >= -30 && x.tIn <= 120 && active.has(x.src) && (live || !x.done))
     .filter(x => !z || z.pick === '*' || z.letterOf.get(x.stop) === z.pick)
     .sort((a, b) => a.tSec - b.tSec).slice(0, z ? 60 : 30);
+  const keepX = chipsArea.querySelector('.chips')?.scrollLeft || 0;          // filtri su una riga scorrevole (telefoni): non si torna all'inizio a ogni aggiornamento
   chipsArea.innerHTML = z ? `<div class="chips"><span class="muted">${unitOf(z)[0]}</span>`
     + `<button class="chip all${z.pick === '*' ? ' on' : ''}" data-p="*" aria-pressed="${z.pick === '*'}">Tutti</button>`
     + z.letters.map(l => `<button class="chip sq${z.pick === l ? ' on' : ''}" data-p="${esc(l)}" aria-pressed="${z.pick === l}" aria-label="${unitOf(z)[0]} ${esc(l)}">${esc(l)}</button>`).join('') + '</div>' : '';
+  { const ch = chipsArea.querySelector('.chips'); if (ch) { ch.scrollLeft = keepX; const on = ch.querySelector('.chip.on'); if (on) { const r = on.getBoundingClientRect(), cr = ch.getBoundingClientRect(); if (r.left < cr.left || r.right > cr.right) ch.scrollLeft += r.left - cr.left - cr.width / 2 + r.width / 2; } } }
   const al = stopAlerts(current);                                                           // avvisi in corso su queste fermate e sulle loro linee: (!) nel titolo e righe cliccabili
   pname.innerHTML = stopTitle(current, z);
   plist.innerHTML = al.list.map(a => Avvisi.rowHtml(a, al.keys)).join('') + (rows.map(x => depRow(x, z, live)).join('') || '<p class="muted pad center">Nessun passaggio.</p>');
@@ -629,7 +635,7 @@ function renderTrip(first) {
   psub.innerHTML = (o ? `da ${esc(o.name)}${o.sched ? ', ' + esc(o.sched) : ''}` : '') + (d.note ? `<br>${esc(d.note)}` : '');
   // corsa verificata (assign.js): il mezzo trasmetteva un'altra corsa; lo si dice, in modo trasparente
   if (d.reassigned) psub.innerHTML += `<span class="reassign">${icon('info', 'sm')} Corsa riconosciuta ${d.reassigned.why === 'feed' ? 'dai dati ACTV' : 'da posizione e orario'}: il mezzo trasmetteva la corsa delle ${esc(d.reassigned.from || '?')}.</span>`;
-  pstatus.innerHTML = d.live && d.detected === false ? 'Non rilevato' : `${status} · ${esc(vehName(d.trip.src, d.trip.vehicle || current.v.label))}${d.live && d.detected !== false && d.speedKmh != null ? ` · <span class="spd" title="Velocità stimata dalle posizioni GPS: il feed ACTV non trasmette la velocità reale">≈ ${+d.speedKmh} km/h (stimata)</span>` : ''}${d.others?.length ? ` · insieme a ${d.others.map(esc).join(', ')}` : ''}`;
+  pstatus.innerHTML = d.live && d.detected === false ? 'Non rilevato' : `${status} · ${esc(vehName(d.trip.src, d.trip.vehicle || current.v.label))}${d.live && d.detected !== false && d.speedKmh != null ? ` <span class="spd" title="Velocità stimata dalle posizioni GPS: il feed ACTV non trasmette la velocità reale" aria-label="velocità stimata circa ${+d.speedKmh} chilometri orari">≈ ${+d.speedKmh} km/h · stima</span>` : ''}${d.others?.length ? ` · insieme a ${d.others.map(esc).join(', ')}` : ''}`;
   // avvisi del mezzo: quelli sulla sua linea e quelli che citano una sua fermata (se non riguardano solo altre linee)
   const key = Avvisi.keyOf(d.trip.src, d.trip.line), only = new Set([key]);
   const tal = [...Avvisi.forLines([{ s: d.trip.src, n: d.trip.line }]), ...Avvisi.forStops(d.stops.map(s => s.id)).filter(a => !a.lines?.length || a.lines.some(l => Avvisi.keyOf(l.s, l.n) === key))]
