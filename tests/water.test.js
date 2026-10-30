@@ -40,3 +40,10 @@ test('acqua alta: misura, previsione e avviso ufficiale insieme (vale il più al
   assert.equal(av.autoWater(now, ctx, []).item, null);
   av.setTideSource(() => null);
 });
+test('acqua alta finita: avviso ufficiale senza date chiuso quando la marea torna sotto 85 cm', () => {
+  const now = Date.now(), it = { id: 'x', source: 'telegram', title: 'Acqua alta', text: 'picco previsto +110 cm', published: now - 3 * 3600e3, from: now - 3 * 3600e3, to: now + 3 * 3600e3, dated: false,
+    lines: [], stops: [], stopNames: [], water: { level: 110 } };
+  av.setTideSource(() => ({ cm: 60, ts: now, stale: false, peak: { cm: 70, ts: now + 3600e3 } }));
+  av.autoWater(now, ctx, [it]); assert.ok(it.to < now);
+  av.setTideSource(() => null);
+});

@@ -19,7 +19,12 @@ function build(src, name) {
       const st = G.stopTimes.get(p.id), t = G.trips[p.id]; if (!st || !t) continue;
       n++;
       const swap = x => x.replace('_793_', '_792_'), delay = [0, 90, -60, 300][n % 4];
-      const tripDesc = { tripId: swap(p.id), routeId: t.route, startTime: schedule.hhmm(st.start) + ':00' };
+      let tripDesc = { tripId: swap(p.id), routeId: t.route, startTime: schedule.hhmm(st.start) + ':00' };
+      // mezzo con la CORSA SBAGLIATA (come capita nel feed reale): dichiara una corsa della stessa linea partita almeno 60 min prima
+      if (n === 7 && name === 'vehiclePositions' && process.env.FAKE_WRONG !== '0') {
+        const prev = G.tripIds.filter(x => G.trips[x].route === t.route && G.stopTimes.get(x).start <= st.start - 3600 && G.trips[x].shape === t.shape).sort((a, b) => G.stopTimes.get(b).start - G.stopTimes.get(a).start)[0];
+        if (prev) { tripDesc = { tripId: swap(prev), routeId: t.route, startTime: schedule.hhmm(G.stopTimes.get(prev).start) + ':00' }; global.__wrong = { veh: 'V7', declared: prev, real: p.id }; if (!global.__wl?.[src]) { (global.__wl ||= {})[src] = 1; console.log(`fakefeed: ${src} V7 dichiara ${prev}, fa ${p.id}`); } }
+      }
       if (name === 'vehiclePositions') {
         entity.push({ id: 'v' + n, vehicle: { trip: tripDesc, position: { latitude: p.lat, longitude: p.lon, bearing: 0 }, timestamp: Math.floor(now / 1000) - (n % 5), vehicle: { id: 'V' + n, label: String(4000 + n) } } });
       } else {

@@ -178,3 +178,29 @@ test('fili: titolo Telegram ripulito, messaggi di servizio esclusi, aggiornament
   const aa = r.filter(x => /acqua alta/i.test(x.title)); assert.equal(aa.length, 1); assert.equal(aa[0].water.level, 120); assert.ok(aa[0].updated);
   A._load({});
 });
+test('fine degli avvisi: chiusure isolate, revoca sciopero, nebbia diradata, «fino alle» senza data', () => {
+  const now = Date.now();
+  A.setContext(() => ({ known: new Map(), byName: new Map() }));
+  A._load({ tg: [
+    { key: 'tg:20', id: 20, text: 'Sciopero del personale navigazione venerdì', links: [], pubMs: now - 50 * 60e3, url: 'https://t.me/muoversivenezia/20' },
+    { key: 'tg:21', id: 21, text: 'Revoca dello sciopero del personale navigazione', links: [], pubMs: now - 30 * 60e3, url: 'https://t.me/muoversivenezia/21' },
+    { key: 'tg:22', id: 22, text: 'Nebbia in laguna: servizi di navigazione rallentati', links: [], pubMs: now - 40 * 60e3, url: 'https://t.me/muoversivenezia/22' },
+    { key: 'tg:23', id: 23, text: 'Nebbia diradata: servizi di navigazione regolari', links: [], pubMs: now - 5 * 60e3, url: 'https://t.me/muoversivenezia/23' },
+    { key: 'tg:24', id: 24, text: 'Servizio ripristinato sul Ponte della Libertà', links: [], pubMs: now - 20 * 60e3, url: 'https://t.me/muoversivenezia/24' }] });
+  const r = A.getAvvisi().items, warn = r.filter(x => !x.resolved).map(x => x.title);
+  assert.deepEqual(warn, []); assert.equal(r.filter(x => x.resolved).length, 3);
+  A._load({});
+  const v = A.parseValidity('Fermata sospesa fino alle 23.00', pub, 'tg'); assert.equal(v.to, utc(2026, 10, 27, 22, 0));
+});
+test('effetto e gravità (modello GTFS-Realtime)', () => {
+  const C = (title, text = '', extra = {}) => A.classify({ title, text, ...extra });
+  assert.deepEqual([C('Linea 2 sospesa tra Rialto e San Marco').effect, C('Linea 2 sospesa').severity], ['no_service', 'severe']);
+  assert.equal(C('Linea 7E deviata in via Cappuccina').effect, 'detour');
+  assert.equal(C('Fermata provvisoria in via Torino').effect, 'stop_moved');
+  assert.equal(C('Rallentamenti sulla linea 4.1').effect, 'delays');
+  assert.deepEqual([C('Corse aggiuntive per la Festa').effect, C('Corse aggiuntive per la Festa').severity], ['additional', 'info']);
+  assert.equal(C('Sciopero di 24 ore').effect, 'strike');
+  assert.equal(C('Servizio ripristinato', '', { resolved: true }).severity, 'info');
+  assert.equal(C('Acqua alta', '', { water: { level: 150 } }).severity, 'severe');
+  assert.equal(C('Nuovi orari invernali', '', { general: true }).severity, 'info');
+});

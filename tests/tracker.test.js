@@ -75,3 +75,20 @@ test('senza mezzo né feed: stato da orario, ETA non nel passato', () => {
   assert.equal(r.vehKey, null);
   assert.ok(Number.isFinite(r.etaMs[r.cur]));
 });
+
+test('autocorrezione: fermate date per superate (feed avanti) tornano "in arrivo" se il GPS dice che il mezzo non ci è arrivato', () => {
+  const vs = vsNew();
+  // il feed (sbagliato) dice che la prima fermata con previsione è la 4, mentre il mezzo è fermo in coda a 700 m (tra la 1 e la 2)
+  let r;
+  for (let i = 0; i < 2; i++) r = step(tracker, ctx, veh(700, 0, { ts: 2000 + i }), feed(4), { tNow: BASE + 200 + i * 10, vs });
+  // senza GPS affidabile accumulato il feed può aver spinto avanti; dopo qualche rilevamento coerente si torna indietro da soli
+  for (let i = 2; i < 7; i++) r = step(tracker, ctx, veh(700 + i * 5, 3, { ts: 2000 + i }), feed(4), { tNow: BASE + 200 + i * 10, vs });
+  assert.equal(r.cur, 2, 'la prossima fermata reale è la 2 (a 1000 m), non la 4');
+  assert.ok(!r.dep || !Object.keys(r.dep).some(k => +k >= 2), 'nessuna partenza registrata dalle fermate non raggiunte');
+});
+test('autocorrezione stabile: dopo il ritorno indietro il feed sbagliato non rimanda avanti (niente oscillazioni)', () => {
+  const vs = vsNew(), seq = [];
+  for (let i = 0; i < 3; i++) seq.push(step(tracker, ctx, null, feed(4), { tNow: BASE + 200 + i * 10, vs }).cur);   // solo feed: fermata 4
+  for (let i = 0; i < 8; i++) seq.push(step(tracker, ctx, veh(700 + i * 40, 4, { ts: 3000 + i }), feed(4), { tNow: BASE + 240 + i * 10, vs }).cur);
+  assert.deepEqual(seq.slice(-6), [2, 2, 2, 2, 2, 2], seq.join(' '));
+});
