@@ -175,10 +175,10 @@ button.chip{display:inline-flex;align-items:center;justify-content:center;gap:6p
 button.chip:hover{background:var(--accent-soft)}
 button.chip.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 /* «Tutti»: pillola neutra, alta quanto i quadrati. Corsie/pali/pontili: il quadrato giallo riempie tutto il pulsante (40 px: sopra il minimo WCAG 2.2 di 24 px) */
-button.chip.all{min-height:40px;min-width:40px;padding:0 12px}
-button.chip.sq{width:40px;height:40px;min-width:40px;min-height:40px;padding:0;border:0;border-radius:10px;background:var(--pt-bg);color:var(--pt-fg);font-weight:900}
+button.chip.all{min-height:32px;min-width:32px;padding:0 11px}
+button.chip.sq{width:32px;height:32px;min-width:32px;min-height:32px;padding:0;border:0;border-radius:8px;font-size:var(--fs-sm);background:var(--pt-bg);color:var(--pt-fg);font-weight:900}
 button.chip.sq:hover{background:var(--pt-bg);filter:brightness(1.08)}
-button.chip.sq.on{background:var(--pt-bg);color:var(--pt-fg);box-shadow:0 0 0 3px var(--accent)}
+button.chip.sq.on{background:var(--pt-bg);color:var(--pt-fg);box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--accent)}
 #plist{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:6px 8px calc(10px + var(--safe-b))}
 .banner{margin:6px 8px;padding:10px 14px;border-radius:var(--r-sm);border:1.5px solid var(--late);color:var(--late);font-weight:700;font-size:var(--fs-sm)}
 
@@ -352,3 +352,10 @@ body.busy #plist{opacity:.72;transition:opacity .15s}
 .tide-aa{display:flex;align-items:center;gap:6px;min-height:32px;margin-top:6px;font-size:var(--fs-xs);font-weight:700;color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .tide-aa .ic{color:var(--warn);flex:none}
 .av-plan{margin:6px 0;font-size:var(--fs-sm)}.av-plan ul{margin:4px 0 4px 18px;padding:0}.av-plan li{margin:2px 0}.av-plan a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.chips{gap:6px}
+.dw{display:inline-flex;vertical-align:-2px;margin-right:4px;color:var(--warn)}
+.sn .nm .dw{margin:0 0 0 5px}
+.tide-warn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin:-6px -4px -6px 4px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--warn);cursor:pointer;vertical-align:middle}
+.tide-warn:hover,.tide-warn:focus-visible{background:var(--accent-soft)}
+.av.ok{opacity:.85}.av.ok .av-src .ic{color:var(--ok, #16a34a);margin-right:4px}
+.av-wsrc{display:block;font-size:var(--fs-xs);font-weight:400;margin-top:2px}
