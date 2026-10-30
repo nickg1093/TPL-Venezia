@@ -47,7 +47,7 @@ Usa i token così (mai nell'URL, mai nel browser): `curl -H "Authorization: Bear
 - Dopo il commit Render ridistribuisce da solo.
 
 ### 1.4 Dopo ogni modifica ai file dell'interfaccia
-Se cambi icone, manifest o l'elenco `SHELL` di `public/sw.js`, incrementa `VERSION` in `public/sw.js` (ora `v16`). I file `/js` e `/css` si aggiornano da soli (rete prima).
+Se cambi icone, manifest o l'elenco `SHELL` di `public/sw.js`, incrementa `VERSION` in `public/sw.js` (ora `v17`). I file `/js` e `/css` si aggiornano da soli (rete prima).
 
 ### 1.5 Dove salvare simboli e immagini
 - **Simboli dell'interfaccia** (battello, bus, tram, lente, ecc.): *tutti* in `public/icons/sprite.svg`, un `<symbol id="i-nome">` ciascuno (24×24, tratto 1.75, `currentColor`). Nel codice si usano con `icon('nome')` (in `public/js/util.js`); in `index.html` con `<svg class="ic"><use href="/icons/sprite.svg#i-nome"/></svg>`. **Non usare emoji**: cambiano da sistema a sistema.
