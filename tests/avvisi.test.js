@@ -34,7 +34,7 @@ test('validità: senza anno si sceglie il prossimo futuro (passaggio d\'anno)', 
 test('linee: solo codici noti, mai le date', () => {
   const known = K(['31', '31H', '32H', '43', '7E', 'T2']);
   const t = 'Sabato 31 ottobre 2026 dalle 9.30 alle 16.30 le linee 31H, 32H e 43 deviano. Bus sostitutivi per T2.';
-  assert.deepEqual(L(FL(t, known)), ['31H', '32H', '43']);
+  assert.deepEqual(L(FL(t, known)), ['31H', '32H', '43', 'T2']);          // T2 (tram) riconosciuto anche senza "linea": i bus sostitutivi riguardano il tram
   assert.deepEqual(L(FL('Linea 7E deviata in via Cavin di Sala', known)), ['7E']);
 });
 test('fermate: nomi tra virgolette e dopo «fermata», solo uguaglianza di nome', () => {
@@ -131,4 +131,50 @@ test('regole generali: "A partire" non è la linea A; pontile senza lettera = po
   assert.deepEqual(r.stopNames.map(s => s.n).sort(), ['Riva de Biasio "B"', 'nav:20', 'nav:21']);
   const m = A.analyze('Mestre', 'Linea 31H: deviazione in via Torino e Corso del Popolo.', ctx);
   assert.deepEqual(m.stops, ['aut:31']);                                                   // "via Torino" è una strada
+});
+
+// ---- v12: date più precise, riconoscimento universale delle linee, fili di avvisi ----
+test('validità: «dalle ore 8.30 di venerdì 30 ottobre … fino al termine della manifestazione»', () => {
+  const v = A.parseValidity('dalle ore 8.30 di venerdì 30 ottobre 2026 e fino al termine della manifestazione per un corteo', pub, 'tg');
+  assert.equal(v.from, utc(2026, 10, 30, 7, 30)); assert.equal(v.to, utc(2026, 10, 30, 22, 59, 59)); assert.ok(v.untilEnd && !v.open);
+});
+test('validità: date relative, fasce senza data, «fino a nuova comunicazione», guasti brevi', () => {
+  let v = A.parseValidity('Domani dalle 9.00 alle 12.00 deviazione', pub, 'tg');
+  assert.equal(v.from, utc(2026, 10, 28, 8, 0)); assert.equal(v.to, utc(2026, 10, 28, 11, 0));
+  v = A.parseValidity('Ponte chiuso dalle 21.00 alle 5.00', pub, 'tg'); assert.equal(v.from, utc(2026, 10, 27, 20, 0)); assert.equal(v.to, utc(2026, 10, 28, 4, 0));
+  v = A.parseValidity('Fermata sospesa fino a nuova comunicazione', pub, 'tg'); assert.ok(v.open);
+  v = A.parseValidity('Linea 2: rallentamenti per guasto', pub, 'tg'); assert.equal(v.to - v.from, 2 * 3600e3);
+  v = A.parseValidity('Sabato 31 ottobre 2026 dalle 9.30 fino alle 18.00 di domenica 1 novembre 2026', pub);
+  assert.equal(v.from, utc(2026, 10, 31, 8, 30)); assert.equal(v.to, utc(2026, 11, 1, 17, 0));
+});
+test('linee: parole di servizio, elenchi, unità, emoji (automobilistico o navigazione)', () => {
+  const known = new Map([['2', [{ n: '2', s: 'aut' }, { n: '2', s: 'nav' }]], ['4.1', [{ n: '4.1', s: 'nav' }]], ['4.2', [{ n: '4.2', s: 'nav' }]], ['10', [{ n: '10', s: 'aut' }]],
+    ['7E', [{ n: '7E', s: 'aut' }]], ['7H', [{ n: '7H', s: 'aut' }]], ['T1', [{ n: 'T1', s: 'aut' }]]]);
+  const F = t => A.analyze(t, '', { known }).lines.map(l => l.s + ':' + l.n).sort();
+  assert.deepEqual(F('Il vaporetto 2 non ferma a Rialto'), ['nav:2']);
+  assert.deepEqual(F('Il bus 2 è deviato'), ['aut:2']);
+  assert.deepEqual(F('Sospese le linee 4.1 4.2 per nebbia'), ['nav:4.1', 'nav:4.2']);
+  assert.deepEqual(F('Bus con 10 minuti di ritardo'), []);
+  assert.deepEqual(F('Linee interessate: 7E, 7H'), ['aut:7E', 'aut:7H']);
+  assert.deepEqual(F('🚌 Linea 2 deviata'), ['aut:2']);
+  assert.deepEqual(F('⛴ Linea 2 limitata'), ['nav:2']);
+  assert.deepEqual(F('Linea 2 modificata'), []);                         // ambiguo senza indizi: nessuna
+  assert.deepEqual(F('Tram T1 sostituito da bus'), ['aut:T1']);
+});
+test('fili: titolo Telegram ripulito, messaggi di servizio esclusi, aggiornamento sostituisce, ripristino chiude', () => {
+  const now = Date.now(), known = new Map([['2', [{ n: '2', s: 'nav' }]]]);
+  A.setContext(() => ({ known, byName: new Map() }));
+  A._load({ tg: [
+    { key: 'tg:10', id: 10, text: '#muoversivenezia | 📢 Mestre centro manifestazione\nCorteo in piazza', links: [], pubMs: now - 50 * 60e3, url: 'https://t.me/muoversivenezia/10' },
+    { key: 'tg:11', id: 11, text: 'AVM/Actv Venezia pinned a photo', links: [], pubMs: now - 49 * 60e3, url: 'https://t.me/muoversivenezia/11' },
+    { key: 'tg:12', id: 12, text: 'Linea 2 navigazione: guasto al pontile, servizio sospeso tra Rialto e San Marco', links: [], pubMs: now - 40 * 60e3, url: 'https://t.me/muoversivenezia/12' },
+    { key: 'tg:13', id: 13, text: 'Linea 2 navigazione: servizio ripristinato', links: [], pubMs: now - 10 * 60e3, url: 'https://t.me/muoversivenezia/13' },
+    { key: 'tg:14', id: 14, text: 'Acqua alta: picco previsto +110 cm alle 9.00', links: [], pubMs: now - 30 * 60e3, url: 'https://t.me/muoversivenezia/14' },
+    { key: 'tg:15', id: 15, text: 'Aggiornamento acqua alta: picco previsto +120 cm', links: [], pubMs: now - 5 * 60e3, url: 'https://t.me/muoversivenezia/15' }] });
+  const r = A.getAvvisi().items, t = r.map(x => x.title);
+  assert.ok(t.includes('Mestre centro manifestazione')); assert.ok(!t.some(x => /pinned/.test(x)));
+  assert.ok(!t.some(x => /guasto/.test(x)));                                     // chiuso dal ripristino
+  const ok = r.find(x => /ripristinato/.test(x.title)); assert.ok(ok.resolved && ok.lines.length === 1);
+  const aa = r.filter(x => /acqua alta/i.test(x.title)); assert.equal(aa.length, 1); assert.equal(aa[0].water.level, 120); assert.ok(aa[0].updated);
+  A._load({});
 });
