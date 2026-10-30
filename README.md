@@ -10,7 +10,7 @@ Server Node.js senza database; pensato per il piano gratuito di Render.
 ### 1.1 Prima installazione o dopo aver sostituito i file
 1. Copia tutti i file di questo progetto nel repository (la cartella `data/` esistente **resta com'è**: contiene i GTFS già scaricati).
 2. `npm install` — **obbligatorio**: Leaflet ora è una dipendenza npm (serve in locale da `/vendor/leaflet`, non più da unpkg) e `package-lock.json` va rigenerato. Fai commit anche di `package-lock.json`.
-3. `npm test` — deve passare tutto (47 test).
+3. `npm test` — deve passare tutto (51 test).
 4. `npm start`, apri `http://localhost:3000`.
 
 ### 1.2 Variabili d'ambiente su Render (Dashboard → Environment)
@@ -138,6 +138,14 @@ Il feed toglie la fermata appena il mezzo arriva e indicherebbe già la successi
 - **Attesa visibile**: ogni richiesta lenta (`api()` in `util.js`) accende una barra in alto (`#busybar`); gli avvisi brevi usano `#toast`.
 - **Fermate doppie**: la stessa fermata presente due volte (entro ~25 m, stesso nome) è unificata in ricerca e mappa; il pannello mostra le partenze di entrambi i codici (`mergeDuplicates` in `zones.js`). Corsie fisse in `FIXED` (Piazzale Roma A1…C da linee GTFS, PM a parte; Tronchetto Mercato A = 5075, B = 5210): dipendono dagli id del GTFS in uso.
 - **Acqua alta**: oltre 85 cm (attuale o prevista) la scheda marea mostra il link ai servizi di navigazione previsti. Gli avvisi che citano acqua alta con un livello (`+110 cm`) ricevono il piano ACTV per quel livello (linee e pontili, tabella `AA_RULES` in `avvisi.js`, trascritta dalla pagina ACTV: da verificare se la pagina cambia).
+- **Avvisi come nelle app di navigazione** (v12):
+  - *Linee*: riconosciute dopo «linea/linee/navetta/bus/autobus/tram/vaporetto…», anche in elenchi con spazi («linee 4.1 4.2») o dopo «linee interessate:»; i tram T1/T2 ovunque. Il servizio si decide da parola («bus 2» = automobilistico, «vaporetto 2» = navigazione), emoji (🚌 / ⛴), parole del testo e fermate citate; numero ambiguo senza indizi = nessuna linea. Mai numeri seguiti da unità («10 minuti»).
+  - *Dove compaiono*: in una fermata gli avvisi che la citano e quelli sulle linee che vi fermano (nel filtro scelto: a Piazzale Roma l'avviso della linea 80 compare solo nella corsia A7); triangolo accanto alla riga del passaggio; nel pannello del mezzo gli avvisi della sua linea e delle sue fermate. Sulla mappa il simbolo resta solo sulle fermate citate. Avvisi di rete (orari, più di 12 linee) restano solo nell'elenco.
+  - *Durate*: «dalle ore 8.30 di venerdì 30 ottobre … fino al termine» (dalle 8:30, fino a fine giornata, etichetta «fino al termine»), «fino alle 18 di domenica 1 novembre», oggi/domani, fasce senza data, «fino a nuova comunicazione» (aperto); Telegram senza date: 2 h per guasti/ritardi, 6 h altrimenti.
+  - *Fili*: un messaggio più recente sullo stesso argomento sostituisce il precedente («aggiornato», eredita il periodo); «ripristinato / servizio regolare / terminata» chiude i precedenti collegati e resta 1 ora come «Risolto»; un messaggio Telegram uguale a una notizia del sito si unisce. Gli avvisi programmati di più giorni si toccano solo con testo molto simile. Titoli Telegram senza hashtag/emoji; esclusi i messaggi di servizio («pinned a photo»).
+- **Marea**: triangolo cliccabile accanto alle maree (attuale o previste) oltre 85 cm: apre l'avviso di acqua alta (ufficiale o calcolato).
+- **Filtri delle fermate**: quadrati da 32 px (sopra il minimo di accessibilità di 24 px); invariati quelli piccoli nelle righe delle corse.
+- **Acqua alta: tre fonti insieme** (v13): livello misurato, picco previsto (12 h) e avviso ufficiale; vale il più alto e il piano ACTV si applica a quel livello. Con un avviso ufficiale che indica il livello resta solo quello, completato con misura, previsione e piano; se l'avviso ufficiale parla di acqua alta senza livello, l'avviso calcolato compare come «confermato» con il link al messaggio.
 - **Avviso acqua alta automatico**: se ACTV/Telegram non pubblicano nulla, con marea misurata o prevista (prossime 12 h) oltre 85 cm compare un avviso «Calcolato dal livello di marea» con il piano ACTV per quel livello (stessa tabella `AA_RULES`). Se esiste già un avviso ufficiale con piano acqua alta, l'automatico non compare e quello ufficiale mostra il livello misurato come conferma.
 - **Prestazioni**: la lettura dei GTFS cede il passo ogni ~8 ms; `/api/stop` e `/api/zone` identiche entro 1,5 s condividono un solo calcolo.
 - **Fermate vicine**: con la posizione attiva, in alto a sinistra compare una pillola con la fermata più vicina entro 250 m e la distanza (con «+N» se sono di più; al tocco si apre la fermata o l'elenco). Se non ce ne sono, la pillola dice quanto dista la più vicina; se la posizione non arriva, mostra il motivo (permesso negato, segnale assente: secondo tentativo con precisione ridotta).
@@ -164,7 +172,7 @@ tests/           test unitari (node --test) e prove dell'interfaccia (tests/ui)
 ```
 
 ## 7. Test
-- `npm test` — 47 test (tracker, orari, archivio GTFS, sicurezza, marea, avvisi).
+- `npm test` — 51 test (tracker, orari, archivio GTFS, sicurezza, marea, avvisi).
 - Simulazione completa: `node -r ./tests/fakefeed.js server.js` (feed finto costruito dalle corse in servizio adesso, con fantasmi e rilevamenti vecchi).
 - Interfaccia: con quel server avviato (`TRUST_PROXY=1`), `python3 tests/ui/run.py http://localhost:3000 <cartella>` (Playwright; usa un Leaflet finto in `tests/ui/leaflet-stub.js`): 6 formati di schermo, X, indietro, segui, dock, nessuno script in linea.
 

@@ -60,58 +60,113 @@ function romeMs(y, m, d, secs = 0) {
 }
 const secsOf = (h, m) => (+h * 3600 + +m * 60);
 
+// Date nel testo con posizione, ruolo ("from"/"to") e orari vicini.
+//   "dal 28 ottobre al 3 novembre", "1-2 novembre", "da lunedì 2 novembre", "fino al 5 novembre", "oggi", "domani",
+//   "sabato 31 ottobre, dalle 9.30 alle 16.30", "dalle ore 8.30 di venerdì 30 ottobre", "fino alle 6 di lunedì 2 novembre"
+const WD = '(?:lunedi|martedi|mercoledi|giovedi|venerdi|sabato|domenica)';
+const TM = '(\\d{1,2})(?:[.:](\\d{2}))?';
+const tsec = (h, m) => { h = +h; m = +(m || 0); return h >= 0 && h <= 24 && m < 60 ? Math.min(86399, h * 3600 + m * 60) : null; };
 function findDates(text, pubMs) {
   const t = noAccents(text.toLowerCase()), out = [], pubY = +cal.romeYmd(pubMs).slice(0, 4);
-  const push = (d, mon, y, idx) => {
-    const m = MONTHS[mon.slice(0, 3)]; d = +d; if (!m || d < 1 || d > 31) return;
+  const push = (d, mon, y, idx, end, extra = {}) => {
+    const m = typeof mon === 'number' ? mon : MONTHS[mon.slice(0, 3)]; d = +d; if (!m || d < 1 || d > 31) return;
     let yy = y ? +y : pubY;
     if (!y && romeMs(yy, m, d) < pubMs - 90 * DAY) yy++;           // senza anno: la prima occorrenza nel futuro prossimo
-    out.push({ y: yy, m, d, idx });
+    out.push({ y: yy, m, d, idx, end, ...extra });
   };
-  // intervalli compatti "1-2 novembre [2026]" / "1 e 2 novembre"
+  // intervalli compatti "1-2 novembre [2026]" / "1 e 2 novembre" / "dal 2 al 4 gennaio"
   const used = [];
   for (const r of t.matchAll(new RegExp(`(\\d{1,2})\\s*(?:-|–|—|e|al)\\s*(\\d{1,2})\\s+${MON_RE}(?:\\s+(\\d{4}))?`, 'g'))) {
-    push(r[1], r[3], r[4], r.index); push(r[2], r[3], r[4], r.index + 1); used.push([r.index, r.index + r[0].length]);
+    const end = r.index + r[0].length;
+    push(r[1], r[3], r[4], r.index, end, { pair: 'from' }); push(r[2], r[3], r[4], r.index + 1, end, { pair: 'to' }); used.push([r.index, end]);
   }
   for (const r of t.matchAll(new RegExp(`(\\d{1,2})\\s*(?:°|º)?\\s+${MON_RE}(?:\\s+(\\d{4}))?`, 'g'))) {
     if (used.some(([a, b]) => r.index >= a && r.index < b)) continue;
-    push(r[1], r[2], r[3], r.index);
+    push(r[1], r[2], r[3], r.index, r.index + r[0].length);
   }
-  return out.sort((a, b) => a.idx - b.idx);
+  // giorni relativi alla pubblicazione: solo se il testo non ha date esplicite (altrimenti "oggi 30 ottobre" la conterebbe due volte)
+  if (!out.length) for (const r of t.matchAll(/\b(oggi|stamattina|stamane|stasera|stanotte|questa (?:mattina|sera|notte)|domani|domattina|dopodomani)\b/g)) {
+    const add = r[1] === 'dopodomani' ? 2 : /domani|domattina/.test(r[1]) ? 1 : 0, p = cal.romeYmd(pubMs), dt = new Date(Date.UTC(+p.slice(0, 4), +p.slice(4, 6) - 1, +p.slice(6, 8) + add));
+    push(dt.getUTCDate(), dt.getUTCMonth() + 1, String(dt.getUTCFullYear()), r.index, r.index + r[0].length, { rel: true });
+  }
+  out.sort((a, b) => a.idx - b.idx);
+  for (const dt of out) {                                         // ruolo e orari vicini
+    const before = t.slice(Math.max(0, dt.idx - 48), dt.idx), after = t.slice(dt.end, dt.end + 64);
+    let m;
+    if ((m = new RegExp(`\\b(?:fino alle|sino alle|alle)\\s*(?:ore\\s*)?${TM}\\s*(?:di|del|della|dello)\\s*(?:${WD}\\s*)?$`).exec(before))) { dt.e = tsec(m[1], m[2]); dt.role = 'to'; }   // "fino alle 6 di lunedì 2 novembre"
+    else if ((m = new RegExp(`(?:\\bdalle|\\bdall'|a partire dalle|\\bore)\\s*(?:ore\\s*)?${TM}\\s*(?:di|del|della|dello)?\\s*(?:${WD}\\s*)?$`).exec(before))) dt.s = tsec(m[1], m[2]);   // "dalle ore 8.30 di venerdì 30 ottobre"
+    if ((m = new RegExp(`^\\s*(?:\\d{4})?\\s*,?\\s*(?:\\(?${WD}\\)?\\s*,?\\s*)?(?:dalle ore|dalle|a partire dalle|dall'|alle ore|ore|alle)\\s*(?:ore\\s*)?${TM}(?:\\s*(?:alle|-|–|fino alle)\\s*(?:ore\\s*)?${TM})?`).exec(after))) {
+      if (dt.s == null) dt.s = tsec(m[1], m[2]); if (m[3] != null) dt.e = tsec(m[3], m[4]);
+    } else if ((m = new RegExp(`^\\s*(?:\\d{4})?\\s*,?\\s*(?:fino|sino) alle\\s*(?:ore\\s*)?${TM}`).exec(after))) dt.e = tsec(m[1], m[2]);
+    if (!dt.role) dt.role = dt.pair || (new RegExp(`(?:\\bal|\\bfino al|\\bsino al|\\bentro il|\\bfino a|\\bentro)\\s+(?:${WD}\\s+)?$`).test(before) ? 'to' : 'from');
+    dt.dal = new RegExp(`(?:\\bdal|\\bda|a partire dal|a partire da|a decorrere dal)\\s+(?:inizio servizi[oa]? (?:di\\s+)?)?(?:${WD}\\s+)?$`).test(before);
+  }
+  return out;
 }
 
-// -> { from, to, open, dated } in ms. Senza date: dalla pubblicazione, con durata breve (Telegram) o media (sito).
+// -> { from, to, open, dated, untilEnd } in ms.
+//  · senza date: dalla pubblicazione (o dall'orario indicato oggi), durata breve per Telegram (2 h per guasti/ritardi, 6 h altrimenti), media per il sito;
+//  · "dal X" senza fine e "fino a nuova comunicazione": vale a lungo (open);  "fino al termine della manifestazione": fino a fine giornata (untilEnd);
+//  · più fasce orarie nello stesso giorno (es. sciopero con fasce garantite): giornata intera.
+const INCIDENT = /\b(guast\w*|incident\w*|rallentament\w*|ritard\w*|traffico|interruzion\w*|interrott\w*|bloccat\w*|avari\w*|soccorso|malore|code)\b/;
 function parseValidity(text, pubMs, kind = 'rss') {
-  const dates = findDates(text, pubMs), t = noAccents(text.toLowerCase());
-  // orari: una sola fascia "dalle 9.30 alle 16.30" vale per il periodo; più fasce (es. sciopero con servizi garantiti) -> giornata intera
-  const tms = [...t.matchAll(/dalle?\s+(?:ore\s+)?(\d{1,2})[.:](\d{2})\s+(?:alle?|fino\s+alle?)\s+(?:ore\s+)?(\d{1,2})[.:](\d{2})/g)];
-  const times = (t.match(/\b\d{1,2}[.:]\d{2}\b/g) || []).length;
-  const one = tms.length === 1 && times <= 2 ? tms[0] : null;
-  const t0 = one ? secsOf(one[1], one[2]) : 0, t1 = one ? secsOf(one[3], one[4]) : 86399;
+  const t = noAccents(text.toLowerCase()), dates = findDates(text, pubMs);
+  const untilNotice = /fino a (?:nuov[oa] (?:avviso|comunicazione|disposizione)|diversa comunicazione|cessate esigenze|data da destinarsi|revoca)|fino al ripristino|a tempo indeterminato/.test(t);
+  const untilEvent = /fino al(?:la)? (?:termine|fine|conclusione)\b/.test(t);
+  const slots = [...t.matchAll(/(?:dalle?|a partire dalle)\s+(?:ore\s+)?(\d{1,2})(?:[.:](\d{2}))?\s*(?:,\s*|e\s+)?(?:alle?|fino\s+alle?|sino\s+alle?)\s+(?:ore\s+)?(\d{1,2})(?:[.:](\d{2}))?/g)];
   if (!dates.length) {
-    const len = kind === 'tg' ? UNDATED_TG_MS : UNDATED_RSS_MS;
+    const p = cal.romeYmd(pubMs), day = romeMs(+p.slice(0, 4), +p.slice(4, 6), +p.slice(6, 8));
+    const len = kind === 'tg' ? (INCIDENT.test(t) ? 2 * 3600e3 : UNDATED_TG_MS) : UNDATED_RSS_MS;
+    if (untilNotice) return { from: pubMs, to: pubMs + OPEN_ENDED_MS, open: true, dated: false };
+    if (slots.length === 1) {
+      const s = tsec(slots[0][1], slots[0][2]), e = tsec(slots[0][3], slots[0][4]);
+      if (s != null && e != null) { const from = day + s * 1000, to = day + e * 1000 + (e <= s ? DAY : 0); if (to > pubMs) return { from: Math.min(from, Math.max(pubMs, from)), to, open: false, dated: true }; }
+    }
+    const st = /(?:dalle|a partire dalle)\s+(?:ore\s+)?(\d{1,2})[.:](\d{2})/.exec(t), s = st ? tsec(st[1], st[2]) : null;
+    if (s != null && day + s * 1000 > pubMs - 3600e3) { const from = day + s * 1000; return { from, to: from + len, open: false, dated: true, untilEnd: untilEvent || undefined }; }
     return { from: pubMs, to: pubMs + len, open: false, dated: false };
   }
-  const key = d => d.y * 10000 + d.m * 100 + d.d, sorted = dates.slice().sort((a, b) => key(a) - key(b));
-  const first = sorted[0], last = sorted[sorted.length - 1];
-  const upTo = /\b(fino al|sino al|fino a|entro il)\b/.test(t) && dates.length === 1;
-  const D = '\\d{1,2}\\s*(?:°|º)?\\s+' + MON_RE;
-  const fromDate = new RegExp('\\b(?:dal|da|a partire dal|a partire da|a decorrere dal)\\s+(?:inizio\\s+servizi\\s+di\\s+|inizio\\s+servizio\\s+di\\s+)?(?:[a-z]+\\s+)?' + D).test(t);
-  const toDate = new RegExp('\\b(?:al|fino al|sino al|entro il)\\s+(?:[a-z]+\\s+)?' + D + '|\\b\\d{1,2}\\s*(?:-|–|—)\\s*\\d{1,2}\\s+' + MON_RE).test(t);
-  if (upTo) return { from: pubMs, to: romeMs(last.y, last.m, last.d, t1), open: false, dated: true };
-  if (fromDate && !toDate) {                                   // "dal 1 novembre", "da inizio servizi di lunedì 2 novembre": senza fine, vale a lungo
-    const from = romeMs(first.y, first.m, first.d, t0);
-    return { from, to: Math.max(from, romeMs(last.y, last.m, last.d, 0)) + OPEN_ENDED_MS, open: true, dated: true };
-  }
-  return { from: romeMs(first.y, first.m, first.d, t0), to: romeMs(last.y, last.m, last.d, t1), open: false, dated: true };
+  if (slots.length > 1) for (const d of dates) { delete d.s; delete d.e; }      // più fasce: giornata intera
+  const one = slots.length === 1 && (t.match(/\b\d{1,2}[.:]\d{2}\b/g) || []).length <= 2 ? slots[0] : null;
+  const g0 = one ? tsec(one[1], one[2]) : null, g1 = one ? tsec(one[3], one[4]) : null;
+  const key = d => d.y * 10000 + d.m * 100 + d.d, byKey = (a, b) => key(a) - key(b);
+  const froms = dates.filter(d => d.role !== 'to').sort(byKey), tos = dates.filter(d => d.role === 'to').sort(byKey), all = dates.slice().sort(byKey);
+  const first = froms[0] || null, last = tos.length ? tos[tos.length - 1] : all[all.length - 1];
+  const from = first ? romeMs(first.y, first.m, first.d, first.s ?? g0 ?? 0) : pubMs;
+  let to, open = false;
+  const distinct = new Set(all.map(key)).size;
+  if (tos.length) to = romeMs(last.y, last.m, last.d, last.e ?? (key(last) === key(first || last) ? g1 : null) ?? 86399);
+  else if (untilNotice || (first?.dal && !untilEvent && distinct === 1 && first.e == null && g1 == null)) { to = Math.max(from, romeMs(last.y, last.m, last.d, 0)) + OPEN_ENDED_MS; open = true; }
+  else to = romeMs(last.y, last.m, last.d, last.e ?? g1 ?? 86399);
+  if (untilEvent && !open) to = Math.max(to, from + 4 * 3600e3);              // evento senza ora di fine: almeno 4 ore
+  if (to <= from) to = Math.max(romeMs(last.y, last.m, last.d, 86399), from + 3600e3);
+  return { from, to, open, dated: true, untilEnd: (untilEvent && !tos.some(d => d.e != null)) || undefined };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // LINEE E FERMATE CITATE
 // ---------------------------------------------------------------------------------------------------------------------
 // Le regole sono generali, non per singolo avviso: vedi i commenti di analyze(). Prima di cercare le linee si tolgono date e orari ("31 ottobre", "9.30"), che sembrerebbero linee.
-const LIST_TOK = '[A-Z0-9][A-Z0-9./]{0,5}';
-const LIST_RE = new RegExp(`^[:'‘’]?\\s*(${LIST_TOK}(?:\\s*(?:,|/|e|-|–)\\s*${LIST_TOK})*)`);
+// parola che introduce una linea (e servizio che indica: "bus", "tram" = automobilistico; "vaporetto", "di navigazione" = navigazione)
+const TRIG = /\b(?:linee|linea|navett[ae]|autobus|bus|tram|tranvi[ae]|vaporett[oi]|battell[oi]|motonav[ie])\b(?:\s+(?:di\s+navigazione|automobilistic[ahei]+|tranviari[ae]|urban[ae]|extraurban[ae]|notturn[ae]|interessat[ae]|coinvolt[ae]|deviat[ae]|sospes[ae]|soppress[ae]|modificat[ae]|limitat[ae]))*\s*(?:n\.|nr\.?|numero)?\s*[:'‘’]?\s*/gi;
+const hintOf = w => /autobus|\bbus|tram|tranvi|automobilistic|extraurban|urban/i.test(w) ? 'aut' : /vaporett|battell|motonav|navigazione/i.test(w) ? 'nav' : null;
+// codice di linea: 4.1, 31H, 6L, T1, N, NLN, 9S…  (solo maiuscole: "bus sostitutivi" non è una linea); non seguito da un'unità ("10 minuti")
+const TOK = /^([A-Z]{0,3}\d{1,3}(?:\.\d)?[A-Z]{0,2}|[A-Z]{1,3})(?![A-Za-z0-9])(?!\s*(?:minut|min\b|ore\b|or[ae]\b|km|metri|m\b|cm\b|corse|%|°|euro|persone|giorni|volte))/;
+const SEP = /^(?:\s*(?:,|\/|&|\+|-|–|\be\b|\bed\b)\s*|\s+)/;
+// elenco di codici dopo la parola di linea; separati solo da spazio continuano solo se entrambi hanno cifre ("linee 4.1 4.2", non "linee 17 N 5")
+function listAfter(s) {
+  const toks = []; let i = 0;
+  for (;;) {
+    const m = TOK.exec(s.slice(i)); if (!m) break;
+    toks.push(m[1]); i += m[0].length;
+    const sp = SEP.exec(s.slice(i)); if (!sp) break;
+    const nx = TOK.exec(s.slice(i + sp[0].length)); if (!nx) break;
+    if (!sp[0].trim() && !(/\d/.test(m[1]) && /\d/.test(nx[1]))) break;
+    i += sp[0].length;
+  }
+  return { toks, rest: s.slice(i) };
+}
+const AUT_EMO = /[\u{1F68C}\u{1F68D}\u{1F68E}\u{1F68B}\u{1F68A}\u{1F68F}\u{1F683}]/gu, NAV_EMO = /[\u26F4\u{1F6A4}\u{1F6E5}\u{1F6A2}\u2693]/gu;
 // parole che indicano il tipo di servizio (usate solo per scegliere tra due linee con lo stesso numero, e come indizio per le fermate)
 const AUT_WORDS = /\b(bus|autobus|automobilistic\w*|tranvia\w*|tram|mestre|marghera|favaro|chirignago|terraferma|extraurban\w*|urban[oa]|rotatoria|deviazion\w*|capolinea)\b/gi;
 const NAV_WORDS = /\b(pontil\w*|imbarcader\w*|vaporett\w*|battell\w*|navigazione|lagun\w*|motonav\w*|lido|giudecca|murano|burano|pellestrina|torcello|san michele|cimitero di s\.?)\b/gi;
@@ -160,17 +215,18 @@ function analyzeBase(title, text, ctx) {
   if (/sciopero/i.test(title) || /^\s*[^\n]{0,80}\bsciopero\b/i.test(text)) return empty;
   const known = ctx.known, mentions = stopMentions(full, ctx.byName), strongIds = new Set(), mSrc = new Set();
   for (const v of mentions.values()) if (v.strong) for (const id of v.ids) { strongIds.add(id); mSrc.add(id.split(':')[0]); }
-  const gAut = count(AUT_WORDS, full), gNav = count(NAV_WORDS, full);
+  const gAut = count(AUT_WORDS, full) + 2 * count(AUT_EMO, full), gNav = count(NAV_WORDS, full) + 2 * count(NAV_EMO, full);
   const served = x => ctx.lineStops?.get(x.s + ':' + String(x.n).toUpperCase());
   const hits = x => { const sv = served(x); let n = 0; if (sv) for (const id of strongIds) if (sv.has(id)) n++; return n; };
   const lines = new Map();
   const clean = full.replace(new RegExp(`\\d{1,2}\\s*(?:-|–|e)?\\s*\\d{0,2}\\s+${MON_RE}(?:\\s+\\d{4})?`, 'gi'), ' ').replace(/\b\d{1,2}[.:]\d{2}\b/g, ' ')
     .replace(/[“"]\s*[A-Z]\s*[”"]/g, ' ');                      // "B", "D" tra virgolette doppie = lettera del pontile, non una linea
-  const decide = (tok, around) => {
-    const c = known?.get(tok.replace(/[./]+$/, '').toUpperCase()); if (!c) return;
+  const decide = (tok, around, hint) => {
+    let c = known?.get(tok.replace(/[./]+$/, '').toUpperCase()); if (!c) return;
+    if (hint && c.length > 1 && c.some(x => x.s === hint)) c = c.filter(x => x.s === hint);     // "bus 2", "vaporetto 2": il servizio è detto
     let pick = c;
     if (c.length > 1) {
-      const la = count(AUT_WORDS, around), ln = count(NAV_WORDS, around);
+      const la = count(AUT_WORDS, around) + 2 * count(AUT_EMO, around), ln = count(NAV_WORDS, around) + 2 * count(NAV_EMO, around);
       const sc = c.map(x => hits(x) * 4 + (mSrc.size === 1 && mSrc.has(x.s) ? 3 : 0) + (x.s === 'aut' ? 2 * la + gAut : 2 * ln + gNav));
       const best = Math.max(...sc), top = c.filter((_, i) => sc[i] === best);
       pick = top.length === 1 && best > 0 ? top : [];   // numero ambiguo senza prove: meglio non indicare la linea che indicarne una sbagliata
@@ -180,18 +236,18 @@ function analyzeBase(title, text, ctx) {
       lines.set(x.s + ':' + x.n, { n: x.n, s: x.s, c: x.c || null });
     }
   };
-  // linee: solo elenchi che seguono "linea/linee/navetta" ("linee 9S, 21 e 56E")
-  for (const m of clean.matchAll(/\b(?:linee|linea|navetta|navette)\b\s*/gi)) {
-    const rest = clean.slice(m.index + m[0].length), l = LIST_RE.exec(rest); if (!l) continue;
-    const around = clean.slice(Math.max(0, m.index - 150), m.index + 250), after = rest.slice(l[0].length);
-    l[1].split(/\s*(?:,|\/|e|-|–)\s*/).forEach((tok, j) => {
-      if (tok !== tok.toUpperCase()) return;
+  // linee: elenchi che seguono una parola di linea ("linee 9S, 21 e 56E", "bus 7", "tram T1", "vaporetto 4.1", "linee interessate: 2, 6") e i tram T1/T2 ovunque
+  for (const m of clean.matchAll(TRIG)) {
+    const rest = clean.slice(m.index + m[0].length), { toks, rest: after } = listAfter(rest); if (!toks.length) continue;
+    const around = clean.slice(Math.max(0, m.index - 150), m.index + 250), hint = hintOf(m[0]);
+    toks.forEach((tok, j) => {
       if (/^[A-Z]$/.test(tok) && (j > 0 || /^\s*[a-zà-ÿ]/.test(after))) return;   // "linea 13 e A partire…": non è la linea A
-      decide(tok, around);
+      decide(tok, around, hint);
     });
   }
-  const lead = /^\s*(?:linea\s+)?([A-Z0-9][A-Z0-9.]{0,5})\s*[:–-]/.exec(text); if (lead && !/^[A-Z]$/.test(lead[1])) decide(lead[1], full.slice(0, 400));
-  const lineList = [...lines.values()].slice(0, 20), srcs = new Set(lineList.map(l => l.s));
+  for (const m of clean.matchAll(/(?<![A-Za-z0-9])(T[1-9])(?![A-Za-z0-9])/g)) decide(m[1], clean.slice(Math.max(0, m.index - 150), m.index + 250), 'aut');   // tram
+  const lead = /^\s*(?:linea\s+)?([A-Z0-9][A-Z0-9.]{0,5})\s*[:–-]/.exec(text); if (lead && !/^[A-Z]$/.test(lead[1])) decide(lead[1], full.slice(0, 400), null);
+  const lineList = [...lines.values()].slice(0, 40), srcs = new Set(lineList.map(l => l.s));
   // fermate: con linee nell'avviso, solo le fermate (id) servite da almeno una di quelle linee; senza linee, solo nomi sicuri del servizio indicato dal testo
   let want = null; if (!srcs.size) { if (gNav >= gAut + 2) want = new Set(['nav']); else if (gAut >= gNav + 2) want = new Set(['aut']); }
   const ids = [], names = new Map();
@@ -203,8 +259,9 @@ function analyzeBase(title, text, ctx) {
     const nm = ctx.nameOf ? ctx.nameOf(id) : k; ids.push(id); names.set(src + '|' + nm, { n: nm, s: src });
   }
   // avvisi generali sugli orari (centinaia di fermate citate di passaggio): niente segnalazione sulle fermate
-  const general = /\borari\b|modifiche ai? serviz/i.test(title) || names.size > 30;
-  return { lines: lineList, stops: general ? [] : ids.slice(0, 80), stopNames: general ? [] : [...names.values()].slice(0, 30) };
+  // (e molte linee: avviso di rete, non di singole linee: resta nell'elenco ma non si appende a fermate e mezzi)
+  const general = /\borari\b|modifiche ai? serviz/i.test(title) || names.size > 30 || lineList.length > 12;
+  return { lines: lineList, stops: general ? [] : ids.slice(0, 80), stopNames: general ? [] : [...names.values()].slice(0, 30), general: general || undefined };
 }
 
 
@@ -260,17 +317,37 @@ function planForLevel(level, ctx) {
 let tideSource = () => null;
 function setTideSource(fn) { tideSource = fn; ST.cache = null; }
 const hhmm = ms => { const p = cal.romeParts(ms), s = p.secs; return String(Math.floor(s / 3600)).padStart(2, '0') + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0'); };
-function autoWater(now, ctx, official) {
+// Acqua alta: valgono INSIEME il livello misurato, la previsione (picco nelle prossime 12 ore) e gli avvisi ufficiali (Telegram / sito ACTV).
+//  · livello di riferimento = il più alto fra misurato, previsto e indicato dall'avviso ufficiale; il piano ACTV si applica a quel livello;
+//  · con un avviso ufficiale che indica il livello: resta solo quello, completato con il piano per il livello di riferimento e con misura e previsione;
+//  · senza: compare l'avviso calcolato; se un avviso ufficiale parla di acqua alta senza livello, l'avviso calcolato risulta "confermato" e vi rimanda.
+const AA_MENTION = /acqua\s+alta|alta\s+marea|picco\s+di\s+marea/i;
+function autoWater(now, ctx, items = []) {
   let snap = null; try { snap = tideSource(); } catch { /* dato non disponibile */ }
-  if (!snap) return { measured: null, item: null };
-  const measured = snap.stale ? null : snap.cm, peak = snap.peak && snap.peak.cm > 85 ? snap.peak : null;
-  const level = Math.max(measured ?? -999, peak ? peak.cm : -999), plan = planForLevel(level, ctx);
-  if (!plan || official) return { measured, item: null };
+  const measured = snap && !snap.stale ? snap.cm : null, peak = snap?.peak || null;
+  const live = items.filter(it => it.source !== 'auto' && !it.drop && !it.resolved && it.from <= now + UPCOMING_MS && it.to >= now);
+  const offs = live.filter(it => it.water).sort((x, y) => y.published - x.published), mentions = live.filter(it => !it.water && AA_MENTION.test(it.title + ' ' + it.text));
+  const official = offs.length ? Math.max(...offs.map(it => it.water.level)) : null;
+  const level = Math.max(measured ?? -999, peak ? peak.cm : -999, official ?? -999), plan = planForLevel(level, ctx);
+  const water = { level, url: AA_URL, measured, forecast: peak && peak.cm > 85 ? peak : null, official, confirmed: !!(offs.length || mentions.length) };
+  if (offs.length) {                                                         // avviso ufficiale con livello: si completa quello
+    const main = offs[0], p = plan || planForLevel(official, ctx);
+    if (p) {
+      main.water = { ...water, plan: p.plan };
+      const lk = new Set(main.lines.map(l => l.s + ':' + l.n)); for (const l of p.lines) if (!lk.has(l.s + ':' + l.n)) main.lines.push(l);
+      main.stops = [...new Set([...main.stops, ...p.stops])]; const nk = new Set(main.stopNames.map(s => s.s + '|' + s.n)); for (const s of p.stopNames) if (!nk.has(s.s + '|' + s.n)) main.stopNames.push(s);
+    }
+    for (const it of offs.slice(1)) it.water = { ...it.water, measured, forecast: water.forecast };
+    return { measured, item: null };
+  }
+  if (!plan || (measured == null || measured <= 85) && !(peak && peak.cm > 85)) return { measured, item: null };
   const nowHigh = measured != null && measured > 85, from = nowHigh ? now - 60e3 : Math.max(now - 60e3, peak.ts - 2 * 3600e3);
-  const parts = [measured != null ? `Livello misurato ${measured} cm` : null, peak ? `picco previsto ${peak.cm} cm alle ${hhmm(peak.ts)}` : null].filter(Boolean).join(', ');
-  return { measured, item: { id: 'auto-acqua-alta', source: 'auto', title: `Acqua alta: marea oltre 85 cm (${level} cm)`, text: `${parts}. Nessun avviso ufficiale rilevato: sono indicate le disposizioni del piano ACTV per questo livello. Fa fede la comunicazione ufficiale.`,
-    url: AA_URL, published: now, from, to: nowHigh ? now + 20 * 60e3 : peak.ts + 2 * 3600e3, open: false, dated: false,
-    lines: plan.lines, stops: plan.stops, stopNames: plan.stopNames, water: { level, plan: plan.plan, url: AA_URL, measured } } };
+  const parts = [measured != null ? `Livello misurato ${measured} cm` : null, peak && peak.cm > 85 ? `picco previsto ${peak.cm} cm alle ${hhmm(peak.ts)}` : null].filter(Boolean).join(', ');
+  const conf = mentions[0];
+  return { measured, item: { id: 'auto-acqua-alta', source: 'auto', title: `Acqua alta: marea oltre 85 cm (${level} cm)`,
+    text: `${parts}. ${conf ? `Confermato dall'avviso ufficiale «${short(conf.title, 80)}»` : 'Nessun avviso ufficiale rilevato'}: sono indicate le disposizioni del piano ACTV per questo livello. Fa fede la comunicazione ufficiale.`,
+    url: AA_URL, tgUrl: conf ? (conf.tgUrl || conf.url) : undefined, published: now, from, to: nowHigh ? now + 20 * 60e3 : Math.max(peak.ts + 2 * 3600e3, now + 20 * 60e3), open: false, dated: false,
+    lines: plan.lines, stops: plan.stops, stopNames: plan.stopNames, water: { ...water, plan: plan.plan } } };
 }
 // unisce il piano acqua alta al risultato di analyze()
 function withWater(res, full, ctx) {
@@ -278,7 +355,7 @@ function withWater(res, full, ctx) {
   const lines = new Map(res.lines.map(l => [l.s + ':' + l.n, l]));
   for (const l of w.lines) if (!lines.has(l.s + ':' + l.n)) lines.set(l.s + ':' + l.n, l);
   const names = new Map(res.stopNames.map(s => [s.s + '|' + s.n, s])); for (const s of w.stopNames) names.set(s.s + '|' + s.n, s);
-  return { lines: [...lines.values()].slice(0, 40), stops: [...new Set([...res.stops, ...w.stops])].slice(0, 100), stopNames: [...names.values()].slice(0, 40),
+  return { ...res, general: undefined, lines: [...lines.values()].slice(0, 40), stops: [...new Set([...res.stops, ...w.stops])].slice(0, 100), stopNames: [...names.values()].slice(0, 40),
     water: { level: w.level, plan: w.plan, url: w.planUrl } };
 }
 
@@ -374,6 +451,57 @@ async function refreshTg() {
 
 const short = (s, n) => { s = String(s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s\S*$/, '') + '…' : s; };
 
+// ---------------------------------------------------------------------------------------------------------------------
+// FILI DI AVVISI SULLO STESSO ARGOMENTO (come le app di navigazione: si vede l'ultima versione, e la fine quando l'evento finisce)
+//  · un messaggio più recente sullo stesso argomento SOSTITUISCE il precedente ("aggiornamento"): il vecchio sparisce; se il nuovo non ha date eredita il periodo del vecchio;
+//  · un messaggio di chiusura ("ripristinato", "servizio regolare", "terminata la manifestazione") CHIUDE i precedenti collegati e resta 1 ora come "risolto";
+//  · un messaggio Telegram uguale a una notizia del sito ACTV non la duplica (si unisce, come quando contiene il link).
+//  Stesso argomento = testo molto simile, oppure stesso tipo di evento con almeno una linea/fermata in comune o testo abbastanza simile.
+//  Gli avvisi programmati lunghi (più di un giorno, es. lavori) si chiudono o si sostituiscono solo con testo molto simile: un guasto sulla stessa linea non li tocca.
+// ---------------------------------------------------------------------------------------------------------------------
+const SERVICE_MSG = /\b(?:pinned (?:a |an )?(?:photo|message|video|file|poll|sticker|gif|audio)|ha fissato|channel (?:photo|name) (?:updated|changed))\b/i;
+const cleanTitle = s => String(s).replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}\u{1F1E6}-\u{1F1FF}]/gu, ' ')
+  .replace(/^(?:\s*#[\p{L}\p{N}_]+\s*[|·:\-–—]?\s*)+/u, '').replace(/^[\s|·:\-–—]+|[\s|·:\-–—]+$/g, '').replace(/\s{2,}/g, ' ').trim();
+const STOPW = new Set(('alla alle allo agli dalla dalle della delle degli nella nelle negli sulla sulle con per tra fra che non come anche oggi domani fino '
+  + 'avviso avvisi informa informano informiamo comunica comunicano servizio servizi actv muoversivenezia venezia linea linee corsa corse fermata fermate causa seguito '
+  + 'previsto prevista previsti previste sono sara saranno potranno potrebbe essere stato stata questo questa quella dopo prima circa').split(' '));
+const KINDS = [/acqua alta|marea/, /manifestazion|corteo|presidio|sfilata|maratona|regata|concerto|partita|processione/, /nebbia|visibilit/, /sciopero/,
+  /\bvento\b|bora|maltempo|temporal|neve|ghiaccio|mareggiat/, /guast|avari|incident|soccorso|malore/, /lavori|cantiere|asfaltatur|chiusura (?:strad|ponte|rotatoria)/, /people mover/];
+const CLOSE_RE = /\b(?:ripristinat\w*|riattivat\w*|ripres[oaie]\b|riprend(?:e|ono)\b|tornat[oaie] (?:regolar\w*|in servizio|attiv\w*)|torna(?:no)? regolar\w*|regolarmente in servizio|(?:servizio|circolazione|transito) (?:e |sono )?(?:regolare|ripristinat\w*)|terminat[oaie]|conclus[oaie]|cessat[oaie]|revocat[oaie]|fine (?:dell[ae] )?(?:manifestazione|evento|emergenza|allerta))\b/;
+const wordsOf = it => new Set(norm(it.title + ' ' + String(it.text || '').slice(0, 260)).split(' ').filter(w => w.length >= 4 && !STOPW.has(w) && !/\d/.test(w)));
+const kindsOf = it => { const s = noAccents((it.title + ' ' + it.text).toLowerCase()); return new Set(KINDS.map((re, i) => (re.test(s) ? i : -1)).filter(i => i >= 0)); };
+const overlap = (a, b) => { if (a.size < 2 || b.size < 2) return 0; let n = 0; for (const w of a) if (b.has(w)) n++; return n / Math.min(a.size, b.size); };
+const shares = (a, b) => a.some(x => b.includes(x));
+function thread(items) {
+  const list = items.filter(i => i.source !== 'auto').sort((a, b) => a.published - b.published);
+  for (const it of list) { it.words = wordsOf(it); it.kinds = kindsOf(it); it.lk = it.lines.map(l => l.s + ':' + l.n); }
+  for (let j = 1; j < list.length; j++) {
+    const B = list[j]; if (B.drop) continue;
+    const closing = CLOSE_RE.test(noAccents((B.title + ' ' + String(B.text).slice(0, 200)).toLowerCase())) && !(B.dated && B.from > B.published + 3600e3);
+    for (let i = j - 1; i >= 0; i--) {
+      const A = list[i]; if (A.drop || A.to <= B.published || A.published > B.published) continue;
+      const ov = overlap(A.words, B.words), sameKind = [...A.kinds].some(k => B.kinds.has(k)), common = shares(A.lk, B.lk) || shares(A.stops, B.stops);
+      const longA = A.dated && A.to - A.from > DAY;
+      const related = ov >= 0.6 || (!longA && ((sameKind && (common || ov >= 0.3)) || (common && ov >= 0.3)));
+      if (!related) continue;
+      if (closing) {                                                        // fine dell'evento: chiude il precedente
+        A.to = Math.max(Math.min(A.to, B.published), A.from); if (A.from > B.published) A.drop = true;
+        B.resolved = true; B.to = B.published + 3600e3; B.from = Math.min(B.from, B.published); B.stops = []; B.stopNames = [];
+        if (!B.lines.length) B.lines = A.lines;
+        continue;
+      }
+      if (A.source !== 'telegram' && B.source === 'telegram' && ov >= 0.5) { A.source = 'both'; A.tgUrl = A.tgUrl || B.tgUrl; B.drop = true; break; }   // stessa notizia del sito
+      // aggiornamento: B sostituisce A
+      if (!B.dated && A.dated) { B.from = Math.min(A.from, B.from); B.to = Math.max(A.to, B.to); B.dated = true; B.open = A.open; B.untilEnd = A.untilEnd; }
+      if (!B.lines.length && A.lines.length) { B.lines = A.lines; B.lk = A.lk; }
+      if (!B.stops.length && A.stops.length) { B.stops = A.stops; B.stopNames = A.stopNames; }
+      if (!B.water && A.water) B.water = A.water;
+      B.updated = (B.updated || 0) + 1 + (A.updated || 0); A.drop = true;
+    }
+  }
+  for (const it of list) { delete it.words; delete it.kinds; delete it.lk; }
+}
+
 // Elenco finale: unisce le due fonti (un messaggio Telegram che rimanda a una notizia ACTV è la stessa cosa), calcola validità, linee, fermate
 function build(now = Date.now()) {
   const ctx = ST.ctx() || {}, items = [], byUrl = new Map();
@@ -386,20 +514,21 @@ function build(now = Date.now()) {
   for (const m of ST.tg) {
     const first = m.links.find(l => byUrl.has(l));
     if (first) { const it = byUrl.get(first); it.source = 'both'; it.tgUrl = m.url; continue; }   // già presente dal sito ACTV
-    const lines = m.text.split('\n').filter(Boolean), title = short(lines[0] || 'Avviso', 110), v = parseValidity(m.text, m.pubMs, 'tg');
-    items.push({ id: idOf(m.key), source: 'telegram', title, text: short(lines.slice(title === lines[0] ? 1 : 0).join(' ') || m.text, 700), url: m.links.find(l => /actv|avm/.test(l)) || m.url, tgUrl: m.url,
+    if (SERVICE_MSG.test(m.text) || !m.text.trim()) continue;                // "… pinned a photo": messaggi di servizio del canale
+    const rows = m.text.split('\n').map(s => s.trim()).filter(Boolean), k = rows.findIndex(r => cleanTitle(r).length >= 3);
+    const title = short(cleanTitle(rows[k] ?? '') || 'Avviso', 110), body = rows.slice(k + 1).join(' '), v = parseValidity(m.text, m.pubMs, 'tg');
+    items.push({ id: idOf(m.key), source: 'telegram', title, text: short(body || title, 700), url: m.links.find(l => /actv|avm/.test(l)) || m.url, tgUrl: m.url,
       published: m.pubMs, ...v, ...analyze(title, m.text, ctx) });
   }
-  const officialWater = items.some(it => it.water && it.from <= now + UPCOMING_MS && it.to >= now);
-  const aw = autoWater(now, ctx, officialWater);
+  thread(items);
+  const aw = autoWater(now, ctx, items);                                     // acqua alta: misura + previsione + avvisi ufficiali
   if (aw.item) items.push(aw.item);
-  else if (aw.measured != null) for (const it of items) if (it.water) it.water.measured = aw.measured;     // conferma con il livello misurato
   const out = [];
   for (const it of items) {
-    if (it.to < now - KEEP_EXPIRED_MS) continue;                            // scaduto
+    if (it.drop || it.to < now - KEEP_EXPIRED_MS) continue;                 // unito a un altro, sostituito, chiuso o scaduto
     const state = it.from <= now ? 'active' : it.from - now <= UPCOMING_MS ? 'upcoming' : null;
     if (!state) continue;                                                   // troppo lontano nel tempo
-    out.push({ ...it, state });
+    const { drop, words, ...pub } = it; out.push({ ...pub, state });
   }
   out.sort((a, b) => (a.state === b.state ? 0 : a.state === 'active' ? -1 : 1) || b.published - a.published);
   return out.slice(0, 40);
