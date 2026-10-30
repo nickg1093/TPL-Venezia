@@ -438,3 +438,32 @@ body.busy #plist{opacity:.72;transition:opacity .15s}
   #chips-area .chips::-webkit-scrollbar{display:none}
   #chips-area .chips>*{flex:none}
 }
+
+/* ---- v19: pannello fermata e pannello mezzo con LE STESSE misure (via di mezzo tra v17 e v18) ---- */
+:root{--r-name:1rem;--r-time:1.125rem;--r-sub:.8125rem;--r-h:56px}
+.dep,.st{min-height:var(--r-h);padding-top:8px;padding-bottom:8px}
+.st{grid-template-columns:40px minmax(0,1fr) auto}
+.dh,.nm{font-size:var(--r-name);font-weight:700;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+.st.at .nm,.st.next .nm{font-size:var(--r-name);font-weight:800}
+.dn{font-size:var(--r-sub);flex-wrap:nowrap;gap:5px;min-width:0;line-height:1.3}
+.dn>span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.st.passed .dn{color:var(--muted)}
+.dt strong,.tm strong{font-size:var(--r-time)}
+.dt .sched-crossed,.tm .sched-crossed{font-size:var(--r-sub)}
+.dt .in-min,.tm .in-min{font-size:var(--r-sub);font-weight:700;color:var(--muted);line-height:1.2;white-space:nowrap}
+.dep .bus,.ph .bus,.search-item .bus{height:2rem;min-width:3rem;font-size:.9375rem}
+.dep .bus:not(.aut),.ph .bus:not(.aut),.search-item .bus:not(.aut){width:2.125rem;min-width:2.125rem;height:2.125rem}
+.dep-bell,.dep-bell-sp{width:34px;height:34px}
+.dep-bell .ic{width:21px;height:21px}
+button.chip.sq{width:30px;height:30px;min-width:30px;min-height:30px;font-size:.8125rem}
+button.chip.all{min-height:30px}
+.dn .pt,.dn .pt.sm{min-width:20px;height:20px;font-size:.75rem}
+/* intestazione della corsa: stato · mezzo · velocità SEMPRE su una riga */
+#pstatus{display:flex;align-items:center;gap:6px;white-space:nowrap;min-width:0;overflow:hidden}
+#pstatus .stx{flex:none}
+#pstatus .vn{min-width:0;overflow:hidden;text-overflow:ellipsis}
+#pstatus .spd{flex:none;margin-left:2px}
+@media (max-width:360px){ :root{--r-name:.9375rem;--r-time:1.0625rem;--r-sub:.75rem;--r-h:52px} }
+@media (min-width:900px){ :root{--r-h:58px} }
+#pstatus:empty{display:none}
+.ph>.ph-status{margin-top:4px}
