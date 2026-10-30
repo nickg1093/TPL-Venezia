@@ -122,6 +122,8 @@ function parseValidity(text, pubMs, kind = 'rss') {
       const s = tsec(slots[0][1], slots[0][2]), e = tsec(slots[0][3], slots[0][4]);
       if (s != null && e != null) { const from = day + s * 1000, to = day + e * 1000 + (e <= s ? DAY : 0); if (to > pubMs) return { from: Math.min(from, Math.max(pubMs, from)), to, open: false, dated: true }; }
     }
+    const fa = /(?:fino|sino) alle\s+(?:ore\s+)?(\d{1,2})[.:](\d{2})/.exec(t), fe = fa ? tsec(fa[1], fa[2]) : null;    // "fino alle 12.00" senza data: oggi a quell'ora
+    if (fe != null && !/(?:dalle|a partire dalle)\s+(?:ore\s+)?\d/.test(t) && day + fe * 1000 > pubMs) return { from: pubMs, to: day + fe * 1000, open: false, dated: true };
     const st = /(?:dalle|a partire dalle)\s+(?:ore\s+)?(\d{1,2})[.:](\d{2})/.exec(t), s = st ? tsec(st[1], st[2]) : null;
     if (s != null && day + s * 1000 > pubMs - 3600e3) { const from = day + s * 1000; return { from, to: from + len, open: false, dated: true, untilEnd: untilEvent || undefined }; }
     return { from: pubMs, to: pubMs + len, open: false, dated: false };
@@ -325,6 +327,8 @@ const AA_MENTION = /acqua\s+alta|alta\s+marea|picco\s+di\s+marea/i;
 function autoWater(now, ctx, items = []) {
   let snap = null; try { snap = tideSource(); } catch { /* dato non disponibile */ }
   const measured = snap && !snap.stale ? snap.cm : null, peak = snap?.peak || null;
+  // marea tornata sotto 85 cm (misura recente) e nessun picco oltre 85 cm previsto: gli avvisi ufficiali di acqua alta SENZA date, pubblicati da più di un'ora, sono finiti
+  if (measured != null && measured <= 85 && !(peak && peak.cm > 85)) for (const it of items) if (it.source !== 'auto' && !it.dated && now - it.published > 3600e3 && (it.water || AA_MENTION.test(it.title + ' ' + it.text))) it.to = Math.min(it.to, now - 1);
   const live = items.filter(it => it.source !== 'auto' && !it.drop && !it.resolved && it.from <= now + UPCOMING_MS && it.to >= now);
   const offs = live.filter(it => it.water).sort((x, y) => y.published - x.published), mentions = live.filter(it => !it.water && AA_MENTION.test(it.title + ' ' + it.text));
   const official = offs.length ? Math.max(...offs.map(it => it.water.level)) : null;
@@ -467,7 +471,7 @@ const STOPW = new Set(('alla alle allo agli dalla dalle della delle degli nella 
   + 'previsto prevista previsti previste sono sara saranno potranno potrebbe essere stato stata questo questa quella dopo prima circa').split(' '));
 const KINDS = [/acqua alta|marea/, /manifestazion|corteo|presidio|sfilata|maratona|regata|concerto|partita|processione/, /nebbia|visibilit/, /sciopero/,
   /\bvento\b|bora|maltempo|temporal|neve|ghiaccio|mareggiat/, /guast|avari|incident|soccorso|malore/, /lavori|cantiere|asfaltatur|chiusura (?:strad|ponte|rotatoria)/, /people mover/];
-const CLOSE_RE = /\b(?:ripristinat\w*|riattivat\w*|ripres[oaie]\b|riprend(?:e|ono)\b|tornat[oaie] (?:regolar\w*|in servizio|attiv\w*)|torna(?:no)? regolar\w*|regolarmente in servizio|(?:servizio|circolazione|transito) (?:e |sono )?(?:regolare|ripristinat\w*)|terminat[oaie]|conclus[oaie]|cessat[oaie]|revocat[oaie]|fine (?:dell[ae] )?(?:manifestazione|evento|emergenza|allerta))\b/;
+const CLOSE_RE = /\b(?:ripristinat\w*|riattivat\w*|ripres[oaie]\b|riprend(?:e|ono)\b|tornat[oaie] (?:regolar\w*|in servizio|attiv\w*)|torna(?:no)? regolar\w*|regolarmente in servizio|(?:servizio|circolazione|transito) (?:e |sono )?(?:regolare|ripristinat\w*)|terminat[oaie]|conclus[oaie]|cessat[oaie]|revocat[oaie]|fine (?:dell[ae] )?(?:manifestazione|evento|emergenza|allerta)|riapert[oaie]|diradat[oaie]|dissolt[oaie]|rientrat[oaie]|di nuovo (?:attiv\w*|in servizio|regolar\w*)|(?:revoca|annullamento|differimento|rinvio) dello sciopero|sciopero (?:e |è )?(?:stato )?(?:revocato|annullato|differito|rinviato))\b/;
 const wordsOf = it => new Set(norm(it.title + ' ' + String(it.text || '').slice(0, 260)).split(' ').filter(w => w.length >= 4 && !STOPW.has(w) && !/\d/.test(w)));
 const kindsOf = it => { const s = noAccents((it.title + ' ' + it.text).toLowerCase()); return new Set(KINDS.map((re, i) => (re.test(s) ? i : -1)).filter(i => i >= 0)); };
 const overlap = (a, b) => { if (a.size < 2 || b.size < 2) return 0; let n = 0; for (const w of a) if (b.has(w)) n++; return n / Math.min(a.size, b.size); };
@@ -475,9 +479,10 @@ const shares = (a, b) => a.some(x => b.includes(x));
 function thread(items) {
   const list = items.filter(i => i.source !== 'auto').sort((a, b) => a.published - b.published);
   for (const it of list) { it.words = wordsOf(it); it.kinds = kindsOf(it); it.lk = it.lines.map(l => l.s + ':' + l.n); }
-  for (let j = 1; j < list.length; j++) {
+  for (let j = 0; j < list.length; j++) {
     const B = list[j]; if (B.drop) continue;
     const closing = CLOSE_RE.test(noAccents((B.title + ' ' + String(B.text).slice(0, 200)).toLowerCase())) && !(B.dated && B.from > B.published + 3600e3);
+    if (closing) { B.resolved = true; B.to = B.published + 3600e3; B.from = Math.min(B.from, B.published); B.stops = []; B.stopNames = []; }   // anche senza un avviso precedente da chiudere: è una notizia di fine, non un problema in corso
     for (let i = j - 1; i >= 0; i--) {
       const A = list[i]; if (A.drop || A.to <= B.published || A.published > B.published) continue;
       const ov = overlap(A.words, B.words), sameKind = [...A.kinds].some(k => B.kinds.has(k)), common = shares(A.lk, B.lk) || shares(A.stops, B.stops);
@@ -501,6 +506,31 @@ function thread(items) {
   }
   for (const it of list) { delete it.words; delete it.kinds; delete it.lk; }
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// EFFETTO E GRAVITÀ (modello degli avvisi GTFS-Realtime: effect + severity_level; linee guida MobilityData / Google Transit):
+// ogni avviso dichiara COSA succede (sospeso, deviazione, ritardi…) e quanto pesa: grave (servizio assente), attenzione, informativo.
+// Gli informativi (servizi aggiuntivi, nuovi orari, risolti) non mettono il triangolo su mappa, fermate e mezzi; l'elenco è ordinato per gravità.
+// ---------------------------------------------------------------------------------------------------------------------
+const EFFECTS = [
+  ['strike', 'Sciopero', 'warning', /\bsciopero\b/],
+  ['water', 'Acqua alta', 'warning', /acqua alta|alta marea/],
+  ['no_service', 'Sospeso', 'severe', /\b(?:sospes[oaie]|soppress[oaie]|interrott[oaie]|non (?:effettua|ferma|fermano|transita|transitano|svolge|attiv[oaie])|chius[oaie] (?:al transito|la fermata|il pontile))\b/],
+  ['detour', 'Deviazione', 'warning', /\b(?:deviat[oaie]|deviazion\w*|percorso alternativo|percors[oi] modificat[oi])\b/],
+  ['stop_moved', 'Fermata spostata', 'warning', /\b(?:fermat[ae]|pontil[ei]|capolinea) (?:provvisori[oae]|spostat[oae]|trasferit[oae])|(?:spostat[oae]|trasferit[oae]) (?:la|il|i|le) (?:fermat|pontil|capolinea)/],
+  ['delays', 'Ritardi', 'warning', /\b(?:ritard\w*|rallentament\w*|traffico intenso|code)\b/],
+  ['reduced', 'Servizio ridotto', 'warning', /\b(?:ridott[oaie]|limitat[oaie]|riduzion\w*|frequenz\w* ridott\w*)\b/],
+  ['additional', 'Servizio aggiuntivo', 'info', /\b(?:potenziat\w*|aggiuntiv[oaie]|corse supplementari|rinforz\w*)\b/],
+  ['modified', 'Servizio modificato', 'info', /\b(?:modific\w*|variazion\w*|nuovi orari|orari)\b/]
+];
+function classify(it) {
+  if (it.resolved) return { effect: 'resolved', effectLabel: 'Risolto', severity: 'info' };
+  const s = noAccents((it.title + ' ' + String(it.text).slice(0, 400)).toLowerCase());
+  if (it.water) { const lv = it.water.level; return { effect: 'water', effectLabel: 'Acqua alta', severity: lv > 140 ? 'severe' : 'warning' }; }
+  const e = EFFECTS.find(([, , , re]) => re.test(s)) || ['other', 'Avviso', 'warning'];
+  return { effect: e[0], effectLabel: e[1], severity: it.general && e[2] !== 'severe' ? 'info' : e[2] };
+}
+const SEV = { severe: 0, warning: 1, info: 2 };
 
 // Elenco finale: unisce le due fonti (un messaggio Telegram che rimanda a una notizia ACTV è la stessa cosa), calcola validità, linee, fermate
 function build(now = Date.now()) {
@@ -528,9 +558,9 @@ function build(now = Date.now()) {
     if (it.drop || it.to < now - KEEP_EXPIRED_MS) continue;                 // unito a un altro, sostituito, chiuso o scaduto
     const state = it.from <= now ? 'active' : it.from - now <= UPCOMING_MS ? 'upcoming' : null;
     if (!state) continue;                                                   // troppo lontano nel tempo
-    const { drop, words, ...pub } = it; out.push({ ...pub, state });
+    const { drop, words, ...pub } = it; out.push({ ...pub, ...classify(it), state });
   }
-  out.sort((a, b) => (a.state === b.state ? 0 : a.state === 'active' ? -1 : 1) || b.published - a.published);
+  out.sort((a, b) => (a.state === b.state ? 0 : a.state === 'active' ? -1 : 1) || SEV[a.severity] - SEV[b.severity] || b.published - a.published);
   return out.slice(0, 40);
 }
 
@@ -548,4 +578,4 @@ function start() {
 }
 // per i test
 function _load({ rss = [], tg = [], pages = {} } = {}) { ST.rss = rss; ST.tg = tg; ST.pages = new Map(Object.entries(pages)); ST.rssOk = ST.tgOk = Date.now(); }
-module.exports = { setTideSource, planForLevel, autoWater, analyze, waterLevel, waterPlan, stopMentions, start, getAvvisi, setContext, parseRss, parseTelegram, parseValidity, articleText, toText, safeUrl, norm, build, _load, refreshRss, refreshTg };
+module.exports = { classify, setTideSource, planForLevel, autoWater, analyze, waterLevel, waterPlan, stopMentions, start, getAvvisi, setContext, parseRss, parseTelegram, parseValidity, articleText, toText, safeUrl, norm, build, _load, refreshRss, refreshTg };

@@ -1,16 +1,29 @@
 # Venezia TPL live
 
 Mappa in tempo reale di autobus, tram e battelli ACTV (GTFS statico + GTFS-Realtime), con marea, installabile come app (PWA).
-Server Node.js senza database; pensato per il piano gratuito di Render.
+Server Node.js senza database: gira su un hosting (es. piano gratuito di Render) **oppure sul tuo computer, senza nessun sito esterno** (vedi 1.0).
 
 ---
 
 ## 1. Operazioni da fare (in ordine)
 
+### 1.0 Uso in locale, senza hosting (computer di casa o dell'ufficio)
+L'app è un unico programma Node.js: il computer scarica da solo i dati ACTV (GTFS e realtime), la marea e gli avvisi, e serve la pagina ai dispositivi.
+1. Installa **Node.js 22 LTS** da https://nodejs.org (una volta sola).
+2. Scarica/estrai il progetto in una cartella (con la sottocartella `data/` se ce l'hai: contiene i GTFS già scaricati; senza, li scarica al primo avvio).
+3. Avvio con doppio clic: **Windows** `avvia-windows.bat` · **macOS** `avvia.command` · **Linux** `./avvia.sh`. Al primo avvio installa le librerie (serve internet), poi apre il browser su `http://localhost:3000`. Se l'app si ferma per un errore, lo script la riavvia dopo 5 s.
+4. Dagli altri dispositivi della **stessa rete** (telefono in Wi-Fi): la finestra dello script mostra l'indirizzo, es. `http://192.168.1.20:3000`. Il computer deve restare acceso e il firewall deve consentire Node.js sulle reti private (Windows lo chiede al primo avvio: «Consenti»).
+5. **HTTPS in rete di casa** (necessario sui telefoni per posizione GPS, notifiche e installazione come app, che i browser concedono solo su HTTPS o su `localhost`):
+   - installa mkcert (https://github.com/FiloSottile/mkcert), poi nella cartella del progetto: `mkcert -install` e `mkcert -cert-file certs/cert.pem -key-file certs/key.pem 192.168.1.20 localhost` (usa il tuo indirizzo);
+   - copia `.env.local.esempio` come `.env.local` e attiva `TLS_CERT=certs/cert.pem` e `TLS_KEY=certs/key.pem`;
+   - sul telefono installa il certificato radice di mkcert (`mkcert -CAROOT` mostra dove si trova) e apri `https://192.168.1.20:3000`.
+6. Impostazioni locali (porta, solo questo computer con `HOST=127.0.0.1`, chiavi delle notifiche): file `.env.local` (modello in `.env.local.esempio`, **mai** da pubblicare).
+7. Fuori casa l'app in locale non è raggiungibile (scelta voluta: niente esposizione su internet). Per usarla ovunque serve un hosting (1.1-1.3).
+
 ### 1.1 Prima installazione o dopo aver sostituito i file
 1. Copia tutti i file di questo progetto nel repository (la cartella `data/` esistente **resta com'è**: contiene i GTFS già scaricati).
 2. `npm install` — **obbligatorio**: Leaflet ora è una dipendenza npm (serve in locale da `/vendor/leaflet`, non più da unpkg) e `package-lock.json` va rigenerato. Fai commit anche di `package-lock.json`.
-3. `npm test` — deve passare tutto (51 test).
+3. `npm test` — deve passare tutto (65 test).
 4. `npm start`, apri `http://localhost:3000`.
 
 ### 1.2 Variabili d'ambiente su Render (Dashboard → Environment)
@@ -21,7 +34,9 @@ Server Node.js senza database; pensato per il piano gratuito di Render.
 | `TRUST_PROXY` | `1` (Render lo imposta da solo se c'è `RENDER`) | numero di proxy fidati davanti al server: serve a leggere l'IP vero del visitatore per i limiti di frequenza. Se il server fosse esposto senza proxy: `0` |
 | `FORCE_HTTPS` | `1` (consigliato in produzione) | reindirizza HTTP→HTTPS e attiva HSTS |
 | `KEEPALIVE_URL` | `https://<tuo-servizio>.onrender.com/healthz` (opzionale) | il server si "autopinga"; di solito `RENDER_EXTERNAL_URL` basta |
-| `RT_POLL_MS` | opzionale, default 3000 | intervallo di lettura dei feed realtime |
+| `RT_POLL_MS` | opzionale, default 5000 (minimo 3000) | intervallo massimo di lettura dei feed realtime: il server segue il ritmo di pubblicazione ACTV senza scendere sotto 3 s |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | da `node scripts/vapid-keys.js` | chiavi delle notifiche di arrivo (vedi 5) |
+| `PUSH_CONTACT` | `mailto:tuo@indirizzo` (facoltativo) | contatto per i servizi di notifica |
 | `PORT` | gestita da Render | |
 
 Usa i token così (mai nell'URL, mai nel browser): `curl -H "Authorization: Bearer $DIAG_TOKEN" https://…/api/gtfs`.
@@ -32,7 +47,7 @@ Usa i token così (mai nell'URL, mai nel browser): `curl -H "Authorization: Bear
 - Dopo il commit Render ridistribuisce da solo.
 
 ### 1.4 Dopo ogni modifica ai file dell'interfaccia
-Se cambi icone, manifest o l'elenco `SHELL` di `public/sw.js`, incrementa `VERSION` in `public/sw.js` (ora `v3`). I file `/js` e `/css` si aggiornano da soli (rete prima).
+Se cambi icone, manifest o l'elenco `SHELL` di `public/sw.js`, incrementa `VERSION` in `public/sw.js` (ora `v16`). I file `/js` e `/css` si aggiornano da soli (rete prima).
 
 ### 1.5 Dove salvare simboli e immagini
 - **Simboli dell'interfaccia** (battello, bus, tram, lente, ecc.): *tutti* in `public/icons/sprite.svg`, un `<symbol id="i-nome">` ciascuno (24×24, tratto 1.75, `currentColor`). Nel codice si usano con `icon('nome')` (in `public/js/util.js`); in `index.html` con `<svg class="ic"><use href="/icons/sprite.svg#i-nome"/></svg>`. **Non usare emoji**: cambiano da sistema a sistema.
@@ -145,6 +160,17 @@ Il feed toglie la fermata appena il mezzo arriva e indicherebbe già la successi
   - *Fili*: un messaggio più recente sullo stesso argomento sostituisce il precedente («aggiornato», eredita il periodo); «ripristinato / servizio regolare / terminata» chiude i precedenti collegati e resta 1 ora come «Risolto»; un messaggio Telegram uguale a una notizia del sito si unisce. Gli avvisi programmati di più giorni si toccano solo con testo molto simile. Titoli Telegram senza hashtag/emoji; esclusi i messaggi di servizio («pinned a photo»).
 - **Marea**: triangolo cliccabile accanto alle maree (attuale o previste) oltre 85 cm: apre l'avviso di acqua alta (ufficiale o calcolato).
 - **Filtri delle fermate**: quadrati da 32 px (sopra il minimo di accessibilità di 24 px); invariati quelli piccoli nelle righe delle corse.
+- **Corsa verificata** (v16, `assign.js`): se il mezzo trasmette una corsa incoerente (es. «100 min di ritardo» mentre fa, quasi in orario, la corsa successiva della linea) la si riconosce confrontando posizione GPS lungo il percorso e orari di tutte le corse della linea attive adesso; prima candidata quella che il trip update ACTV associa al mezzo. Cambio solo con prove ripetute (2 rilevamenti per la candidata ACTV, 3 per quella trovata dal GPS) e differenza netta (≥ 12 min o corsa dichiarata fuori percorso); un ritardo vero non viene toccato; al capolinea l'attesa è normale; se il feed cambia corsa si torna al feed. La corsa abbandonata perde il ritardo "finto" del suo trip update. Nel pannello del mezzo: «Corsa riconosciuta da posizione e orario: il mezzo trasmetteva la corsa delle HH:MM».
+- **Fermate mai superate per errore** (v16, `tracker.js`): senza GPS fresco la fermata corrente avanza con l'orario + l'ultimo ritardo stimato (non il solo orario) e mai oltre il punto raggiungibile dall'ultima posizione certa (15 m/s); con il GPS che torna, l'autocorrezione riporta indietro le fermate date per superate.
+- **Più utenti insieme**: una sola lettura dei feed per tutti; elenco mezzi calcolato una volta per stato e condiviso (ETag, risposta 304 senza dati a chi l'ha già); pannelli fermata/zona identici entro 1,5 s calcolati una volta; limiti per IP e per connessioni in tempo reale.
+- **Velocità**: il feed ACTV non trasmette la velocità; quella mostrata è **stimata** dalle posizioni ed è indicata come tale («≈ 25 km/h (stimata)»).
+- **Notifiche v15**: campanella su ogni passaggio del pannello fermata (avviso di QUELLA corsa a QUELLA fermata) e nel pannello della corsa; niente emoji: titolo «Linea 80 → Martellago», immagine = mattonella (bus/tram) o cerchio (battelli) della linea con i suoi colori, disegnata dal service worker; icona della barra di stato = simbolo stilizzato del servizio (stessi tracciati di `sprite.svg`). Con l'app in primo piano nessuna notifica di sistema: avviso dentro l'app. Push con `TTL` pari alla validità del messaggio e `Topic` per corsa (offline: arriva solo l'ultimo stato); `pushsubscriptionchange` rinnova l'iscrizione senza perdere gli avvisi.
+- **Avvisi: effetto e gravità** (modello GTFS-Realtime `effect`/`severity_level`): Sospeso (grave), Deviazione, Fermata spostata, Ritardi, Servizio ridotto, Sciopero, Acqua alta (attenzione), Servizio aggiuntivo/modificato, Risolto, avvisi di rete (informativi). Etichetta colorata su schede e righe; elenco ordinato per gravità; il triangolo su mappa, titoli e righe solo per grave/attenzione.
+- **Preferiti** (v14, `public/js/fav.js`): stella ☆ nel pannello di una fermata o zona; l'elenco compare aprendo la ricerca (campo vuoto). Salvati nella memoria del browser per questo sito (`localStorage`, formato versionato) con richiesta di memoria persistente: restano dopo aggiornamenti dell'app e riavvii; si perdono solo cancellando i dati del sito o cambiando indirizzo.
+- **Avviso di arrivo** (v14, `push.js`, `watch.js`, `public/js/notify.js`, `public/sw.js`): nella corsa aperta da una fermata, campanella 🔔 → «2 / 5 / 10 / 15 min prima». Notifiche di sistema (Web Push standard, cifrate RFC 8291 e firmate VAPID) anche ad app chiusa; pochi messaggi ponderati, tutti con lo stesso tag (si sostituiscono): conferma silenziosa, variazioni di ritardo ≥ 3 min (silenziose, max una ogni 4 min), preavviso con suono, «in arrivo ora», soppressione/fermata saltata; azione «Non avvisarmi più»; tocco = apre la corsa. Suoni, vibrazione e «non disturbare» seguono le impostazioni del telefono. Senza Web Push (iPhone senza app installata, navigazione privata) l'avviso funziona finché l'app resta aperta. Su iPhone: installare l'app (Condividi → Aggiungi alla schermata Home).
+  - Chiavi: `node scripts/vapid-keys.js` e copiare `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` nelle variabili d'ambiente (facoltativo `PUSH_CONTACT=mailto:…`). Senza, si usano chiavi temporanee: dopo un riavvio del server le iscrizioni vanno rifatte.
+  - Limiti: 6 avvisi per IP, 1000 in tutto, durata massima 3 ore; solo servizi di notifica noti (Google, Mozilla, Apple, Microsoft) in HTTPS.
+- **Avvisi finiti** (v14): chiusure anche isolate («ripristinato», «riaperta», «nebbia diradata», revoca/rinvio dello sciopero) = «Risolto» per 1 ora e chiusura dei precedenti collegati; avvisi ufficiali di acqua alta senza date chiusi quando la marea misurata torna sotto 85 cm senza nuovi picchi previsti; «fino alle 23.00» senza data = oggi a quell'ora.
 - **Acqua alta: tre fonti insieme** (v13): livello misurato, picco previsto (12 h) e avviso ufficiale; vale il più alto e il piano ACTV si applica a quel livello. Con un avviso ufficiale che indica il livello resta solo quello, completato con misura, previsione e piano; se l'avviso ufficiale parla di acqua alta senza livello, l'avviso calcolato compare come «confermato» con il link al messaggio.
 - **Avviso acqua alta automatico**: se ACTV/Telegram non pubblicano nulla, con marea misurata o prevista (prossime 12 h) oltre 85 cm compare un avviso «Calcolato dal livello di marea» con il piano ACTV per quel livello (stessa tabella `AA_RULES`). Se esiste già un avviso ufficiale con piano acqua alta, l'automatico non compare e quello ufficiale mostra il livello misurato come conferma.
 - **Prestazioni**: la lettura dei GTFS cede il passo ogni ~8 ms; `/api/stop` e `/api/zone` identiche entro 1,5 s condividono un solo calcolo.
@@ -168,11 +194,15 @@ tide.js, avvisi.js, feedaudit.js  marea / avvisi di servizio / verifica del feed
 scripts/update-gtfs.js   aggiornamento archivio (usato dal workflow)
 public/index.html (solo struttura) · css/app.css · js/{app,util,zones,tide,avvisi,pwa,theme-init}.js · icons/ · sw.js · manifest.webmanifest
 public/js/locate.js  GPS e stati del pulsante
+public/js/fav.js     preferiti                     public/js/notify.js  avviso di arrivo (client)
+push.js          Web Push (cifratura, VAPID)    watch.js      regole e invio degli avvisi di arrivo
+assign.js        verifica della corsa dichiarata dal mezzo        env.js   impostazioni locali (.env.local)
+avvia-windows.bat / avvia.sh / avvia.command   avvio in locale con un doppio clic
 tests/           test unitari (node --test) e prove dell'interfaccia (tests/ui)
 ```
 
 ## 7. Test
-- `npm test` — 51 test (tracker, orari, archivio GTFS, sicurezza, marea, avvisi).
+- `npm test` — 58 test (tracker, orari, archivio GTFS, sicurezza, marea, avvisi).
 - Simulazione completa: `node -r ./tests/fakefeed.js server.js` (feed finto costruito dalle corse in servizio adesso, con fantasmi e rilevamenti vecchi).
 - Interfaccia: con quel server avviato (`TRUST_PROXY=1`), `python3 tests/ui/run.py http://localhost:3000 <cartella>` (Playwright; usa un Leaflet finto in `tests/ui/leaflet-stub.js`): 6 formati di schermo, X, indietro, segui, dock, nessuno script in linea.
 

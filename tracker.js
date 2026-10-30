@@ -133,7 +133,7 @@ function update(x) {
   // 1) FEED / ORARIO: prima fermata attesa
   let feedCur;
   if (lv && lv.firstJ >= 0) { feedCur = lv.firstJ; while (feedCur < n - 1 && tNow - (at(feedCur) + dly(feedCur)) > C.STALE_S) feedCur++; }
-  else { feedCur = 0; while (feedCur < n && at(feedCur) <= tNow) feedCur++; }
+  else { const d0 = clamp(vs.delay ?? 0, -120, 4 * 3600); feedCur = 0; while (feedCur < n && at(feedCur) + d0 <= tNow) feedCur++; }   // senza feed: orario + ultimo ritardo stimato (non il solo orario)
 
   // 2) GPS: posizione lungo il tracciato, velocità lisciata (sp, per le stime) e istantanea (vi, per le ripartenze)
   const sp = veh && Number.isFinite(veh.speed) ? veh.speed : null;
@@ -141,8 +141,23 @@ function update(x) {
   const fresh = !!veh && Number.isFinite(veh.lat) && !(veh.ageS != null && veh.ageS * 1000 > C.FRESH_MS);   // età misurata col nostro orologio
   const offs = fresh ? stopOffsets(G, trip, st) : null;
   let sv = null, lateral = null;
-  if (offs) { const pr = project(shapeInfo(G, trip.shape), veh.lat, veh.lon, vs.sMax ?? null); if (pr && pr.lat <= C.OFFROUTE_M) { sv = pr.s; lateral = pr.lat; } }
-  if (sv != null && veh.ts !== vs.curTs) { vs.prevS = vs.curS ?? null; vs.curS = sv; vs.curTs = veh.ts; }   // nuovo rilevamento
+  if (offs) {
+    const sh = shapeInfo(G, trip.shape), pr = project(sh, veh.lat, veh.lon, vs.sMax ?? null);
+    if (pr && pr.lat <= C.OFFROUTE_M) { sv = pr.s; lateral = pr.lat; }
+    // AUTOCORREZIONE DELLA POSIZIONE SUL TRACCIATO. La ricerca "vicino all'ultima posizione" può agganciare il tratto sbagliato dove il percorso
+    // si sovrappone (andata/ritorno sulla stessa strada, anelli) o dopo un salto del GPS. Si calcola anche la posizione senza vincoli: se è
+    // altrettanto vicina alla linea e molto più coerente con il ritardo atteso (feed o ultima stima) per 3 rilevamenti nuovi di fila, diventa quella buona.
+    if (vs.sMax != null) {
+      const full = project(sh, veh.lat, veh.lon, null);
+      if (full && full.lat <= C.OFFROUTE_M && (sv == null || Math.abs(full.s - sv) > 300)) {
+        const exp = lv?.delays?.[Math.min(n - 1, vs.cur ?? 0)] ?? vs.delay ?? 0, dOf = s => tNow - schedAt(offs, st, s);
+        const better = full.lat <= (lateral ?? Infinity) + 15 && (sv == null || Math.abs(dOf(full.s) - exp) + 90 < Math.abs(dOf(sv) - exp));
+        if (better) { if (veh.ts !== vs.altTs) { vs.altTs = veh.ts; vs.altN = (vs.altN || 0) + 1; } } else vs.altN = 0;
+        if (vs.altN >= 3) { sv = full.s; lateral = full.lat; vs.sMax = full.s; vs.altN = 0; vs.curS = null; }
+      } else vs.altN = 0;
+    }
+  }
+  if (sv != null && veh.ts !== vs.curTs) { vs.prevS = vs.curS ?? null; vs.curS = sv; vs.curTs = veh.ts; vs.curAt = nowMs; }   // nuovo rilevamento
   const adv = sv != null && vs.prevS != null ? sv - vs.prevS : 0;                                        // avanzamento (m) fra gli ultimi due rilevamenti
   const delayGps = sv != null ? tNow - schedAt(offs, st, sv) : null;                                    // ritardo misurato dal GPS (s)
   if (sp != null && sp >= C.MOVE) vs.moveSince ??= nowMs; else vs.moveSince = null;
@@ -166,8 +181,9 @@ function update(x) {
       if (!gone) break; pc++;
     }
     cur = Math.max(prevCur, pc);
-    // il feed più avanti di 2+ fermate mentre il bus corre = proiezione GPS dubbia (percorsi sovrapposti): ci si fida del feed
-    if (lv && feedCur - pc >= 2 && (sp == null || sp >= C.MOVE)) { cur = Math.max(prevCur, feedCur); src = 'feed'; }   // solo con un vero feed (non con l'orario)
+    // il feed più avanti di 2+ fermate mentre il bus corre = proiezione GPS dubbia (percorsi sovrapposti): ci si fida del feed,
+    // MA non quando il GPS è affidabile (sulla linea da 3+ rilevamenti, laterale < 40 m): lì è il feed a essere indietro di aggiornamento o sbagliato
+    if (lv && feedCur - pc >= 2 && (sp == null || sp >= C.MOVE) && !((vs.gpsOk || 0) >= 3 && lateral < 40) && !(vs.fixAt && nowMs - vs.fixAt < 300000)) { cur = Math.max(prevCur, feedCur); src = 'feed'; }
   }
   // d) dichiarazione del mezzo: vale solo se coerente col GPS (o senza GPS) e mai mentre il mezzo è ancora fermo in fermata
   const stillHere = heldK === cur && (vi ?? 0) < C.STILL;
@@ -183,6 +199,27 @@ function update(x) {
     if (tNow < planned) cur = heldK;
   }
   cur = clamp(cur, 0, n);
+  // LIMITE DI RAGGIUNGIBILITÀ. Senza GPS fresco (rilevamenti in ritardo, galleria, mezzo che non trasmette) feed e orario potrebbero
+  // segnare come superate fermate che il mezzo non può aver raggiunto: dall'ultima posizione certa, a 15 m/s al massimo (54 km/h),
+  // non si va oltre. Appena torna il GPS vale la posizione vera (e, se serve, l'autocorrezione qui sotto).
+  if (sv == null && vs.curS != null && vs.curAt && nowMs - vs.curAt < 900000 && cur > prevCur) {
+    const og = stopOffsets(G, trip, st);
+    if (og) { const reach = vs.curS + (nowMs - vs.curAt) / 1000 * 15; while (cur > prevCur && og[cur - 1] > reach + C.PASS_M) cur--; }
+  }
+  // AUTOCORREZIONE DELLE FERMATE "SUPERATE". La fermata corrente di norma non torna indietro; ma se il GPS (fresco, sulla linea) dice per 2
+  // rilevamenti nuovi di fila che il mezzo è ancora PRIMA dell'ultima fermata data per lasciata (oltre 120 m), quelle fermate non sono state
+  // superate davvero (feed avanti, dichiarazione del mezzo, aggancio sbagliato): si torna alla prima fermata davanti al mezzo e si cancellano
+  // le partenze registrate da lì in poi. Il mezzo resta sul suo percorso, le fermate tornano "in arrivo".
+  if (sv != null) { if (lateral <= 40) { if (veh.ts !== vs.okTs) { vs.okTs = veh.ts; vs.gpsOk = (vs.gpsOk || 0) + 1; } } else vs.gpsOk = 0; }
+  if (sv != null && lateral <= 60 && cur > 0) {
+    const behind = offs[Math.min(cur, n) - 1] - sv;
+    if (behind > 120) { if (veh.ts !== vs.backTs) { vs.backTs = veh.ts; vs.backN = (vs.backN || 0) + 1; } } else vs.backN = 0;
+    if (vs.backN >= 2) {
+      let k = 0; while (k < n - 1 && offs[k] + C.PASS_M < sv) k++;
+      if (k < cur) { cur = k; src = 'gps-fix'; if (vs.dep) for (const j of Object.keys(vs.dep)) if (+j >= k) delete vs.dep[j]; vs.at = null; vs.sMax = sv; vs.fixes = (vs.fixes || 0) + 1; vs.fixAt = nowMs; }
+      vs.backN = 0;
+    }
+  } else if (sv == null) vs.backN = 0;
   const changed = cur !== prevCur;
   if (changed) { vs.at = null; vs.stage = 0; }
 

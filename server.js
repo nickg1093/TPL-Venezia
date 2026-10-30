@@ -1,4 +1,5 @@
 // SERVER WEB. Instrada le richieste, applica la sicurezza (security.js) e serve la pagina; tutta la logica dei mezzi è in live.js.
+require('./env');   // impostazioni locali facoltative (.env.local), prima di tutto il resto
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -9,6 +10,7 @@ const schedule = require('./schedule');
 const gtfs = require('./gtfs');
 const tide = require('./tide');
 const avvisi = require('./avvisi');
+const watch = require('./watch');
 const sec = require('./security');
 const { equivalentStops } = require('./stopgroups');
 const { audit } = require('./feedaudit');
@@ -43,7 +45,7 @@ const byExpected = (a, b) => (a.expSec - b.expSec) || (a.schedIn - b.schedIn);
 const labelsOf = i => new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
 
 // Dati del veicolo esposti al pubblico: solo ciò che serve alla mappa (niente stati interni)
-const PUBLIC_VEH = ['id', 'src', 'label', 'lat', 'lon', 'bearing', 'speed', 'line', 'color', 'tripId', 'routeId', 'headsign', 'key', 'ts', 'old', 'sim', 'co', 'dup', 'dupWith', 'path'];
+const PUBLIC_VEH = ['id', 'src', 'label', 'lat', 'lon', 'bearing', 'speed', 'line', 'color', 'tripId', 'routeId', 'headsign', 'key', 'ts', 'old', 'sim', 'co', 'dup', 'dupWith', 'path', 'reassigned'];
 const publicVehicle = v => { const o = {}; for (const k of PUBLIC_VEH) if (v[k] !== undefined && v[k] !== null && v[k] !== false) o[k] = v[k]; if (o.speed != null) o.speed = +o.speed.toFixed(1); return o; };
 
 // marea con cache breve: più utenti = una sola richiesta al portale
@@ -76,9 +78,28 @@ function departuresFor(fulls, u) {
   return { out: out.sort(byExpected), note, liveUpdated };
 }
 
+// corpo JSON delle richieste POST: piccolo, solo application/json, solo dallo stesso sito (niente moduli da altri siti)
+function readJson(req, max = 4096) {
+  return new Promise((ok, ko) => {
+    if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) return ko(sec.bad('formato non valido'));
+    const o = req.headers.origin; if (o && new URL(o).host !== req.headers.host) return ko(fail(403, 'origine non ammessa'));
+    let n = 0; const parts = [];
+    req.on('data', c => { n += c.length; if (n > max) { ko(fail(413, 'richiesta troppo grande')); req.destroy(); } else parts.push(c); });
+    req.on('end', () => { try { ok(JSON.parse(Buffer.concat(parts).toString('utf8') || '{}')); } catch { ko(sec.bad('JSON non valido')); } });
+    req.on('error', ko);
+  });
+}
+// aspetto della mattonella/cerchio della linea per l'immagine della notifica: solo colori #RRGGBB e due forme
+const validStyle = st => {
+  const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
+  return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
+};
+const POSTS = new Set(['/api/reload-gtfs', '/api/watch', '/api/watch/cancel', '/api/watch/resub']);
+
 // ---- ROUTE API ----  auth: 'diag' | 'admin' | undefined;  method: 'POST' solo per azioni che modificano lo stato
 const API = new Map(Object.entries({
-  '/api/vehicles': { fn: u => {
+  // risposta CONDIVISA: calcolata una volta per stato del feed e servizi scelti, poi riusata per tutti (ETag: 304 a chi l'ha già)
+  '/api/vehicles': { shared: u => wanted(u).map(i => `${i}:${S[i].updated}:${S[i].error ? 1 : 0}`).join('|') + '|' + live.version(), fn: u => {
     const list = wanted(u), errors = list.map(i => S[i].error).filter(Boolean), now = Date.now();
     return { updated: Math.max(0, ...list.map(i => S[i].updated)), feedTs: Math.max(0, ...list.map(i => S[i].feedTs || 0)) || null,
       error: errors.join('; ') || null, version: live.version(), ready, sim: list.filter(i => S[i].sim),
@@ -125,6 +146,26 @@ const API = new Map(Object.entries({
     const { out, note, liveUpdated } = departuresFor(list, u);
     return { liveUpdated, note, departures: out.slice(0, 300) };
   } },
+  // AVVISI DI ARRIVO (notifiche): chiave pubblica, attivazione, annullamento, messaggi per i dispositivi senza Web Push
+  '/api/push-key': { fn: () => ({ key: watch.publicKey() }) },
+  '/api/watch': { method: 'POST', limit: 'watch', fn: async (u, req) => {
+    const b = await readJson(req);
+    const t = sec.vFullId(b.trip, IDS), st = sec.vFullId(b.stop, IDS), lead = Math.round(+b.lead);
+    if (!t || !st || t[0] !== st[0] || !(lead >= 1 && lead <= 30)) throw sec.bad('parametri non validi');
+    const G = D[t[0]], seq = G.stopTimes.get(t[1]);
+    if (!seq || !seq.s.includes(st[1])) throw fail(404, 'corsa o fermata sconosciuta');
+    if (b.sub != null && !require('./push').validSub(b.sub)) throw sec.bad('iscrizione alle notifiche non valida');
+    const url = `/?trip=${encodeURIComponent(b.trip)}&stop=${encodeURIComponent(b.stop)}`;
+    return watch.create({ sub: b.sub ? { endpoint: b.sub.endpoint, keys: { p256dh: b.sub.keys.p256dh, auth: b.sub.keys.auth } } : null, src: t[0], tid: t[1], stop: b.stop,
+      style: validStyle(b.style), stopName: typeof b.stopName === 'string' && b.stopName.trim() && b.stopName.length <= 80 ? b.stopName.replace(/[\u0000-\u001f<>]/g, '').trim() : (G.stopBaseNames?.get(st[1]) || G.stops[st[1]] || st[1]), lead, ip: sec.clientIp(req), url });
+  } },
+  '/api/watch/resub': { method: 'POST', limit: 'watch', fn: async (u, req) => {
+    const b = await readJson(req), P = require('./push');
+    if (typeof b.old !== 'string' || !P.validSub(b.sub)) throw sec.bad('parametri non validi');
+    return { updated: watch.resubscribe(b.old, { endpoint: b.sub.endpoint, keys: { p256dh: b.sub.keys.p256dh, auth: b.sub.keys.auth } }) };
+  } },
+  '/api/watch/cancel': { method: 'POST', limit: 'watch', fn: async (u, req) => { const b = await readJson(req); return { ok: watch.cancel(String(b.id || ''), String(b.token || '')) }; } },
+  '/api/watch/poll': { fn: u => { const r = watch.poll(q(u, 'id') || '', q(u, 'token') || ''); if (!r) throw fail(404, 'avviso non attivo'); return r; } },
   '/api/trip': { fn: u => {
     const [i, tid] = fullId(u, 'id'), veh = q(u, 'veh');
     if (!sec.vVeh(veh)) throw sec.bad('parametro veh non valido');
@@ -167,7 +208,7 @@ const API = new Map(Object.entries({
   } }
 }));
 
-const respCache = new Map();
+const respCache = new Map(), sharedCache = new Map();
 // ---- risposte ----
 function send(req, res, obj, code = 200, extra = {}) {
   const body = Buffer.from(typeof obj === 'string' ? obj : JSON.stringify(obj));
@@ -225,7 +266,7 @@ async function onRequest(req, res) {
   const p = u.pathname;
   if (sec.httpsRedirect(req, res, p)) return;
   if (p === '/healthz') return text(res, 200, 'ok');
-  if (req.method !== 'GET' && req.method !== 'HEAD' && !(req.method === 'POST' && p === '/api/reload-gtfs')) return text(res, 405, 'Metodo non consentito', { Allow: 'GET, HEAD' });
+  if (req.method !== 'GET' && req.method !== 'HEAD' && !(req.method === 'POST' && POSTS.has(p))) return text(res, 405, 'Metodo non consentito', { Allow: 'GET, HEAD' });
 
   const wait = sec.limit(req, sec.classOf(p));
   if (wait) return text(res, 429, 'Troppe richieste', { 'Retry-After': String(wait) });
@@ -242,6 +283,7 @@ async function onRequest(req, res) {
   const api = API.get(p);
   if (api) {
     if ((api.method || 'GET') !== req.method && !(req.method === 'HEAD' && !api.method)) return text(res, 405, 'Metodo non consentito', { Allow: api.method || 'GET, HEAD' });
+    if (api.limit) { const w = sec.limit(req, api.limit); if (w) return text(res, 429, 'Troppe richieste', { 'Retry-After': String(w) }); }
     if (api.auth) {
       if (sec.limit(req, 'admin')) return text(res, 429, 'Troppi tentativi', { 'Retry-After': '60' });
       if (!sec.tokenOk(req, api.auth === 'admin' ? ADMIN_TOKEN : DIAG_TOKEN)) return text(res, 401, 'Non autorizzato', { 'WWW-Authenticate': 'Bearer' });
@@ -250,6 +292,15 @@ async function onRequest(req, res) {
       u._req = req;
       if (api.raw) return api.raw(u, req, res);
       // risposte di /api/stop e /api/zone: stessa richiesta (stessa fermata/zona, stessa ora) nello stesso secondo e mezzo = un solo calcolo, anche con molti utenti
+      if (api.shared) {
+        const ck = p + '?' + (q(u, 'src') || ''), k = api.shared(u), hit = sharedCache.get(ck);
+        let ent = hit && hit.k === k ? hit : null;
+        if (!ent) { const body = Buffer.from(JSON.stringify(await api.fn(u, req))); ent = { k, body, gz: zlib.gzipSync(body, { level: 6 }), etag: '"' + crypto.createHash('md5').update(body).digest('hex').slice(0, 16) + '"' }; if (sharedCache.size > 20) sharedCache.clear(); sharedCache.set(ck, ent); }
+        if (req.headers['if-none-match'] === ent.etag) { res.writeHead(304, { ETag: ent.etag, 'Cache-Control': 'no-cache' }); return res.end(); }
+        const gz = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-cache', ETag: ent.etag, Vary: 'Accept-Encoding', ...(gz ? { 'Content-Encoding': 'gzip' } : {}) });
+        return res.end(req.method === 'HEAD' ? undefined : gz ? ent.gz : ent.body);
+      }
       if (api.cache) { const k = req.url, hit = respCache.get(k), now = Date.now(); if (hit && now - hit.t < 1500) return send(req, res, await hit.p); const p = Promise.resolve().then(() => api.fn(u, req)); respCache.set(k, { t: now, p }); p.catch(() => respCache.delete(k)); if (respCache.size > 200) for (const [kk, v] of respCache) if (now - v.t >= 1500) respCache.delete(kk); return send(req, res, await p); }
       send(req, res, await api.fn(u, req));
     } catch (e) {
@@ -268,9 +319,27 @@ async function onRequest(req, res) {
   return page ? serveStatic(req, res, page) : text(res, 500, 'public/index.html mancante');
 }
 
-const server = http.createServer((req, res) => { onRequest(req, res).catch(e => { console.error('richiesta:', e.stack || e.message); if (!res.headersSent) text(res, 500, 'Errore interno'); else res.end(); }); });
+// AVVIO DEL SERVER WEB. Funziona uguale su un hosting (Render) e su un computer di casa:
+//  · HOST: indirizzo di ascolto (predefinito 0.0.0.0 = raggiungibile dagli altri dispositivi della stessa rete; 127.0.0.1 = solo questo computer);
+//  · TLS_CERT + TLS_KEY (file PEM, es. creati con mkcert): HTTPS diretto, necessario sui telefoni per posizione, notifiche e installazione
+//    quando si apre l'app con l'indirizzo del computer (su "localhost" il browser lo consente anche senza HTTPS).
+const HOST = process.env.HOST || '0.0.0.0';
+const handler = (req, res) => { onRequest(req, res).catch(e => { console.error('richiesta:', e.stack || e.message); if (!res.headersSent) text(res, 500, 'Errore interno'); else res.end(); }); };
+let server, scheme = 'http';
+if (process.env.TLS_CERT && process.env.TLS_KEY) {
+  try { server = require('https').createServer({ cert: fs.readFileSync(process.env.TLS_CERT), key: fs.readFileSync(process.env.TLS_KEY) }, handler); scheme = 'https'; }
+  catch (e) { console.error('HTTPS non attivato (certificato o chiave non leggibili):', e.message); }
+}
+server ||= http.createServer(handler);
 server.headersTimeout = 15000; server.requestTimeout = 30000; server.keepAliveTimeout = 5000; server.maxHeadersCount = 60;   // protezione da connessioni lente (slowloris)
-server.listen(PORT, () => console.log(`http://localhost:${PORT}`));
+server.on('error', e => { console.error(e.code === 'EADDRINUSE' ? `La porta ${PORT} è già in uso: chiudi l'altra copia dell'app o imposta PORT con un altro numero.` : 'server: ' + e.message); process.exit(1); });
+server.listen(PORT, HOST, () => {
+  console.log(`App avviata: ${scheme}://localhost:${PORT}`);
+  if (HOST === '0.0.0.0' || HOST === '::') {
+    const addrs = Object.values(require('os').networkInterfaces()).flat().filter(a => a && a.family === 'IPv4' && !a.internal).map(a => `${scheme}://${a.address}:${PORT}`);
+    if (addrs.length) console.log('Dagli altri dispositivi della stessa rete: ' + addrs.join('  '));
+  }
+});
 
 // ---- AVVIO ----
 live.startLoops();
@@ -306,6 +375,7 @@ avvisi.setContext(() => {
   return (avCtx = { v: live.version(), known, byName, lineStops, nameOf: id => names.get(id) || id });
 });
 avvisi.setTideSource(() => tide.snapshot());
+watch.init({ tripDetail: (i, tid) => live.tripDetail(i, tid, true), contact: process.env.PUSH_CONTACT });
 avvisi.start();
 tide.start();   // raccolta periodica del livello di marea: costruisce la storia da cui si ricava la tendenza
 

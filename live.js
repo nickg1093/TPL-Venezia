@@ -12,12 +12,17 @@ const cal = require('./calendar');
 const ids = require('./ids');
 const motion = require('./motion');
 const tracker = require('./tracker');
+const assign = require('./assign');
 const { inArea } = require('./geo');
 const { secsOfDayRome, hhmm } = schedule;
 
 const events = new EventEmitter();
-// Intervallo massimo di lettura dei feed (la lettura si adatta al ritmo di pubblicazione di ACTV, minimo 1 s). Limiti per evitare valori assurdi da variabile d'ambiente.
-const REFRESH_MS = Math.min(30000, Math.max(1000, +process.env.RT_POLL_MS || 2000));
+// LETTURA DEI FEED: UNA sola lettura per servizio, condivisa da tutti gli utenti (gli utenti non contattano mai ACTV).
+// Ritmo: quello di pubblicazione del feed, ma non più spesso di MIN_POLL_MS (3 s) né più raramente di REFRESH_MS (5 s, RT_POLL_MS per cambiarlo).
+// ACTV rigenera il feed circa ogni secondo, ma ogni mezzo trasmette la sua posizione ogni 10-30 s: leggere ogni 3-5 s non perde dati e,
+// con richieste condizionali (304 se nulla è cambiato), pesa pochissimo sui server degli open data (prassi delle app di settore: 5-30 s).
+const MIN_POLL_MS = 3000;
+const REFRESH_MS = Math.min(30000, Math.max(MIN_POLL_MS, +process.env.RT_POLL_MS || 5000));
 const RT = { nav: 'https://tpl.actv.it/nav/GTFSRT/', aut: 'https://tpl.actv.it/aut/GTFSRT/' };
 const IDS = Object.keys(RT);
 const NOTES = { approx: 'data fuori dal calendario GTFS: orari indicativi' };
@@ -157,6 +162,7 @@ async function refresh(id) {
     // (non quello di partenza): meglio fidarsi dei codici che scartare tutto.
     const la = s8.lastAgree, strict = !(la && la.ok + la.bad >= 10 && la.bad / (la.ok + la.bad) > 0.8), tally = { ok: 0, bad: 0 };
     let tuOk = 0, vOk = 0, wrongDay = 0, skippedDeleted = 0;
+    const tuOfVeh = new Map(), vehOfTu = new Map();                   // il trip update dice anche QUALE mezzo fa la corsa: serve a verificare le corse dichiarate
 
     // 2) TRIP UPDATE
     for (const e of upd) {
@@ -166,6 +172,7 @@ async function refresh(id) {
       if (!dayOk(tu.trip.startDate)) { wrongDay++; continue; }
       const tid = resolveTrip(G, tu.trip, strict, tally); if (!tid) continue;
       tuOk++;
+      const tvk = tu.vehicle?.id; if (tvk) { tuOfVeh.set(String(tvk), tid); vehOfTu.set(tid, String(tvk)); }
       const st = G.stopTimes.get(tid), n = st.s.length, explicit = new Array(n), skipped = new Set();
       let cur = 0, firstJ = -1;
       for (const u of tu.stopTimeUpdate || []) {
@@ -226,7 +233,7 @@ async function refresh(id) {
       veicoli: { total: pos.length, collegati: vOk, posizioneNonValida: bad, datoTroppoVecchio: ghost },
       coerenzaCodici: { coerenti: tally.ok, incoerenti: tally.bad, controlloAttivo: strict } };
     s8.updated = now; s8.goodAt = now; s8.error = null; s8.sim = false;
-    pickOwners(id); buildStates(id); events.emit('push', true);
+    verifyTrips(id, tuOfVeh, vehOfTu); pickOwners(id); buildStates(id); events.emit('push', true);
   } catch (err) {
     s8.errCount++; s8.error = `${id}: ${err.message}`;
     // I dati reali restano finché sono recenti; solo dopo vari errori (o 3 minuti senza dati) si passa alle posizioni da orario, dichiarate come tali.
@@ -237,6 +244,30 @@ async function refresh(id) {
       } catch { /* senza GTFS non c'è nulla da simulare */ }
     }
   }
+}
+
+// VERIFICA DELLE CORSE DICHIARATE (vedi assign.js). Corregge solo con prove ripetute e torna al feed appena il feed cambia corsa.
+// La corsa abbandonata perde le previsioni del trip update se quel trip update descriveva proprio questo mezzo (erano il suo ritardo "finto").
+function verifyTrips(i, tuOfVeh, vehOfTu) {
+  const G = D[i], s8 = S[i], mem = (s8.assign ||= new Map()), owners = new Map(), seen = new Set();
+  for (const [k, m] of mem) if (m.goodTid) owners.set(m.goodTid, { key: k, good: true });
+  for (const v of s8.vehicles) {
+    if (v.sim || !v.tripId) continue;
+    seen.add(v.key);
+    const m = mem.get(v.key) || mem.set(v.key, {}).get(v.key);
+    v.feedTripId = v.tripId;
+    let r = null;
+    try { r = assign.check({ G, v, mem: m, tuTid: tuOfVeh.get(String(v.key)) || null, owners, tNowOf: tripNow }); } catch { r = null; }
+    m.goodTid = r ? r.tid : (m.cand ? null : v.tripId);
+    if (!r || r.tid === v.tripId) continue;
+    const trip = G.trips[r.tid], rt = G.routes[trip.route] || {}, from = G.stopTimes.get(v.tripId);
+    if (vehOfTu.get(v.tripId) === String(v.key) && s8.live[v.tripId]) delete s8.live[v.tripId];
+    v.tripId = r.tid; v.line = rt.name || v.line; v.color = rt.color || v.color; v.headsign = trip.headsign || v.headsign;
+    v.routeId = has(G.routes, trip.route) ? `${i}:${trip.route}` : v.routeId;
+    v.reassigned = { from: from ? schedule.hhmm(from.start) : null, why: r.why };
+  }
+  for (const k of [...mem.keys()]) if (!seen.has(k)) mem.delete(k);
+  if (s8.match) s8.match.corseRiconosciute = s8.vehicles.filter(v => v.reassigned).map(v => ({ mezzo: v.label || v.key, dichiarata: v.feedTripId, scelta: v.tripId, perche: v.reassigned.why }));
 }
 
 // STATO UNICO DI UNA CORSA (fonte di verità condivisa da pannello fermata, dettaglio corsa e mappa):
@@ -386,6 +417,7 @@ function tripDetail(i, tid, live, vehKey = null, G = D[i]) {
 
   const dn = live && cur < n ? ss.delayS : null;
   return {
+    reassigned: live && veh?.reassigned ? veh.reassigned : null,
     live, detected: !live || !!(sel || lv), progress, atStop, phase: ss.phase, vehKey: ss.vehKey ?? null, others, speedKmh: ss.speed != null ? Math.round(ss.speed * 3.6) : null, cancelled: !!lv?.cancelled, note: noteOf(G),
     delayNow: dn != null ? Math.round(dn / 60) : null,
     historyKnown: stops.some(s => s.state === 'passed' && s.delay != null),
@@ -489,7 +521,7 @@ async function gtfsStatus() {
 function startLoops() {
   for (const id of IDS) (async function loop() {
     const t0 = Date.now(); await refresh(id);
-    const base = Math.min(REFRESH_MS, Math.max(1000, (S[id].pubMs || REFRESH_MS * 3) / 3));
+    const base = Math.min(REFRESH_MS, Math.max(MIN_POLL_MS, S[id].pubMs || REFRESH_MS));
     setTimeout(loop, Math.max(500, Math.min(30000, base * 2 ** Math.min(S[id].errCount, 4)) - (Date.now() - t0)));
   })();
 }
