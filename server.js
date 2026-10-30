@@ -335,7 +335,7 @@ server.headersTimeout = 15000; server.requestTimeout = 30000; server.keepAliveTi
 server.on('error', e => { console.error(e.code === 'EADDRINUSE' ? `La porta ${PORT} è già in uso: chiudi l'altra copia dell'app o imposta PORT con un altro numero.` : 'server: ' + e.message); process.exit(1); });
 server.listen(PORT, HOST, () => {
   console.log(`App avviata: ${scheme}://localhost:${PORT}`);
-  if (HOST === '0.0.0.0' || HOST === '::') {
+  if ((HOST === '0.0.0.0' || HOST === '::') && !process.env.RENDER) {        // indirizzi di rete utili solo in locale (su Render sono interni)
     const addrs = Object.values(require('os').networkInterfaces()).flat().filter(a => a && a.family === 'IPv4' && !a.internal).map(a => `${scheme}://${a.address}:${PORT}`);
     if (addrs.length) console.log('Dagli altri dispositivi della stessa rete: ' + addrs.join('  '));
   }
