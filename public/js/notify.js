@@ -11,6 +11,7 @@ function load() { try { const d = JSON.parse(localStorage.getItem(KEY) || '[]');
 function save() { list = list.filter(w => w.until > Date.now()); try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* solo in memoria */ } onChange(); }
 // onFront(msg): messaggio arrivato con l'app in primo piano (lo mostra l'app, non il sistema)
 export const init = (fn, front) => { onChange = fn || onChange; onFront = front || onFront; startPolling(); };
+export const all = () => list.filter(w => w.until > Date.now()).slice();
 export const find = (trip, stop) => list.find(w => w.trip === trip && w.stop === stop && w.until > Date.now()) || null;
 export const supported = () => 'Notification' in window && 'serviceWorker' in navigator;
 const iOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);

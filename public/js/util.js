@@ -63,9 +63,9 @@ export function etaText(phase, expMs, inMin, live = true) {
     if (phase === 'approaching') return 'In arrivo';
     if (phase === 'arrived') return 'Arrivato';
     if (phase === 'departed') return 'Partito';
-    if (expMs) { const s = (expMs - Date.now()) / 1000; return s <= 45 ? 'In arrivo' : `tra ${Math.max(1, Math.round(s / 60))} min`; }
+    if (expMs) { const s = (expMs - Date.now()) / 1000; return s <= 45 ? 'In arrivo' : `Tra ${Math.max(1, Math.round(s / 60))} min`; }
   }
-  return inMin <= 0 ? 'In partenza' : `tra ${inMin} min`;
+  return inMin <= 0 ? 'In partenza' : `Tra ${inMin} min`;
 }
 // aggiorna ogni secondo i "tra N min" senza aspettare il server (le fasi fisse non cambiano)
 const FIXED = new Set(['at', 'departing', 'approaching', 'arrived', 'departed']);
@@ -78,7 +78,7 @@ export function tickEta() {
 
 // ritardo -> classe e testo (stessa regola ovunque)
 // Stato del passaggio, UNA formula per tutta l'app (pannello fermata, pannello mezzo, intestazione): breve ma esplicita; long = per i lettori di schermo
-export const delayInfo = d => d >= 1 ? { cls: 'late', txt: `ritardo ${d} min`, long: `in ritardo di ${d} minuti` } : d <= -1 ? { cls: 'early', txt: `anticipo ${-d} min`, long: `in anticipo di ${-d} minuti` } : { cls: 'ok', txt: 'in orario', long: 'in orario' };
+export const delayInfo = d => d >= 1 ? { cls: 'late', txt: `In ritardo di ${d} min`, long: `in ritardo di ${d} minuti` } : d <= -1 ? { cls: 'early', txt: `In anticipo di ${-d} min`, long: `in anticipo di ${-d} minuti` } : { cls: 'ok', txt: 'In orario', long: 'in orario' };
 
 // Lettura JSON dal server. Una risposta "troppe richieste" (429, testo semplice) non è un errore dei dati: si segnala con busy = true
 // e il chiamante tiene a schermo ciò che già mostra e riprova al giro successivo.

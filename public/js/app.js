@@ -8,6 +8,7 @@ import * as Pwa from './pwa.js';
 import { createLocator } from './locate.js';
 import * as Fav from './fav.js';
 import * as Notify from './notify.js';
+import * as Info from './info.js';
 
 const POLL_MS = 2000, MIN_STOP_ZOOM = 14;
 onBusy(b => { $('busybar').hidden = !b; document.body.classList.toggle('busy', b); });   // barra di caricamento per le richieste lente
@@ -63,7 +64,12 @@ const schedQS = () => mode === 'sched' ? `&secs=${range.value}&date=${dateEl.val
 //   lineLayer = percorsi scelti dalla ricerca · tripLayer = percorso e fermate della corsa selezionata · stopLayer = pali delle fermate
 // ---------------------------------------------------------------------------------------------------------------------
 const map = L.map('map', { preferCanvas: true, zoomControl: false, attributionControl: false }).setView([45.437, 12.335], 12);
-if (matchMedia('(pointer: fine)').matches) L.control.zoom({ position: 'bottomright', zoomInTitle: 'Ingrandisci', zoomOutTitle: 'Riduci' }).addTo(map);   // su touch si usa il pizzico
+if (matchMedia('(pointer: fine)').matches) {                                   // su touch si usa il pizzico
+  const zc = L.control.zoom({ position: 'bottomright', zoomInTitle: 'Ingrandisci', zoomOutTitle: 'Riduci' }).addTo(map);
+  // il tasto «i» sta nello stesso angolo: va sopra i comandi dello zoom, non sopra di essi
+  const zh = () => { const el = zc.getContainer?.(); if (el?.offsetHeight) document.documentElement.style.setProperty('--zoom-off', el.offsetHeight + 12 + 'px'); };
+  zh(); requestAnimationFrame(zh); addEventListener('resize', zh);
+}
 // l'attribuzione di OpenStreetMap è nel dock in basso (#credits): sempre visibile e mai coperta da pannelli o finestre
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 const lineLayer = L.layerGroup().addTo(map), tripLayer = L.layerGroup().addTo(map), stopLayer = L.layerGroup().addTo(map);
@@ -327,7 +333,7 @@ function collapseSearch() { searchContainer.classList.remove('expanded'); search
 function clearSearchState(force = false) { if (lineFilter && !force) return; setLineFilter(null); filterEl.value = ''; $('search-clear').hidden = true; resultsEl.classList.remove('active'); resultsEl.innerHTML = ''; clearRoutes(); }
 function setSearch(on) {
   searchContainer.classList.toggle('expanded', on); searchToggleBtn.setAttribute('aria-expanded', String(on));
-  if (on) { Tide.close(); Avvisi.close(); filterEl.focus(); if (!filterEl.value) showFavs(); } else clearSearchState(true);
+  if (on) { Tide.close(); Avvisi.close(); Info.close(); filterEl.focus(); if (!filterEl.value) showFavs(); } else clearSearchState(true);
 }
 searchToggleBtn.onclick = e => { e.stopPropagation(); setSearch(!searchOpen()); };
 document.addEventListener('click', e => { if (searchOpen() && !searchContainer.contains(e.target) && !searchToggleBtn.contains(e.target)) collapseSearch(); });
@@ -371,7 +377,7 @@ resultsEl.addEventListener('click', e => {
   else setLineFilter({ src: it.dataset.src, name: it.dataset.name, ids: it.dataset.ids.split('\u0001') });
 });
 // un tocco sulla mappa vuota chiude i percorsi della ricerca (se nessun pannello è aperto) e le finestre troppo grandi
-map.on('click', () => { if (!current && !searchOpen()) clearSearchState(); if (narrow()) { Tide.close(); Avvisi.close(); } });
+map.on('click', () => { if (!current && !searchOpen()) clearSearchState(); if (narrow()) { Tide.close(); Avvisi.close(); Info.close(); } });
 
 // ---------------------------------------------------------------------------------------------------------------------
 // NAVIGAZIONE TRA PANNELLI
@@ -409,7 +415,7 @@ function show(e) {
   clearInterval(panelTimer); lastDeps = null; lastTrip = null;
   tripLayer.clearLayers(); setFollow(false); locator.release();          // aprire un pannello ferma l'inseguimento della mia posizione
   if (e.t !== 'trip') { selVeh = null; render(); }
-  current = e; panel.hidden = false; document.body.classList.add('has-panel'); if (narrow()) { Tide.close(); Avvisi.close(); }
+  current = e; panel.hidden = false; document.body.classList.add('has-panel'); if (narrow()) { Tide.close(); Avvisi.close(); Info.close(); }
   chipsArea.innerHTML = ''; pstatus.textContent = ''; psub.textContent = ''; pbadge.innerHTML = '';
   pfollow.hidden = e.t !== 'trip';
   pfav.hidden = e.t === 'trip'; pnotify.hidden = !(e.t === 'trip' && e.stop); notifyPick = false; rowPick = null;
@@ -479,12 +485,9 @@ function depRow(x, z, live) {
   const src = x.src, done = !!x.done;
   let cls = '', subNote = '', fullNote = '';
   if (x.cancel) { cls = 'late'; subNote = x.cancel === 'trip' ? 'Soppressa' : 'Saltata'; }
-  else if (live) {
-    if (!x.live) subNote = 'da orario';
-    else {                                                                    // stato breve: l'orario barrato e quello nuovo dicono già il resto
-      const di = delayInfo(x.delay);
-      cls = di.cls; subNote = done ? `partito · ${di.txt}` : di.txt; fullNote = done ? `partito, ${di.long}` : di.long;
-    }
+  else if (live && !done) {                                                   // corse già partite: nessuno stato (lo dice la colonna di destra)
+    if (!x.live) subNote = 'Da orario';
+    else { const di = delayInfo(x.delay); cls = di.cls; subNote = di.txt; fullNote = di.long; }
   }
   if (done) cls = '';                                                         // riga grigia: nessun colore di stato
   const reqHtml = x.isRequest ? '<span class="req-tag">A richiesta</span>' : '';
@@ -497,8 +500,11 @@ function depRow(x, z, live) {
   // l'indicatore sotto l'orario ha SEMPRE il colore neutro (come nel pannello della corsa): il colore di stato è solo sull'orario
   return `<div class="dep go${x.cancel ? ' cx' : ''}${done ? ' gone' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" data-veh="${esc(x.veh || '')}" role="button" tabindex="0" title="${done ? 'Corsa già partita: apri il percorso' : 'Apri il percorso della corsa'}">`
     // avviso sulla linea: triangolo sull'angolo della mattonella (il nome della destinazione resta libero)
-    + `<span class="bw">${badge(x.line, x.color, src)}${Avvisi.lineHasAlert(src, x.line) ? `<span class="bdot" title="Avviso sulla linea ${esc(x.line)}">${icon('warn', 'sm')}</span>` : ''}</span>`
-    + `<div class="dm"><div class="dh">${esc(x.headsign || '')}</div><div class="dn ${cls}"${fullNote ? ` title="${esc(fullNote)}"` : ''}>${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}${reqHtml}<span>${esc(info)}</span></div></div>`
+    // mattonella/cerchio della linea: in alto a destra l'avviso sulla linea; in basso a sinistra la fonte del passaggio
+    // (onde = mezzo rilevato in tempo reale, orologio = orario programmato)
+    + `<span class="bw">${badge(x.line, x.color, src)}${Avvisi.lineHasAlert(src, x.line) ? `<span class="bdot" title="Avviso sulla linea ${esc(x.line)}">${icon('warn', 'sm')}</span>` : ''}`
+    + (live && !x.cancel ? `<span class="bsrc ${x.live ? 'on' : ''}" title="${x.live ? 'Mezzo rilevato in tempo reale' : 'Orario programmato: mezzo non rilevato'}">${icon(x.live ? 'live' : 'clock', 'sm')}</span>` : '') + '</span>'
+    + `<div class="dm"><div class="dh"><span class="mq">${esc(x.headsign || '')}</span></div><div class="dn ${cls}"${fullNote ? ` title="${esc(fullNote)}"` : ''}>${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}${reqHtml}<span><span class="mq">${esc(info)}</span></span></div></div>`
     + `<div class="dt">${timeHtml}<div class="in-min" data-exp="${live && x.expMs ? Math.round(x.expMs) : ''}" data-ph="${live ? (x.phase || '') : ''}">${esc(label)}</div></div>`
     + bellHtml(x, live) + '</div>' + (rowPick && rowPick.trip === `${src}:${x.tripId}` && rowPick.stop === x.stop ? pickHtml(x.stop) : '');
 }
@@ -512,6 +518,18 @@ const pickHtml = stop => `<div class="dep-pick" role="group" aria-label="Quando 
   + `<div class="chips">${[2, 5, 10, 15].map(m => `<button type="button" class="chip all" data-lead="${m}">${m} min</button>`).join('')}<button type="button" class="nlink" data-ncancel>Annulla</button></div></div>`;
 let rowPick = null;
 const styleOf = (line, color, src) => { const k = colorInfo(color, line); return { shape: src === 'aut' ? 'tile' : 'circle', bg: k.c, fg: k.ink }; };
+// TESTI TROPPO LUNGHI (destinazione e riga sotto): scorrono avanti e indietro invece di essere tagliati. La fase dell'animazione dipende
+// dall'orologio, così gli aggiornamenti dell'elenco (ogni pochi secondi) non la fanno ripartire da capo. Con «riduci movimento»: puntini.
+function marquee(root) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  for (const el of root.querySelectorAll('.mq')) {
+    const box = el.parentElement, over = box.scrollWidth - box.clientWidth;      // lo span è in linea: si misura il contenitore
+    if (over <= 2) continue;
+    const t = Math.max(3, over / 28 + 1.5);                                   // secondi per un passaggio (circa 28 px/s, con pause agli estremi)
+    el.classList.add('run'); el.style.setProperty('--mq-d', `-${over + 6}px`);
+    el.style.animationDuration = t + 's'; el.style.animationDelay = `-${(Date.now() / 1000) % (2 * t)}s`;
+  }
+}
 function renderDepartures() {
   if (!lastDeps || !current || current.t === 'trip') return;
   const live = mode === 'live', z = current.t === 'zone' ? zones.get(current.key) : null;
@@ -527,6 +545,7 @@ function renderDepartures() {
   { const ch = chipsArea.querySelector('.chips'); if (ch) { ch.scrollLeft = keepX; const on = ch.querySelector('.chip.on'); if (on) { const r = on.getBoundingClientRect(), cr = ch.getBoundingClientRect(); if (r.left < cr.left || r.right > cr.right) ch.scrollLeft += r.left - cr.left - cr.width / 2 + r.width / 2; } } }
   const al = stopAlerts(current);                                                           // avvisi in corso su queste fermate e sulle loro linee: (!) nel titolo e righe cliccabili
   pname.innerHTML = stopTitle(current, z);
+  requestAnimationFrame(() => marquee(plist));
   plist.innerHTML = al.list.map(a => Avvisi.rowHtml(a, al.keys)).join('') + (rows.map(x => depRow(x, z, live)).join('') || '<p class="muted pad center">Nessun passaggio.</p>');
 }
 chipsArea.addEventListener('click', e => {
@@ -594,8 +613,8 @@ function tripHtml(d) {
       timeHtml = Math.abs(s.delay) >= 1
         ? `<div class="tm-time-wrap"><span class="sched-crossed">${esc(s.sched)}</span><strong class="${di.cls}">${esc(s.exp)}</strong></div>`
         : `<div class="tm-time-wrap"><strong class="${di.cls}">${esc(s.exp)}</strong></div>`;
-    } else { sub = d.live && d.detected !== false ? 'da orario' : (d.live ? 'non rilevato' : ''); timeHtml = `<div class="tm-time-wrap"><strong>${esc(s.sched)}</strong></div>`; }
-    const meta = s.skipped ? 'Fermata saltata' : (s.state === 'at' || s.state === 'next') ? etaText(s.phase, s.expMs, s.inMin, d.live && d.detected !== false) : (s.state === 'upcoming' && d.live && s.expMs ? `tra ${Math.max(1, Math.round((s.expMs - Date.now()) / 60000))} min` : '');
+    } else { sub = d.live ? 'Da orario' : ''; timeHtml = `<div class="tm-time-wrap"><strong>${esc(s.sched)}</strong></div>`; }
+    const meta = s.skipped ? 'Fermata saltata' : (s.state === 'at' || s.state === 'next') ? etaText(s.phase, s.expMs, s.inMin, d.live && d.detected !== false) : (s.state === 'upcoming' ? (d.live && s.expMs ? `Tra ${Math.max(1, Math.round((s.expMs - Date.now()) / 60000))} min` : (s.inMin > 0 ? `Tra ${s.inMin} min` : '')) : '');
     return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === 0 ? ' first' : ''}${i === n - 1 ? ' last' : ''}" data-i="${i}" role="button" tabindex="0" title="Apri la fermata">`
       + `<div class="rail-col"><div class="rail-line"></div><span class="dot">${s.state === 'passed' ? icon('check') : ''}</span></div>`
       // stessa impaginazione del pannello fermata: a sinistra nome e stato (ritardo/anticipo), a destra orario e "tra N min"
@@ -794,8 +813,10 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', e => {  
 });
 // dal pannello della marea (triangolo accanto a una marea oltre le soglie del piano ACTV) all'avviso di acqua alta
 window.addEventListener('tpl:water-alert', () => { Tide.close(); const id = Avvisi.waterAlertId(); Avvisi.openAlert(id); });
-Tide.init(() => { Avvisi.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
-Avvisi.init(() => { Tide.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); }, () => { drawStops(); if (current && current.t !== 'trip') renderDepartures(); else if (current?.t === 'trip' && lastTrip) renderTrip(false); });   // quando arrivano avvisi nuovi si aggiornano mappa e pannello fermata
+const hideAttr = Info.init(() => { Tide.close(); Avvisi.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
+map.on('movestart', hideAttr); map.on('zoomstart', hideAttr); map.on('click', hideAttr);
+Tide.init(() => { Avvisi.close(); Info.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
+Avvisi.init(() => { Tide.close(); Info.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); }, () => { drawStops(); if (current && current.t !== 'trip') renderDepartures(); else if (current?.t === 'trip' && lastTrip) renderTrip(false); });   // quando arrivano avvisi nuovi si aggiornano mappa e pannello fermata
 Pwa.init();
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -885,7 +906,7 @@ async function onRowBell(e) {
   else rowPick = rowPick && rowPick.trip === trip && rowPick.stop === stop ? null : { trip, stop };
   renderDepartures();
 }
-Notify.init(() => { if (current?.t === 'trip') { renderNotifyBar(); updateBell(); } else if (current) renderDepartures(); },
+Notify.init(() => { if (Info.isOpen()) Info.renderWatches(); if (current?.t === 'trip') { renderNotifyBar(); updateBell(); } else if (current) renderDepartures(); },
   m => toast(`${m.title}: ${m.body}`, m.silent ? 4000 : 9000));
 // apertura da una notifica: /?trip=src:id&stop=src:id (anche con l'app già aperta, tramite il service worker)
 function openFromUrl(href) {
@@ -905,7 +926,8 @@ if (new URLSearchParams(location.search).has('trip')) setTimeout(() => openFromU
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {   // chiude la finestra più "in alto": marea, poi ricerca, poi pannello
-    if (Avvisi.isOpen()) { const inside = $('avvisi').contains(document.activeElement); Avvisi.close(); if (inside) $('avvisi-btn').focus(); }
+    if (Info.isOpen()) { const inside = $('info').contains(document.activeElement); Info.close(); if (inside) $('info-btn').focus(); }
+    else if (Avvisi.isOpen()) { const inside = $('avvisi').contains(document.activeElement); Avvisi.close(); if (inside) $('avvisi-btn').focus(); }
     else if (Tide.isOpen()) { const inside = $('tide').contains(document.activeElement); Tide.close(); if (inside) $('tide-btn').focus(); }
     else if (searchOpen()) { setSearch(false); searchToggleBtn.focus(); }
     else if (!panel.hidden) closePanel();
