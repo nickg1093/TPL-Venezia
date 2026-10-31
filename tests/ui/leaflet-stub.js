@@ -51,7 +51,11 @@
   }
   window.L = { map: (i, o) => new Map_(i, o), latLng: ll, point: pt, divIcon: o => o, tileLayer: () => ({ addTo() { return this; } }), layerGroup: () => new Group(),
     marker: (p, o) => new Marker(p, o), circleMarker: (p, o) => new Circle(p, o), circle: (p, o) => new Acc(p, o), polyline: (p, o) => new Poly(p, o),
-    control: { zoom: () => ({ addTo() { return this; } }) } };
+    control: { zoom: () => ({ addTo(m) {                                      // come Leaflet: angolo in basso a destra con due pulsanti
+      const c = document.createElement('div'); c.className = 'leaflet-bottom leaflet-right'; c.style.cssText = 'position:absolute;right:0;bottom:0;z-index:1000';
+      this.el = document.createElement('div'); this.el.className = 'leaflet-control-zoom leaflet-bar leaflet-control'; this.el.style.cssText = 'display:flex;flex-direction:column;float:right;clear:both';
+      this.el.innerHTML = '<a class="leaflet-control-zoom-in" href="#" title="Ingrandisci" style="display:block;text-align:center">+</a><a class="leaflet-control-zoom-out" href="#" title="Riduci" style="display:block;text-align:center">−</a>';
+      c.append(this.el); m.el.append(c); return this; }, getContainer() { return this.el; } }) } };
   // gli strati aggiunti alla mappa ricevono _add
   const addTo = Group.prototype.addTo; Group.prototype.addTo = function (m) { this._map = m; return addTo.call(this, m); };
   Layer.prototype.addTo = function (g) { g.addLayer ? g.addLayer(this) : g; if (g._map && this._add) { /* già nel gruppo */ } if (g instanceof Map_) this._add(g); return this; };
