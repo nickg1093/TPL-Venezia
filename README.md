@@ -1,6 +1,6 @@
 # Venezia TPL live
 
-Mappa in tempo reale di autobus, tram e battelli ACTV (GTFS statico + GTFS-Realtime), con marea, installabile come app (PWA).
+Mappa in tempo reale di autobus, tram e vaporetti ACTV (GTFS statico + GTFS-Realtime), con marea, installabile come app (PWA).
 Server Node.js senza database: gira su un hosting (es. piano gratuito di Render) **oppure sul tuo computer, senza nessun sito esterno** (vedi 1.0).
 
 ---
@@ -36,6 +36,7 @@ L'app è un unico programma Node.js: il computer scarica da solo i dati ACTV (GT
 | `KEEPALIVE_URL` | `https://<tuo-servizio>.onrender.com/healthz` (opzionale) | il server si "autopinga"; di solito `RENDER_EXTERNAL_URL` basta |
 | `RT_POLL_MS` | opzionale, default 5000 (minimo 3000) | intervallo massimo di lettura dei feed realtime: il server segue il ritmo di pubblicazione ACTV senza scendere sotto 3 s |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | da `node scripts/vapid-keys.js` | chiavi delle notifiche di arrivo (vedi 5) |
+| `APP_CONTACT` | e-mail dedicata (es. una casella creata apposta) | mostrata nella pagina Informazioni come contatto del titolare per privacy e segnalazioni; consigliata
 | `PUSH_CONTACT` | `mailto:tuo@indirizzo` (facoltativo) | contatto per i servizi di notifica |
 | `PORT` | gestita da Render | |
 
@@ -47,7 +48,7 @@ Usa i token così (mai nell'URL, mai nel browser): `curl -H "Authorization: Bear
 - Dopo il commit Render ridistribuisce da solo.
 
 ### 1.4 Dopo ogni modifica ai file dell'interfaccia
-Se cambi icone, manifest o l'elenco `SHELL` di `public/sw.js`, incrementa `VERSION` in `public/sw.js` (ora `v19`). I file `/js` e `/css` si aggiornano da soli (rete prima).
+Se cambi icone, manifest o l'elenco `SHELL` di `public/sw.js`, incrementa `VERSION` in `public/sw.js` (ora `v20`). I file `/js` e `/css` si aggiornano da soli (rete prima).
 
 ### 1.5 Dove salvare simboli e immagini
 - **Simboli dell'interfaccia** (battello, bus, tram, lente, ecc.): *tutti* in `public/icons/sprite.svg`, un `<symbol id="i-nome">` ciascuno (24×24, tratto 1.75, `currentColor`). Nel codice si usano con `icon('nome')` (in `public/js/util.js`); in `index.html` con `<svg class="ic"><use href="/icons/sprite.svg#i-nome"/></svg>`. **Non usare emoji**: cambiano da sistema a sistema.
@@ -178,6 +179,10 @@ Il feed toglie la fermata appena il mezzo arriva e indicherebbe già la successi
 - **Marea**: livello, tendenza, prossime alte/basse con pallino di colore (stesse soglie del dato corrente) e grafico da 6 ore prima a 18 ore dopo, con promemoria breve ai servizi di navigazione previsti quando la marea supera 85 cm con cursore (osservato / previsto). La parte futura è ricavata dagli estremi pubblicati da CPSM (interpolazione), quella passata dalla storia che il server accumula dal suo avvio.
 - **Avvisi di servizio** (`avvisi.js`, `public/js/avvisi.js`): raccolta automatica dalle notizie del sito ACTV (RSS + pagina) e dal canale Telegram pubblico, ogni 5-10 minuti. Per ogni avviso si ricavano validità (date in italiano), linee e fermate con regole generali: la linea deve seguire «linea/linee/navetta» ed esistere nel GTFS; numeri presenti in entrambi i servizi si risolvono dalle fermate citate e da ciò che le linee servono davvero (altrimenti si scartano); le fermate valgono solo se servite da quelle linee; nomi di una sola parola e strade («via Torino») non bastano da soli; scioperi e avvisi generali sugli orari non segnano fermate. Le fermate con avviso in corso hanno il simbolo (!) in mappa e nel pannello, con riga che apre l'avviso.
 - **Altezza all'avvio** (`theme-init.js`): l'altezza dell'app è la misura reale della finestra, riletta alcune volte nei primi secondi, così su Android i tasti di sistema non coprono la barra in basso.
+- **Pagina Informazioni** (v20, `public/js/info.js`): tasto «i» in basso a destra sopra la barra Tempo reale/Pianificato (sale con la barra; su smartphone si nasconde con un pannello aperto). Si apre a tutto schermo; si chiude con la X, Esc o il tasto «indietro» del telefono. Contiene: il progetto (sviluppato con l'ausilio dell'intelligenza artificiale; nessun riferimento al repository), note legali e condizioni d'uso, sintesi dell'informativa privacy (art. 13 GDPR), permessi, sicurezza, fonti e licenze, avvisi di arrivo attivi con «Disattiva». Il contatto del titolare viene da `APP_CONTACT` (nessun nome mostrato). L'attribuzione OpenStreetMap resta visibile 5 s all'avvio (o fino alla prima interazione), come chiedono le linee guida OSMF; i crediti completi sono nella pagina.
+- **Righe del pannello fermata** (v20): seconda riga «corsia · stato · mezzo» (es. «A4 · In ritardo di 1 min · BUS 4013»); stati «In ritardo di N min / In anticipo di N min / In orario / Da orario». Destinazione e seconda riga troppo lunghe scorrono avanti e indietro (fase legata all'orologio, non riparte a ogni aggiornamento); con «riduci movimento» attivo restano tagliate con i puntini. Icona della fonte (tempo reale / orario) in basso a sinistra del numero di linea, avvisi in alto a destra.
+- **Tracciamento** (v20, `tracker.js`): un mezzo fermo in anticipo vicino alla fermata non viene dato per partito (sosta anticipata); prima della partenza dal capolinea il GPS viene ignorato se il mezzo è lontano dal percorso, e il ritardo «0» non confermato dal feed non viene mostrato.
+- **Notifiche** (v20, `watch.js`): l'avviso «sta arrivando» richiede due conferme consecutive; se la corsa è soppressa o salta la fermata, la notifica indica la prossima corsa della stessa linea; messaggio dedicato se il mezzo smette di essere rilevato.
 - Installazione (PWA), tema chiaro/scuro (segue il sistema finché non scegli).
 
 ---
@@ -195,6 +200,7 @@ scripts/update-gtfs.js   aggiornamento archivio (usato dal workflow)
 public/index.html (solo struttura) · css/app.css · js/{app,util,zones,tide,avvisi,pwa,theme-init}.js · icons/ · sw.js · manifest.webmanifest
 public/js/locate.js  GPS e stati del pulsante
 public/js/fav.js     preferiti                     public/js/notify.js  avviso di arrivo (client)
+public/js/info.js    pagina Informazioni (note legali, privacy, fonti)
 push.js          Web Push (cifratura, VAPID)    watch.js      regole e invio degli avvisi di arrivo
 assign.js        verifica della corsa dichiarata dal mezzo        env.js   impostazioni locali (.env.local)
 avvia-windows.bat / avvia.sh / avvia.command   avvio in locale con un doppio clic

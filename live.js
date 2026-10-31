@@ -389,7 +389,8 @@ function tripDetail(i, tid, live, vehKey = null, G = D[i]) {
     if (live) {
       if (future) dlS = (ss.etaMs[k] - nowMs) / 1000 - (ts - tNow);
       else if (ss.dep?.[k]) dlS = (tNow - (nowMs - ss.dep[k]) / 1000) - ts;
-      else if (hist?.[k] != null) dlS = Math.min(hist[k], tNow - ts);
+      else if (hist?.[k] != null) dlS = Math.min(Math.max(0, hist[k]), tNow - ts);       // arrivo in anticipo dal feed ≠ partenza in anticipo
+      if (future && ss.preStart && !ss.feedPre && dlS < 60) dlS = null;                    // corsa non partita e senza feed: si mostra l'orario ("da orario")
       if (dlS != null && k < cur) { dlS = Math.max(dlS, prevAct - ts); prevAct = ts + dlS; }
     }
     stops[k] = {

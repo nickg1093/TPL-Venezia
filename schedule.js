@@ -140,6 +140,7 @@ function departures(G, live, stopId, secsParam = null, date = null, state = null
         // Con stato live (tracker.js): ETA fusa feed + GPS + orario, già corretta per le regole di partenza.
         let dl = lv ? lv.delays[i] : null, expMs = null, em;
         if (ps && i >= ps.cur && ps.etaMs && Number.isFinite(ps.etaMs[i])) { expMs = ps.etaMs[i]; em = (expMs - nowMs) / 1000; dl = em - (ts - tNow); }
+        if (ps && ps.preStart && !ps.feedPre && dl != null && dl < 60) dl = null;    // corsa non ancora partita, senza feed: orario programmato
         const sm = ts - tNow; em ??= ts + (dl ?? 0) - tNow;
         const dm = dl != null ? Math.round(dl / 60) : null;     // ritardo in minuti interi: l'orario previsto si ricava da questo, così sono sempre coerenti
         if ((sm < -180 || sm > 7200) && (em < -180 || em > 7200)) continue;

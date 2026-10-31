@@ -31,6 +31,8 @@ const C = {
   DEP_DISP_M: 15,      // spostamento dal punto di sosta che prova la partenza (m)
   MOVE_PASS: 2.0,      // m/s istantanei: mezzo che passa oltre la fermata senza sosta
   DWELL_FWD_M: 140,    // un mezzo che ha già sostato alla fermata può restare fermo fino a 140 m dopo il palo (pensilina lunga, fila): finché non c'è una prova di partenza è ancora lì
+  HOLD_FWD_M: 150,     // SOSTA IN ANTICIPO: mezzo fermo fino a 150 m oltre il palo (pontili, banchine, capolinea lunghi) prima dell'orario = in fermata, non partito
+  HOLD_EARLY_S: 20,    // ...se mancano almeno 20 s alla partenza programmata
   HOLD_S: 20           // senza GPS, la fermata si considera lasciata solo 20 s dopo la partenza prevista (orario + ritardo del feed)
 };
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
@@ -157,6 +159,9 @@ function update(x) {
       } else vs.altN = 0;
     }
   }
+  // PRIMA DELL'ORARIO DI PARTENZA (oltre 2 minuti prima) una corsa non può essere a metà percorso: un mezzo che la dichiara ma è altrove
+  // (ancora sulla corsa precedente, in rimessa, in trasferimento) non fa avanzare le fermate né genera ritardi/anticipi dal GPS.
+  if (sv != null && (vs.cur ?? 0) === 0 && vs.dep?.[0] == null && tNow < st.d[0] - 120 && sv - (offs?.[0] ?? 0) > C.TERM_M) { sv = null; lateral = null; }
   if (sv != null && veh.ts !== vs.curTs) { vs.prevS = vs.curS ?? null; vs.curS = sv; vs.curTs = veh.ts; vs.curAt = nowMs; }   // nuovo rilevamento
   const adv = sv != null && vs.prevS != null ? sv - vs.prevS : 0;                                        // avanzamento (m) fra gli ultimi due rilevamenti
   const delayGps = sv != null ? tNow - schedAt(offs, st, sv) : null;                                    // ritardo misurato dal GPS (s)
@@ -167,6 +172,7 @@ function update(x) {
   const known = vs.cur !== undefined, prevCur = vs.cur ?? 0, a0 = vs.at;   // known = corsa già seguita nei cicli precedenti
   let cur = Math.max(prevCur, feedCur), src = 'feed';
   const heldK = a0 && a0.k === prevCur && prevCur < n - 1 ? prevCur : -1;       // fermata in cui il mezzo è stato visto fermo e non ha ancora dato prova di partenza
+  const stillNow = (vi ?? sp ?? 99) < C.STILL || (veh?.stillS || 0) >= 15;
   if (sv != null) {
     let pc = prevCur; src = 'gps';
     while (pc < n - 1) {
@@ -178,6 +184,10 @@ function update(x) {
       }
       if (!gone && !a && !term) gone = dk > 20 && (vi ?? 0) >= C.MOVE_PASS;                              // c) senza sosta
       if (!gone && !a && term) gone = dk > 90 && sustained;
+      // SOSTA IN ANTICIPO: arrivato prima dell'orario e fermo poco oltre il palo. Le linee guida dei sistemi AVL considerano le fermate
+      // "punti di regolazione": il mezzo attende l'orario. Finché è fermo e la partenza programmata è nel futuro NON è partito
+      // (altrimenti risulterebbe "partito in anticipo" anche se poi parte puntuale).
+      if (gone && stillNow && dk <= C.HOLD_FWD_M && tNow < at(pc) - C.HOLD_EARLY_S) gone = false;
       if (!gone) break; pc++;
     }
     cur = Math.max(prevCur, pc);
@@ -230,7 +240,8 @@ function update(x) {
     const back = term ? C.TERM_BACK_M : C.ARR_BACK_M, fwd = term ? C.TERM_M : C.PASS_M;
     // fermo = velocità istantanea bassa; al capolinea basta non essere in movimento SOSTENUTO (manovre e rumore GPS non contano)
     const stopped = term ? !sustained : (vi != null ? vi < C.STILL : (veh.status === 1 || (veh.stillS || 0) >= 5));
-    const inZone = dk != null ? (dk >= -back && dk <= fwd) : dTo(k) <= (term ? 120 : 50);
+    const early = stopped && tNow < at(k) - C.HOLD_EARLY_S;                           // fermo in anticipo: la zona della fermata si allunga in avanti
+    const inZone = dk != null ? (dk >= -back && dk <= (early ? Math.max(fwd, C.HOLD_FWD_M) : fwd)) : dTo(k) <= (term ? 120 : early ? 160 : 50);
     const sticky = vs.at && vs.at.k === k && (dk != null ? dk >= -back - 20 && dk <= Math.max(fwd + 20, C.DWELL_FWD_M) : dTo(k) <= (term ? 160 : 80));
     if ((inZone && stopped) || sticky || (veh.status === 1 && inZone)) atStop = k;
     if (atStop === k && !(vs.at && vs.at.k === k)) vs.at = { k, anchorS: dk != null ? sv : null, since: nowMs };
@@ -259,8 +270,14 @@ function update(x) {
   if (cur === 0 && n > 0) etaCur = Math.max(etaCur, at(0));          // dal capolinea non si parte prima dell'orario programmato (il feed può dare anticipi irreali)
 
   const etaMs = new Float64Array(n).fill(NaN), effD = cur < n ? etaCur - at(cur) : 0;
+  // CORSA NON ANCORA PARTITA (prassi dei sistemi di monitoraggio): fonte primaria il feed ACTV; mai anticipi a valle (la corsa non può partire
+  // prima dell'orario); un ritardo solo se la partenza è già in ritardo o se il feed lo dichiara. La posizione GPS di un mezzo ancora sulla corsa
+  // precedente o in rimessa NON genera ritardi/anticipi sulle fermate successive.
+  const notStarted = cur === 0 && vs.dep?.[0] == null && !(atStop === 0 && moving);
+  const lateStart = notStarted ? Math.max(0, etaCur - at(0)) : 0;
   for (let k = cur, last = 0; k < n; k++) {
     let e = k === cur ? etaCur : at(k) + effD + (dly(k) - dly(cur));       // ritardo effettivo + variazione prevista dal feed
+    if (notStarted) { const fd = lv?.delays?.[k]; e = at(k) + Math.max(lateStart, fd != null ? Math.max(0, fd) : 0); }
     e = Math.max(e, last); last = e; etaMs[k] = nowMs + (e - tNow) * 1000;
   }
 
@@ -287,7 +304,8 @@ function update(x) {
     if (vs.dep[k] != null || !known) continue;
     let t = null;
     if (k === cur - 1 && sv != null && veh?.ts && nowMs - veh.ts < 120000) t = Math.min(nowMs, veh.ts);
-    else if (hist?.[k] != null) t = Math.min(nowMs, nowMs - (tNow - (at(k) + hist[k])) * 1000);
+    // dal feed: il ritardo dichiarato è quello di ARRIVO; un arrivo in anticipo non è una partenza in anticipo (il mezzo attende l'orario)
+    else if (hist?.[k] != null) t = Math.min(nowMs, nowMs - (tNow - (at(k) + Math.max(0, hist[k]))) * 1000);
     else if (k === cur - 1) t = nowMs;
     if (t != null) vs.dep[k] = t;
   }
@@ -296,7 +314,8 @@ function update(x) {
 
   // dayOff: a quale giorno di servizio appartiene l'istanza viva (0 = oggi, 86400 = ieri, orari 24:xx dopo mezzanotte)
   return { vehKey: veh?.key ?? null, label: veh?.label ?? null, cur, atStop, phase, stage, etaMs, dayOff: tNow >= 86400 ? 86400 : 0, src, sVeh: sv, lateral, delayS: vs.delay ?? 0,
-    atOrigin: atStop === 0 || (!veh && cur === 0 && tNow < at(0)), waiting: atStop === cur && etaCur - tNow > 0, speed: sp, dep: vs.dep };
+    atOrigin: atStop === 0 || (!veh && cur === 0 && tNow < at(0)), waiting: atStop === cur && etaCur - tNow > 0, speed: sp, dep: vs.dep,
+    preStart: notStarted, feedPre: notStarted && !!lv };
 }
 
 // Punto del tracciato all'ascissa s, e tratto di tracciato tra due ascisse (per muovere il mezzo SULLA linea, non in rettilineo).

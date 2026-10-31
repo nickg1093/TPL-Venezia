@@ -94,6 +94,7 @@ const validStyle = st => {
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
+const ABOUT_VERSION = 'v20';
 const POSTS = new Set(['/api/reload-gtfs', '/api/watch', '/api/watch/cancel', '/api/watch/resub']);
 
 // ---- ROUTE API ----  auth: 'diag' | 'admin' | undefined;  method: 'POST' solo per azioni che modificano lo stato
@@ -147,6 +148,8 @@ const API = new Map(Object.entries({
     return { liveUpdated, note, departures: out.slice(0, 300) };
   } },
   // AVVISI DI ARRIVO (notifiche): chiave pubblica, attivazione, annullamento, messaggi per i dispositivi senza Web Push
+  // informazioni sul servizio per la pagina «i»: versione e, se impostato, contatto del titolare (variabile APP_CONTACT; nessun nome)
+  '/api/about': { fn: () => ({ version: ABOUT_VERSION, contact: (process.env.APP_CONTACT || '').slice(0, 160) || null }) },
   '/api/push-key': { fn: () => ({ key: watch.publicKey() }) },
   '/api/watch': { method: 'POST', limit: 'watch', fn: async (u, req) => {
     const b = await readJson(req);
@@ -375,7 +378,20 @@ avvisi.setContext(() => {
   return (avCtx = { v: live.version(), known, byName, lineStops, nameOf: id => names.get(id) || id });
 });
 avvisi.setTideSource(() => tide.snapshot());
-watch.init({ tripDetail: (i, tid) => live.tripDetail(i, tid, true), contact: process.env.PUSH_CONTACT });
+// prossima corsa della stessa linea dalla stessa fermata (per l'avviso di corsa soppressa): orario "HH:MM" o null
+function nextSameLine(i, tid, stopFull) {
+  const G = D[i], trip = G.trips[tid], st = G.stopTimes.get(tid), sid = stopFull.split(':').slice(1).join(':'); if (!trip || !st) return null;
+  const k = st.s.indexOf(sid); if (k < 0) return null;
+  const t0 = st.d[k]; let best = null;
+  for (const t2 of G.tripIds) {
+    const tr = G.trips[t2]; if (t2 === tid || tr.route !== trip.route) continue;
+    const s2 = G.stopTimes.get(t2), j = s2.s.indexOf(sid); if (j < 0 || j === s2.s.length - 1) continue;
+    const t = s2.d[j]; if (t <= t0 || (best != null && t >= best) || !schedule.isActiveToday(G, t2)) continue;
+    best = t;
+  }
+  return best == null ? null : schedule.hhmm(best);
+}
+watch.init({ tripDetail: (i, tid) => live.tripDetail(i, tid, true), contact: process.env.PUSH_CONTACT, next: nextSameLine });
 avvisi.start();
 tide.start();   // raccolta periodica del livello di marea: costruisce la storia da cui si ricava la tendenza
 

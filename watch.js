@@ -12,7 +12,7 @@ const dly = d => (d == null || Math.abs(d) < 1 ? '' : d > 0 ? ` · ritardo ${d} 
 
 // Prossimo messaggio per una corsa (al massimo uno a ogni controllo). w: stato dell'avviso, d: dettaglio della corsa (live.tripDetail).
 // -> { msg?: {kind, title, body, silent}, end?: true }
-function step(w, d, now = Date.now()) {
+function step(w, d, now = Date.now(), next = null) {
   // titolo breve, senza emoji: la linea (con la sua mattonella o il suo cerchio come immagine della notifica) e la destinazione
   const title = `Linea ${d.trip.line}${d.trip.headsign ? ' → ' + d.trip.headsign : ''}`, stop = w.stopName;
   const out = (kind, body, silent, end = false, ttl = 120) => ({ msg: { kind, title, body, silent, line: d.trip.line, ttl }, end });
@@ -21,15 +21,23 @@ function step(w, d, now = Date.now()) {
     if (k < 0) return { end: true }; w.k = k;
   }
   const s = d.stops[w.k];
-  if (d.cancelled) return out('cancel', `Corsa soppressa: non passerà da ${stop}.`, false, true, 900);
-  if (s.skipped) return out('skip', `Il mezzo non ferma a ${stop} (fermata saltata).`, false, true, 900);
+  // soppressa o fermata saltata: si indica subito la corsa successiva della stessa linea da quella fermata (se c'è), così l'avviso è utile
+  const alt = next ? ` Prossima corsa della linea ${d.trip.line}: alle ${next}.` : '';
+  if (d.cancelled) return out('cancel', `Corsa soppressa: non passerà da ${stop}.${alt}`, false, true, 900);
+  if (s.skipped) return out('skip', `Il mezzo non ferma a ${stop} (fermata saltata).${alt}`, false, true, 900);
   if (s.state === 'passed') return w.sent.arr ? { end: true } : out('passed', `Passato da ${stop}.`, true, true);
   const eta = s.expMs ?? now + (s.inMin ?? 0) * 60000, mins = Math.max(0, Math.round((eta - now) / 60000));
   const est = d.live && d.detected !== false ? '' : ' (da orario)', when = `alle ${hm(eta)}${dly(s.delay)}${est}`;
   if (now - w.created > LIFE_MS || eta < now - 10 * 60e3) return { end: true };
   const here = s.state === 'at' || s.phase === 'approaching' || mins <= 1;
   if (!w.sent.arr && here && (w.sent.lead || w.lead <= 2 || mins <= 1)) { w.sent.lead = w.sent.conf = w.sent.arr = true; return out('arrive', `In arrivo ora a ${stop}.`, false, true, 90); }
-  if (!w.sent.lead && mins <= w.lead) { w.sent.lead = w.sent.conf = true; w.lastDelay = s.delay; w.lastAt = now; return out('lead', `Arriva tra ${mins} min a ${stop}, ${when}.`, false, false, Math.max(60, Math.min(900, Math.round((eta - now) / 1000)))); }
+  // preavviso solo con stima STABILE: due controlli di fila entro la soglia (un GPS che salta non fa suonare il telefono in anticipo),
+  // oppure subito se si è già ben dentro la soglia
+  if (!w.sent.lead && mins <= w.lead) w.leadHits = (w.leadHits || 0) + 1; else if (!w.sent.lead) w.leadHits = 0;
+  // mezzo non più rilevato da 5 minuti (prima del preavviso): lo si dice una volta, l'avviso prosegue con l'orario
+  if (d.live && d.detected === false) { w.lostSince ??= now; } else w.lostSince = null;
+  if (!w.sent.lead && w.sent.conf && !w.sent.lost && w.lostSince && now - w.lostSince > 5 * 60e3) { w.sent.lost = true; return out('update', `Il mezzo non è rilevato in questo momento: l'avviso prosegue in base all'orario (${hm(eta)}).`, true); }
+  if (!w.sent.lead && mins <= w.lead && (w.leadHits >= 2 || mins <= w.lead - 2 || w.lead <= 2)) { w.sent.lead = w.sent.conf = true; w.lastDelay = s.delay; w.lastAt = now; return out('lead', `Arriva tra ${mins} min a ${stop}, ${when}.`, false, false, Math.max(60, Math.min(900, Math.round((eta - now) / 1000)))); }
   if (!w.sent.conf) { w.sent.conf = true; w.lastDelay = s.delay; w.lastAt = now; return out('conf', `Ti avviso ${w.lead} min prima dell'arrivo a ${stop}. Previsto ${when}.`, true); }
   if (!w.sent.lead && s.delay != null && w.lastDelay != null && Math.abs(s.delay - w.lastDelay) >= DELAY_STEP && now - w.lastAt >= UPDATE_GAP_MS) {
     w.lastDelay = s.delay; w.lastAt = now; return out('update', `Ora previsto a ${stop} ${when}.`, true);
@@ -39,7 +47,8 @@ function step(w, d, now = Date.now()) {
 
 // ---- registro degli avvisi ----
 let vapid = null, subject = 'mailto:noreply@example.invalid', getTrip = null, timer = null;
-function init({ tripDetail, contact }) { vapid = push.loadVapid(); getTrip = tripDetail; if (contact) subject = contact; if (!vapid.fromEnv) console.log('push: chiavi VAPID temporanee (imposta VAPID_PUBLIC_KEY e VAPID_PRIVATE_KEY per conservarle tra i riavvii)'); }
+let nextOf = () => null;
+function init({ tripDetail, contact, next }) { vapid = push.loadVapid(); getTrip = tripDetail; if (next) nextOf = next; if (contact) subject = contact; if (!vapid.fromEnv) console.log('push: chiavi VAPID temporanee (imposta VAPID_PUBLIC_KEY e VAPID_PRIVATE_KEY per conservarle tra i riavvii)'); }
 const publicKey = () => (vapid ? push.b64u(vapid.pub) : null);
 
 function create({ sub, src, tid, stop, stopName, lead, ip, url, style }) {
@@ -73,7 +82,8 @@ async function deliver(w, msg) {
 }
 async function tick(w) {
   let d; try { d = getTrip(w.src, w.tid); } catch { W.delete(w.id); return; }     // corsa non più nel GTFS in uso
-  const r = step(w, d);
+  let nx = null; if (d.cancelled || d.stops?.[w.k ?? -1]?.skipped) { try { nx = nextOf(w.src, w.tid, w.stop); } catch { nx = null; } }
+  const r = step(w, d, Date.now(), nx);
   if (r.msg) await deliver(w, r.msg).catch(e => console.log('push: errore di invio:', e.message));
   if (r.end) { if (w.sub) W.delete(w.id); else w.ended = Date.now(); }
 }
