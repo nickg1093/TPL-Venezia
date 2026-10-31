@@ -5,7 +5,7 @@
 <!-- Niente maximum-scale/user-scalable=no: bloccare lo zoom della pagina viola l'accessibilità (WCAG 1.4.4). La mappa gestisce da sé i propri gesti. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Venezia TPL live</title>
-<meta name="description" content="Autobus, tram e battelli di Venezia in tempo reale, con livello e tendenza della marea.">
+<meta name="description" content="Autobus, tram e vaporetti di Venezia in tempo reale, con livello e tendenza della marea.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#ffffff">
 <link rel="manifest" href="/manifest.webmanifest">
@@ -26,6 +26,10 @@
 <div id="wrap">
   <div id="busybar" class="busybar" role="progressbar" aria-label="Caricamento in corso" aria-busy="true" hidden><span></span></div>
   <div id="map" role="application" aria-label="Mappa dei mezzi pubblici in tempo reale" tabindex="0"></div>
+  <!-- INFORMAZIONI: bottone separato dagli strumenti, in basso a destra sulla mappa (sempre sopra la barra in basso, qualunque sia la sua altezza) -->
+  <div id="info-fab" class="group"><button id="info-btn" class="ibtn" type="button" aria-label="Informazioni, note legali e crediti" aria-expanded="false" aria-controls="info" title="Informazioni"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-about"/></svg></button></div>
+  <!-- attribuzione obbligatoria della mappa (ODbL): visibile all'apertura, poi si riduce; crediti completi in Informazioni -->
+  <div id="osm-attr" class="osm-attr">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> · dati ACTV elaborati: stime</div>
 
   <!-- ALTO A SINISTRA: stato dei dati -->
   <div id="topleft"><span id="status" aria-live="off">Caricamento…</span><button id="linefilter" class="chip-f" type="button" hidden></button><button id="nearchip" class="chip-f near" type="button" hidden></button></div>
@@ -43,7 +47,7 @@
   <!-- COLONNA CONTROLLI A DESTRA: servizi · ricerca/posizione/tema · avvisi/marea/installa -->
   <nav id="controls" aria-label="Strumenti della mappa">
     <div class="group" role="group" aria-label="Servizi da mostrare">
-      <label class="ibtn" title="Battelli"><input type="checkbox" name="src" value="nav" checked><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-ship"/></svg><span class="sr-only">Battelli</span></label>
+      <label class="ibtn" title="Vaporetti"><input type="checkbox" name="src" value="nav" checked><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-ship"/></svg><span class="sr-only">Vaporetti</span></label>
       <label class="ibtn" title="Autobus e tram"><input type="checkbox" name="src" value="aut" checked><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-bus"/></svg><span class="sr-only">Autobus e tram</span></label>
     </div>
     <div class="group">
@@ -70,6 +74,101 @@
     <div id="avvisi-body" aria-live="polite">Caricamento…</div>
   </section>
 
+
+  <!-- FINESTRA INFORMAZIONI: come leggere i dati, note legali, privacy e permessi, fonti e crediti -->
+  <section id="info" class="fullpage" role="dialog" aria-modal="true" aria-labelledby="info-title" tabindex="-1" hidden>
+    <header class="fp-h"><h2 id="info-title">Informazioni</h2><button id="info-close" class="ibtn sm" type="button" aria-label="Chiudi informazioni"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-close"/></svg></button></header>
+    <div id="info-body">
+      <div class="ip-hero">
+        <img src="/icons/icon.svg" alt="" width="64" height="64">
+        <div><p class="ip-name">Venezia TPL live</p><p class="ip-tag">Autobus, tram e vaporetti di Venezia in tempo reale</p><p class="ip-ver" id="info-version"></p></div>
+      </div>
+      <div class="ip-notice" role="note"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-warn"/></svg><p><b>Servizio indipendente e non ufficiale.</b> Orari e dati in tempo reale sono pubblicati da ACTV come dati aperti e vengono elaborati da questa app per stimare posizioni e arrivi. Le informazioni sono quindi <b>indicative e possono contenere errori</b>: fanno fede le comunicazioni ufficiali di ACTV.</p></div>
+      <ul class="ip-facts">
+        <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-db"/></svg><b>Dati aperti</b><span>pubblicati da ACTV, Comune di Venezia e OpenStreetMap</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-phone"/></svg><b>Dati sul dispositivo</b><span>preferiti e impostazioni restano sul tuo telefono</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-shield"/></svg><b>Nessun tracciamento</b><span>niente cookie, pubblicità o statistiche</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-user"/></svg><b>Nessun account</b><span>nessuna registrazione richiesta</span></li>
+      </ul>
+      <div id="info-watches"></div>
+      <nav class="ip-toc" aria-label="Sezioni della pagina">
+        <button type="button" data-go="ip-proj">Il progetto</button><button type="button" data-go="ip-legal">Note legali</button><button type="button" data-go="ip-privacy">Privacy</button><button type="button" data-go="ip-perm">Permessi</button><button type="button" data-go="ip-secu">Sicurezza</button><button type="button" data-go="ip-src">Fonti e licenze</button>
+      </nav>
+      <section class="ip-sec" id="ip-proj" aria-labelledby="ip-proj-h">
+        <h3 id="ip-proj-h"><span class="ip-sec-ic"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-code"/></svg></span><span>Il progetto</span></h3>
+        <p>Venezia TPL live è un progetto personale e indipendente, nato per rendere più semplice seguire autobus, tram e vaporetti di Venezia a partire dai dati aperti pubblicati da ACTV.</p>
+        <p>L'app è stata sviluppata <b>con l'ausilio dell'intelligenza artificiale</b>, sotto la guida e con le verifiche dell'autore. Come ogni software può contenere errori: le segnalazioni, al contatto indicato in fondo alla pagina, aiutano a correggerli.</p>
+      </section>
+      <section class="ip-sec" id="ip-legal" aria-labelledby="ip-legal-h">
+        <h3 id="ip-legal-h"><span class="ip-sec-ic"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-scale"/></svg></span><span>Note legali e condizioni d'uso</span></h3>
+        <h4>Natura del servizio</h4>
+        <p>Venezia TPL live è un servizio informativo gratuito che mostra su una mappa orari, posizione dei mezzi, previsioni di arrivo, avvisi e livello di marea, ottenuti elaborando dati aperti pubblici. Non vende titoli di viaggio e non svolge attività di trasporto.</p>
+        <h4>Indipendenza e marchi</h4>
+        <p>Il servizio <b>non è realizzato, gestito, approvato o sponsorizzato</b> da ACTV S.p.A., AVM S.p.A., dal Comune di Venezia o dal Centro Previsioni e Segnalazioni Maree. Le denominazioni citate appartengono ai rispettivi titolari e sono usate al solo scopo di indicare la fonte dei dati.</p>
+        <h4>Valore delle informazioni</h4>
+        <p>Orari, fermate e dati in tempo reale (posizione dei mezzi e ritardi) sono <b>pubblicati da ACTV</b> come dati aperti. Questa app li <b>elabora automaticamente</b>: associa i mezzi alle corse, ricostruisce le posizioni lungo il percorso e calcola le previsioni di arrivo. Il risultato ha valore <b>indicativo e non è privo di errori</b>: i dati di partenza possono essere incompleti, inesatti o aggiornati in ritardo, e l'elaborazione può aggiungere ulteriori imprecisioni. <b>Fanno fede esclusivamente le comunicazioni ufficiali</b> di ACTV (<a href="https://actv.avmspa.it/" target="_blank" rel="noopener noreferrer">actv.avmspa.it</a>, avvisi in fermata e a bordo) e, per la marea, del Centro Maree del Comune di Venezia.</p>
+        <h4>Avvisi di arrivo</h4>
+        <p>Le notifiche sono un aiuto e non una garanzia: possono arrivare in ritardo, non arrivare o essere imprecise, perché dipendono dai dati disponibili, dal dispositivo, dalla rete e dai servizi di notifica. Non usarle come unico riferimento. Non consultare l'app mentre sei alla guida.</p>
+        <h4>Esclusione di garanzie e limitazione di responsabilità</h4>
+        <p>Il servizio è fornito «così com'è» e «secondo disponibilità», senza garanzie espresse o implicite di esattezza, completezza, continuità o idoneità a uno scopo particolare. Nei limiti consentiti dalla legge, il gestore non risponde di danni diretti o indiretti, ritardi, coincidenze perse o spese derivanti dall'uso del servizio, dalla sua indisponibilità o dall'affidamento sulle informazioni mostrate. Resta ferma la responsabilità per dolo o colpa grave (art. 1229 del Codice civile) e restano salvi i diritti che la legge riconosce in modo inderogabile ai consumatori.</p>
+        <h4>Uso corretto</h4>
+        <p>Non è consentito usare il servizio in modo da comprometterne il funzionamento, ad esempio con interrogazioni automatiche massive. Il servizio applica limiti al numero di richieste per proteggere tutti gli utenti.</p>
+        <h4>Modifiche e legge applicabile</h4>
+        <p>Il servizio e queste condizioni possono essere modificati, sospesi o interrotti in qualsiasi momento. Usando il servizio accetti le condizioni in vigore. Le condizioni sono regolate dalla legge italiana.</p>
+      </section>
+      <section class="ip-sec" id="ip-privacy" aria-labelledby="ip-privacy-h">
+        <h3 id="ip-privacy-h"><span class="ip-sec-ic"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-lock"/></svg></span><span>Informativa privacy<small>sintesi ai sensi dell'art. 13 del Regolamento (UE) 2016/679 (GDPR)</small></span></h3>
+        <p>Il servizio tratta <b>il minimo indispensabile</b> per funzionare: non richiede registrazione, non usa cookie, non fa profilazione e non contiene pubblicità né strumenti di statistica.</p>
+        <ul class="ip-checks ip-priv">
+          <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-db"/></svg><span><b>Dati di navigazione</b> (indirizzo IP e dati tecnici della richiesta): servono a erogare il servizio e a proteggerlo dagli abusi, per legittimo interesse (art. 6, par. 1, lett. f GDPR). L'app li tiene solo in memoria per circa 60 secondi; il fornitore di hosting, Render Services, Inc. (USA, aderente all'EU-U.S. Data Privacy Framework), può conservare registri tecnici secondo la propria <a href="https://render.com/privacy" target="_blank" rel="noopener noreferrer">informativa</a>.</span></li>
+          <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-bell"/></svg><span><b>Avvisi di arrivo</b>, solo se li attivi: l'iscrizione anonima creata dal browser, con corsa e fermata scelte, serve a inviarti l'avviso richiesto (art. 6, par. 1, lett. b GDPR). Resta solo in memoria fino all'arrivo e al massimo per 3 ore. Il messaggio passa, cifrato, per il servizio di notifica del tuo browser.</span></li>
+          <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-locate"/></svg><span><b>Posizione</b>, solo se tocchi il pulsante: è usata <b>solo sul tuo dispositivo</b> e non viene inviata al server.</span></li>
+          <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-phone"/></svg><span><b>Memoria del dispositivo</b>: preferiti, tema e avvisi attivi restano nel browser. Sono strumenti tecnici che non richiedono consenso (art. 122 Codice privacy; <a href="https://www.garanteprivacy.it/home/docweb/-/docweb-display/docweb/9677876" target="_blank" rel="noopener noreferrer">Linee guida del Garante</a> del 10 giugno 2021).</span></li>
+          <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-pin"/></svg><span><b>Mappa</b>: le immagini sono scaricate dal tuo browser dai server della OpenStreetMap Foundation, titolare autonomo (<a href="https://osmfoundation.org/wiki/Privacy_Policy" target="_blank" rel="noopener noreferrer">informativa</a>).</span></li>
+        </ul>
+        <p>Puoi esercitare i diritti previsti dagli artt. 15–22 GDPR (accesso, cancellazione, opposizione e gli altri) scrivendo al contatto indicato qui sotto. Poiché i dati durano pochi secondi o poche ore e non sono legati alla tua identità, potrebbe non essere possibile identificarti (art. 11 GDPR). Puoi sempre proporre reclamo al <a href="https://www.garanteprivacy.it/" target="_blank" rel="noopener noreferrer">Garante per la protezione dei dati personali</a>.</p>
+        <p class="ip-owner" id="ip-owner" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-mail"/></svg><span><b>Titolare del trattamento</b>, contatto: <span id="ip-owner-contact"></span></span></p>
+      </section>
+      <section class="ip-sec" id="ip-perm" aria-labelledby="ip-perm-h">
+        <h3 id="ip-perm-h"><span class="ip-sec-ic"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-phone"/></svg></span><span>Permessi del dispositivo<small>tutti facoltativi, li puoi revocare in ogni momento</small></span></h3>
+        <div class="ip-cards">
+        <article class="ip-card"><h4><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-locate"/></svg>Posizione</h4><dl><div><dt>A cosa serve</dt><dd>centrare la mappa su di te e mostrare le fermate vicine.</dd></div><div><dt>Quando viene chiesta</dt><dd>solo quando tocchi il pulsante posizione.</dd></div><div><dt>Come revocarla</dt><dd>dalle impostazioni del sito nel browser o dalle impostazioni del telefono.</dd></div></dl></article>
+        <article class="ip-card"><h4><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-bell"/></svg>Notifiche</h4><dl><div><dt>A cosa serve</dt><dd>avvisarti quando il mezzo che aspetti si avvicina alla fermata.</dd></div><div><dt>Quando viene chiesta</dt><dd>solo quando tocchi la campanella su un passaggio.</dd></div><div><dt>Come revocarla</dt><dd>dalla campanella, dal pulsante «Disattiva» della notifica o dalle impostazioni del browser.</dd></div></dl></article>
+        <article class="ip-card"><h4><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-download"/></svg>Installazione</h4><dl><div><dt>A cosa serve</dt><dd>aprire l'app dalla schermata Home, a schermo intero.</dd></div><div><dt>Cosa comporta</dt><dd>nessun permesso aggiuntivo: l'app installata usa le stesse impostazioni del sito.</dd></div><div><dt>Come rimuoverla</dt><dd>come qualsiasi altra app del telefono.</dd></div></dl></article>
+        </div>
+      </section>
+      <section class="ip-sec" id="ip-secu" aria-labelledby="ip-secu-h">
+        <h3 id="ip-secu-h"><span class="ip-sec-ic"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-shield"/></svg></span><span>Sicurezza</span></h3>
+        <ul class="ip-checks">
+          <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-lock"/></svg><span><b>Connessione cifrata</b> (HTTPS) per tutte le comunicazioni.</span></li>
+          <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-shield"/></svg><span><b>Nessuno script di terze parti</b>: il codice dell'app è servito dal suo stesso server, con una politica di sicurezza dei contenuti (CSP) restrittiva.</span></li>
+          <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-check"/></svg><span><b>Contenuti esterni come testo semplice</b>: gli avvisi provenienti da altre fonti vengono ripuliti e non possono eseguire codice.</span></li>
+          <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-check"/></svg><span><b>Limiti alle richieste</b> per proteggere il servizio da abusi e sovraccarichi.</span></li>
+        </ul>
+        <p>Se trovi una vulnerabilità, segnalala al contatto indicato in questa pagina e non renderla pubblica prima che sia corretta (divulgazione responsabile).</p>
+      </section>
+      <section class="ip-sec" id="ip-src" aria-labelledby="ip-src-h">
+        <h3 id="ip-src-h"><span class="ip-sec-ic"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-db"/></svg></span><span>Fonti dei dati, licenze e crediti</span></h3>
+        <div class="ip-cards">
+        <article class="ip-card"><h4><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-bus"/></svg>Orari, fermate e dati in tempo reale</h4><dl><div><dt>Titolare</dt><dd>ACTV S.p.A. (gruppo AVM)</dd></div><div><dt>Dati</dt><dd>GTFS e GTFS-Realtime di autobus, tram e navigazione, pubblicati nel <a href="https://actv.avmspa.it/it/content/catalogo-dei-dati-metadati-e-banche-dati-actv" target="_blank" rel="noopener noreferrer">catalogo dei dati di ACTV</a> (art. 53, c. 1-bis, d.lgs. 82/2005).</dd></div><div><dt>Condizioni</dt><dd>pubblicati senza una licenza espressa: si intendono rilasciati come dati di tipo aperto (art. 52, c. 2, Codice dell'amministrazione digitale).</dd></div><div><dt>Modifiche</dt><dd>dati elaborati da questa app (associazione dei mezzi alle corse, ricostruzione delle posizioni, previsioni di arrivo): i risultati sono stime indicative e possono contenere errori.</dd></div></dl></article>
+        <article class="ip-card"><h4><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-warn"/></svg>Avvisi sul servizio</h4><dl><div><dt>Fonti</dt><dd><a href="https://actv.avmspa.it/" target="_blank" rel="noopener noreferrer">notizie del sito ACTV</a>, canale Telegram <a href="https://t.me/muoversivenezia" target="_blank" rel="noopener noreferrer">AVM/Actv Venezia</a> e piano <a href="https://actv.avmspa.it/it/content/acqua-alta-servizi-di-navigazione-previsti" target="_blank" rel="noopener noreferrer">«Acqua alta: servizi di navigazione previsti»</a>.</dd></div><div><dt>Modifiche</dt><dd>testi riportati in forma sintetica, con il collegamento all'originale.</dd></div></dl></article>
+        <article class="ip-card"><h4><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-tide"/></svg>Livello di marea</h4><dl><div><dt>Titolare</dt><dd>Comune di Venezia – Centro Previsioni e Segnalazioni Maree</dd></div><div><dt>Dati</dt><dd><a href="https://dati.venezia.it/?q=content/cpsm-dati-meteomarini-laguna-e-litorale-veneziano" target="_blank" rel="noopener noreferrer">dati meteomarini della laguna e del litorale</a> dal portale dati.venezia.it.</dd></div><div><dt>Licenza</dt><dd>Creative Commons Attribuzione (CC BY).</dd></div><div><dt>Modifiche</dt><dd>dati elaborati da questa app.</dd></div></dl></article>
+        <article class="ip-card"><h4><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-pin"/></svg>Mappa</h4><dl><div><dt>Dati</dt><dd>© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">contributori di OpenStreetMap</a>, disponibili con licenza Open Database License (ODbL).</dd></div><div><dt>Immagini</dt><dd>server della OpenStreetMap Foundation, nel rispetto delle <a href="https://operations.osmfoundation.org/policies/tiles/" target="_blank" rel="noopener noreferrer">condizioni d'uso</a>.</dd></div></dl></article>
+        </div>
+        <h4>Software di terze parti</h4>
+        <ul class="ip-sw">
+          <li><a href="https://leafletjs.com/" target="_blank" rel="noopener noreferrer">Leaflet</a><span>BSD-2-Clause</span></li>
+          <li><a href="https://github.com/protobufjs/protobuf.js" target="_blank" rel="noopener noreferrer">protobuf.js</a><span>BSD-3-Clause</span></li>
+          <li><a href="https://github.com/cthackers/adm-zip" target="_blank" rel="noopener noreferrer">adm-zip</a><span>MIT</span></li>
+        </ul>
+        <p class="muted">Icone e grafica realizzate per questa app.</p>
+      </section>
+      <footer class="ip-foot">
+        <p id="info-contact-row" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-mail"/></svg><span>Contatti e segnalazioni: <span id="info-contact"></span></span></p>
+        <p>Ultimo aggiornamento di questa pagina: 31 ottobre 2026</p>
+      </footer>
+    </div>
+  </section>
   <!-- PANNELLO DETTAGLI (fermata / zona / corsa) -->
   <aside id="panel" class="card side-panel" hidden aria-label="Dettagli">
     <div class="ph">
@@ -132,7 +231,6 @@
       <input id="tl-range" type="range" min="0" max="86400" value="43200" step="1" aria-label="Orario della giornata">
       <button id="tl-now" type="button" class="ora-btn">ORA</button>
     </div>
-    <p id="credits">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> · ACTV (GTFS-RT) · <a href="https://dati.venezia.it/?q=content/cpsm-dati-meteomarini-laguna-e-litorale-veneziano" target="_blank" rel="noopener noreferrer">CPSM Venezia</a></p>
   </div>
 </footer>
 
