@@ -264,8 +264,6 @@ body.sched-mode #timeline-controls{display:flex;align-items:center;gap:8px 10px}
 #tl-date,#tl-speed{min-height:44px;padding:0 10px;border:1.5px solid var(--line-strong);border-radius:99px;background:var(--surface);color:var(--fg);font:inherit;font-size:var(--fs-sm);font-weight:600}
 #tl-range{flex:1 1 90px;min-width:90px;height:44px;margin:0;accent-color:var(--accent);cursor:pointer}
 
-#credits{margin:0;text-align:center;font-size:var(--fs-xs);line-height:1.2;color:var(--muted)}
-#credits a{display:inline-block;padding:3px;color:var(--accent);text-decoration:underline;text-underline-offset:2px}   /* area di tocco >= 24 px (WCAG 2.2 AA) */
 
 /* ---------- AVVISO "INSTALLA" ---------- */
 .snack{position:absolute;z-index:1300;left:calc(var(--gap) + var(--safe-l));right:calc(var(--tap) + 3*var(--gap) + var(--safe-r) + 8px);bottom:calc(var(--gap) + 44px);max-width:440px;display:flex;align-items:center;gap:12px;
@@ -467,3 +465,100 @@ button.chip.all{min-height:30px}
 @media (min-width:900px){ :root{--r-h:58px} }
 #pstatus:empty{display:none}
 .ph>.ph-status{margin-top:4px}
+
+/* ---- scheda Informazioni ---- */
+#info-body{padding:0 16px 16px;font-size:var(--fs-sm);line-height:1.45}
+#info-body a{color:var(--accent);text-decoration:underline;text-underline-offset:2px;display:inline-block;padding:2px 0}
+#info-watches .iw{display:flex;align-items:center;gap:8px;padding:8px 10px;margin:0 0 6px;border-radius:12px;background:var(--accent-soft)}
+#info-watches .iw span{flex:1;min-width:0}
+#info-watches h3{margin:6px 0;font-size:var(--fs-sm)}
+/* attribuzione OpenStreetMap sulla mappa: visibile all'apertura, si riduce dopo 5 s o alla prima interazione (linee guida OSMF); crediti completi nella scheda Informazioni */
+.leaflet-control-attribution{transition:opacity .4s}
+.leaflet-control-attribution.attr-off{opacity:0;pointer-events:none}
+.osm-attr{position:absolute;z-index:900;left:calc(var(--gap) + var(--safe-l));bottom:8px;padding:3px 9px;border-radius:99px;background:var(--glass);color:var(--muted);font-size:.75rem;line-height:1.5;box-shadow:var(--shadow);transition:opacity .5s}
+.osm-attr a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.osm-attr.off{opacity:0;pointer-events:none}
+
+/* fonte del passaggio sull'angolo in basso a sinistra della mattonella: onde verdi = rilevato in tempo reale, orologio = da orario */
+.bsrc{position:absolute;left:-8px;bottom:-8px;display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--surface);color:var(--muted);box-shadow:0 0 0 1.5px var(--surface)}
+.bsrc .ic{width:15px;height:15px;stroke-width:2.3}
+.bsrc.on{color:var(--ok)}
+.dep.gone .bsrc{color:var(--muted)}
+
+/* bottone Informazioni: stesso stile degli altri, da solo in basso a destra della mappa (sopra la barra in basso di qualunque altezza) */
+#info-fab{position:absolute;z-index:1000;right:calc(var(--gap) + var(--safe-r));bottom:calc(var(--gap) + var(--zoom-off, 0px))}   /* con i comandi dello zoom (mouse): sopra di essi */
+body.has-panel #info-fab{display:none}
+@media (min-width:768px){ body.has-panel #info-fab{display:flex} }
+/* pagina Informazioni a tutto schermo (copre mappa e barra): testo lungo, impaginato come una pagina, leggibile */
+#info.fullpage{position:fixed;inset:0;z-index:3000;overflow-y:auto;background:var(--bg);color:var(--fg);overscroll-behavior:contain}
+#info .fp-h{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:760px;margin:0 auto;padding:calc(10px + var(--safe-t)) 16px 10px;background:var(--bg);border-bottom:1px solid var(--line)}
+#info .fp-h h2{margin:0;font-size:var(--fs-xl);font-weight:800}
+#info 
+/* scorrimento dei testi lunghi nelle righe dei passaggi */
+.dh .mq,.dn .mq{white-space:nowrap}
+.mq.run{display:inline-block;animation-name:mq;animation-timing-function:ease-in-out;animation-iteration-count:infinite;animation-direction:alternate;will-change:transform}
+@keyframes mq{0%,18%{transform:translateX(0)}82%,100%{transform:translateX(var(--mq-d))}}
+.dh:has(.mq.run),.dn>span:has(.mq.run){text-overflow:clip}
+
+/* PAGINA INFORMAZIONI — impaginazione da documento: intestazione, avviso, punti chiave, indice, sezioni a schede */
+#info #info-body{max-width:760px;margin:0 auto;padding:20px 16px calc(40px + var(--safe-b));font-size:var(--fs-md);line-height:1.6}
+#info p{margin:0 0 12px}
+#info ul{margin:0 0 14px;padding-left:20px}#info li{margin:0 0 8px}
+.ip-hero{display:flex;align-items:center;gap:16px;margin:4px 0 18px}
+.ip-hero img{flex:none;width:64px;height:64px;border-radius:16px;box-shadow:var(--shadow)}
+.ip-name{margin:0!important;font-size:var(--fs-xl);font-weight:800;line-height:1.2}
+.ip-tag{margin:2px 0 6px!important;color:var(--muted);font-size:var(--fs-sm);line-height:1.35}
+.ip-ver{display:inline-block;margin:0!important;padding:1px 9px;border-radius:99px;background:var(--surface-2);color:var(--muted);font-size:var(--fs-xs);font-weight:700}
+.ip-ver:empty{display:none}
+.ip-notice{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;margin:0 0 16px;border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);border-radius:var(--r-md);background:color-mix(in srgb,var(--warn) 10%,var(--surface))}
+.ip-notice>.ic{flex:none;width:24px;height:24px;color:var(--warn);margin-top:1px}
+.ip-notice p{margin:0!important;font-size:var(--fs-sm);line-height:1.5}
+.ip-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;list-style:none;margin:0 0 18px!important;padding:0!important}
+.ip-facts li{display:flex;flex-direction:column;gap:2px;margin:0!important;padding:12px 14px;border-radius:var(--r-md);background:var(--surface);border:1px solid var(--line)}
+.ip-facts .ic{width:22px;height:22px;color:var(--accent);margin-bottom:4px}
+.ip-facts b{font-size:var(--fs-sm);line-height:1.3}
+.ip-facts span{font-size:var(--fs-xs);color:var(--muted);line-height:1.35}
+@media (min-width:640px){.ip-facts{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.ip-toc{position:sticky;top:var(--fp-h,57px);z-index:1;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 -16px 8px;padding:10px 16px;background:var(--bg);border-bottom:1px solid var(--line)}
+.ip-toc::-webkit-scrollbar{display:none}
+.ip-toc button{flex:none;min-height:40px;padding:0 14px;border-radius:99px;border:1px solid var(--line-strong);background:var(--surface);color:var(--fg);font:inherit;font-size:var(--fs-sm);font-weight:700;cursor:pointer}
+.ip-toc button:hover{background:var(--accent-soft)}
+.ip-sec{scroll-margin-top:calc(var(--fp-h,57px) + 64px);padding:22px 0 6px;border-bottom:1px solid var(--line)}
+.ip-sec:last-of-type{border-bottom:0}
+.ip-sec h3{display:flex;align-items:center;gap:12px;margin:0 0 14px;font-size:var(--fs-lg);font-weight:800;line-height:1.25;outline:none}
+.ip-sec h3 small{display:block;margin-top:2px;font-size:var(--fs-xs);font-weight:600;color:var(--muted)}
+.ip-sec-ic{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--accent-soft);color:var(--accent)}
+.ip-sec-ic .ic{width:22px;height:22px}
+.ip-sec h4{margin:18px 0 6px;font-size:var(--fs-md);font-weight:800}
+.ip-sec h3+h4{margin-top:4px}
+.ip-cards{display:grid;gap:10px;margin:0 0 14px}
+@media (min-width:640px){.ip-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.ip-card{padding:14px 16px;border-radius:var(--r-md);background:var(--surface);border:1px solid var(--line)}
+.ip-card h4{display:flex;align-items:center;gap:8px;margin:0 0 8px!important;font-size:var(--fs-md)}
+.ip-card h4 .ic{width:20px;height:20px;color:var(--accent);flex:none}
+.ip-card dl{margin:0}
+.ip-card dl>div{padding:6px 0;border-top:1px solid var(--line)}
+.ip-card dl>div:first-child{border-top:0;padding-top:0}
+.ip-card dt{font-size:var(--fs-xs);font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.ip-card dd{margin:1px 0 0;font-size:var(--fs-sm);line-height:1.5}
+.ip-owner{display:grid;gap:8px;margin:0 0 16px;padding:12px 14px;border-radius:var(--r-md);background:var(--accent-soft)}
+.ip-owner>div{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline}
+.ip-owner dt{display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);font-weight:800}
+.ip-owner dt .ic{width:18px;height:18px;color:var(--accent)}
+.ip-owner dd{margin:0;font-size:var(--fs-sm)}
+.ip-checks{list-style:none;padding:0!important}
+.ip-checks li{display:flex;gap:12px;align-items:flex-start}
+.ip-checks .ic{flex:none;width:22px;height:22px;color:var(--ok);margin-top:2px}
+.ip-sw{list-style:none;padding:0!important;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);overflow:hidden}
+.ip-sw li{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0!important;padding:8px 16px;border-top:1px solid var(--line)}
+.ip-sw li:first-child{border-top:0}
+.ip-sw span{font-size:var(--fs-xs);font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+.ip-foot{margin-top:20px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:var(--fs-sm)}
+.ip-foot p{display:flex;gap:8px;align-items:flex-start;margin:0 0 6px!important}
+.ip-foot .ic{flex:none;width:18px;height:18px;margin-top:3px}
+#info #info-watches:not(:empty){margin:0 0 18px;padding:12px 14px;border-radius:var(--r-md);background:var(--surface);border:1px solid var(--line)}
+#info #info-body a{display:inline;padding:0;overflow-wrap:anywhere}
+.ip-toc button[aria-current="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.ip-priv .ic{color:var(--accent)}
+p.ip-owner{display:flex;gap:10px;align-items:flex-start}
+p.ip-owner .ic{flex:none;width:20px;height:20px;color:var(--accent);margin-top:3px}
