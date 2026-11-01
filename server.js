@@ -45,7 +45,7 @@ const byExpected = (a, b) => (a.expSec - b.expSec) || (a.schedIn - b.schedIn);
 const labelsOf = i => new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
 
 // Dati del veicolo esposti al pubblico: solo ciò che serve alla mappa (niente stati interni)
-const PUBLIC_VEH = ['id', 'src', 'label', 'lat', 'lon', 'bearing', 'speed', 'line', 'color', 'tripId', 'routeId', 'headsign', 'key', 'ts', 'old', 'sim', 'co', 'dup', 'dupWith', 'path', 'reassigned'];
+const PUBLIC_VEH = ['id', 'src', 'label', 'lat', 'lon', 'bearing', 'speed', 'line', 'color', 'tripId', 'routeId', 'headsign', 'key', 'ts', 'old', 'sim', 'co', 'dup', 'dupWith', 'path', 'reassigned', 'idle'];
 const publicVehicle = v => { const o = {}; for (const k of PUBLIC_VEH) if (v[k] !== undefined && v[k] !== null && v[k] !== false) o[k] = v[k]; if (o.speed != null) o.speed = +o.speed.toFixed(1); return o; };
 
 // marea con cache breve: più utenti = una sola richiesta al portale
@@ -94,7 +94,7 @@ const validStyle = st => {
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
-const ABOUT_VERSION = 'v20';
+const ABOUT_VERSION = 'v21';
 const POSTS = new Set(['/api/reload-gtfs', '/api/watch', '/api/watch/cancel', '/api/watch/resub']);
 
 // ---- ROUTE API ----  auth: 'diag' | 'admin' | undefined;  method: 'POST' solo per azioni che modificano lo stato
@@ -174,7 +174,7 @@ const API = new Map(Object.entries({
     if (!sec.vVeh(veh)) throw sec.bad('parametro veh non valido');
     const sched = q(u, 'mode') === 'sched', G = sched ? (gtfsFor(i, timeParams(u).date).G || D[i]) : D[i];
     if (!G.stopTimes.has(tid)) throw fail(404, 'corsa sconosciuta');
-    return live.tripDetail(i, tid, !sched, veh || null, G);
+    return live.tripDetail(i, tid, !sched, veh || null, G, sched ? timeParams(u) : null);
   } },
   // date selezionabili in modalità Pianificato: solo quelle coperte dai GTFS in archivio
   '/api/dates': { fn: () => live.dateRange() },

@@ -98,7 +98,7 @@ function findDates(text, pubMs) {
     if ((m = new RegExp(`^\\s*(?:\\d{4})?\\s*,?\\s*(?:\\(?${WD}\\)?\\s*,?\\s*)?(?:dalle ore|dalle|a partire dalle|dall'|alle ore|ore|alle)\\s*(?:ore\\s*)?${TM}(?:\\s*(?:alle|-|–|fino alle)\\s*(?:ore\\s*)?${TM})?`).exec(after))) {
       if (dt.s == null) dt.s = tsec(m[1], m[2]); if (m[3] != null) dt.e = tsec(m[3], m[4]);
     } else if ((m = new RegExp(`^\\s*(?:\\d{4})?\\s*,?\\s*(?:fino|sino) alle\\s*(?:ore\\s*)?${TM}`).exec(after))) dt.e = tsec(m[1], m[2]);
-    if (!dt.role) dt.role = dt.pair || (new RegExp(`(?:\\bal|\\bfino al|\\bsino al|\\bentro il|\\bfino a|\\bentro)\\s+(?:${WD}\\s+)?$`).test(before) ? 'to' : 'from');
+    if (!dt.role) dt.role = dt.pair || (new RegExp(`(?:\\bal|\\bfino al|\\bsino al|\\bentro il|\\bfino a|\\bentro|\\b(?:fino|sino) al(?:la)? (?:termine|fine) (?:dei servizi|del servizio|della giornata)(?: di| del)?)\\s+(?:${WD}\\s+)?$`).test(before) ? 'to' : 'from');   // anche "fino al termine dei servizi di sabato 30 novembre"
     dt.dal = new RegExp(`(?:\\bdal|\\bda|a partire dal|a partire da|a decorrere dal)\\s+(?:inizio servizi[oa]? (?:di\\s+)?)?(?:${WD}\\s+)?$`).test(before);
   }
   return out;
@@ -453,6 +453,7 @@ async function refreshTg() {
   ST.cache = null;
 }
 
+const RELINK_MS = 2 * DAY;   // un messaggio Telegram si unisce alla notizia ACTV che cita solo se pubblicato entro 2 giorni da essa
 const short = (s, n) => { s = String(s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s\S*$/, '') + '…' : s; };
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -542,8 +543,10 @@ function build(now = Date.now()) {
     items.push(it); byUrl.set(r.url, it);
   }
   for (const m of ST.tg) {
-    const first = m.links.find(l => byUrl.has(l));
-    if (first) { const it = byUrl.get(first); it.source = 'both'; it.tgUrl = m.url; continue; }   // già presente dal sito ACTV
+    // già presente dal sito ACTV: si unisce. MA se il messaggio è molto più recente della notizia a cui rimanda (ACTV aggiorna spesso la stessa
+    // pagina, es. "chiusura di via Pio X: ulteriore proroga" datata settembre e riannunciata a novembre), vale il messaggio: date e testo nuovi.
+    const first = m.links.find(l => byUrl.has(l) && m.pubMs - byUrl.get(l).published <= RELINK_MS);
+    if (first) { const it = byUrl.get(first); it.source = 'both'; it.tgUrl = m.url; continue; }
     if (SERVICE_MSG.test(m.text) || !m.text.trim()) continue;                // "… pinned a photo": messaggi di servizio del canale
     const rows = m.text.split('\n').map(s => s.trim()).filter(Boolean), k = rows.findIndex(r => cleanTitle(r).length >= 3);
     const title = short(cleanTitle(rows[k] ?? '') || 'Avviso', 110), body = rows.slice(k + 1).join(' '), v = parseValidity(m.text, m.pubMs, 'tg');

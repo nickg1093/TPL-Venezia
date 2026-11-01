@@ -147,7 +147,7 @@ async function refresh(id) {
   const s8 = S[id];
   try {
     const [P, U] = await Promise.all([pull(id, 'vehiclePositions'), pull(id, 'tripUpdates')]);
-    const G = D[id], live = {}, now = Date.now(), pos = P.ents, upd = U.ents;
+    const G = D[id], now = Date.now(), pos = P.ents, upd = U.ents;
     s8.errCount = 0; s8.feedTs = P.headerTs ? P.headerTs * 1000 : null;
     if (P.changed) {   // ritmo con cui ACTV pubblica davvero nuovi dati: si legge ~3 volte più spesso, senza sprechi
       if (s8.lastChange) { const iv = Math.min(60000, Math.max(500, now - s8.lastChange)); s8.pubMs = s8.pubMs ? 0.7 * s8.pubMs + 0.3 * iv : iv; }
@@ -162,7 +162,7 @@ async function refresh(id) {
     // (non quello di partenza): meglio fidarsi dei codici che scartare tutto.
     const la = s8.lastAgree, strict = !(la && la.ok + la.bad >= 10 && la.bad / (la.ok + la.bad) > 0.8), tally = { ok: 0, bad: 0 };
     let tuOk = 0, vOk = 0, wrongDay = 0, skippedDeleted = 0;
-    const tuOfVeh = new Map(), vehOfTu = new Map();                   // il trip update dice anche QUALE mezzo fa la corsa: serve a verificare le corse dichiarate
+    const tuOfVeh = new Map(), vehOfTu = new Map(), tuCand = new Map();                   // il trip update dice anche QUALE mezzo fa la corsa: serve a verificare le corse dichiarate
 
     // 2) TRIP UPDATE
     for (const e of upd) {
@@ -172,7 +172,7 @@ async function refresh(id) {
       if (!dayOk(tu.trip.startDate)) { wrongDay++; continue; }
       const tid = resolveTrip(G, tu.trip, strict, tally); if (!tid) continue;
       tuOk++;
-      const tvk = tu.vehicle?.id; if (tvk) { tuOfVeh.set(String(tvk), tid); vehOfTu.set(tid, String(tvk)); }
+      const tvk = tu.vehicle?.id ? String(tu.vehicle.id) : null; if (tvk) { tuOfVeh.set(tvk, tid); vehOfTu.set(tid, tvk); }
       const st = G.stopTimes.get(tid), n = st.s.length, explicit = new Array(n), skipped = new Set();
       let cur = 0, firstJ = -1;
       for (const u of tu.stopTimeUpdate || []) {
@@ -193,14 +193,10 @@ async function refresh(id) {
       const delays = new Array(n);
       for (let k = 0; k < n; k++) { if (explicit[k] != null) c = explicit[k]; delays[k] = c; }
       // quando il feed ha cambiato per l'ultima volta i ritardi di questa corsa: ne misura l'"età" (peso nelle stime)
-      const sig = delays.join(','), pv = s8.sig.get(tid), changedAt = pv && pv.sig === sig ? pv.t : now; s8.sig.set(tid, { sig, t: changedAt });
-      live[tid] = { delays, cancelled: tu.trip.scheduleRelationship === 3, skipped, firstJ, changedAt };
-      let h = s8.hist.get(tid); if (!h) s8.hist.set(tid, h = { delays: new Array(n).fill(null), seen: 0 });
-      for (let k = 0; k < n; k++) if (explicit[k] != null) h.delays[k] = explicit[k];
-      h.seen = now;
+      // ACTV pubblica una previsione PER MEZZO: due mezzi sulla stessa corsa = due previsioni. Si sceglie dopo (chooseTU), quando si sa
+      // quale mezzo fa davvero la corsa: la previsione di un altro mezzo (es. fermo al capolinea) non deve finire sulla corsa giusta.
+      (tuCand.get(tid) || tuCand.set(tid, []).get(tid)).push({ veh: tvk, explicit, entry: { delays, cancelled: tu.trip.scheduleRelationship === 3, skipped, firstJ } });
     }
-    for (const [k, h] of s8.hist) if (now - h.seen > 3 * 3600 * 1000) { s8.hist.delete(k); s8.sig.delete(k); }
-    s8.live = live;
 
     // 3) POSIZIONI: solo rilevamenti sensati. Per ogni mezzo si tiene il più recente (il feed può ripeterlo).
     const byKey = new Map(); let bad = 0, ghost = 0;
@@ -233,7 +229,7 @@ async function refresh(id) {
       veicoli: { total: pos.length, collegati: vOk, posizioneNonValida: bad, datoTroppoVecchio: ghost },
       coerenzaCodici: { coerenti: tally.ok, incoerenti: tally.bad, controlloAttivo: strict } };
     s8.updated = now; s8.goodAt = now; s8.error = null; s8.sim = false;
-    verifyTrips(id, tuOfVeh, vehOfTu); pickOwners(id); buildStates(id); events.emit('push', true);
+    const idle = verifyTrips(id, tuOfVeh); pickOwners(id); chooseTU(id, tuCand, idle, now); buildStates(id); events.emit('push', true);
   } catch (err) {
     s8.errCount++; s8.error = `${id}: ${err.message}`;
     // I dati reali restano finché sono recenti; solo dopo vari errori (o 3 minuti senza dati) si passa alle posizioni da orario, dichiarate come tali.
@@ -246,28 +242,47 @@ async function refresh(id) {
   }
 }
 
-// VERIFICA DELLE CORSE DICHIARATE (vedi assign.js). Corregge solo con prove ripetute e torna al feed appena il feed cambia corsa.
-// La corsa abbandonata perde le previsioni del trip update se quel trip update descriveva proprio questo mezzo (erano il suo ritardo "finto").
-function verifyTrips(i, tuOfVeh, vehOfTu) {
-  const G = D[i], s8 = S[i], mem = (s8.assign ||= new Map()), owners = new Map(), seen = new Set();
-  for (const [k, m] of mem) if (m.goodTid) owners.set(m.goodTid, { key: k, good: true });
-  for (const v of s8.vehicles) {
-    if (v.sim || !v.tripId) continue;
-    seen.add(v.key);
-    const m = mem.get(v.key) || mem.set(v.key, {}).get(v.key);
-    v.feedTripId = v.tripId;
-    let r = null;
-    try { r = assign.check({ G, v, mem: m, tuTid: tuOfVeh.get(String(v.key)) || null, owners, tNowOf: tripNow }); } catch { r = null; }
-    m.goodTid = r ? r.tid : (m.cand ? null : v.tripId);
-    if (!r || r.tid === v.tripId) continue;
-    const trip = G.trips[r.tid], rt = G.routes[trip.route] || {}, from = G.stopTimes.get(v.tripId);
-    if (vehOfTu.get(v.tripId) === String(v.key) && s8.live[v.tripId]) delete s8.live[v.tripId];
+// CORSA DEL MEZZO (vedi assign.js): si segue ACTV. Ritorna l'insieme dei mezzi staccati dalla corsa (fermi al capolinea ben oltre l'orario).
+function verifyTrips(i, tuOfVeh) {
+  const G = D[i], s8 = S[i], mem = (s8.assign ||= new Map()), idle = new Set();
+  const list = s8.vehicles.filter(v => !v.sim && v.tripId);
+  for (const v of list) v.feedTripId = v.tripId;
+  let plan = new Map();
+  try { plan = assign.plan({ G, vehicles: list, mem, tuOfVeh, tNowOf: tripNow }); } catch (e) { console.error('corsa dei mezzi:', e.message); }
+  for (const v of list) {
+    const r = plan.get(v.key); if (!r) continue;
+    const from = G.stopTimes.get(v.tripId);
+    if (r.idle) { v.idle = { why: r.idle.why, trip: from ? schedule.hhmm(from.start) : null }; v.tripId = null; idle.add(String(v.key)); continue; }
+    if (r.tid === v.tripId) continue;
+    const trip = G.trips[r.tid], rt = G.routes[trip.route] || {};
     v.tripId = r.tid; v.line = rt.name || v.line; v.color = rt.color || v.color; v.headsign = trip.headsign || v.headsign;
     v.routeId = has(G.routes, trip.route) ? `${i}:${trip.route}` : v.routeId;
     v.reassigned = { from: from ? schedule.hhmm(from.start) : null, why: r.why };
   }
-  for (const k of [...mem.keys()]) if (!seen.has(k)) mem.delete(k);
-  if (s8.match) s8.match.corseRiconosciute = s8.vehicles.filter(v => v.reassigned).map(v => ({ mezzo: v.label || v.key, dichiarata: v.feedTripId, scelta: v.tripId, perche: v.reassigned.why }));
+  if (s8.match) {
+    s8.match.corseDaTripUpdate = s8.vehicles.filter(v => v.reassigned).map(v => ({ mezzo: v.label || v.key, posizione: v.feedTripId, tripUpdate: v.tripId }));
+    s8.match.nonAssociati = s8.vehicles.filter(v => v.idle).map(v => ({ mezzo: v.label || v.key, corsa: v.feedTripId, motivo: v.idle.why }));
+  }
+  return idle;
+}
+
+// PREVISIONE ACTV DI OGNI CORSA: quella del mezzo che fa la corsa (titolare scelto da pickOwners); altrimenti quella senza mezzo o di un
+// mezzo non staccato; mai quella di un mezzo staccato (i suoi "ritardi" erano solo il tempo che passava al capolinea).
+function chooseTU(i, cand, idle, now) {
+  const s8 = S[i], live = {};
+  for (const [tid, list] of cand) {
+    const owner = s8.owner.get(tid), ok = list.filter(x => !(x.veh && idle.has(x.veh)));
+    const pick = ok.find(x => owner != null && x.veh === String(owner)) || ok.find(x => !x.veh) || ok[0];
+    if (!pick) continue;
+    const e = pick.entry, n = e.delays.length;
+    const sig = e.delays.join(','), pv = s8.sig.get(tid), changedAt = pv && pv.sig === sig ? pv.t : now; s8.sig.set(tid, { sig, t: changedAt });
+    live[tid] = { ...e, changedAt, veh: pick.veh };
+    let h = s8.hist.get(tid); if (!h) s8.hist.set(tid, h = { delays: new Array(n).fill(null), seen: 0 });
+    for (let k = 0; k < n; k++) if (pick.explicit[k] != null) h.delays[k] = pick.explicit[k];
+    h.seen = now;
+  }
+  for (const [k, h] of s8.hist) if (now - h.seen > 3 * 3600 * 1000) { s8.hist.delete(k); s8.sig.delete(k); }
+  s8.live = live;
 }
 
 // STATO UNICO DI UNA CORSA (fonte di verità condivisa da pannello fermata, dettaglio corsa e mappa):
@@ -364,9 +379,11 @@ function buildStates(i) {
   S[i].state = out;
 }
 
-function tripDetail(i, tid, live, vehKey = null, G = D[i]) {
+// when = { secs, date }: modalità Pianificato, la corsa si mostra all'ora e nel giorno SCELTI (fermate passate/da fare e avvisi sul calendario)
+function tripDetail(i, tid, live, vehKey = null, G = D[i], when = null) {
   const st = G.stopTimes.get(tid), trip = G.trips[tid], r = G.routes[trip.route] || {}, n = st.s.length;
-  const tNow = tripNow(st), nowMs = Date.now();
+  const fits = t => t >= st.start - 3600 && t <= st.end + 3600;
+  const tNow = !live && when?.secs != null ? (!fits(when.secs) && fits(when.secs + 86400) ? when.secs + 86400 : when.secs) : tripNow(st), nowMs = Date.now();
   // mezzo di cui si mostra la corsa: quello richiesto (dal marker o dal pannello fermata) se è un rinforzo, altrimenti il principale
   const prim = live ? S[i].state[tid] : null;
   const pick = prim && vehKey && prim.vehKey !== vehKey ? (prim.co || []).find(c => c.vehKey === vehKey) : null;
@@ -419,7 +436,7 @@ function tripDetail(i, tid, live, vehKey = null, G = D[i]) {
   const dn = live && cur < n ? ss.delayS : null;
   return {
     reassigned: live && veh?.reassigned ? veh.reassigned : null,
-    live, detected: !live || !!(sel || lv), progress, atStop, phase: ss.phase, vehKey: ss.vehKey ?? null, others, speedKmh: ss.speed != null ? Math.round(ss.speed * 3.6) : null, cancelled: !!lv?.cancelled, note: noteOf(G),
+    live, detected: !live || !!(sel || lv), progress, atStop, phase: ss.phase, vehKey: ss.vehKey ?? null, others, speedKmh: ss.speed != null ? Math.round(ss.speed * 3.6) : null, cancelled: !!lv?.cancelled, note: noteOf(G, when?.date),
     delayNow: dn != null ? Math.round(dn / 60) : null,
     historyKnown: stops.some(s => s.state === 'passed' && s.delay != null),
     trip: { src: i, id: `${i}:${tid}`, line: r.name || trip.route, color: r.color || null, headsign: trip.headsign || G.stops[st.s[n - 1]] || null, vehicle: veh?.label || null },

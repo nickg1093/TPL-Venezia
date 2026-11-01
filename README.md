@@ -48,7 +48,7 @@ Usa i token così (mai nell'URL, mai nel browser): `curl -H "Authorization: Bear
 - Dopo il commit Render ridistribuisce da solo.
 
 ### 1.4 Dopo ogni modifica ai file dell'interfaccia
-Se cambi icone, manifest o l'elenco `SHELL` di `public/sw.js`, incrementa `VERSION` in `public/sw.js` (ora `v20`). I file `/js` e `/css` si aggiornano da soli (rete prima).
+Se cambi icone, manifest o l'elenco `SHELL` di `public/sw.js`, incrementa `VERSION` in `public/sw.js` (ora `v21`). I file `/js` e `/css` si aggiornano da soli (rete prima).
 
 ### 1.5 Dove salvare simboli e immagini
 - **Simboli dell'interfaccia** (battello, bus, tram, lente, ecc.): *tutti* in `public/icons/sprite.svg`, un `<symbol id="i-nome">` ciascuno (24×24, tratto 1.75, `currentColor`). Nel codice si usano con `icon('nome')` (in `public/js/util.js`); in `index.html` con `<svg class="ic"><use href="/icons/sprite.svg#i-nome"/></svg>`. **Non usare emoji**: cambiano da sistema a sistema.
@@ -161,7 +161,17 @@ Il feed toglie la fermata appena il mezzo arriva e indicherebbe già la successi
   - *Fili*: un messaggio più recente sullo stesso argomento sostituisce il precedente («aggiornato», eredita il periodo); «ripristinato / servizio regolare / terminata» chiude i precedenti collegati e resta 1 ora come «Risolto»; un messaggio Telegram uguale a una notizia del sito si unisce. Gli avvisi programmati di più giorni si toccano solo con testo molto simile. Titoli Telegram senza hashtag/emoji; esclusi i messaggi di servizio («pinned a photo»).
 - **Marea**: triangolo cliccabile accanto alle maree (attuale o previste) oltre 85 cm: apre l'avviso di acqua alta (ufficiale o calcolato).
 - **Filtri delle fermate**: quadrati da 32 px (sopra il minimo di accessibilità di 24 px); invariati quelli piccoli nelle righe delle corse.
-- **Corsa verificata** (v16, `assign.js`): se il mezzo trasmette una corsa incoerente (es. «100 min di ritardo» mentre fa, quasi in orario, la corsa successiva della linea) la si riconosce confrontando posizione GPS lungo il percorso e orari di tutte le corse della linea attive adesso; prima candidata quella che il trip update ACTV associa al mezzo. Cambio solo con prove ripetute (2 rilevamenti per la candidata ACTV, 3 per quella trovata dal GPS) e differenza netta (≥ 12 min o corsa dichiarata fuori percorso); un ritardo vero non viene toccato; al capolinea l'attesa è normale; se il feed cambia corsa si torna al feed. La corsa abbandonata perde il ritardo "finto" del suo trip update. Nel pannello del mezzo: «Corsa riconosciuta da posizione e orario: il mezzo trasmetteva la corsa delle HH:MM».
+- **Correzioni dal debug del 1° novembre 2026** (v21; 1h35 di feed ACTV e sito registrati insieme, 169 mezzi, ~4.000 passaggi reali):
+  - **Corsa del mezzo = quella ACTV** (`assign.js`): niente più corse "riconosciute" dal GPS (sbagliavano nei casi difficili: blocchi, code al capolinea, binari affiancati, perfino corse contromano; ACTV non pubblica i turni, `block_id` vuoto). Vale la previsione ACTV che indica lo stesso mezzo su un'altra corsa (2 rilevamenti). Unico distacco: mezzo fermo al capolinea di partenza da oltre 5 min, oltre 40 min dopo l'orario (resta sulla mappa in grigio, la corsa torna alle previsioni/orario).
+  - **Una previsione per mezzo** (`live.js: chooseTU`): ACTV pubblica una previsione per ogni mezzo anche sulla stessa corsa; si usa quella del mezzo titolare, mai quella di un mezzo staccato.
+  - **Linee circolari** (`tracker.js: projectTimed`): alla prima lettura si sceglie il punto del percorso coerente con l'orario (inizio giro, non fine).
+  - **Capolinea prima della partenza**: partenza all'orario, il ritardo ACTV "trascinato" dalla corsa precedente non conta.
+  - **Previsione ACTV incoerente** con la posizione (oltre 10 min per oltre 2 min, mezzo in marcia sul percorso): vale il ritardo misurato.
+  - **Anticipi** mostrati solo se confermati dalla posizione; **nessun recupero** del ritardo a valle (le previsioni lontane erano in media 1,5–2 min troppo ottimistiche).
+  - **Arrivo al capolinea**: fermo fino a 300 m prima dell'ultima fermata = corsa conclusa.
+- **Pianificato** (v21): il pannello della corsa usa data e ora scelte (fermate passate/da fare e avviso sul calendario).
+- **Avvisi** (v21): un messaggio Telegram pubblicato oltre 2 giorni dopo la notizia ACTV a cui rimanda non si unisce più a essa (ACTV aggiorna la stessa pagina: le date vecchie la facevano scartare); "fino al termine dei servizi di sabato 30 novembre" è riconosciuto come data di FINE.
+- **Marea** (v21): la curva prevista parte dall'ultimo valore osservato (niente "nessun dato" intorno all'ora attuale).
 - **Fermate mai superate per errore** (v16, `tracker.js`): senza GPS fresco la fermata corrente avanza con l'orario + l'ultimo ritardo stimato (non il solo orario) e mai oltre il punto raggiungibile dall'ultima posizione certa (15 m/s); con il GPS che torna, l'autocorrezione riporta indietro le fermate date per superate.
 - **Più utenti insieme**: una sola lettura dei feed per tutti; elenco mezzi calcolato una volta per stato e condiviso (ETag, risposta 304 senza dati a chi l'ha già); pannelli fermata/zona identici entro 1,5 s calcolati una volta; limiti per IP e per connessioni in tempo reale.
 - **Velocità**: il feed ACTV non trasmette la velocità; quella mostrata è **stimata** dalle posizioni ed è indicata come tale («≈ 25 km/h (stimata)»).
@@ -202,7 +212,7 @@ public/js/locate.js  GPS e stati del pulsante
 public/js/fav.js     preferiti                     public/js/notify.js  avviso di arrivo (client)
 public/js/info.js    pagina Informazioni (note legali, privacy, fonti)
 push.js          Web Push (cifratura, VAPID)    watch.js      regole e invio degli avvisi di arrivo
-assign.js        verifica della corsa dichiarata dal mezzo        env.js   impostazioni locali (.env.local)
+assign.js        corsa del mezzo (segue ACTV, mezzi fermi al capolinea)        env.js   impostazioni locali (.env.local)
 avvia-windows.bat / avvia.sh / avvia.command   avvio in locale con un doppio clic
 tests/           test unitari (node --test) e prove dell'interfaccia (tests/ui)
 ```
