@@ -35,9 +35,10 @@ test('regole: conferma, aggiornamento ponderato, preavviso, arrivo, soppressione
   assert.deepEqual(Wt.step(w, D(19, {}, 1, now + 60e3), now + 60e3), {});                                                // +1 min: nessun messaggio
   assert.deepEqual(Wt.step(w, D(18, {}, 4, now + 2 * 60e3), now + 2 * 60e3), {});                                            // +4 min ma troppo presto (min. 4 min tra aggiornamenti)
   r = Wt.step(w, D(16, {}, 4, now + 5 * 60e3), now + 5 * 60e3); assert.equal(r.msg.kind, 'update'); assert.match(r.msg.body, /ritardo 4 min/);
+  assert.deepEqual(Wt.step(w, D(5, {}, 4, now + 15.5 * 60e3), now + 15.5 * 60e3), {});                  // prima volta entro la soglia: si aspetta conferma
   r = Wt.step(w, D(5, {}, 4, now + 16 * 60e3), now + 16 * 60e3); assert.equal(r.msg.kind, 'lead'); assert.ok(!r.msg.silent); assert.match(r.msg.body, /Arriva tra 5 min a Piazzale Roma A7/);
   assert.deepEqual(Wt.step(w, D(3, {}, 4, now + 18 * 60e3), now + 18 * 60e3), {});
   r = Wt.step(w, D(1, { phase: 'approaching' }, 4, now + 20 * 60e3), now + 20 * 60e3); assert.equal(r.msg.kind, 'arrive'); assert.ok(r.end);
-  const w2 = { ...w, sent: {}, k: null }; r = Wt.step(w2, { ...D(10), cancelled: true }, now); assert.equal(r.msg.kind, 'cancel'); assert.ok(r.end && !r.msg.silent);
+  const w2 = { ...w, sent: {}, k: null }; r = Wt.step(w2, { ...D(10), cancelled: true }, now, '14:40'); assert.equal(r.msg.kind, 'cancel'); assert.ok(r.end && !r.msg.silent); assert.match(r.msg.body, /Prossima corsa della linea 80: alle 14:40/);
   const w3 = { ...w, sent: {}, k: null, src: 'nav' }; r = Wt.step(w3, D(3), now); assert.equal(r.msg.kind, 'lead'); assert.ok(r.msg.ttl >= 60 && r.msg.ttl <= 900);   // già entro il preavviso: subito quello
 });

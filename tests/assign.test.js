@@ -1,4 +1,4 @@
-// Verifica delle corse dichiarate: corsa sbagliata nel feed (ritardo "finto") corretta con prove ripetute; ritardo vero lasciato com'è.
+// Corsa del mezzo: si segue ACTV (posizione e previsioni); nessuna corsa indovinata dal GPS; staccato solo il mezzo fermo al capolinea ben oltre l'orario.
 const test = require('node:test'), assert = require('node:assert');
 const schedule = require('../schedule'); schedule.isActiveToday = () => true;           // nei test tutte le corse sono attive
 const A = require('../assign');
@@ -14,30 +14,35 @@ const addTrip = (tid, startMin) => {
 };
 addTrip('T0900', 9 * 60); addTrip('T1040', 10 * 60 + 40); addTrip('T1100', 11 * 60);
 const at = (frac) => lon0 + dLon * 4 * frac;                                           // punto lungo la linea (0 = a, 1 = e)
-const run = (mem, now, f, extra = {}) => A.check({ G, v: { key: 'V1', feedTripId: 'T0900', lat, lon: at(f), ts: now, ...extra }, mem, tuTid: extra.tu || null, owners: new Map(), tNowOf: () => now });
+const P = (vehs, now, mem = new Map(), tu = new Map()) => A.plan({ G, vehicles: vehs.map(v => ({ ts: now, ...v })), mem, tuOfVeh: tu, tNowOf: () => now });
 
 test('adattamento: ritardo misurato dal GPS lungo il percorso', () => {
   const f = A.fitTrip(G, 'T1040', lat, at(0.5), () => (10 * 60 + 52) * 60);           // a metà alle 10:52 (previsto 10:50)
   assert.ok(f.lat < 5 && Math.abs(f.delay - 120) < 15);
 });
-test('corsa sbagliata (100 min di "ritardo"): si passa alla corsa giusta dopo 3 rilevamenti', () => {
-  const mem = {}, now = (10 * 60 + 52) * 60;                                            // il mezzo dichiara la corsa delle 9:00 ma è a metà alle 10:52
-  assert.equal(run(mem, now, 0.5), null); assert.equal(run(mem, now + 15, 0.52), null);
-  const r = run(mem, now + 30, 0.54); assert.equal(r.tid, 'T1040'); assert.equal(r.why, 'gps'); assert.ok(Math.abs(r.delay) < 300);
-  assert.equal(run(mem, now + 45, 0.56).tid, 'T1040');                                 // la scelta regge
-  // il feed cambia la corsa dichiarata: si torna a seguire il feed
-  assert.equal(A.check({ G, v: { key: 'V1', feedTripId: 'T1040', lat, lon: at(0.6), ts: now + 60 }, mem, owners: new Map(), tNowOf: () => now + 60 }), null);
+test('ritardo grande ma in viaggio (blocco, coda): si segue la corsa dichiarata, nessuna corsa "più coerente" indovinata', () => {
+  const mem = new Map(), now = (10 * 60 + 52) * 60;                                     // dichiara la corsa delle 9:00, a metà percorso alle 10:52
+  for (let k = 0; k < 4; k++) assert.deepEqual(P([{ key: 'V', tripId: 'T0900', lat, lon: at(0.5 + k * 0.01), ts: now + k * 15 }], now + k * 15, mem).get('V'), { tid: 'T0900', why: 'feed' });
 });
-test('ritardo vero: nessuna altra corsa più coerente, nessun intervento', () => {
-  const mem = {}, now = (9 * 60 + 30) * 60;                                            // corsa delle 9:00 a metà alle 9:30 = 20 min di ritardo
-  for (let k = 0; k < 5; k++) assert.equal(run(mem, now + k * 15, 0.5 + k * 0.01), null);
+test('previsione ACTV sullo stesso mezzo con un\'altra corsa: vale dopo 2 rilevamenti', () => {
+  const mem = new Map(), now = (11 * 60 + 5) * 60, tu = new Map([['V', 'T1100']]);
+  assert.equal(P([{ key: 'V', tripId: 'T0900', lat, lon: at(0.25), ts: now }], now, mem, tu).get('V').tid, 'T0900');
+  assert.deepEqual(P([{ key: 'V', tripId: 'T0900', lat, lon: at(0.26), ts: now + 15 }], now + 15, mem, tu).get('V'), { tid: 'T1100', why: 'tu' });
 });
-test('candidata indicata dal trip update del feed: bastano 2 rilevamenti', () => {
-  const mem = {}, now = (11 * 60 + 5) * 60;
-  assert.equal(run(mem, now, 0.25, { tu: 'T1100' }), null);
-  const r = run(mem, now + 15, 0.26, { tu: 'T1100' }); assert.equal(r.tid, 'T1100'); assert.equal(r.why, 'feed');
+test('attesa al capolinea prima della partenza (anche lunga): associato', () => {
+  const mem = new Map(), now = (10 * 60 + 5) * 60;
+  for (let k = 0; k < 3; k++) assert.equal(P([{ key: 'W', tripId: 'T1040', lat, lon: at(0), stillS: 1200, ts: now + k * 15 }], now + k * 15, mem).get('W').tid, 'T1040');
 });
-test('attesa al capolinea prima della partenza: è normale, nessun intervento', () => {
-  const mem = {}, now = (10 * 60 + 25) * 60;                                           // mezzo al capolinea, dichiara la corsa delle 10:40
-  for (let k = 0; k < 4; k++) assert.equal(A.check({ G, v: { key: 'V2', feedTripId: 'T1040', lat, lon: at(0), ts: now + k * 15 }, mem, owners: new Map(), tNowOf: () => now + k * 15 }), null);
+test('fermo al capolinea da oltre 40 minuti dopo la partenza: staccato dalla corsa; riparte = di nuovo associato', () => {
+  const mem = new Map(), now = (9 * 60 + 50) * 60;                                       // corsa delle 9:00, fermo al capolinea alle 9:50
+  let r = P([{ key: 'X', tripId: 'T0900', lat, lon: at(0), stillS: 900, ts: now }], now, mem).get('X');
+  assert.equal(r.tid, 'T0900', 'serve una conferma');
+  r = P([{ key: 'X', tripId: 'T0900', lat, lon: at(0), stillS: 915, ts: now + 15 }], now + 15, mem).get('X');
+  assert.ok(r.idle);
+  r = P([{ key: 'X', tripId: 'T0900', lat, lon: at(0.02), stillS: 0, ts: now + 30 }], now + 30, mem).get('X');
+  assert.equal(r.tid, 'T0900');
+});
+test('fermo al capolinea 30 minuti dopo la partenza (blocco della linea): resta associato, il ritardo è vero', () => {
+  const mem = new Map(), now = (9 * 60 + 30) * 60;
+  for (let k = 0; k < 3; k++) assert.equal(P([{ key: 'Y', tripId: 'T0900', lat, lon: at(0), stillS: 1500, ts: now + k * 15 }], now + k * 15, mem).get('Y').tid, 'T0900');
 });

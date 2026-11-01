@@ -92,3 +92,75 @@ test('autocorrezione stabile: dopo il ritorno indietro il feed sbagliato non rim
   for (let i = 0; i < 8; i++) seq.push(step(tracker, ctx, veh(700 + i * 40, 4, { ts: 3000 + i }), feed(4), { tNow: BASE + 240 + i * 10, vs }).cur);
   assert.deepEqual(seq.slice(-6), [2, 2, 2, 2, 2, 2], seq.join(' '));
 });
+
+test('sosta in anticipo poco oltre il palo: in fermata, non "partito in anticipo"; la partenza vera vale', () => {
+  const vs = vsNew();
+  // arriva alla fermata 2 (1000 m) con 70 s di anticipo e si ferma 100 m oltre il palo (banchina lunga). Partenza programmata BASE+270
+  let r = step(tracker, ctx, veh(960, 6, { ts: 1 }), feed(2), { tNow: BASE + 195, vs });
+  r = step(tracker, ctx, veh(1100, 0, { ts: 2 }), feed(2), { tNow: BASE + 200, vs });
+  assert.equal(r.cur, 2, 'non deve risultare partito'); assert.equal(r.atStop, 2, 'deve risultare in fermata');
+  r = step(tracker, ctx, veh(1100, 0, { ts: 3 }), feed(3), { tNow: BASE + 240, vs });   // anche se il feed toglie la fermata
+  assert.equal(r.cur, 2);
+  r = step(tracker, ctx, veh(1160, 5, { ts: 4 }), feed(3), { tNow: BASE + 272, vs });    // parte in orario
+  assert.equal(r.cur, 3);
+  const dep = vs.dep[2], depS = (dep - (Date.UTC(2026, 9, 28, 10, 0, 0) + 0)) / 1000 - 0;
+  assert.ok(dep >= Date.UTC(2026, 9, 28, 10, 0, 0) + 270 * 1000 - 5000, 'partenza registrata all\'orario, non in anticipo');
+});
+test('corsa non ancora partita: nessun anticipo sulle fermate successive; ritardo solo se la partenza è già in ritardo', () => {
+  let vs = vsNew();
+  // 5 minuti prima della partenza, feed con anticipi a valle e mezzo lontano (ancora sulla corsa precedente)
+  let r = step(tracker, ctx, veh(2400, 8, { ts: 1 }), feed(0, -120), { tNow: BASE - 300, vs });
+  for (let k = 0; k < 6; k++) assert.ok(r.etaMs[k] >= Date.UTC(2026, 9, 28, 10, 0, 0) + (ctx.st.d[k] - BASE) * 1000 - 1000, 'fermata ' + k + ' in anticipo');
+  assert.ok(r.preStart);
+  // fermo al capolinea 90 s dopo l'orario di partenza: le fermate successive slittano di almeno 90 s
+  vs = vsNew();
+  r = step(tracker, ctx, veh(0, 0, { ts: 1 }), null, { tNow: BASE + 120, vs });
+  for (let k = 1; k < 6; k++) assert.ok(r.etaMs[k] >= Date.UTC(2026, 9, 28, 10, 0, 0) + (ctx.st.a[k] + 85 - BASE) * 1000, 'fermata ' + k + ' senza ritardo di partenza');
+});
+
+// ---- correzioni dal debug del 1° novembre 2026 ----
+const T0 = Date.UTC(2026, 9, 28, 10, 0, 0), msAt = t => T0 + (t - BASE) * 1000;
+test('capolinea, prima della partenza: il ritardo ACTV trascinato (+40) non vale, la partenza è all\'orario', () => {
+  const vs = vsNew();
+  let r = step(tracker, ctx, veh(0, 0, { ts: 1 }), feed(0, 2400), { tNow: BASE - 600, vs });
+  r = step(tracker, ctx, veh(0, 0, { ts: 2 }), feed(0, 2400), { tNow: BASE - 580, vs });
+  assert.equal(r.atStop, 0);
+  assert.ok(Math.abs(r.etaMs[0] - msAt(ctx.st.d[0])) < 2000, 'partenza all\'orario');
+  for (let k = 1; k < 6; k++) assert.ok(r.etaMs[k] - msAt(ctx.st.a[k]) < 60000, 'fermata ' + k + ' senza i 40 minuti trascinati');
+});
+test('previsione ACTV incoerente col GPS per oltre 2 minuti (mezzo in orario, ACTV +40): vale il ritardo misurato', () => {
+  const vs = vsNew(); let r;
+  for (let i = 0; i <= 16; i++) { const t = BASE + 140 + i * 10; r = step(tracker, ctx, veh(530 + i * 40, 4, { ts: 100 + i }), feed(2, 2400), { tNow: t, vs }); }
+  const late = (r.etaMs[3] - msAt(ctx.st.a[3])) / 60000;
+  assert.ok(late < 10, 'ritardo mostrato ' + late.toFixed(1) + ' min: non deve seguire i +40 di ACTV');
+});
+test('anticipo solo se confermato dalla posizione: mezzo in orario, ACTV -3 min, nessun anticipo', () => {
+  const vs = vsNew(); let r;
+  for (let i = 0; i < 4; i++) r = step(tracker, ctx, veh(620 + i * 30, 5, { ts: 200 + i }), feed(2, -180), { tNow: BASE + 160 + i * 6, vs });
+  assert.ok(r.etaMs[2] >= msAt(ctx.st.a[2]) - 5000, 'nessun arrivo prima dell\'orario');
+});
+test('il ritardo non si recupera da solo: le fermate lontane non tornano in orario', () => {
+  const vs = vsNew(), lv = feed(2, 300); lv.delays = [300, 300, 300, 240, 120, 0];   // ACTV prevede il recupero a valle
+  let r; for (let i = 0; i < 3; i++) r = step(tracker, ctx, veh(700 + i * 30, 6, { ts: 300 + i }), lv, { tNow: BASE + 420 + i * 6, vs });
+  const d2 = r.etaMs[2] - msAt(ctx.st.d[2]), d5 = r.etaMs[5] - msAt(ctx.st.a[5]);   // il tracker prevede la PARTENZA dalle fermate intermedie, l'arrivo al capolinea
+  assert.ok(d5 >= d2 - 1000, 'ritardo a valle ' + Math.round(d5 / 1000) + ' s non inferiore a quello attuale ' + Math.round(d2 / 1000) + ' s');
+});
+test('arrivo al capolinea: fermo 200 m prima dell\'ultima fermata (altro stallo) = corsa conclusa', () => {
+  const vs = vsNew(); let r;
+  for (let i = 0; i < 3; i++) r = step(tracker, ctx, veh(2300, 0, { ts: 400 + i }), feed(5, 0), { tNow: BASE + 600 + i * 10, vs });
+  assert.equal(r.phase, 'arrived');
+});
+// linea circolare: partenza e arrivo nello stesso punto
+test('linea circolare: al capolinea il mezzo è all\'inizio del giro, non alla fine', () => {
+  const { M_LON } = require('../geo'), ids = require('../ids'), LAT = 45.45, lonAt = m => 12.30 + m / M_LON;
+  const pts = []; for (let m = 0; m <= 1500; m += 50) pts.push(LAT, lonAt(m)); for (let m = 1500; m >= 0; m -= 50) pts.push(LAT + 0.00004, lonAt(m));   // andata e ritorno affiancati
+  const s = ['L0', 'L1', 'L2', 'L3', 'L4', 'L0'], pos = [0, 500, 1000, 1500, 750, 0], stopLoc = {};
+  s.forEach((sid, k) => { stopLoc[sid] = [k >= 4 || k === 5 ? LAT + 0.00004 : LAT, lonAt(pos[k])]; }); stopLoc.L0 = [LAT + 0.00002, lonAt(0)];
+  const d = [0, 120, 240, 360, 480, 600].map(x => BASE + x);
+  const G = { routes: { R: { name: '24' } }, trips: { C: { route: 'R', shape: 'SH' } }, stops: {}, stopLoc, shapePts: { SH: Float32Array.from(pts) }, routeShapes: {}, calendar: {}, exByDate: {},
+    stopTimes: new Map([['C', { s, q: Int32Array.from([1, 2, 3, 4, 5, 6]), a: Int32Array.from(d), d: Int32Array.from(d), start: d[0], end: d[5] }]]), stopIndex: {}, tripIds: ['C'], stopBaseNames: new Map(), stopIsRequest: new Map() };
+  ids.attach(G);
+  const c2 = { G, trip: G.trips.C, st: G.stopTimes.get('C') };
+  const r = step(tracker, c2, { ...veh(0, 0, { ts: 1 }), lat: LAT + 0.00002, lon: lonAt(0) }, feed(0, 0, 6), { tNow: BASE - 60, vs: vsNew() });
+  assert.equal(r.cur, 0, 'non deve risultare a fine giro');
+});

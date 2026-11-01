@@ -74,6 +74,19 @@ test('unione: un messaggio che rimanda alla notizia ACTV non duplica; scaduti es
   assert.equal(a.source, 'both'); assert.deepEqual(a.stops, ['aut:9']); assert.deepEqual(L(a.lines), ['31H']); assert.equal(a.state, 'active');
   assert.ok(r.some(x => x.source === 'telegram'));
 });
+test('proroga su Telegram che rimanda a una notizia ACTV vecchia (stessa pagina aggiornata): compare il messaggio nuovo', () => {
+  const now = Date.now();
+  A.setContext(() => ({ known: K(['24']), byName: new Map() }));
+  A._load({
+    rss: [{ key: 'rss:9', title: 'MESTRE - CHIUSURA DI VIA PIO X: ULTERIORE PROROGA LAVORI', url: 'https://actv.avmspa.it/it/content/pio-x', text: 'fino al 31 ottobre 2026', pubMs: now - 54 * 864e5 }],
+    pages: { 'https://actv.avmspa.it/it/content/pio-x': 'Chiusura di via Pio X prorogata fino al 31 ottobre 2026. Linee deviate.' },
+    tg: [{ key: 'tg:20', id: 20, text: '⚠️ #muoversivenezia | Mestre - via Pio X\n\nViene ulteriormente prorogata, fino al termine dei servizi di sabato 30 novembre 2026, la chiusura di via Pio X. I bus continueranno ad effettuare le deviazioni in corso.',
+      links: ['https://actv.avmspa.it/it/content/pio-x'], pubMs: now - 3600e3, url: 'https://t.me/muoversivenezia/20' }]
+  });
+  const r = A.getAvvisi().items, pio = r.filter(x => /pio x/i.test(x.title));
+  assert.equal(pio.length, 1, 'un solo avviso, quello nuovo'); assert.equal(pio[0].source, 'telegram'); assert.equal(pio[0].state, 'active');
+  A._load({});
+});
 test('link: solo https verso domini ACTV/Telegram', () => {
   assert.ok(A.safeUrl('https://t.me/muoversivenezia/1')); assert.equal(A.safeUrl('http://actv.avmspa.it/x'), null);
   assert.equal(A.safeUrl('javascript:alert(1)'), null); assert.equal(A.safeUrl('https://actv.avmspa.it.evil.com/x'), null);
