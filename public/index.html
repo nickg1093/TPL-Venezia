@@ -26,8 +26,9 @@
 <div id="wrap">
   <div id="busybar" class="busybar" role="progressbar" aria-label="Caricamento in corso" aria-busy="true" hidden><span></span></div>
   <div id="map" role="application" aria-label="Mappa dei mezzi pubblici in tempo reale" tabindex="0"></div>
-  <!-- INFORMAZIONI: bottone separato dagli strumenti, in basso a destra sulla mappa (sempre sopra la barra in basso, qualunque sia la sua altezza) -->
-  <div id="info-fab" class="group"><button id="info-btn" class="ibtn" type="button" aria-label="Informazioni, note legali e crediti" aria-expanded="false" aria-controls="info" title="Informazioni"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-about"/></svg></button></div>
+  <!-- INFORMAZIONI: bottone separato dagli strumenti, in basso a destra sulla mappa (sempre sopra la barra in basso, qualunque sia la sua altezza).
+       Sopra, solo quando ce ne sono, la campanella degli avvisi di arrivo attivi (con il numero): apre la loro lista. -->
+  <div id="info-fab" class="group"><button id="watch-btn" class="ibtn" type="button" hidden aria-controls="info" title="Avvisi di arrivo attivi"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-bell"/></svg><span class="cntb" id="watch-count" aria-hidden="true"></span></button><button id="info-btn" class="ibtn" type="button" aria-label="Informazioni, note legali e crediti" aria-expanded="false" aria-controls="info" title="Informazioni"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-about"/></svg></button></div>
   <!-- attribuzione obbligatoria della mappa (ODbL): visibile all'apertura, poi si riduce; crediti completi in Informazioni -->
   <div id="osm-attr" class="osm-attr">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> · dati ACTV elaborati: stime</div>
 
