@@ -13,6 +13,7 @@ const ids = require('./ids');
 const motion = require('./motion');
 const tracker = require('./tracker');
 const assign = require('./assign');
+const turni = require('./turni');
 const { inArea } = require('./geo');
 const { secsOfDayRome, hhmm } = schedule;
 
@@ -229,7 +230,8 @@ async function refresh(id) {
       veicoli: { total: pos.length, collegati: vOk, posizioneNonValida: bad, datoTroppoVecchio: ghost },
       coerenzaCodici: { coerenti: tally.ok, incoerenti: tally.bad, controlloAttivo: strict } };
     s8.updated = now; s8.goodAt = now; s8.error = null; s8.sim = false;
-    const idle = verifyTrips(id, tuOfVeh); pickOwners(id); chooseTU(id, tuCand, idle, now); buildStates(id); events.emit('push', true);
+    const idle = verifyTrips(id, tuOfVeh), vacated = applyTurni(id, vehOfTu, now);
+    pickOwners(id); chooseTU(id, tuCand, idle, vacated, now); buildStates(id); events.emit('push', true);
   } catch (err) {
     s8.errCount++; s8.error = `${id}: ${err.message}`;
     // I dati reali restano finché sono recenti; solo dopo vari errori (o 3 minuti senza dati) si passa alle posizioni da orario, dichiarate come tali.
@@ -260,18 +262,43 @@ function verifyTrips(i, tuOfVeh) {
     v.reassigned = { from: from ? schedule.hhmm(from.start) : null, why: r.why };
   }
   if (s8.match) {
-    s8.match.corseDaTripUpdate = s8.vehicles.filter(v => v.reassigned).map(v => ({ mezzo: v.label || v.key, posizione: v.feedTripId, tripUpdate: v.tripId }));
+    s8.match.corseDaTripUpdate = s8.vehicles.filter(v => v.reassigned?.why === 'tu').map(v => ({ mezzo: v.label || v.key, posizione: v.feedTripId, tripUpdate: v.tripId }));
     s8.match.nonAssociati = s8.vehicles.filter(v => v.idle).map(v => ({ mezzo: v.label || v.key, corsa: v.feedTripId, motivo: v.idle.why }));
   }
   return idle;
 }
 
+// TURNO DEL MEZZO (vedi turni.js): mezzo molto in ritardo sulla corsa del feed che di fatto fa la corsa successiva. Si applica qui, una volta
+// per lettura e prima dello stato delle corse, perché mappa, pannello fermata e pannello del mezzo dicano la stessa cosa.
+// Ritorna Map(corsa lasciata -> mezzo): quelle corse restano senza mezzo e senza le previsioni che erano del mezzo.
+let turnoCheck = null;                                  // controllo con la centrale ACTV (server.js -> centrale.checkTurno), facoltativo
+const setTurnoCheck = f => { turnoCheck = f; };
+const activeNow = (G, tid, st) => { const t = G.trips[tid], ymd = cal.romeYmd(); return !!t && schedule.serviceActive(G, t.service, tripNow(st) >= 86400 ? cal.addDays(ymd, -1) : ymd); };
+function applyTurni(i, vehOfTu, now) {
+  const G = D[i], s8 = S[i], mem = (s8.turni ||= new Map()), vacated = new Map();
+  const list = s8.vehicles.filter(v => !v.sim && v.tripId);
+  let p = new Map();
+  try { p = turni.plan({ G, vehicles: list, prev: s8.state, vehOfTu, mem, nowMs: now, tNowOf: tripNow, activeNow, check: turnoCheck ? (sid, line, eta, sched) => turnoCheck(i, sid, line, eta, sched) : null }); }
+  catch (e) { console.error('turni dei mezzi:', e.message); }
+  for (const v of list) {
+    const r = p.get(v.key); if (!r) continue;
+    const from = G.stopTimes.get(r.from), trip = G.trips[r.to];
+    v.tripId = r.to; v.headsign = trip.headsign || v.headsign;
+    v.reassigned = { from: from ? schedule.hhmm(from.start) : null, why: 'turno' };
+    vacated.set(r.from, String(v.key));
+  }
+  s8.vacated = vacated;
+  if (s8.match) s8.match.corseDelTurno = list.filter(v => v.reassigned?.why === 'turno').map(v => ({ mezzo: v.label || v.key, corsaDelFeed: v.feedTripId, corsaVera: v.tripId }));
+  return vacated;
+}
+
 // PREVISIONE ACTV DI OGNI CORSA: quella del mezzo che fa la corsa (titolare scelto da pickOwners); altrimenti quella senza mezzo o di un
 // mezzo non staccato; mai quella di un mezzo staccato (i suoi "ritardi" erano solo il tempo che passava al capolinea).
-function chooseTU(i, cand, idle, now) {
+function chooseTU(i, cand, idle, vacated, now) {
   const s8 = S[i], live = {};
   for (const [tid, list] of cand) {
-    const owner = s8.owner.get(tid), ok = list.filter(x => !(x.veh && idle.has(x.veh)));
+    // escluse: previsioni di mezzi staccati e quelle del mezzo che ha lasciato questa corsa per quella del suo turno (turni.js)
+    const owner = s8.owner.get(tid), ok = list.filter(x => !(x.veh && (idle.has(x.veh) || vacated.get(tid) === x.veh)));
     const pick = ok.find(x => owner != null && x.veh === String(owner)) || ok.find(x => !x.veh) || ok[0];
     if (!pick) continue;
     const e = pick.entry, n = e.delays.length;
@@ -544,5 +571,5 @@ function startLoops() {
   })();
 }
 
-module.exports = { Feed, events, D, S, ready, IDS, REFRESH_MS, refresh, tripDetail, noteOf, dataFor, dateRange, startStatic, startLoops, adopt, syncStatic, gtfsStatus,
+module.exports = { Feed, events, D, S, ready, IDS, REFRESH_MS, refresh, tripDetail, setTurnoCheck, tripNow, noteOf, dataFor, dateRange, startStatic, startLoops, adopt, syncStatic, gtfsStatus,
   version: () => version, stopsCache: () => cachedStopsGzip, setStopsCache: v => { cachedStopsGzip = v; } };

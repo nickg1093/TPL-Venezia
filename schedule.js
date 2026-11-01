@@ -132,7 +132,7 @@ function departures(G, live, stopId, secsParam = null, date = null, state = null
           const depAt = ps.dep?.[i];                                    // istante (ms) in cui è stato visto partire
           if (last || !depAt || nowMs - depAt > DONE_MS || depAt > nowMs + 1000) continue;
           const dl = (tNow - (nowMs - depAt) / 1000) - ts, dm = Math.round(dl / 60);   // ritardo effettivo alla partenza, in minuti interi
-          out.push({ ...base, exp: hhmm(ts + dm * 60), schedIn: Math.round((ts - tNow) / 60), expIn: Math.round((depAt - nowMs) / 60000),
+          out.push({ ...base, exp: hhmm(ts + dm * 60), schedIn: Math.round((ts - tNow) / 60), schedSec: ts - tNow, expIn: Math.round((depAt - nowMs) / 60000),
             delay: dm, live: true, veh: ps.vehKey ?? null, vehLabel: ps.label ?? null, atStop: false, phase: 'departed', done: true, expMs: depAt, expSec: (depAt - nowMs) / 1000, cancel: null });
           continue;
         }
@@ -144,7 +144,7 @@ function departures(G, live, stopId, secsParam = null, date = null, state = null
         const sm = ts - tNow; em ??= ts + (dl ?? 0) - tNow;
         const dm = dl != null ? Math.round(dl / 60) : null;     // ritardo in minuti interi: l'orario previsto si ricava da questo, così sono sempre coerenti
         if ((sm < -180 || sm > 7200) && (em < -180 || em > 7200)) continue;
-        out.push({ ...base, exp: hhmm(ts + (dm ?? 0) * 60), schedIn: Math.round(sm / 60), expIn: Math.round(em / 60),
+        out.push({ ...base, exp: hhmm(ts + (dm ?? 0) * 60), schedIn: Math.round(sm / 60), schedSec: sm, expIn: Math.round(em / 60),
           delay: dm, live: dl != null, veh: ps?.vehKey ?? null, vehLabel: ps?.label ?? null,
           atStop: !!ps && ps.atStop === i, phase: ps && i >= ps.cur ? (i === ps.cur ? ps.phase : 'enroute') : null, done: false, expMs, expSec: em,
           cancel: lv0?.cancelled ? 'trip' : (lv0?.skipped.has(i) ? 'stop' : null) });
@@ -157,4 +157,4 @@ function departures(G, live, stopId, secsParam = null, date = null, state = null
 const isActiveToday = (G, tripId) => { const t = G.trips[tripId]; return !!t && serviceActive(G, t.service, cal.romeYmd()); };
 const scheduleMode = (G, date) => servicesFor(G, cal.isYmd(date) ? date : cal.romeYmd()).mode;
 const secsOfDayRome = ms => cal.romeParts(ms).secs;
-module.exports = { positionsNow, departures, secsOfDayRome, isActiveToday, scheduleMode, hhmm, DONE_MS };
+module.exports = { positionsNow, departures, secsOfDayRome, isActiveToday, scheduleMode, hhmm, DONE_MS, serviceActive };

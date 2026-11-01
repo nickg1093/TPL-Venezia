@@ -14,6 +14,7 @@ const watch = require('./watch');
 const sec = require('./security');
 const { equivalentStops } = require('./stopgroups');
 const { audit } = require('./feedaudit');
+const centrale = require('./centrale');
 const { D, S, IDS, ready } = live;
 
 const PORT = +process.env.PORT || 3000;
@@ -43,6 +44,10 @@ const fullId = (u, key) => { const r = sec.vFullId(q(u, key), IDS); if (!r) thro
 // Ordine di passaggio: per orario PREVISTO (con ritardo/anticipo reale), poi per orario programmato.
 const byExpected = (a, b) => (a.expSec - b.expSec) || (a.schedIn - b.schedIn);
 const labelsOf = i => new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
+// CENTRALE ACTV (centrale.js): confronto continuo con i nostri dati, correzione delle corse senza mezzo e controllo dei turni (turni.js).
+// Facoltativa: ACTV_CENTRALE=0 la spegne e il sito usa i soli dati del feed.
+centrale.init({ G: i => D[i], state: i => S[i]?.state, vacated: i => S[i]?.vacated, serviceActive: schedule.serviceActive, version: () => live.version() });
+live.setTurnoCheck(centrale.checkTurno);
 
 // Dati del veicolo esposti al pubblico: solo ciò che serve alla mappa (niente stati interni)
 const PUBLIC_VEH = ['id', 'src', 'label', 'lat', 'lon', 'bearing', 'speed', 'line', 'color', 'tripId', 'routeId', 'headsign', 'key', 'ts', 'old', 'sim', 'co', 'dup', 'dupWith', 'path', 'reassigned', 'idle'];
@@ -64,15 +69,18 @@ function departuresFor(fulls, u) {
     if (r.none) { note = NO_GTFS; continue; }
     const G = r.G, own = G === D[i], lab = own ? labelsOf(i) : new Map(), full = `${i}:${sid}`;
     if (!has(G.stopIndex, sid)) continue;                                        // fermata che in quella versione non esiste
+    let mine = [];
     for (const eq of equivalentStops(G, sid)) {
       if (doneEq.has(i + ':' + eq)) continue; doneEq.add(i + ':' + eq);           // codici dello stesso palo richiesti più volte (zona o fermata unita): una sola volta
       const isRequest = G.stopIsRequest?.get(eq) || false;
       for (const d of schedule.departures(G, own ? S[i].live : {}, eq, secs, date, liveMode && own ? S[i].state : null)) {
         const k = `${full}|${d.tripId}|${d.seq}|${d.veh ?? ''}|${d.done ? 1 : 0}`;
         if (seen.has(k)) continue; seen.add(k);
-        out.push({ ...d, src: i, stop: full, vehicle: d.vehLabel || lab.get(d.tripId) || null, isRequest });
+        mine.push({ ...d, src: i, stop: full, vehicle: d.vehLabel || lab.get(d.tripId) || null, isRequest });
       }
     }
+    if (liveMode && own) mine = centrale.mergeStop(i, sid, mine);                // tempi della centrale ACTV (se disponibili)
+    out.push(...mine);
     note = live.noteOf(G, date) || note; liveUpdated = Math.max(liveUpdated, S[i].updated);
   }
   return { out: out.sort(byExpected), note, liveUpdated };
@@ -94,7 +102,7 @@ const validStyle = st => {
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
-const ABOUT_VERSION = 'v21';
+const ABOUT_VERSION = 'v22';
 const POSTS = new Set(['/api/reload-gtfs', '/api/watch', '/api/watch/cancel', '/api/watch/resub']);
 
 // ---- ROUTE API ----  auth: 'diag' | 'admin' | undefined;  method: 'POST' solo per azioni che modificano lo stato
@@ -134,16 +142,18 @@ const API = new Map(Object.entries({
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Encoding': 'gzip', 'Cache-Control': 'no-store' });
     res.end(gz);
   } },
-  '/api/stop': { cache: true, fn: u => {
+  '/api/stop': { cache: true, fn: async u => {
     const [i, sid] = fullId(u, 'id'), G = D[i];
     if (!has(G.stopIndex, sid)) throw fail(404, 'fermata sconosciuta');
+    if (mode(u) === 'live') await centrale.prepareStops([[i, sid]]);
     const { out, note, liveUpdated } = departuresFor([[i, sid]], u);
     return { stop: { id: `${i}:${sid}`, name: G.stopBaseNames?.get(sid) || G.stops[sid] || sid, src: i }, liveUpdated, note, departures: out.slice(0, 120) };
   } },
-  '/api/zone': { cache: true, fn: u => {
+  '/api/zone': { cache: true, fn: async u => {
     const list = (q(u, 'ids') || '').split(',').slice(0, 24).map(f => sec.vFullId(f, IDS));
     if (!list.length || list.some(x => !x)) throw sec.bad('parametro ids non valido');
     if (list.some(([i, sid]) => !has(D[i].stopIndex, sid))) throw fail(404, 'zona sconosciuta');
+    if (mode(u) === 'live') await centrale.prepareStops(list);
     const { out, note, liveUpdated } = departuresFor(list, u);
     return { liveUpdated, note, departures: out.slice(0, 300) };
   } },
@@ -169,12 +179,14 @@ const API = new Map(Object.entries({
   } },
   '/api/watch/cancel': { method: 'POST', limit: 'watch', fn: async (u, req) => { const b = await readJson(req); return { ok: watch.cancel(String(b.id || ''), String(b.token || '')) }; } },
   '/api/watch/poll': { fn: u => { const r = watch.poll(q(u, 'id') || '', q(u, 'token') || ''); if (!r) throw fail(404, 'avviso non attivo'); return r; } },
-  '/api/trip': { fn: u => {
+  '/api/trip': { fn: async u => {
     const [i, tid] = fullId(u, 'id'), veh = q(u, 'veh');
     if (!sec.vVeh(veh)) throw sec.bad('parametro veh non valido');
     const sched = q(u, 'mode') === 'sched', G = sched ? (gtfsFor(i, timeParams(u).date).G || D[i]) : D[i];
     if (!G.stopTimes.has(tid)) throw fail(404, 'corsa sconosciuta');
-    return live.tripDetail(i, tid, !sched, veh || null, G, sched ? timeParams(u) : null);
+    if (sched) return live.tripDetail(i, tid, false, veh || null, G, timeParams(u));
+    await centrale.prepareTrip(i, tid);                                   // solo corse senza nostro mezzo (le altre: tracciamento)
+    return centrale.mergeTrip(i, tid, live.tripDetail(i, tid, true, veh || null, G, null));
   } },
   // date selezionabili in modalità Pianificato: solo quelle coperte dai GTFS in archivio
   '/api/dates': { fn: () => live.dateRange() },
@@ -201,6 +213,8 @@ const API = new Map(Object.entries({
     tripUpdates: S[i].raw.tripUpdates ? audit(S[i].raw.tripUpdates.buf) : null
   }])) },
   '/api/gtfs': { auth: 'diag', fn: () => live.gtfsStatus() },
+  // CENTRALE ACTV (riservata, DIAG_TOKEN): letture, errori, righe abbinate alle corse GTFS e tempi sostituiti o confermati
+  '/api/centrale': { auth: 'diag', fn: () => centrale.status() },
   // quale IP vede il server per chi chiama (serve a scegliere TRUST_PROXY): intestazione X-Forwarded-For grezza e IP usato per i limiti
   '/api/whoami': { auth: 'diag', fn: (u, req) => ({ xForwardedFor: req.headers['x-forwarded-for'] || null, remote: req.socket.remoteAddress, ipUsato: sec.clientIp(req), trustProxy: process.env.TRUST_PROXY ?? null }) },
   // RICARICA GTFS (riservata, ADMIN_TOKEN, solo POST): controlla il sito ACTV, archivia le versioni nuove e rivaluta quale usare
@@ -391,7 +405,7 @@ function nextSameLine(i, tid, stopFull) {
   }
   return best == null ? null : schedule.hhmm(best);
 }
-watch.init({ tripDetail: (i, tid) => live.tripDetail(i, tid, true), contact: process.env.PUSH_CONTACT, next: nextSameLine });
+watch.init({ tripDetail: (i, tid) => centrale.mergeTrip(i, tid, live.tripDetail(i, tid, true)), contact: process.env.PUSH_CONTACT, next: nextSameLine });
 avvisi.start();
 tide.start();   // raccolta periodica del livello di marea: costruisce la storia da cui si ricava la tendenza
 

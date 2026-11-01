@@ -23,7 +23,7 @@ L'app è un unico programma Node.js: il computer scarica da solo i dati ACTV (GT
 ### 1.1 Prima installazione o dopo aver sostituito i file
 1. Copia tutti i file di questo progetto nel repository (la cartella `data/` esistente **resta com'è**: contiene i GTFS già scaricati).
 2. `npm install` — **obbligatorio**: Leaflet ora è una dipendenza npm (serve in locale da `/vendor/leaflet`, non più da unpkg) e `package-lock.json` va rigenerato. Fai commit anche di `package-lock.json`.
-3. `npm test` — deve passare tutto (65 test).
+3. `npm test` — deve passare tutto (101 test).
 4. `npm start`, apri `http://localhost:3000`.
 
 ### 1.2 Variabili d'ambiente su Render (Dashboard → Environment)
@@ -35,6 +35,8 @@ L'app è un unico programma Node.js: il computer scarica da solo i dati ACTV (GT
 | `FORCE_HTTPS` | `1` (consigliato in produzione) | reindirizza HTTP→HTTPS e attiva HSTS |
 | `KEEPALIVE_URL` | `https://<tuo-servizio>.onrender.com/healthz` (opzionale) | il server si "autopinga"; di solito `RENDER_EXTERNAL_URL` basta |
 | `RT_POLL_MS` | opzionale, default 5000 (minimo 3000) | intervallo massimo di lettura dei feed realtime: il server segue il ritmo di pubblicazione ACTV senza scendere sotto 3 s |
+| `ACTV_CENTRALE` | opzionale | `0` spegne il confronto con la centrale ACTV (oraritemporeale.actv.it): il sito usa i soli dati del feed |
+| `ACTV_CENTRALE_RPM` | opzionale, default 60 | letture al minuto del controllo continuo con la centrale ACTV (0 = solo quando un utente apre un pannello) |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | da `node scripts/vapid-keys.js` | chiavi delle notifiche di arrivo (vedi 5) |
 | `APP_CONTACT` | e-mail dedicata (es. una casella creata apposta) | mostrata nella pagina Informazioni come contatto del titolare per privacy e segnalazioni; consigliata
 | `PUSH_CONTACT` | `mailto:tuo@indirizzo` (facoltativo) | contatto per i servizi di notifica |
@@ -48,7 +50,7 @@ Usa i token così (mai nell'URL, mai nel browser): `curl -H "Authorization: Bear
 - Dopo il commit Render ridistribuisce da solo.
 
 ### 1.4 Dopo ogni modifica ai file dell'interfaccia
-Se cambi icone, manifest o l'elenco `SHELL` di `public/sw.js`, incrementa `VERSION` in `public/sw.js` (ora `v21`). I file `/js` e `/css` si aggiornano da soli (rete prima).
+Se cambi icone, manifest o l'elenco `SHELL` di `public/sw.js`, incrementa `VERSION` in `public/sw.js` (ora `v22`). I file `/js` e `/css` si aggiornano da soli (rete prima).
 
 ### 1.5 Dove salvare simboli e immagini
 - **Simboli dell'interfaccia** (battello, bus, tram, lente, ecc.): *tutti* in `public/icons/sprite.svg`, un `<symbol id="i-nome">` ciascuno (24×24, tratto 1.75, `currentColor`). Nel codice si usano con `icon('nome')` (in `public/js/util.js`); in `index.html` con `<svg class="ic"><use href="/icons/sprite.svg#i-nome"/></svg>`. **Non usare emoji**: cambiano da sistema a sistema.
@@ -169,6 +171,12 @@ Il feed toglie la fermata appena il mezzo arriva e indicherebbe già la successi
   - **Previsione ACTV incoerente** con la posizione (oltre 10 min per oltre 2 min, mezzo in marcia sul percorso): vale il ritardo misurato.
   - **Anticipi** mostrati solo se confermati dalla posizione; **nessun recupero** del ritardo a valle (le previsioni lontane erano in media 1,5–2 min troppo ottimistiche).
   - **Arrivo al capolinea**: fermo fino a 300 m prima dell'ultima fermata = corsa conclusa.
+- **v22 — turni dei mezzi e centrale ACTV** (debug del 1° novembre 2026: 4.422 passaggi confrontati con oraritemporeale.actv.it alla stessa palina e nello stesso minuto). Il feed GTFS-RT non pubblica i turni e non sposta il ritardo sulla corsa successiva: mezzi "in ritardo di 86-92 minuti" (T1, battello 4.2) perché associati a una corsa vecchia, corse "da orario" un minuto prima del mezzo che le fa davvero (doppioni), corse da orario 5-13 minuti prima del vero passaggio, partenze che a quell'ora non avvengono. Il GTFS statico resta il riferimento (nessuna fermata, corsa o nome nuovo); grafica invariata, nessuna indicazione della fonte.
+  - **Turno del mezzo** (`turni.js`, applicato da `live.js` a ogni lettura, prima dello stato delle corse: **mappa, pannello fermata e pannello del mezzo dicono la stessa cosa**). Un mezzo passa dalla corsa del feed A alla corsa B solo se: ha oltre 10 min di ritardo su A alla prossima fermata; B è della stessa linea e fa esattamente le stesse fermate fino al capolinea; B è in servizio e nessun altro mezzo la fa (né per posizione né per previsione ACTV); il mezzo passa da 2 min prima a 5 min dopo l'orario di B (fermo al capolinea: la prima corsa che parte entro 15 min); la centrale ACTV, se ha i dati, non dà B in tempo reale a un altro istante; stessa scelta per 2 rilevamenti GPS nuovi. Una volta scelta resta con un margine più largo (da 3 min prima a 8 min dopo). La corsa A resta senza mezzo e senza le previsioni che erano di quel mezzo. Diagnosi: `/api/audit` → `corseDelTurno`.
+  - **Centrale ACTV** (`centrale.js` e `centrale-*.js`): il server legge la pagina della **singola fermata** (mai i "terminal", che uniscono fermate distinte nel GTFS, es. Mestre Centro + 27 Ottobre) quando si apre un pannello (cache 25 s, attesa massima 1,5 s) e **in continuo** in sottofondo (60 letture/min, `ACTV_CENTRALE_RPM`): prima le fermate dei mezzi da controllare per il turno, poi a rotazione la prossima fermata di ogni mezzo in servizio. Massimo 240 letture/min in tutto, pausa di 5 minuti dopo 5 errori di fila. Ogni riga ACTV si aggancia a una corsa GTFS (linea, codice palina con le fermate equivalenti, orario; pontili dalla lettera nel nome GTFS): programmate per orario esatto; tempo reale con un abbinamento che rispetta l'ordine dei passaggi (prima ai nostri mezzi, poi alle corse senza mezzo, mai oltre 40 min di ritardo), con gli orari ACTV alle fermate successive che escludono direzioni e percorsi diversi. I tempi reali ACTV sono al minuto per difetto: si contano a metà minuto.
+  - **Correzioni** (solo corse **senza** nostro mezzo localizzato; quelle con il mezzo restano del tracciamento): in tempo reale per la centrale → prendono quel tempo (anche nel pannello della corsa, con gli orari alle fermate successive); programmate → restano da orario; **non elencate** dalla centrale, che vede quell'ora e quella linea a quella palina → partenza fasulla, la riga si toglie (non se un passaggio ACTV della stessa linea entro 10 min non si è agganciato a nessuna corsa); corsa lasciata da un mezzo per il suo turno → compare solo se la centrale ne elenca un passaggio (senza centrale no); sola previsione del feed (nessun mezzo localizzato) diversa dalla centrale in tempo reale → vale la centrale, mai tolta. Le righe ACTV senza corsa GTFS non si aggiungono.
+  - **Facoltativa**: se la centrale non risponde o cambia formato il sito funziona con i soli dati del feed (resta la regola del turno, senza il controllo della centrale). `ACTV_CENTRALE=0` la spegne. Diagnosi riservata `/api/centrale` (DIAG_TOKEN): letture, errori, righe abbinate, partenze tolte, tempi sostituiti e **confronto continuo** del tempo di ogni mezzo con il passaggio ACTV più vicino (entro 75 s / 3 min / oltre, con i casi).
+  - **Avvisi di arrivo attivi**: campanella con il numero sopra la «i», visibile solo quando ce n'è almeno uno; apre la lista (in Informazioni, dove restano).
 - **Pianificato** (v21): il pannello della corsa usa data e ora scelte (fermate passate/da fare e avviso sul calendario).
 - **Avvisi** (v21): un messaggio Telegram pubblicato oltre 2 giorni dopo la notizia ACTV a cui rimanda non si unisce più a essa (ACTV aggiorna la stessa pagina: le date vecchie la facevano scartare); "fino al termine dei servizi di sabato 30 novembre" è riconosciuto come data di FINE.
 - **Marea** (v21): la curva prevista parte dall'ultimo valore osservato (niente "nessun dato" intorno all'ora attuale).
@@ -206,6 +214,8 @@ gtfs.js          lettura di un GTFS                 gtfsstore.js  archivio e sce
 calendar.js      servizi attivi, data di Venezia    ids.js        collegamento universale degli ID
 stopgroups.js    fermate equivalenti                geo.js, csv.js  utilità
 tide.js, avvisi.js, feedaudit.js  marea / avvisi di servizio / verifica del feed
+turni.js         turno del mezzo (corsa che fa davvero un mezzo molto in ritardo)
+centrale.js      centrale ACTV (oraritemporeale.actv.it): quadro e collegamento; centrale-stato/lettura/abbina/fonde.js i moduli
 scripts/update-gtfs.js   aggiornamento archivio (usato dal workflow)
 public/index.html (solo struttura) · css/app.css · js/{app,util,zones,tide,avvisi,pwa,theme-init}.js · icons/ · sw.js · manifest.webmanifest
 public/js/locate.js  GPS e stati del pulsante
@@ -218,7 +228,7 @@ tests/           test unitari (node --test) e prove dell'interfaccia (tests/ui)
 ```
 
 ## 7. Test
-- `npm test` — 58 test (tracker, orari, archivio GTFS, sicurezza, marea, avvisi).
+- `npm test` — 101 test (tracker, orari, archivio GTFS, sicurezza, marea, avvisi, turni dei mezzi, centrale ACTV).
 - Simulazione completa: `node -r ./tests/fakefeed.js server.js` (feed finto costruito dalle corse in servizio adesso, con fantasmi e rilevamenti vecchi).
 - Interfaccia: con quel server avviato (`TRUST_PROXY=1`), `python3 tests/ui/run.py http://localhost:3000 <cartella>` (Playwright; usa un Leaflet finto in `tests/ui/leaflet-stub.js`): 6 formati di schermo, X, indietro, segui, dock, nessuno script in linea.
 
@@ -226,6 +236,7 @@ tests/           test unitari (node --test) e prove dell'interfaccia (tests/ui)
 - Le soglie (distanze, secondi) sono stime ragionate, non tarate sui dati reali ACTV: osserva i primi giorni e correggi `C` in `tracker.js` se serve.
 - Le prove dell'interfaccia usano un Leaflet finto: la mappa vera (tessere, gesti) va verificata a mano una volta.
 - Il formato della marea (`tide.js`) e le pagine reali di ACTV/Telegram (`avvisi.js`) non sono stati verificati con le fonti vere in questo ambiente: dopo il deploy controlla `/api/tide` e `/api/avvisi`. Lo storico della marea riparte da zero a ogni riavvio del server.
+- La pagina della centrale ACTV non è un servizio documentato: se ACTV la cambia, la fusione si spegne da sola (controlla `/api/centrale`: letture, errori, righe abbinate).
 - Su Render gratuito il server si addormenta senza traffico: serve il pinger esterno; dopo il risveglio i primi secondi non hanno dati.
 
 Dati: © OpenStreetMap contributors · ACTV (GTFS/GTFS-RT) · CPSM Venezia.
