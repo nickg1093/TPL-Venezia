@@ -487,6 +487,7 @@ button.chip.all{min-height:30px}
 .dep.gone .bsrc{color:var(--muted)}
 
 /* bottone Informazioni: stesso stile degli altri, da solo in basso a destra della mappa (sopra la barra in basso di qualunque altezza) */
+#watch-btn .cntb{top:-2px;right:-4px;background:var(--accent)}   /* avvisi di arrivo attivi: numero sulla campanella sopra la «i» */
 #info-fab{position:absolute;z-index:1000;right:calc(var(--gap) + var(--safe-r));bottom:calc(var(--gap) + var(--zoom-off, 0px))}   /* con i comandi dello zoom (mouse): sopra di essi */
 body.has-panel #info-fab{display:none}
 @media (min-width:768px){ body.has-panel #info-fab{display:flex} }
