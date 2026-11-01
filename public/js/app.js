@@ -162,8 +162,8 @@ dateEl.onchange = () => {
 // ---------------------------------------------------------------------------------------------------------------------
 // MEZZI SULLA MAPPA
 // ---------------------------------------------------------------------------------------------------------------------
-const busHtml = v => badge(v.line, v.color, v.src, `${mode === 'sched' || v.sim ? ' sched' : ''}${v.old ? ' old' : ''}${v.id === selVeh ? ' sel' : ''}`);
-const tip = v => `${vehIcon(v.src, v.label, 'sm', v.line)} <b>${esc(v.line)}</b>${v.headsign ? ' ' + icon('next', 'sm') + ' ' + esc(v.headsign) : ''}${v.label ? ' · ' + esc(vehName(v.src, v.label)) : ''}${v.old ? ' · dato non aggiornato' : ''}`;
+const busHtml = v => badge(v.line, v.color, v.src, `${mode === 'sched' || v.sim ? ' sched' : ''}${v.old ? ' old' : ''}${v.idle ? ' idle' : ''}${v.id === selVeh ? ' sel' : ''}`);
+const tip = v => `${vehIcon(v.src, v.label, 'sm', v.line)} <b>${esc(v.line)}</b>${v.headsign ? ' ' + icon('next', 'sm') + ' ' + esc(v.headsign) : ''}${v.label ? ' · ' + esc(vehName(v.src, v.label)) : ''}${v.idle ? ' · non associato a una corsa' : v.old ? ' · dato non aggiornato' : ''}`;
 
 // MOVIMENTO (fedele ai dati ricevuti)
 // Regole: 1) la posizione vera è sempre l'ultimo rilevamento GPS; 2) il mezzo non va MAI oltre l'ultimo punto ricevuto
@@ -386,7 +386,7 @@ map.on('click', () => { if (!current && !searchOpen()) clearSearchState(); if (n
 // Aprire un pannello dalla mappa (mezzo, palo, ricerca) riparte da zero.
 // ---------------------------------------------------------------------------------------------------------------------
 const NAV_MAX = 20;
-const vehSnap = v => ({ id: v.id, key: v.key, src: v.src, tripId: v.tripId, routeId: v.routeId, line: v.line, color: v.color, label: v.label, headsign: v.headsign, dup: v.dup, dupWith: v.dupWith, lat: v.lat, lon: v.lon });
+const vehSnap = v => ({ id: v.id, key: v.key, src: v.src, tripId: v.tripId, routeId: v.routeId, line: v.line, color: v.color, label: v.label, headsign: v.headsign, dup: v.dup, dupWith: v.dupWith, idle: v.idle, lat: v.lat, lon: v.lon });
 function entryForStop(id, name, src) {
   const z = zoneOf.get(id);
   if (z) return { t: 'zone', key: z.key, pick: z.letterOf.get(id) || '*' };
@@ -585,7 +585,9 @@ function showTrip(e) {
   pfollow.disabled = !v.id;
   keepInView = () => { const m = selVeh && markers.get(selVeh); return m ? m.m.getLatLng() : null; };
   if (!v.tripId) {
-    plist.innerHTML = `<p class="muted pad">${v.dup ? `La corsa di questo mezzo risulta assegnata anche al mezzo ${esc(v.dupWith)}: il sistema segue quello più coerente col percorso.` : 'Dati corsa non disponibili per questo mezzo.'}</p>`;
+    const why = v.idle ? `Mezzo fermo al capolinea da molto oltre l'orario della corsa che dichiara${v.idle.trip ? ` (partenza delle ${esc(v.idle.trip)})` : ''}: non viene associato a quella corsa, che è mostrata con le previsioni ACTV o con l'orario programmato. Torna associato appena riparte.`
+      : v.dup ? `La corsa di questo mezzo risulta assegnata anche al mezzo ${esc(v.dupWith)}: il sistema segue quello più coerente col percorso.` : 'Dati corsa non disponibili per questo mezzo.';
+    plist.innerHTML = `<p class="muted pad">${why}</p>`;
     psub.textContent = ''; showRoutes([v.routeId], tripLayer); if (v.id) ensureVisible(L.latLng(v.lat, v.lon)); return;
   }
   e.drawn = false; plist.innerHTML = '<p class="muted pad">Caricamento…</p>';
@@ -655,7 +657,7 @@ function renderTrip(first) {
   const o = d.stops[0];
   psub.innerHTML = (o ? `da ${esc(o.name)}${o.sched ? ', ' + esc(o.sched) : ''}` : '') + (d.note ? `<br>${esc(d.note)}` : '');
   // corsa verificata (assign.js): il mezzo trasmetteva un'altra corsa; lo si dice, in modo trasparente
-  if (d.reassigned) psub.innerHTML += `<span class="reassign">${icon('info', 'sm')} Corsa riconosciuta ${d.reassigned.why === 'feed' ? 'dai dati ACTV' : 'da posizione e orario'}: il mezzo trasmetteva la corsa delle ${esc(d.reassigned.from || '?')}.</span>`;
+  if (d.reassigned) psub.innerHTML += `<span class="reassign">${icon('info', 'sm')} Corsa indicata dalle previsioni ACTV: la posizione del mezzo riportava la corsa delle ${esc(d.reassigned.from || '?')}.</span>`;
   // UNA riga: stato · mezzo (con "insieme a…", accorciato se serve) · velocità stimata (etichetta che non va mai a capo)
   const vtxt = vehName(d.trip.src, d.trip.vehicle || current.v.label) + (d.others?.length ? ` · insieme a ${d.others.join(', ')}` : '');
   const spd = d.live && d.detected !== false && d.speedKmh != null ? `<span class="spd" title="Velocità stimata dalle posizioni GPS: il feed ACTV non trasmette la velocità reale" aria-label="velocità stimata circa ${+d.speedKmh} chilometri orari">≈ ${+d.speedKmh} km/h · stima</span>` : '';

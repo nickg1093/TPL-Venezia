@@ -20,13 +20,20 @@ const lerp = (pts, t) => {                                    // valore interpol
   for (let i = 1; i < pts.length; i++) if (t <= pts[i][0]) { const a = pts[i - 1], b = pts[i], f = b[0] === a[0] ? 0 : (t - a[0]) / (b[0] - a[0]); return a[1] + (b[1] - a[1]) * f; }
   return pts[pts.length - 1][1];
 };
+// Serie PREVISTA disegnata e letta dal cursore: parte dall'ULTIMO valore osservato, così tra l'ultima misura (es. 16:20) e l'inizio della
+// previsione non resta un buco "nessun dato" proprio intorno all'ora attuale. Quel tratto è trattato come previsione (linea tratteggiata).
+const fcFrom = c => {
+  const obs = c.observed || [], fc = c.forecast || [], last = obs[obs.length - 1];
+  return last ? [last, ...fc.filter(p => p[0] > last[0])] : fc;
+};
 function valueAt(c, t) {                                      // { cm, kind: 'osservato' | 'previsto' } oppure null
-  if (t <= c.now) { const v = lerp(c.observed || [], t); return v == null ? null : { cm: Math.round(v), kind: 'osservato' }; }
-  const v = lerp(c.forecast || [], t); return v == null ? null : { cm: Math.round(v), kind: 'previsto' };
+  const obs = c.observed || [], last = obs[obs.length - 1];
+  if (last && t <= last[0]) { const v = lerp(obs, t); return v == null ? null : { cm: Math.round(v), kind: 'osservato' }; }
+  const v = lerp(fcFrom(c), t); return v == null ? null : { cm: Math.round(v), kind: 'previsto' };
 }
 function chartHtml(c) {
   CH.W = Math.max(200, Math.min(520, Math.round((card.clientWidth || 340) - 40)));
-  const obs = c.observed || [], fc = c.forecast || [], ext = c.extremes || [], { W, H, L, R, T, B } = CH;
+  const obs = c.observed || [], fc = fcFrom(c), ext = c.extremes || [], { W, H, L, R, T, B } = CH;
   const vals = [...obs, ...fc].map(p => p[1]).concat(ext.map(e => e.cm));
   if (vals.length < 2) return '';
   let lo = Math.min(...vals), hi = Math.max(...vals); const step = hi - lo > 120 ? 50 : hi - lo > 50 ? 20 : 10;
@@ -63,7 +70,7 @@ function bindChart(c) {                                       // collega cursore
     if (v) { const Yv = CH.T + (CH.H - CH.T - CH.B) * (1 - (v.cm - lo) / (hi - lo)); dot.setAttribute('cx', X()); dot.setAttribute('cy', Yv.toFixed(1)); } else { dot.setAttribute('cx', -10); dot.setAttribute('cy', -10); }
     box.querySelector('.tr-time').textContent = hmTxt;
     box.querySelector('.tr-val').textContent = v ? `${fmtCm(v.cm)} cm` : 'nessun dato';
-    box.querySelector('.tr-kind').textContent = v ? (v.kind === 'previsto' ? 'previsto' : 'osservato') : (t <= c.now ? 'storico non disponibile' : 'oltre la previsione');
+    box.querySelector('.tr-kind').textContent = v ? (v.kind === 'previsto' ? 'previsto' : 'osservato') : (t <= ((c.observed || [])[0]?.[0] ?? c.now) ? 'storico non disponibile' : 'oltre la previsione');
     rng.setAttribute('aria-valuetext', `${hmTxt}: ${v ? fmtCm(v.cm) + ' centimetri, ' + v.kind : 'nessun dato'}`);
   };
   rng.addEventListener('input', () => set(+rng.value));
