@@ -1,5 +1,5 @@
 # PERCORSI A PIEDI TRA FERMATE IN LAGUNA (Venezia centro storico, Giudecca, Tronchetto, Murano, Burano/Mazzorbo, Sant'Erasmo, Treporti, Lido, Pellestrina, Chioggia)
-# Distanze in metri lungo la rete pedonale di OpenStreetMap (calli, ponti, fondamenta, scale ×1,3), fino a 1000 m. © OpenStreetMap contributors, ODbL.
+# Distanze in metri lungo la rete pedonale di OpenStreetMap (calli, ponti, fondamenta, scale ×1,3), fino a 2000 m. © OpenStreetMap contributors, ODbL.
 # Generato il 3 novembre 2026 da Overpass API (scripts/pedonale.js lo rigenera). Riga 1 = fermate (n = navigazione, a = automobilistico);
 # riga 2 = coppie "i.j.m" in base 36 (indici nella riga 1, metri). In laguna i tempi a piedi si prendono SOLO da qui: una coppia assente vuol
 # dire oltre 1 km a piedi (es. sponde opposte del Canal Grande lontano dai ponti, isole diverse).

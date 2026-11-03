@@ -71,15 +71,29 @@ test('dopo mezzanotte: corse del giorno di servizio precedente (orari 24:xx)', (
 });
 
 test('in laguna niente scorciatoie: fermate non collegate dalla rete pedonale non si raggiungono a piedi', () => {
+  // dati di prova propri (non i file veri, che cambiano a ogni rigenerazione): due pontili a 195 m in linea d'aria su rive opposte
+  const os = require('os'), fs = require('fs'), path = require('path');
   const { walkTo } = percorso._t;
-  // nav:5043 (Ca' Rezzonico) e nav:5042 (S. Samuele) sono sulle due rive del Canal Grande: 195 m in linea d'aria, oltre 1 km a piedi
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pedonale-'));
   const G = makeG([{ route: 'X', name: 'X', stops: ['5042', '5043'], start: 8 * 3600, every: 600, hop: 300, n: 2 }], { 5042: 0, 5043: 195 });
-  percorso.init({ G: i => (i === 'nav' ? G : aut), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [] });
-  percorso.build();
-  const m = walkTo([['nav:5043', 40], ['nav:5042', 170]]);
-  assert.ok(m.has(percorso._t.IX.gid.get('nav:5043')));
-  assert.ok(!m.has(percorso._t.IX.gid.get('nav:5042')), 'l\'altra riva non è raggiungibile dal punto');
-  percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [] });
+  const ctx = { G: i => (i === 'nav' ? G : aut), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [], walkDir: dir };
+  try {
+    // nessun cammino tra le due rive nel file: dal punto si raggiunge solo il pontile della propria riva
+    fs.writeFileSync(path.join(dir, 'pedonale-laguna.txt'), '# prova\nn5042,n5043\n\n');
+    percorso.init(ctx); percorso.build();
+    let m = walkTo([['nav:5043', 40], ['nav:5042', 170]]);
+    assert.ok(m.has(percorso._t.IX.gid.get('nav:5043')));
+    assert.ok(!m.has(percorso._t.IX.gid.get('nav:5042')), 'l\'altra riva non è raggiungibile dal punto');
+    // con un cammino vero (giro dal ponte, 1622 m) l'altra riva si raggiunge, ma con il tempo del giro, non della linea d'aria
+    fs.writeFileSync(path.join(dir, 'pedonale-laguna.txt'), `# prova\nn5042,n5043\n0.1.${(1622).toString(36)}\n`);
+    percorso.init(ctx); percorso.build();
+    m = walkTo([['nav:5043', 40], ['nav:5042', 170]]);
+    const s = m.get(percorso._t.IX.gid.get('nav:5042'));
+    assert.ok(s > 15 * 60, 'a piedi lungo il giro: ' + s + ' s');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [] });
+  }
 });
 
 test('tempo reale: un ritardo del mezzo sposta la coincidenza', () => {

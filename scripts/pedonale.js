@@ -43,10 +43,10 @@ async function overpass(R, label) {
   return net.done();
 }
 
-function save(file, ST, pairs, loose) {
+function save(file, ST, pairs, loose, lim) {
   const old = fs.existsSync(path.join(ROOT, file)) ? fs.readFileSync(path.join(ROOT, file), 'utf8').split('\n').filter(l => l.startsWith('#')) : [];
   const date = new Date().toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
-  const head = old.length ? old.map(l => l.replace(/Generato il .*? da/, `Generato il ${date} da`))
+  const head = old.length ? old.map(l => l.replace(/Generato il .*? da/, `Generato il ${date} da`).replace(/fino a \d+ m\b/, `fino a ${lim} m`))
     : [`# Distanze a piedi (metri) tra fermate ACTV lungo la rete pedonale di OpenStreetMap. Generato il ${date} da scripts/pedonale.js.`,
        '# Riga 1: fermate (n = navigazione, a = automobilistico). Riga 2: coppie «i.j.metri» in base 36. Riga 3: fermate lontane dalla rete.',
        '# Dati © OpenStreetMap contributors, licenza ODbL (https://www.openstreetmap.org/copyright).'];
@@ -68,7 +68,7 @@ function save(file, ST, pairs, loose) {
     console.log(`laguna: ${ST.length} fermate`);
     const g = await overpass(BB.map(b => [b[0], b[1], b[2], b[3]]), 'laguna');
     const pairs = P.coppie(ST, g, 2000, 150);
-    save('pedonale-laguna.txt', ST, pairs, []);                // in laguna una fermata senza rete resta senza cambi a piedi (pontili isolati)
+    save('pedonale-laguna.txt', ST, pairs, [], 2000);                // in laguna una fermata senza rete resta senza cambi a piedi (pontili isolati)
   }
   if (want !== 'laguna') {
     const terra = all.filter(s => !inB(s.la, s.lo));
@@ -78,6 +78,6 @@ function save(file, ST, pairs, loose) {
     console.log(`terraferma: ${terra.length} fermate (+${edge.length} pontili di confine), ${R.length} zone da scaricare`);
     const g = await overpass(R, 'terraferma');
     const pairs = P.coppie(ST, g, 1200, 150);
-    save('pedonale-terraferma.txt', ST, pairs, ST.map((s, k) => (s.n >= 0 && s.sd <= 150 ? -1 : k)).filter(k => k >= 0));
+    save('pedonale-terraferma.txt', ST, pairs, ST.map((s, k) => (s.n >= 0 && s.sd <= 150 ? -1 : k)).filter(k => k >= 0), 1200);
   }
 })().catch(e => { console.error(e.message); process.exit(1); });
