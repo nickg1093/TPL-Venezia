@@ -2,7 +2,7 @@
 // Quale file leggere lo decide gtfsstore.js (validità nel calendario + coerenza col realtime): qui non c'è più alcun download.
 const fs = require('fs');
 const path = require('path');
-const AdmZip = require('adm-zip');
+const { Zip } = require('./zip');                 // lettore ZIP interno (zlib), al posto di adm-zip
 const ids = require('./ids');
 const store = require('./gtfsstore');
 const { eachRow, tick } = require('./csv');
@@ -72,7 +72,7 @@ async function build(srcId, pick, sel) {
   const buf = fs.readFileSync(pick.file), sig = pick.hash;
 
   await tick();
-  const entries = new AdmZip(buf).getEntries();
+  const entries = new Zip(buf).getEntries();
   await tick();
   const read = name => { const e = entries.find(x => { const n = x.entryName.toLowerCase(); return n === name || n.endsWith('/' + name); }); return e ? e.getData() : null; };
   const pool = new Map(), intern = x => { let v = pool.get(x); if (v === undefined) pool.set(x, v = x); return v; };
@@ -80,7 +80,7 @@ async function build(srcId, pick, sel) {
   const usedShapes = new Set(), shapesByRoute = {};
 
   await eachRow(read('routes.txt'), ['route_id', 'route_short_name', 'route_long_name', 'route_color'], r => {
-    routes[r.route_id] = { name: r.route_short_name || r.route_long_name || r.route_id, color: r.route_color ? '#' + r.route_color : null };
+    routes[r.route_id] = { name: r.route_short_name || r.route_long_name || r.route_id, color: r.route_color ? '#' + r.route_color : null, type: r.route_type === '' || r.route_type == null ? null : +r.route_type };
   });
   
   await eachRow(read('stops.txt'), ['stop_id', 'stop_name', 'stop_lat', 'stop_lon'], s => {

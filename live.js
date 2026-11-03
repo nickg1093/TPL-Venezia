@@ -231,7 +231,7 @@ async function refresh(id) {
       coerenzaCodici: { coerenti: tally.ok, incoerenti: tally.bad, controlloAttivo: strict } };
     s8.updated = now; s8.goodAt = now; s8.error = null; s8.sim = false;
     const idle = verifyTrips(id, tuOfVeh), vacated = applyTurni(id, vehOfTu, now);
-    pickOwners(id); chooseTU(id, tuCand, idle, vacated, now); buildStates(id); events.emit('push', true);
+    pickOwners(id); chooseTU(id, tuCand, idle, vacated, now); dedupePassages(id, now); buildStates(id); events.emit('push', true);
   } catch (err) {
     s8.errCount++; s8.error = `${id}: ${err.message}`;
     // I dati reali restano finché sono recenti; solo dopo vari errori (o 3 minuti senza dati) si passa alle posizioni da orario, dichiarate come tali.
@@ -295,10 +295,13 @@ function applyTurni(i, vehOfTu, now) {
 // PREVISIONE ACTV DI OGNI CORSA: quella del mezzo che fa la corsa (titolare scelto da pickOwners); altrimenti quella senza mezzo o di un
 // mezzo non staccato; mai quella di un mezzo staccato (i suoi "ritardi" erano solo il tempo che passava al capolinea).
 function chooseTU(i, cand, idle, vacated, now) {
-  const s8 = S[i], live = {};
+  const s8 = S[i], live = {}, onTrip = new Map();
+  for (const v of s8.vehicles) if (v.tripId && !v.sim) onTrip.set(String(v.key), v.tripId);
   for (const [tid, list] of cand) {
     // escluse: previsioni di mezzi staccati e quelle del mezzo che ha lasciato questa corsa per quella del suo turno (turni.js)
-    const owner = s8.owner.get(tid), ok = list.filter(x => !(x.veh && (idle.has(x.veh) || vacated.get(tid) === x.veh)));
+    // e quelle di un mezzo che il GPS mostra su UN'ALTRA corsa (ACTV continua a prevedere corse vecchie con quel mezzo: 4.1 a Guglie il 3/11,
+    // corse delle 13:49 e 14:29 «in ritardo di 140 e 101 min» = il battello della 16:09)
+    const owner = s8.owner.get(tid), ok = list.filter(x => !(x.veh && (idle.has(x.veh) || vacated.get(tid) === x.veh || (onTrip.has(x.veh) && onTrip.get(x.veh) !== tid))));
     const pick = ok.find(x => owner != null && x.veh === String(owner)) || ok.find(x => !x.veh) || ok[0];
     if (!pick) continue;
     const e = pick.entry, n = e.delays.length;
@@ -310,6 +313,61 @@ function chooseTU(i, cand, idle, vacated, now) {
   }
   for (const [k, h] of s8.hist) if (now - h.seen > 3 * 3600 * 1000) { s8.hist.delete(k); s8.sig.delete(k); }
   s8.live = live;
+}
+
+// UN PASSAGGIO, UNA RIGA (3/11/2026). ACTV pubblica previsioni anche per corse che nessun mezzo fa (o che il suo sistema tiene «aperte»):
+// il ritardo viene trascinato fino al primo mezzo che passerà davvero. A Guglie la 4.1 delle 13:49 «+140» e quella delle 14:29 «+101» erano
+// il battello della 16:09: tre righe per un passaggio. Vale anche per i mezzi SENZA GPS (non tutte le corse sono tracciate): il confronto si fa
+// con il passaggio, non con il mezzo.
+// Corsa X con la sola previsione del feed (nessun mezzo la fa) e ritardo di almeno 10 minuti alla prossima fermata:
+//   a) se la sua previsione cade sul passaggio di una corsa Y successiva della stessa linea, con le stesse fermate fino al capolinea (±3 min
+//      dal tempo di Y se Y ha dati propri; da 3 min prima a 20 min dopo l'orario se Y è solo programmata, cioè senza GPS né previsione),
+//      e il ritardo di X «copre» la distanza tra i due orari, X è un doppione di Y: la previsione di X si scarta. Y resta com'è (mezzo
+//      localizzato o previsione propria); se non ha dati prende il tempo di X quando differisce dal suo orario di oltre un minuto (è un dato del
+//      feed), altrimenti resta «Da orario». Due mezzi localizzati non si toccano mai (X non ne ha per definizione);
+//   b) senza Y e con oltre 40 minuti di ritardo: vale solo se la centrale ACTV, quando ha i dati di quella palina, elenca un passaggio in
+//      tempo reale della linea a quell'ora; se li ha e non lo elenca, la previsione si scarta. Senza dati della centrale resta.
+const DEDUP = { MIN_DELAY_S: 600, NEAR_S: 180, LATE_S: 20 * 60, BIG_DELAY_S: 40 * 60 };
+let passCheck = null;                                   // centrale ACTV (server.js -> centrale.checkPass), facoltativo
+const setPassCheck = f => { passCheck = f; };
+function dedupePassages(i, now) {
+  const G = D[i], s8 = S[i], prev = s8.state || {}, busy = new Set();
+  for (const v of s8.vehicles) if (v.tripId && !v.sim) busy.add(v.tripId);
+  const stat = (s8.dedup ||= { doppioni: 0, presiDallaCorsaDopo: 0, ritardiNonConfermati: 0 });
+  for (const tid of Object.keys(s8.live)) {
+    const lv = s8.live[tid]; if (busy.has(tid) || !lv || lv.cancelled || lv.derived) continue;
+    const st = G.stopTimes.get(tid), trip = G.trips[tid]; if (!st || !trip) continue;
+    const n = st.s.length, tN = tripNow(st);
+    let k = -1; for (let j = Math.max(0, lv.firstJ); j < n - 1; j++) if (lv.delays[j] != null && st.d[j] + lv.delays[j] >= tN - 60) { k = j; break; }
+    if (k < 0 || lv.delays[k] < DEDUP.MIN_DELAY_S) continue;
+    const dX = lv.delays[k], pX = now + (st.d[k] + dX - tN) * 1000, schedX = now + (st.d[k] - tN) * 1000;
+    let hit = null;
+    try {
+      for (const y of turni.slotsAt(G, tid, k, now, tripNow, activeNow)) {
+        if (y.schedMs <= schedX || dX * 1000 < y.schedMs - schedX - DEDUP.NEAR_S * 1000) continue;
+        const py = prev[y.tid]?.etaMs?.[y.k], ly = s8.live[y.tid]?.delays?.[y.k];
+        // Y con dati propri (mezzo localizzato o previsione): stesso passaggio se entro ±3 min dal suo tempo. Y solo programmata (non
+        // tracciata): la previsione di X può anche essere il SUO ritardo, fino a 20 min dopo l'orario (vince la corsa con l'orario più vicino)
+        const known = Number.isFinite(py) || ly != null, predY = Number.isFinite(py) ? py : ly != null ? y.schedMs + ly * 1000 : y.schedMs;
+        const d = pX - predY, ok = known ? Math.abs(d) <= DEDUP.NEAR_S * 1000 : d >= -DEDUP.NEAR_S * 1000 && d <= DEDUP.LATE_S * 1000;
+        const score = Math.abs(d) - (known ? 3600e3 : 0);                                // a parità, i passaggi con dati propri prima
+        if (ok && (!hit || score < hit.d)) hit = { y, d: score };
+      }
+    } catch (e) { console.error('passaggi doppi:', e.message); }
+    if (hit) {
+      delete s8.live[tid]; s8.hist.delete(tid); stat.doppioni++;
+      const y = hit.y, Y = G.stopTimes.get(y.tid), dY = Math.round((pX - y.schedMs) / 1000);
+      if (Y && !busy.has(y.tid) && !s8.live[y.tid] && Math.abs(dY) > 60) {
+        s8.live[y.tid] = { delays: Array.from({ length: Y.s.length }, (_, j) => (j >= y.k ? dY : null)), cancelled: false, skipped: new Set(), firstJ: y.k, changedAt: lv.changedAt, veh: null, derived: tid };
+        stat.presiDallaCorsaDopo++;
+      }
+      continue;
+    }
+    if (dX > DEDUP.BIG_DELAY_S && passCheck) {
+      let r = null; try { r = passCheck(i, st.s[k], G.routes[trip.route]?.name || trip.route, pX); } catch { r = null; }
+      if (r === 'no') { delete s8.live[tid]; s8.hist.delete(tid); stat.ritardiNonConfermati++; }
+    }
+  }
 }
 
 // STATO UNICO DI UNA CORSA (fonte di verità condivisa da pannello fermata, dettaglio corsa e mappa):
@@ -434,7 +492,7 @@ function tripDetail(i, tid, live, vehKey = null, G = D[i], when = null) {
       if (future) dlS = (ss.etaMs[k] - nowMs) / 1000 - (ts - tNow);
       else if (ss.dep?.[k]) dlS = (tNow - (nowMs - ss.dep[k]) / 1000) - ts;
       else if (hist?.[k] != null) dlS = Math.min(Math.max(0, hist[k]), tNow - ts);       // arrivo in anticipo dal feed ≠ partenza in anticipo
-      if (future && ss.preStart && !ss.feedPre && dlS < 60) dlS = null;                    // corsa non partita e senza feed: si mostra l'orario ("da orario")
+      if (future && ss.preStart && !ss.feedPre && dlS < 60) dlS = ss.vehKey ? 0 : null;    // non partita, senza feed: nessun anticipo; col mezzo «In orario», senza «Da orario»
       if (dlS != null && k < cur) { dlS = Math.max(dlS, prevAct - ts); prevAct = ts + dlS; }
     }
     stops[k] = {
@@ -464,7 +522,8 @@ function tripDetail(i, tid, live, vehKey = null, G = D[i], when = null) {
   return {
     reassigned: live && veh?.reassigned ? veh.reassigned : null,
     live, detected: !live || !!(sel || lv), progress, atStop, phase: ss.phase, vehKey: ss.vehKey ?? null, others, speedKmh: ss.speed != null ? Math.round(ss.speed * 3.6) : null, cancelled: !!lv?.cancelled, note: noteOf(G, when?.date),
-    delayNow: dn != null ? Math.round(dn / 60) : null,
+    // stato della corsa in testa al pannello: lo stesso delle righe (prima fermata non ancora servita con un ritardo); senza = «Da orario»
+    delayNow: (nx => nx ? (dn != null && ss.vehKey ? Math.round(dn / 60) : nx.delay) : null)(stops.find(s => s.state !== 'passed' && s.delay != null)),
     historyKnown: stops.some(s => s.state === 'passed' && s.delay != null),
     trip: { src: i, id: `${i}:${tid}`, line: r.name || trip.route, color: r.color || null, headsign: trip.headsign || G.stops[st.s[n - 1]] || null, vehicle: veh?.label || null },
     shape: gtfs.toLL(G.shapePts[trip.shape]), stops
@@ -571,5 +630,5 @@ function startLoops() {
   })();
 }
 
-module.exports = { Feed, events, D, S, ready, IDS, REFRESH_MS, refresh, tripDetail, setTurnoCheck, tripNow, noteOf, dataFor, dateRange, startStatic, startLoops, adopt, syncStatic, gtfsStatus,
+module.exports = { Feed, events, D, S, ready, IDS, REFRESH_MS, refresh, tripDetail, setTurnoCheck, setPassCheck, dedupePassages, tripNow, noteOf, dataFor, dateRange, startStatic, startLoops, adopt, syncStatic, gtfsStatus,
   version: () => version, stopsCache: () => cachedStopsGzip, setStopsCache: v => { cachedStopsGzip = v; } };

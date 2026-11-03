@@ -8,14 +8,77 @@
   "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["standalone", "minimal-ui"],
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
   "orientation": "any",
   "background_color": "#0a1019",
   "theme_color": "#0b62c4",
-  "categories": ["travel", "navigation", "transportation"],
+  "categories": [
+    "travel",
+    "navigation",
+    "transportation"
+  ],
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Pianifica percorso",
+      "short_name": "Percorso",
+      "description": "Apre il pianificatore di percorso",
+      "url": "/?apri=percorso",
+      "icons": [
+        {
+          "src": "/icons/scorciatoia-percorso.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Fermate vicine",
+      "short_name": "Vicine",
+      "description": "Chiede la posizione e mostra le fermate più vicine",
+      "url": "/?apri=vicine",
+      "icons": [
+        {
+          "src": "/icons/scorciatoia-vicine.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Preferiti",
+      "short_name": "Preferiti",
+      "description": "Fermate e percorsi salvati",
+      "url": "/?apri=preferiti",
+      "icons": [
+        {
+          "src": "/icons/scorciatoia-preferiti.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    }
   ]
 }

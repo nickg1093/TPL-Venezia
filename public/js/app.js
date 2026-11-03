@@ -9,6 +9,8 @@ import { createLocator } from './locate.js';
 import * as Fav from './fav.js';
 import * as Notify from './notify.js';
 import * as Info from './info.js';
+import * as Plan from './percorso.js';
+import * as Guida from './guida.js';
 
 const POLL_MS = 2000, MIN_STOP_ZOOM = 14;
 onBusy(b => { $('busybar').hidden = !b; document.body.classList.toggle('busy', b); });   // barra di caricamento per le richieste lente
@@ -26,7 +28,7 @@ $('toast').onclick = () => { $('toast').hidden = true; };
 // ELEMENTI E STATO
 // ---------------------------------------------------------------------------------------------------------------------
 const statusEl = $('status'), filterEl = $('filter'), resultsEl = $('search-results'), panel = $('panel'), plist = $('plist'), chipsArea = $('chips-area');
-const pname = $('pname'), psub = $('psub'), pstatus = $('pstatus'), pbadge = $('pbadge'), pback = $('pback'), pfollow = $('pfollow'), pfav = $('pfav'), pnotify = $('pnotify');
+const pname = $('pname'), psub = $('psub'), pstatus = $('pstatus'), pbadge = $('pbadge'), pback = $('pback'), pfollow = $('pfollow'), pfav = $('pfav'), pnotify = $('pnotify'), pplan = $('pplan'), pshare = $('pshare');
 const range = $('tl-range'), dateEl = $('tl-date');
 const searchContainer = $('search-container'), searchToggleBtn = $('search-toggle-btn');
 
@@ -57,7 +59,7 @@ function clampDate() {
   if (dateEl.max && v > dateEl.max) { dateEl.value = dateEl.max; return true; }
   return false;
 }
-const schedQS = () => mode === 'sched' ? `&secs=${range.value}&date=${dateEl.value.replace(/-/g, '')}` : '';
+const schedQS = () => mode === 'sched' ? `&secs=${encodeURIComponent(range.value)}&date=${encodeURIComponent(dateEl.value.replace(/\D/g, ''))}` : '';
 
 // ---------------------------------------------------------------------------------------------------------------------
 // MAPPA E LIVELLI
@@ -71,8 +73,25 @@ if (matchMedia('(pointer: fine)').matches) {                                   /
   zh(); requestAnimationFrame(zh); addEventListener('resize', zh);
 }
 // l'attribuzione di OpenStreetMap è nel dock in basso (#credits): sempre visibile e mai coperta da pannelli o finestre
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-const lineLayer = L.layerGroup().addTo(map), tripLayer = L.layerGroup().addTo(map), stopLayer = L.layerGroup().addTo(map);
+// updateWhenZooming: false = durante il pizzico non si scaricano le mattonelle dei livelli intermedi (meno dati, stessa immagine finale)
+const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, updateWhenZooming: false }).addTo(map);
+// AREA SERVITA (/api/area, area.js): fuori dal contorno intorno a tutte le fermate la mappa è oscurata, non ci si sposta oltre
+// e non si scaricano mattonelle; lo zoom si allontana al massimo fino a vedere tutta l'area.
+function applyArea(a) {
+  if (!a || !Array.isArray(a.rings) || !Array.isArray(a.bbox) || a.bbox.length !== 4 || !a.bbox.every(Number.isFinite)) return;
+  const ok = p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]) && Math.abs(p[0]) <= 90 && Math.abs(p[1]) <= 180;
+  const rings = a.rings.filter(r => Array.isArray(r)).map(r => r.filter(ok)).filter(r => r.length >= 3);
+  if (!rings.length) return;
+  const b = L.latLngBounds([a.bbox[0], a.bbox[1]], [a.bbox[2], a.bbox[3]]);
+  L.polygon([[[-85, -180], [-85, 180], [85, 180], [85, -180]], ...rings], { stroke: false, fillColor: '#0b1520', fillOpacity: 0.32, interactive: false }).addTo(map);
+  L.polygon(rings, { fill: false, color: '#2f80ed', weight: 2, opacity: 0.75, interactive: false }).addTo(map);
+  tiles.options.bounds = b.pad(0.1); tiles.redraw?.();
+  map.setMaxBounds(b.pad(0.1)); map.options.maxBoundsViscosity = 1;
+  const fitMin = () => map.setMinZoom(Math.max(8, map.getBoundsZoom(b, false) - 0));
+  fitMin(); addEventListener('resize', fitMin);
+}
+fetch('/api/area', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(a => { try { applyArea(a); } catch { /* area facoltativa: la mappa funziona anche senza */ } }).catch(() => {});
+const lineLayer = L.layerGroup().addTo(map), tripLayer = L.layerGroup().addTo(map), stopLayer = L.layerGroup().addTo(map), planLayer = L.layerGroup().addTo(map);
 new ResizeObserver(() => map.invalidateSize({ animate: false })).observe($('wrap'));   // il dock cambia altezza (es. in modalità Pianificato): la mappa si adegua
 
 // Linea sulla mappa con contorno: resta leggibile anche se il colore è chiaro (es. bianco della linea 1) e in entrambi i temi
@@ -217,12 +236,19 @@ function render() {
   for (const [id, e] of markers) if (!keep.has(id)) { e.m.remove(); markers.delete(id); }
 }
 
-// Un fotogramma: avanza i mezzi lungo il loro percorso e, se l'inseguimento è attivo, scorre la mappa dolcemente verso il centro della zona libera
+// Un fotogramma: avanza i mezzi lungo il loro percorso e, se l'inseguimento è attivo, scorre la mappa dolcemente verso il centro della zona libera.
+// RISPARMIO DI BATTERIA: i mezzi si muovono di pochi pixel al secondo (a zoom 13 un bus a 36 km/h percorre meno di 1 pixel al secondo),
+// quindi i fotogrammi sono pochi e dipendono dallo zoom: 2 al secondo da lontano, fino a 10 da vicinissimo; 30 mentre si segue un mezzo
+// (la mappa scorre con lui).
+// Si spostano solo i simboli nella parte di mappa visibile (gli altri riprendono il loro posto appena entrano in vista);
+// con l'app in secondo piano non si disegna nulla.
+const FPS_AT = z => z >= 17 ? 10 : z >= 16 ? 6 : z >= 15 ? 4 : 2;
 let lastFrame = performance.now();
-requestAnimationFrame(function frame(t) {
-  const dt = Math.min(100, t - lastFrame); lastFrame = t;
+function frame(t) {
+  const dt = Math.min(400, t - lastFrame); lastFrame = t;
   if (mode === 'live' && !document.hidden) {
-    for (const e of markers.values()) {
+    const view = map.getBounds().pad(0.15);
+    for (const [id, e] of markers) {
       if (e.poly.length < 2) continue;                                  // arrivato: nessun lavoro
       let adv = e.mps * dt / 1000;                                      // metri da percorrere in questo fotogramma
       while (adv > 0 && e.poly.length > 1) {
@@ -231,38 +257,50 @@ requestAnimationFrame(function frame(t) {
         else { const f = adv / seg; e.poly[0] = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]; adv = 0; }
       }
       e.lat = e.poly[0][0]; e.lon = e.poly[0][1];
-      e.m.setLatLng([e.lat, e.lon]);
+      if (id === selVeh || view.contains([e.lat, e.lon])) e.m.setLatLng([e.lat, e.lon]);
     }
   }
-  if (follow && selVeh && !document.hidden && Date.now() >= followAfter) {
+  const chase = follow && selVeh && !document.hidden;
+  if (chase && Date.now() >= followAfter) {
     const e = markers.get(selVeh);
     if (e) {
       const box = freeBox(), p = map.latLngToContainerPoint(e.m.getLatLng()), dx = p.x - box.cx, dy = p.y - box.cy;
       if (Math.abs(dx) > 1.5 || Math.abs(dy) > 1.5) { const k = Math.min(1, dt / 350); map.panBy([dx * k, dy * k], { animate: false }); }   // scorrimento con attenuazione: nessuno scatto
     }
   }
-  requestAnimationFrame(frame);
-});
+  setTimeout(() => requestAnimationFrame(frame), Math.max(0, 1000 / (chase ? 30 : FPS_AT(map.getZoom())) - 8));
+}
+requestAnimationFrame(frame);
 
+// Mezzi: in tempo reale arrivano dal flusso (solo le differenze, vedi più sotto); la richiesta completa resta per la modalità
+// Pianificato e come riserva se il flusso non è disponibile.
 async function load() {
   const m = mode, key = keyOf();
+  if (m === 'live' && streamLive()) { vehicles = [...fleet.values()]; render(); return; }
   try {
     const d = await api(`/api/${m === 'sched' ? 'scheduled' : 'vehicles'}?src=${key}${schedQS()}`, { cache: m === 'sched' ? 'no-store' : 'no-cache' });
     if (m !== mode || key !== keyOf()) return;
     if (d.error && !d.vehicles) throw new Error(d.error);
-    if (d.version !== undefined && d.version !== staticVer) { staticVer = d.version; loadStatics(); }
-    vehicles = d.vehicles || []; lastUpdate = d.updated || Date.now(); render();
-    const wait = [...active].filter(s => d.ready && !d.ready[s]);
-    const counts = [...active].map(s => `<span class="cnt">${srcIcon(s, 'sm')}${vehicles.filter(v => v.src === s).length}</span>`).join('');
-    const notes = [];
-    if (m === 'live' && d.sim?.length) notes.push('dati in tempo reale non disponibili: posizioni da orario');
-    if (m === 'live' && d.stale?.length) notes.push('il feed ACTV non si aggiorna da diversi minuti');
-    if (wait.length) notes.push(`in caricamento: ${wait.join(', ')}`);
-    if (d.error) notes.push(d.error);
+    if (m === 'live') { fleet.clear(); for (const v of d.vehicles || []) if (v && typeof v.id === 'string') fleet.set(v.id, v); }
+    vehicles = d.vehicles || []; render(); showStatus(d, m);
     if (m === 'sched' && /Carico gli orari/.test(d.error || '')) setTimeout(() => { if (mode === 'sched') load(); }, 3000);   // versione del GTFS per quella data in caricamento
-    statusEl.className = notes.length ? 'warn' : '';
-    statusEl.innerHTML = `${counts}<span>${m === 'sched' ? 'pianificato' : 'mezzi'} · ${new Date(d.updated).toLocaleTimeString('it-IT')}</span>${notes.map(n => `<span class="note">${esc(n)}</span>`).join('')}`;
   } catch (e) { if (m === mode && !e.busy) { statusEl.className = 'err'; statusEl.textContent = 'Errore: ' + e.message; } }
+}
+// stato in alto a sinistra (numero di mezzi, ora dei dati, avvisi sul feed); d = risposta completa o stato inviato dal flusso
+let lastStatus = '';
+function showStatus(d, m = mode) {
+  if (d.version !== undefined && d.version !== staticVer) { staticVer = d.version; loadStatics(); }
+  lastUpdate = d.updated || Date.now();
+  const wait = [...active].filter(s => d.ready && !d.ready[s]);
+  const counts = [...active].map(s => `<span class="cnt">${srcIcon(s, 'sm')}${vehicles.filter(v => v.src === s).length}</span>`).join('');
+  const notes = [];
+  if (m === 'live' && d.sim?.length) notes.push('dati in tempo reale non disponibili: posizioni da orario');
+  if (m === 'live' && d.stale?.length) notes.push('il feed ACTV non si aggiorna da diversi minuti');
+  if (wait.length) notes.push(`in caricamento: ${wait.join(', ')}`);
+  if (d.error) notes.push(d.error);
+  const html = `${counts}<span>${m === 'sched' ? 'pianificato' : 'mezzi'} · ${new Date(d.updated).toLocaleTimeString('it-IT')}</span>${notes.map(n => `<span class="note">${esc(n)}</span>`).join('')}`;
+  if (html === lastStatus && statusEl.className === (notes.length ? 'warn' : '')) return;   // nulla di nuovo: nessun ridisegno
+  lastStatus = html; statusEl.className = notes.length ? 'warn' : ''; statusEl.innerHTML = html;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -298,7 +336,7 @@ const shapeCache = new Map();
 function loadStatics() {
   shapeCache.clear();
   api('/api/routes').then(d => { if (d && !d.error) routesData = d; }).catch(() => {});
-  api('/api/stops').then(d => { if (Array.isArray(d)) { buildZones(d); stops = mergeDuplicates(d); stopById.clear(); for (const s of stops) stopById.set(s[0], s); drawStops(); updateNear(); } }).catch(() => {});
+  api('/api/stops').then(d => { if (Array.isArray(d)) { buildZones(d); stops = mergeDuplicates(d); stopById.clear(); for (const s of stops) stopById.set(s[0], s); drawStops(); updateNear(); openLink(); setTimeout(guideBoot, 1200); } }).catch(() => {});
 }
 async function showRoutes(ids, layer = lineLayer) {
   const tok = ++routeToken;
@@ -370,6 +408,7 @@ resultsEl.addEventListener('click', e => {
   if (!it || !it.dataset.type) return;
   if (it.dataset.type === 'near') { collapseSearch(); const n = nearList[+it.dataset.k]; if (n) openNear(n); return; }
   if (it.dataset.type === 'fav') { collapseSearch(); openFav(it.dataset.k); return; }
+  if (it.dataset.type === 'saved') { collapseSearch(); const r = Fav.routeByKey(it.dataset.k); if (r) { Tide.close(); Avvisi.close(); Info.close(); openFromMap({ t: 'plan', opts: { from: { ...r.from }, to: { ...r.to } } }); } return; }
   filterEl.value = it.dataset.name; resultsEl.classList.remove('active');
   collapseSearch();
   if (it.dataset.type === 'zone') { const z = zones.get(it.dataset.key); if (z) { openFromMap({ t: 'zone', key: z.key, pick: '*' }); focusOn(L.latLng(z.center), 16); } }
@@ -377,7 +416,7 @@ resultsEl.addEventListener('click', e => {
   else setLineFilter({ src: it.dataset.src, name: it.dataset.name, ids: it.dataset.ids.split('\u0001') });
 });
 // un tocco sulla mappa vuota chiude i percorsi della ricerca (se nessun pannello è aperto) e le finestre troppo grandi
-map.on('click', () => { if (!current && !searchOpen()) clearSearchState(); if (narrow()) { Tide.close(); Avvisi.close(); Info.close(); } });
+map.on('click', e => { if (Plan.isPicking()) { Plan.pick(e.latlng); return; } if (!current && !searchOpen()) clearSearchState(); if (narrow()) { Tide.close(); Avvisi.close(); Info.close(); } });
 
 // ---------------------------------------------------------------------------------------------------------------------
 // NAVIGAZIONE TRA PANNELLI
@@ -394,6 +433,7 @@ function entryForStop(id, name, src) {
   return { t: 'stop', id: pid, name: p ? p[1] : name, src, ids: groups.get(pid) || null };
 }
 function describe(e) {   // testo del link «indietro»
+  if (e.t === 'plan') return 'Percorso';
   if (e.t === 'stop') return e.name;
   if (e.t === 'zone') return zones.get(e.key)?.name || 'Zona';
   return `Linea ${e.v.line}${e.v.headsign ? ' · ' + e.v.headsign : ''}`;
@@ -415,18 +455,22 @@ function show(e) {
   clearInterval(panelTimer); lastDeps = null; lastTrip = null;
   tripLayer.clearLayers(); setFollow(false); locator.release();          // aprire un pannello ferma l'inseguimento della mia posizione
   if (e.t !== 'trip') { selVeh = null; render(); }
+  if (e.t !== 'plan') planLayer.clearLayers();
   current = e; panel.hidden = false; document.body.classList.add('has-panel'); if (narrow()) { Tide.close(); Avvisi.close(); Info.close(); }
   chipsArea.innerHTML = ''; pstatus.textContent = ''; psub.textContent = ''; pbadge.innerHTML = '';
   pfollow.hidden = e.t !== 'trip';
-  pfav.hidden = e.t === 'trip'; pnotify.hidden = !(e.t === 'trip' && e.stop); notifyPick = false; rowPick = null;
+  pfav.hidden = e.t === 'trip' || (e.t === 'plan' && !Plan.canSave()); pnotify.hidden = !(e.t === 'trip' && e.stop); notifyPick = false; rowPick = null;
+  panel.classList.toggle('is-plan', e.t === 'plan'); document.body.classList.toggle('panel-plan', e.t === 'plan'); planBtn.setAttribute('aria-expanded', String(e.t === 'plan'));
+  pplan.hidden = !(e.t === 'stop' || e.t === 'zone'); updateShare(e);
   updateBack(); updateFav(); updateBell();
-  if (e.t === 'trip') showTrip(e); else showStopPanel(e);
+  if (e.t === 'plan') { keepInView = null; Plan.show(e.opts || {}); e.opts = null; }
+  else if (e.t === 'trip') showTrip(e); else showStopPanel(e);
   drawStops();
 }
 function closePanel() {
   const hadTrip = current?.t === 'trip' || navStack.some(x => x.t === 'trip');
   navStack.length = 0; current = null; lastDeps = null; lastTrip = null; clearInterval(panelTimer);
-  setFollow(false); tripLayer.clearLayers(); keepInView = null;
+  setFollow(false); tripLayer.clearLayers(); keepInView = null; Plan.clear(); panel.classList.remove('is-plan'); document.body.classList.remove('panel-plan'); planBtn.setAttribute('aria-expanded', 'false');
   if (selVeh) { selVeh = null; render(); }
   panel.hidden = true; document.body.classList.remove('has-panel'); chipsArea.innerHTML = '';
   if (hadTrip && !searchOpen()) clearSearchState();        // il percorso mostrato per la corsa sparisce; i percorsi di una ricerca ancora aperta restano
@@ -434,8 +478,8 @@ function closePanel() {
 }
 $('pclose').onclick = closePanel;
 
-const refreshPanel = () => { if (!current) return; if (current.t === 'trip') loadTrip(); else loadDepartures(); };
-const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInterval(() => { if (Date.now() - lastPushAt > 6000) refreshPanel(); }, 4000); };   // rete di sicurezza se lo stream non arriva
+const refreshPanel = () => { if (!current || current.t === 'plan') return; if (current.t === 'trip') loadTrip(); else loadDepartures(); };   // il percorso si aggiorna da sé (ogni minuto)
+const startPanelTimer = () => { clearInterval(panelTimer); panelTimer = setInterval(() => { if (!document.hidden && Date.now() - lastPushAt > 15000) refreshPanel(); }, 10000); };   // rete di sicurezza se il flusso tace   // rete di sicurezza se lo stream non arriva
 
 // ---------------------------------------------------------------------------------------------------------------------
 // PANNELLO FERMATA / ZONA
@@ -474,39 +518,123 @@ async function loadDepartures() {
   const url = z ? '/api/zone?ids=' + encodeURIComponent(z.items.map(i => i.id).join(','))
     : e.ids?.length > 1 ? '/api/zone?ids=' + encodeURIComponent(e.ids.join(',')) : '/api/stop?id=' + encodeURIComponent(e.id);
   try {
-    const d = await api(url + schedQS().replace('&', url.includes('?') ? '&' : '?'));
+    const d = await api(url + schedQS());                                 // url ha sempre già «?»: i parametri si aggiungono con «&»
     if (d.error) throw new Error(d.error);
     if (current !== e) return;
     lastDeps = d; d._e = e; renderDepartures();
   } catch (err) { if (current === e && !(err.busy && lastDeps)) plist.innerHTML = `<p class="late pad">Dati non disponibili: ${esc(err.message)}</p>`; }
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// RIGHE DEL PANNELLO FERMATA (v23): tre righe per passaggio
+//   1) destinazione · 2) fermate successive (scorrono di continuo, sempre verso sinistra) · 3) corsia/pontile · stato · mezzo
+//   a destra l'orario: se cambia, quello programmato barrato SOPRA quello previsto; sotto «Tra N min»; poi la campanella.
+// Sezioni: «Partiti da poco» (3 minuti, una riga ciascuno) e «Prossime partenze», in ordine di orario o raggruppate per linea e
+// destinazione (un tocco sul gruppo mostra tutti i suoi passaggi).
+// ---------------------------------------------------------------------------------------------------------------------
+const destOf = h => String(h || '').replace(/\s*["“”'‘’][A-Za-z0-9]{1,2}["“”'‘’]\s*$/, '');   // senza la lettera del pontile di arrivo
+// stato del passaggio (stesse diciture del pannello della corsa)
+function depState(x, live) {
+  if (x.cancel) return { cls: 'late', txt: x.cancel === 'trip' ? 'Corsa soppressa' : 'Fermata saltata', long: '' };
+  if (!live || x.done) return { cls: '', txt: '', long: '' };
+  if (!x.live) return { cls: 'sched', txt: 'Da orario', long: '' };
+  const di = delayInfo(x.delay); return { cls: di.cls, txt: di.txt, long: di.long };
+}
+// riga 3: corsia/pontile · stato · mezzo (ordine di sempre), con lo scorrimento avanti e indietro se non entra
+function stateLine(x, z, live) {
+  const st = depState(x, live), vName = live && x.vehicle ? vehName(x.src, x.vehicle) : '';
+  const parts = [st.txt ? `<span class="dst ${st.cls}">${esc(st.txt)}</span>` : '', vName ? `<span class="dvh">${esc(vName)}</span>` : ''].filter(Boolean).join('<span class="dsep"> · </span>');
+  return `<div class="dn d-l3"${st.long ? ` title="${esc(st.long)}"` : ''}>${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}${x.isRequest ? '<span class="req-tag">A richiesta</span>' : ''}<span><span class="mq">${parts}</span></span></div>`;
+}
+// riga 2: fermate successive dal server (elenco condiviso tra le corse con le stesse fermate: lastDeps.nexts[x.nx])
+function nextLine(x) {
+  const v = x.nx && lastDeps?.nexts?.[x.nx];
+  if (!v || !Array.isArray(v.s) || !v.s.length) return `<div class="d-l2"><span class="d-nx">${icon('next', 'sm')}<span>prossima fermata: capolinea</span></span></div>`;
+  const items = v.s.map(it => Array.isArray(it) && Array.isArray(it[1]) ? `<b>${esc(it[0])}:</b> ${it[1].map(esc).join(' · ')}` : esc(it));
+  if (v.m) items.push('…');
+  const txt = items.join('<i class="d-ar" aria-hidden="true">›</i>');
+  return `<div class="d-l2"><span class="tk" title="Fermate successive"><span class="tki"><span class="d-nx">${icon('next', 'sm')}<span>${txt}</span></span></span></span></div>`;
+}
+// colonna dell'orario: programmato barrato sopra (se cambia), previsto sotto, poi «Tra N min»
+function timeCol(x, live) {
+  const st = depState(x, live), changed = live && !x.done && Math.abs(x.delay) >= 1 && !x.cancel;
+  return `<div class="dt dt3"><span class="sched-crossed${changed ? '' : ' sp'}"${changed ? '' : ' aria-hidden="true"'}>${changed ? esc(x.sched) : ''}</span>`
+    + `<strong class="${st.cls === 'sched' ? '' : st.cls}">${esc(live ? x.exp : x.sched)}</strong>`
+    + `<div class="in-min" data-exp="${live && x.expMs ? Math.round(x.expMs) : ''}" data-ph="${live ? esc(x.phase || '') : ''}">${esc(etaText(x.phase, x.expMs, x.tIn, live))}</div></div>`;
+}
+// mattonella della linea con avviso (in alto a destra) e fonte del passaggio (in basso a sinistra: onde = rilevato, orologio = orario)
+const badgeCol = (x, live) => `<span class="bw">${badge(x.line, x.color, x.src)}${Avvisi.lineHasAlert(x.src, x.line) ? `<span class="bdot" title="Avviso sulla linea ${esc(x.line)}">${icon('warn', 'sm')}</span>` : ''}`
+  + (live && !x.cancel && !x.done ? `<span class="bsrc ${x.live ? 'on' : ''}" title="${x.live ? 'Mezzo rilevato in tempo reale' : 'Orario programmato: mezzo non rilevato'}">${icon(x.live ? 'live' : 'clock', 'sm')}</span>` : '') + '</span>';
+const rowData = x => `data-trip="${esc(x.tripId)}" data-src="${esc(x.src)}" data-stop="${esc(x.stop || '')}" data-veh="${esc(x.veh || '')}"`;
+const pickAfter = x => (rowPick && rowPick.trip === `${x.src}:${x.tripId}` && rowPick.stop === x.stop ? pickHtml(x.stop) : '');
+// passaggio completo (vista «Orario»)
 function depRow(x, z, live) {
-  const src = x.src, done = !!x.done;
-  let cls = '', subNote = '', fullNote = '';
-  if (x.cancel) { cls = 'late'; subNote = x.cancel === 'trip' ? 'Soppressa' : 'Saltata'; }
-  else if (live && !done) {                                                   // corse già partite: nessuno stato (lo dice la colonna di destra)
-    if (!x.live) subNote = 'Da orario';
-    else { const di = delayInfo(x.delay); cls = di.cls; subNote = di.txt; fullNote = di.long; }
+  return `<div class="dep d3 go${x.cancel ? ' cx' : ''}" ${rowData(x)} role="button" tabindex="0" title="Apri il percorso della corsa">`
+    + badgeCol(x, live)
+    + `<div class="dm"><div class="dh"><span class="mq">${esc(destOf(x.headsign))}</span></div>${nextLine(x)}${stateLine(x, z, live)}</div>`
+    + timeCol(x, live) + bellHtml(x, live) + '</div>' + pickAfter(x);
+}
+// gruppo (vista «Per linea»): il primo passaggio, il numero dei passaggi e la freccia; aperto mostra tutti i passaggi
+function groupRow(g, z, live, open) {
+  const x = g.list[0], n = g.list.length;
+  let h = `<div class="dep d3 grp${open ? ' open' : ''}" data-g="${esc(g.key)}" role="button" tabindex="0" aria-expanded="${open}" title="${open ? 'Chiudi' : 'Mostra tutti i passaggi'}">`
+    + badgeCol(x, live)
+    + `<div class="dm"><div class="dh"><span class="mq">${esc(destOf(x.headsign))}</span></div>${nextLine(x)}${stateLine(x, z, live)}</div>`
+    + timeCol(x, live) + `<span class="gchev" aria-label="${n} ${n === 1 ? 'passaggio' : 'passaggi'}">${n > 1 ? `<b>${n}</b>` : ''}${icon('chev', 'sm chev')}</span></div>`;
+  if (open) h += `<div class="gl" role="group" aria-label="Passaggi della linea ${esc(x.line)} per ${esc(destOf(x.headsign))}">`
+    + g.list.map(y => `<div class="dep d3s go${y.cancel ? ' cx' : ''}" ${rowData(y)} role="button" tabindex="0" title="Apri il percorso della corsa">${stateLine(y, z, live)}${timeCol(y, live)}${bellHtml(y, live)}</div>${pickAfter(y)}`).join('') + '</div>';
+  return h;
+}
+// partito da poco: una riga, attenuata
+function pastRow(x, live) {
+  const ago = live && x.done && x.expMs ? Math.max(0, Math.round((Date.now() - x.expMs) / 60000)) : null;
+  const when = ago != null ? (ago < 1 ? 'partito ora' : `partito ${ago === 1 ? '1 minuto' : ago + ' minuti'} fa`) : `orario ${esc(x.sched)}${live && !x.live ? ' · da orario' : ''}`;
+  return `<div class="dep d1 go" ${rowData(x)} role="button" tabindex="0" title="Corsa già partita: apri il percorso">${badge(x.line, x.color, x.src)}<span class="d1n"><span class="mq">${esc(destOf(x.headsign))}</span></span><span class="d1w">${when}</span></div>`;
+}
+// «Partiti da poco»: sezione chiusa (solo il titolo con il numero) o aperta, come i gruppi; scelta ricordata sul telefono
+const PAST_KEY = 'tpl.partiti';
+let pastOpen = (() => { try { return localStorage.getItem(PAST_KEY) === '1'; } catch { return false; } })();
+const VIEW_KEY = 'tpl.vista';
+let depView = (() => { try { return localStorage.getItem(VIEW_KEY) === 'linea' ? 'linea' : 'orario'; } catch { return 'orario'; } })();
+const viewSwitch = () => `<span class="vsw" role="group" aria-label="Come mostrare i passaggi">`
+  + `<button type="button" data-view="orario" aria-pressed="${depView === 'orario'}" class="${depView === 'orario' ? 'on' : ''}">${icon('clock', 'sm')}Orario</button>`
+  + `<button type="button" data-view="linea" aria-pressed="${depView === 'linea'}" class="${depView === 'linea' ? 'on' : ''}">${icon('route', 'sm')}Per linea</button></span>`;
+// elenco completo: partiti da poco, poi prossime partenze (in ordine di orario o per linea)
+function depListHtml(rows, z, live) {
+  const past = [], next = [];
+  for (const x of rows) (x.done || (x.tSec < -30 && !x.atStop && x.phase !== 'at' && x.phase !== 'departing') ? past : next).push(x);
+  let h = '';
+  if (past.length) {
+    const last = past.slice(-6), n = last.length;
+    h += `<button type="button" class="d3h pastsw${pastOpen ? ' open' : ''}" data-past aria-expanded="${pastOpen}"${pastOpen ? ' aria-controls="pastlist"' : ''} title="${pastOpen ? 'Nascondi' : 'Mostra'} le corse partite da poco">`
+      + `<span>Partiti da poco</span><span class="gchev" aria-label="${n} ${n === 1 ? 'corsa' : 'corse'}"><b>${n}</b>${icon('chev', 'sm chev')}</span></button>`;
+    if (pastOpen) h += `<div id="pastlist" role="group" aria-label="Corse partite da poco">` + last.map(x => pastRow(x, live)).join('') + '</div>';
   }
-  if (done) cls = '';                                                         // riga grigia: nessun colore di stato
-  const reqHtml = x.isRequest ? '<span class="req-tag">A richiesta</span>' : '';
-  const vName = (live && x.vehicle) ? vehName(src, x.vehicle) : '';
-  const info = [subNote, vName].filter(Boolean).join(' · ');
-  const timeHtml = (live && Math.abs(x.delay) >= 1)
-    ? `<div class="dt-time-wrap"><span class="sched-crossed">${esc(x.sched)}</span><strong class="${cls}">${esc(x.exp)}</strong></div>`
-    : `<div class="dt-time-wrap"><strong class="${cls}">${esc(live ? x.exp : x.sched)}</strong></div>`;
-  const label = etaText(x.phase, x.expMs, x.tIn, live);
-  // l'indicatore sotto l'orario ha SEMPRE il colore neutro (come nel pannello della corsa): il colore di stato è solo sull'orario
-  return `<div class="dep go${x.cancel ? ' cx' : ''}${done ? ' gone' : ''}" data-trip="${esc(x.tripId)}" data-src="${esc(src)}" data-stop="${esc(x.stop || '')}" data-veh="${esc(x.veh || '')}" role="button" tabindex="0" title="${done ? 'Corsa già partita: apri il percorso' : 'Apri il percorso della corsa'}">`
-    // avviso sulla linea: triangolo sull'angolo della mattonella (il nome della destinazione resta libero)
-    // mattonella/cerchio della linea: in alto a destra l'avviso sulla linea; in basso a sinistra la fonte del passaggio
-    // (onde = mezzo rilevato in tempo reale, orologio = orario programmato)
-    + `<span class="bw">${badge(x.line, x.color, src)}${Avvisi.lineHasAlert(src, x.line) ? `<span class="bdot" title="Avviso sulla linea ${esc(x.line)}">${icon('warn', 'sm')}</span>` : ''}`
-    + (live && !x.cancel ? `<span class="bsrc ${x.live ? 'on' : ''}" title="${x.live ? 'Mezzo rilevato in tempo reale' : 'Orario programmato: mezzo non rilevato'}">${icon(x.live ? 'live' : 'clock', 'sm')}</span>` : '') + '</span>'
-    + `<div class="dm"><div class="dh"><span class="mq">${esc(x.headsign || '')}</span></div><div class="dn ${cls}"${fullNote ? ` title="${esc(fullNote)}"` : ''}>${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}${reqHtml}<span><span class="mq">${esc(info)}</span></span></div></div>`
-    + `<div class="dt">${timeHtml}<div class="in-min" data-exp="${live && x.expMs ? Math.round(x.expMs) : ''}" data-ph="${live ? (x.phase || '') : ''}">${esc(label)}</div></div>`
-    + bellHtml(x, live) + '</div>' + (rowPick && rowPick.trip === `${src}:${x.tripId}` && rowPick.stop === x.stop ? pickHtml(x.stop) : '');
+  h += `<div class="d3h"><span>Prossime partenze</span>${viewSwitch()}</div>`;
+  if (!next.length) return h + '<p class="muted pad center">Nessun passaggio.</p>';
+  if (depView === 'orario') return h + next.map(x => depRow(x, z, live)).join('');
+  const groups = new Map();
+  for (const x of next) { const k = `${x.src}|${x.line}|${norm(destOf(x.headsign).toLowerCase())}`; (groups.get(k) || groups.set(k, { key: k, list: [] }).get(k)).list.push(x); }
+  if (current.openGroup && !groups.has(current.openGroup)) current.openGroup = null;   // il gruppo aperto non c'è più
+  return h + [...groups.values()].map(g => groupRow(g, z, live, g.key === current.openGroup)).join('');
+}
+// riga delle fermate successive: scorrimento continuo verso sinistra (testo ripetuto due volte), velocità costante; la fase dipende
+// dall'orologio, così gli aggiornamenti dell'elenco ogni pochi secondi non la fanno ripartire. Con «riduci movimento»: ferma, coi puntini.
+const TK_PX_S = 38;
+// fuori vista lo scorrimento si ferma (meno lavoro per il telefono); l'osservatore si azzera a ogni disegno dell'elenco
+const tkIO = 'IntersectionObserver' in window ? new IntersectionObserver(es => { for (const e of es) e.target.classList.toggle('off', !e.isIntersecting); }, { root: plist }) : null;
+function ticker(root) {
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  tkIO?.disconnect();
+  for (const t of root.querySelectorAll('.tk')) {
+    const inner = t.firstElementChild; if (!inner || inner.dataset.on) continue;
+    const w = inner.firstElementChild.getBoundingClientRect().width;
+    if (still || w <= t.clientWidth + 1) { t.classList.add('fit'); continue; }
+    const copy = inner.firstElementChild.cloneNode(true); copy.setAttribute('aria-hidden', 'true'); inner.appendChild(copy);
+    const d = (w + 32) / TK_PX_S;                                            // 32 = spazio tra la fine e il nuovo inizio
+    inner.style.animationDuration = d.toFixed(2) + 's'; inner.style.animationDelay = `-${((Date.now() / 1000) % d).toFixed(2)}s`;
+    inner.dataset.on = '1'; t.classList.add('run'); tkIO?.observe(t);
+  }
 }
 // campanella su ogni passaggio (solo tempo reale, corse non ancora partite né soppresse): avviso di arrivo di QUELLA corsa a QUESTA fermata
 function bellHtml(x, live) {
@@ -533,9 +661,9 @@ function marquee(root) {
 function renderDepartures() {
   if (!lastDeps || !current || current.t === 'trip') return;
   const live = mode === 'live', z = current.t === 'zone' ? zones.get(current.key) : null;
-  psub.textContent = (z ? `${z.letters.length} ${unitOf(z)[1]} · ` : '') + (live ? `Live · ${new Date(lastDeps.liveUpdated).toLocaleTimeString('it-IT')}` : 'Orario') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
+  psub.textContent = (z ? `${z.letters.length} ${unitOf(z)[1]} · ` : '') + (live ? (lastDeps.liveUpdated ? `Live · ${new Date(lastDeps.liveUpdated).toLocaleTimeString('it-IT')}` : 'Live · in attesa dei dati') : 'Orario') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
   const rows = lastDeps.departures.map(x => ({ ...x, tIn: live ? x.expIn : x.schedIn, tSec: live ? x.expSec : x.schedIn * 60 }))
-    .filter(x => !x.arrival && x.tIn >= -30 && x.tIn <= 120 && active.has(x.src) && (live || !x.done))
+    .filter(x => !x.arrival && x.tSec >= -200 && x.tIn <= 120 && active.has(x.src) && (live || !x.done))   // partiti: al massimo da 3 minuti
     .filter(x => !z || z.pick === '*' || z.letterOf.get(x.stop) === z.pick)
     .sort((a, b) => a.tSec - b.tSec).slice(0, z ? 60 : 30);
   const keepX = chipsArea.querySelector('.chips')?.scrollLeft || 0;          // filtri su una riga scorrevole (telefoni): non si torna all'inizio a ogni aggiornamento
@@ -545,19 +673,33 @@ function renderDepartures() {
   { const ch = chipsArea.querySelector('.chips'); if (ch) { ch.scrollLeft = keepX; const on = ch.querySelector('.chip.on'); if (on) { const r = on.getBoundingClientRect(), cr = ch.getBoundingClientRect(); if (r.left < cr.left || r.right > cr.right) ch.scrollLeft += r.left - cr.left - cr.width / 2 + r.width / 2; } } }
   const al = stopAlerts(current);                                                           // avvisi in corso su queste fermate e sulle loro linee: (!) nel titolo e righe cliccabili
   pname.innerHTML = stopTitle(current, z);
-  requestAnimationFrame(() => marquee(plist));
-  plist.innerHTML = al.list.map(a => Avvisi.rowHtml(a, al.keys)).join('') + (rows.map(x => depRow(x, z, live)).join('') || '<p class="muted pad center">Nessun passaggio.</p>');
+  requestAnimationFrame(() => { marquee(plist); ticker(plist); });
+  // chi usa la tastiera non perde il punto in cui era (titolo «Partiti da poco», gruppo, interruttore della vista) a ogni aggiornamento
+  const fa = document.activeElement, fsel = fa && plist.contains(fa) ? (fa.matches('[data-past]') ? '[data-past]' : fa.dataset.g ? `.grp[data-g="${CSS.escape(fa.dataset.g)}"]` : fa.dataset.view ? `[data-view="${CSS.escape(fa.dataset.view)}"]` : null) : null;
+  plist.innerHTML = al.list.map(a => Avvisi.rowHtml(a, al.keys)).join('') + depListHtml(rows, z, live);
+  if (fsel) plist.querySelector(fsel)?.focus({ preventScroll: true });
+  if (live && !guidePanelWait && !Guida.active() && plist.querySelector('.dep.d3')) {   // prima fermata aperta: guida del pannello (una volta)
+    guidePanelWait = setTimeout(() => { guidePanelWait = null; if (!panel.hidden && current && (current.t === 'stop' || current.t === 'zone') && mode === 'live') Guida.panelReady(); }, 800);
+  }
 }
 chipsArea.addEventListener('click', e => {
+  if (current?.t === 'plan') return;                                     // modulo percorso.js
   if (e.target.closest('[data-lead],[data-nstop],[data-ncancel]')) return onNotifyBar(e);
   const chip = e.target.closest('.chip');
   if (chip && current?.t === 'zone') { const z = zones.get(current.key); if (z) { z.pick = current.pick = chip.dataset.p; drawStops(); renderDepartures(); } }
 });
 plist.addEventListener('click', e => {
+  if (current?.t === 'plan') return;                                     // modulo percorso.js
   const av = e.target.closest('.alert-row'); if (av) return Avvisi.openAlert(av.dataset.av);
   if (e.target.closest('[data-bell],.dep-pick')) return onRowBell(e);
+  if (e.target.closest('[data-past]') && current && current.t !== 'trip') { pastOpen = !pastOpen; try { localStorage.setItem(PAST_KEY, pastOpen ? '1' : '0'); } catch { /* facoltativo */ } renderDepartures(); return; }
+  const vb = e.target.closest('[data-view]');
+  if (vb && current && current.t !== 'trip') { depView = vb.dataset.view === 'linea' ? 'linea' : 'orario'; try { localStorage.setItem(VIEW_KEY, depView); } catch { /* facoltativo */ } renderDepartures(); return; }
+  const grp = e.target.closest('.grp');
+  if (grp && current && current.t !== 'trip') { current.openGroup = current.openGroup === grp.dataset.g ? null : grp.dataset.g; rowPick = null; renderDepartures(); return; }
   const dep = e.target.closest('.dep.go');
   if (dep && current && current.t !== 'trip') return openDeparture(dep.dataset);
+  if (e.target.closest('.seg-toggle') && current?.t === 'trip') { current.segAll = !current.segAll; renderTrip(true); return; }   // tutta la corsa / solo il tratto
   const row = e.target.closest('.st'); if (!row || !lastTrip) return;
   const s = lastTrip.stops[+row.dataset.i]; if (!s) return;
   openFromPanel(entryForStop(s.id, s.name, lastTrip.trip.src));          // dalla corsa alla fermata (con «indietro» alla corsa)
@@ -606,9 +748,20 @@ async function loadTrip() {
     if (err.loading) { if (current === e) setTimeout(() => { if (current === e) loadTrip(); }, 3000); return; }
     if (current === e && !(err.busy && lastTrip)) plist.innerHTML = `<p class="late pad">Dati non disponibili: ${esc(err.message)}</p>`; }
 }
+// tratto del percorso (corsa aperta da «Pianifica percorso»): posizioni di salita e discesa nell'elenco delle fermate, o null
+function segRange(d) {
+  const sg = current?.seg; if (!sg || !d?.stops?.length) return null;
+  let i0 = sg.p?.[0] != null && d.stops[sg.p[0]]?.id === sg.a ? sg.p[0] : d.stops.findIndex(s => s.id === sg.a);
+  if (i0 < 0) return null;
+  let i1 = sg.p?.[1] != null && sg.p[1] > i0 && d.stops[sg.p[1]]?.id === sg.b ? sg.p[1] : d.stops.findIndex((s, i) => i > i0 && s.id === sg.b);
+  if (i1 < 0) return null;
+  return [i0, i1];
+}
 function tripHtml(d) {
-  const k = colorInfo(d.trip.color, d.trip.line), n = d.stops.length;
+  const k = colorInfo(d.trip.color, d.trip.line), seg = segRange(d), only = seg && !current.segAll;
+  const lo = only ? seg[0] : 0, hi = only ? seg[1] : d.stops.length - 1;
   const rows = d.stops.map((s, i) => {
+    if (i < lo || i > hi) return `<div class="st out" data-i="${i}" hidden></div>`;   // fuori dal tratto: resta nell'elenco (posizione del mezzo) ma non si vede
     let timeHtml = '', sub = '', cls = '';
     if (d.live && d.detected !== false && s.delay != null) {
       const di = delayInfo(s.delay); sub = di.txt; cls = di.cls;
@@ -617,26 +770,30 @@ function tripHtml(d) {
         : `<div class="tm-time-wrap"><strong class="${di.cls}">${esc(s.exp)}</strong></div>`;
     } else { sub = d.live ? 'Da orario' : ''; timeHtml = `<div class="tm-time-wrap"><strong>${esc(s.sched)}</strong></div>`; }
     const meta = s.skipped ? 'Fermata saltata' : (s.state === 'at' || s.state === 'next') ? etaText(s.phase, s.expMs, s.inMin, d.live && d.detected !== false) : (s.state === 'upcoming' ? (d.live && s.expMs ? `Tra ${Math.max(1, Math.round((s.expMs - Date.now()) / 60000))} min` : (s.inMin > 0 ? `Tra ${s.inMin} min` : '')) : '');
-    return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === 0 ? ' first' : ''}${i === n - 1 ? ' last' : ''}" data-i="${i}" role="button" tabindex="0" title="Apri la fermata">`
+    const end = seg && (i === seg[0] || i === seg[1]) ? (i === seg[0] ? ' seg-on' : ' seg-off') : '';
+    return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === lo ? ' first' : ''}${i === hi ? ' last' : ''}${end}" data-i="${i}" role="button" tabindex="0" title="Apri la fermata">`
       + `<div class="rail-col"><div class="rail-line"></div><span class="dot">${s.state === 'passed' ? icon('check') : ''}</span></div>`
       // stessa impaginazione del pannello fermata: a sinistra nome e stato (ritardo/anticipo), a destra orario e "tra N min"
-      + `<div class="sn"><div class="nm">${esc(s.name)}${Avvisi.hasAlert(s.id) ? `<span class="dw" title="Avviso su questa fermata">${icon('warn', 'sm')}</span>` : ''}</div>`
+      + `<div class="sn"><div class="nm">${esc(s.name)}${end ? `<span class="seg-tag">${i === seg[0] ? 'sali' : 'scendi'}</span>` : ''}${Avvisi.hasAlert(s.id) ? `<span class="dw" title="Avviso su questa fermata">${icon('warn', 'sm')}</span>` : ''}</div>`
       + `<div class="dn ${s.state === 'passed' ? '' : cls}"><span>${esc(s.skipped ? 'Fermata saltata' : sub)}</span></div></div>`
       + `<div class="tm">${timeHtml}<div class="in-min">${esc(s.skipped ? '' : meta)}</div></div></div>`;
   }).join('');
   const weak = lum(k.rail) > .8 || lum(k.rail) < .03;   // bianco o nero puro non si vedono su uno dei due temi: si usa il colore del testo
-  return `<div class="tl" style="--rc:${weak ? 'var(--fg)' : k.rail};--check-fg:${weak ? 'var(--bg)' : k.contrast}"><div class="trav"></div><div class="veh">${vehIcon(d.trip.src, d.trip.vehicle, '', d.trip.line)}</div>${rows}</div>`;
+  const tog = seg ? `<button type="button" class="nlink seg-toggle">${icon(current.segAll ? 'route' : 'next', 'sm')}${current.segAll ? 'Solo il tuo tratto' : `Tutta la corsa (${d.stops.length} fermate)`}</button>` : '';
+  const before = only && d.live && d.detected !== false && d.progress && d.progress.from < seg[0] ? `<p class="seg-note muted">${icon('info', 'sm')}Il mezzo è ${seg[0] - d.progress.from === 1 ? 'alla fermata precedente' : `a ${seg[0] - d.progress.from} fermate dalla tua`}</p>` : '';
+  return before + `<div class="tl" style="--rc:${weak ? 'var(--fg)' : k.rail};--check-fg:${weak ? 'var(--bg)' : k.contrast}"><div class="trav"></div><div class="veh">${vehIcon(d.trip.src, d.trip.vehicle, '', d.trip.line)}</div>${rows}</div>` + tog;
 }
 // posiziona il mezzo sulla linea del tempo, fra le due fermate in cui si trova, con scorrimento fluido
 function placeVehicle(d, first) {
   const tl = plist.querySelector('.tl'), veh = tl && tl.querySelector('.veh'), trav = tl && tl.querySelector('.trav');
   if (!tl || !veh || !trav) return;
   const rows = tl.querySelectorAll('.st'), a = rows[d.progress.from], b = rows[d.progress.from + 1];
-  if (!a) { veh.style.display = 'none'; trav.style.display = 'none'; return; }
+  const vis = tl.querySelector('.st:not(.out)');
+  if (!a || !vis || a.classList.contains('out') || (b && b.classList.contains('out') && d.progress.frac > 0)) { veh.style.display = 'none'; trav.style.display = 'none'; return; }
   veh.style.display = ''; trav.style.display = '';
   const tlRect = tl.getBoundingClientRect();
   const dotCenter = row => { const r = row.querySelector('.dot').getBoundingClientRect(); return { x: r.left - tlRect.left + r.width / 2, y: r.top - tlRect.top + r.height / 2 }; };
-  const firstCenter = dotCenter(rows[0]), ca = dotCenter(a).y, cb = b ? dotCenter(b).y : ca, y = ca + (cb - ca) * (b ? d.progress.frac : 0);
+  const firstCenter = dotCenter(vis), ca = dotCenter(a).y, cb = b ? dotCenter(b).y : ca, y = ca + (cb - ca) * (b ? d.progress.frac : 0);
   veh.style.left = firstCenter.x + 'px'; trav.style.left = firstCenter.x + 'px'; trav.style.top = firstCenter.y + 'px';
   const from = !first && vehMemo.trip === current.v.tripId ? vehMemo.y : y;
   veh.style.transition = trav.style.transition = 'none';
@@ -651,17 +808,19 @@ function renderTrip(first) {
   if (!current.v.line) { current.v.line = d.trip.line; current.v.color = d.trip.color; current.v.headsign = d.trip.headsign; pbadge.innerHTML = badge(d.trip.line, d.trip.color, d.trip.src); }
   if (first) renderNotifyBar();
   let status = 'programmato';
-  if (d.live && d.detected === false) status = 'Non rilevato';
-  else if (d.live) status = d.delayNow == null ? 'live' : `<span class="${delayInfo(d.delayNow).cls}" title="${esc(delayInfo(d.delayNow).long)}">${esc(delayInfo(d.delayNow).txt)}</span>`;
+  // stesse diciture del pannello fermata: in tempo reale «In orario / In ritardo di / In anticipo di», altrimenti «Da orario»
+  if (d.live && (d.detected === false || d.delayNow == null)) status = 'Da orario';
+  else if (d.live) status = `<span class="${delayInfo(d.delayNow).cls}" title="${esc(delayInfo(d.delayNow).long)}">${esc(delayInfo(d.delayNow).txt)}</span>`;
   pname.innerHTML = `${icon('next', 'sm')}<span>${d.trip.headsign ? esc(d.trip.headsign) : 'Linea ' + esc(d.trip.line)}</span>`;
-  const o = d.stops[0];
-  psub.innerHTML = (o ? `da ${esc(o.name)}${o.sched ? ', ' + esc(o.sched) : ''}` : '') + (d.note ? `<br>${esc(d.note)}` : '');
+  const o = d.stops[0], seg = segRange(d);
+  psub.innerHTML = (seg ? `il tuo tratto: ${esc(d.stops[seg[0]].name)} → ${esc(d.stops[seg[1]].name)}` : o ? `da ${esc(o.name)}${o.sched ? ', ' + esc(o.sched) : ''}` : '') + (d.note ? `<br>${esc(d.note)}` : '');
   // corsa verificata (assign.js): il mezzo trasmetteva un'altra corsa; lo si dice, in modo trasparente
-  if (d.reassigned) psub.innerHTML += `<span class="reassign">${icon('info', 'sm')} Corsa indicata dalle previsioni ACTV: la posizione del mezzo riportava la corsa delle ${esc(d.reassigned.from || '?')}.</span>`;
+  if (d.reassigned?.why === 'tu') psub.innerHTML +=   // turni.js ('turno'): il mezzo è già sulla corsa che fa davvero, nessuna nota
+    `<span class="reassign">${icon('info', 'sm')} Corsa indicata dalle previsioni ACTV: la posizione del mezzo riportava la corsa delle ${esc(d.reassigned.from || '?')}.</span>`;
   // UNA riga: stato · mezzo (con "insieme a…", accorciato se serve) · velocità stimata (etichetta che non va mai a capo)
   const vtxt = vehName(d.trip.src, d.trip.vehicle || current.v.label) + (d.others?.length ? ` · insieme a ${d.others.join(', ')}` : '');
   const spd = d.live && d.detected !== false && d.speedKmh != null ? `<span class="spd" title="Velocità stimata dalle posizioni GPS: il feed ACTV non trasmette la velocità reale" aria-label="velocità stimata circa ${+d.speedKmh} chilometri orari">≈ ${+d.speedKmh} km/h · stima</span>` : '';
-  pstatus.innerHTML = d.live && d.detected === false ? 'Non rilevato' : `<span class="stx">${status}</span><span class="vn">· ${esc(vtxt)}</span>${spd}`;
+  pstatus.innerHTML = d.live && d.detected === false ? 'Da orario' : `<span class="stx">${status}</span><span class="vn">· ${esc(vtxt)}</span>${spd}`;
   // avvisi del mezzo: quelli sulla sua linea e quelli che citano una sua fermata (se non riguardano solo altre linee)
   const key = Avvisi.keyOf(d.trip.src, d.trip.line), only = new Set([key]);
   const tal = [...Avvisi.forLines([{ s: d.trip.src, n: d.trip.line }]), ...Avvisi.forStops(d.stops.map(s => s.id)).filter(a => !a.lines?.length || a.lines.some(l => Avvisi.keyOf(l.s, l.n) === key))]
@@ -674,8 +833,8 @@ function renderTrip(first) {
   routeToken++; lineLayer.clearLayers(); tripLayer.clearLayers();
   drawLine(d.shape?.length ? d.shape : [], colorInfo(d.trip.color, d.trip.line), tripLayer, .95);
   if (!d.shape?.length) showRoutes([current.v.routeId], tripLayer);
-  for (const s of d.stops) if (s.lat != null) L.circleMarker([s.lat, s.lon], { radius: 3.5, weight: 1.5, color: '#0f172a', fillColor: '#fff', fillOpacity: .9 }).bindTooltip(esc(s.name)).addTo(tripLayer);
-  const veh = plist.querySelector('.veh'), row = veh && veh.style.display !== 'none' ? veh : plist.querySelector('.st.at, .st.next');
+  for (const s of (seg && !current.segAll ? d.stops.slice(seg[0], seg[1] + 1) : d.stops)) if (s.lat != null) L.circleMarker([s.lat, s.lon], { radius: 3.5, weight: 1.5, color: '#0f172a', fillColor: '#fff', fillOpacity: .9 }).bindTooltip(esc(s.name)).addTo(tripLayer);
+  const veh = plist.querySelector('.veh'), row = veh && veh.style.display !== 'none' ? veh : seg && !current.segAll ? plist.querySelector('.st.seg-on') : plist.querySelector('.st.at:not(.out), .st.next:not(.out)');
   if (row) row.scrollIntoView({ block: 'center' });
 }
 
@@ -714,8 +873,10 @@ const locator = createLocator({
     } else { me.setLatLng(meLL); meAcc.setLatLng(meLL); meAcc.setRadius(Math.max(f.accuracy, 5)); }
     if (f.follow) focusOn(meLL, map.getZoom());                     // solo nello stato «segue»
     // le fermate vicine si ricalcolano se ti sei spostato di almeno 8 m o dopo 10 s (il GPS dà una lettura al secondo)
+    Plan.onPosition(meLL);                                            // «La mia posizione» chiesta dal percorso
     const now = Date.now();
     if (!nearLL || now - nearAt > 10000 || mDist(nearLL.lat, nearLL.lng, f.lat, f.lng) >= 8) { nearAt = now; nearLL = meLL; updateNear(); }
+    if (nearOnFix && stops.length) { nearOnFix = false; const k = $('nearchip').dataset.k; if (!$('nearchip').hidden && k !== 'note') $('nearchip').click(); }
   }
 });
 // l'utente fa altro con la mappa: finisce l'inseguimento della posizione (il punto resta)
@@ -771,6 +932,7 @@ document.querySelectorAll('input[name=mode]').forEach(el => el.addEventListener(
   mode = el.value; vehicles = [];
   const sched = mode === 'sched';
   document.body.classList.toggle('sched-mode', sched);
+  streamSync();
   if (sched) applyTime(+range.value, true); else { stopPlay(); load(); }
   render(); renderDepartures();
   if (current?.t === 'trip' && current.v.tripId) loadTrip();
@@ -780,22 +942,75 @@ document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('
   if (el.checked) active.add(el.value); else active.delete(el.value);
   if (!active.size) { active.add(el.value); el.checked = true; }
   vehicles = vehicles.filter(v => active.has(v.src));
-  render(); drawStops(); load(); updateNear();
+  streamSync(); render(); drawStops(); load(); updateNear();
 }));
 
-// AGGIORNAMENTO A SPINTA: il server avvisa (SSE) appena ci sono dati nuovi, così mezzi e pannelli si aggiornano subito.
-// I timer restano come rete di sicurezza e scattano solo se lo stream tace da oltre 6 s. Massimo un aggiornamento ogni 1,5 s.
-let lastPushAt = 0, lastPushRun = 0, lastPanelAt = 0, pushTimer = null;
+// AGGIORNAMENTO A SPINTA (flusso SSE /api/stream?d=1): il server manda subito, nello stesso collegamento compresso, solo ciò che è
+// cambiato nei mezzi (posizioni, corse…) e lo stato del feed. Niente richieste ripetute dell'elenco intero.
+//   · mappa: si ridisegna al massimo una volta al secondo;
+//   · pannello aperto: si ricarica quando il feed porta dati nuovi (al massimo ogni 8 s) e comunque ogni 20 s; i «tra N min» contano da soli;
+//   · app in secondo piano o modalità Pianificato: il collegamento si chiude (niente radio accesa per nulla) e si riapre al ritorno;
+//   · collegamento muto da 15 s: si riapre; se succede di continuo (proxy che trattiene i dati compressi) si passa al flusso non compresso;
+//   · browser senza EventSource: richiesta completa ogni 5 s, solo con l'app in primo piano.
+const fleet = new Map();                                               // id -> mezzo, come lo ha il server per i servizi scelti
+let es = null, esUrl = '', esPlain = false, lastMsgAt = 0, mutes = 0, renderTimer = null, lastRender = 0;
+let lastPushAt = 0, lastPanelAt = 0;
+const streamLive = () => !!es && es.readyState !== 2;
+function streamSync() {
+  const url = mode === 'live' && !document.hidden && typeof EventSource !== 'undefined'
+    ? `/api/stream?d=1&src=${encodeURIComponent(keyOf())}${esPlain ? '&z=0' : ''}` : '';
+  if (url && url === esUrl && streamLive()) return;
+  if (es) { es.close(); es = null; }
+  esUrl = url; if (!url) return;
+  try { es = new EventSource(url); lastMsgAt = Date.now(); es.onmessage = onStream; } catch { es = null; esUrl = ''; }
+}
+function applyFleet(msg) {
+  if (msg.t === 'f' && Array.isArray(msg.v)) { fleet.clear(); for (const v of msg.v) if (v && typeof v.id === 'string') fleet.set(v.id, v); return true; }
+  if (msg.t !== 'd') return false;
+  for (const d of Array.isArray(msg.s) ? msg.s : []) {
+    if (!d || typeof d.id !== 'string') continue;
+    const { n, x, ...rest } = d;
+    if (n || !fleet.has(d.id)) { fleet.set(d.id, rest); continue; }
+    const o = { ...fleet.get(d.id), ...rest }; if (Array.isArray(x)) for (const k of x) delete o[k];
+    fleet.set(d.id, o);
+  }
+  for (const id of Array.isArray(msg.d) ? msg.d : []) fleet.delete(id);
+  return true;
+}
+function onStream(e) {
+  lastMsgAt = Date.now(); mutes = 0;
+  let msg; try { msg = JSON.parse(e.data); } catch { return; }
+  if (!msg || typeof msg !== 'object') return;
+  const changed = mode === 'live' && applyFleet(msg);
+  if (changed) {
+    if (!renderTimer) renderTimer = setTimeout(() => {                  // mappa: al massimo un ridisegno al secondo
+      renderTimer = null; lastRender = Date.now();
+      if (mode === 'live') { vehicles = [...fleet.values()]; render(); if (msg.m) showStatus(msg.m, 'live'); }
+    }, Math.max(0, 1000 - (Date.now() - lastRender)));
+  } else if (msg.m && mode === 'live') showStatus(msg.m, 'live');
+  onPush(msg.t === 'd' || msg.t === 'f');
+}
 function onPush(changed) {
   lastPushAt = Date.now();
   if (document.hidden || mode !== 'live') return;
-  const wait = 1500 - (Date.now() - lastPushRun);
-  if (wait > 0) { if (!pushTimer) pushTimer = setTimeout(() => { pushTimer = null; onPush(changed); }, wait); return; }
-  lastPushRun = Date.now();
-  if (changed) load();
-  if (Date.now() - lastPanelAt >= 4000) { lastPanelAt = Date.now(); refreshPanel(); }   // pannello: al massimo ogni 4 s (limita le richieste al server)
+  const since = Date.now() - lastPanelAt;
+  if ((changed && since >= 8000) || since >= 20000) { lastPanelAt = Date.now(); refreshPanel(); }
 }
-try { const es = new EventSource('/api/stream'); es.onmessage = e => onPush(e.data === '1'); } catch { /* si usano i timer */ }
+streamSync();
+document.addEventListener('visibilitychange', () => {
+  streamSync();
+  if (document.hidden) return;
+  lastPushAt = Date.now();
+  if (mode === 'live') { if (!streamLive()) load(); refreshPanel(); lastPanelAt = Date.now(); }
+});
+setInterval(() => {                                                    // controllo del collegamento (solo app in primo piano, tempo reale)
+  if (document.hidden || mode !== 'live') return;
+  if (es && (es.readyState === 2 || Date.now() - lastMsgAt > 15000)) {
+    if (es.readyState !== 2 && ++mutes >= 2) esPlain = true;           // muto più volte di fila: flusso senza compressione
+    es.close(); es = null; esUrl = ''; streamSync();
+  }
+  if (!streamLive()) load();                                           // nessun flusso: richiesta completa
+}, 5000);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // TEMA · FINESTRE · TASTIERA
@@ -828,19 +1043,32 @@ const favName = e => (e.t === 'zone' ? zones.get(e.key)?.name : e.name) || 'Ferm
 const favEntry = e => (e.t === 'zone' ? { t: 'zone', key: e.key } : { t: 'stop', id: e.id });
 function updateFav() {
   if (!current || current.t === 'trip') return;
+  if (current.t === 'plan') updateShare(current);
+  if (current.t === 'plan') {                                         // percorso preferito: la stella c'è quando partenza e arrivo sono scelti
+    pfav.hidden = !Plan.canSave(); if (pfav.hidden) return;
+    const on = Plan.isSaved(), lab = on ? 'Togli il percorso dai preferiti' : 'Salva il percorso nei preferiti';
+    pfav.setAttribute('aria-pressed', String(on)); pfav.setAttribute('aria-label', lab); pfav.title = lab; return;
+  }
   const on = Fav.has(favEntry(current)), lab = on ? 'Togli dai preferiti' : 'Aggiungi ai preferiti';
   pfav.setAttribute('aria-pressed', String(on)); pfav.setAttribute('aria-label', lab); pfav.title = lab;
 }
 pfav.onclick = () => {
   if (!current || current.t === 'trip') return;
+  if (current.t === 'plan') {
+    const r = Plan.toggleSaved(); if (r === undefined) return; updateFav();
+    toast(r === null ? 'Impossibile salvare: la memoria del browser non è disponibile (navigazione privata?).' : r ? 'Percorso salvato: lo trovi nel pianificatore e nei preferiti della ricerca.' : 'Percorso tolto dai preferiti.', 3500);
+    return;
+  }
   const r = Fav.toggle(favEntry(current), favName(current), favSrc(current)); updateFav();
   toast(r === null ? 'Impossibile salvare: la memoria del browser non è disponibile (navigazione privata?).' : r ? 'Aggiunta ai preferiti: la trovi aprendo la ricerca.' : 'Tolta dai preferiti.', 3500);
 };
 function showFavs() {
-  const l = Fav.all();
-  resultsEl.innerHTML = '<div class="search-category">Preferiti</div>' + (l.length ? l.map(f =>
+  const l = Fav.all(), rs = Fav.allRoutes();
+  resultsEl.innerHTML = (rs.length ? '<div class="search-category">Percorsi salvati</div>' + rs.slice(0, 8).map(r =>
+    `<div class="search-item" role="option" tabindex="0" data-type="saved" data-k="${esc(r.k)}">${icon('route', 'sm fav-ic')}<span>${esc(r.from.label)} ${icon('next', 'sm')} ${esc(r.to.label)}</span></div>`).join('') : '')
+    + '<div class="search-category">Preferiti</div>' + (l.length ? l.map(f =>
     `<div class="search-item" role="option" tabindex="0" data-type="fav" data-k="${esc(f.k)}">${icon('star', 'sm fav-ic')}${srcIcon(f.src)} <span>${esc(f.name)}</span></div>`).join('')
-    : `<div class="search-item muted">Nessun preferito: tocca ${icon('star', 'sm')} nel pannello di una fermata per salvarla qui.</div>`);
+    : `<div class="search-item muted"><span>Nessuna fermata preferita: tocca la stella nel pannello di una fermata per salvarla qui${rs.length ? '' : ' (e quella del pianificatore per salvare un percorso)'}.</span></div>`);
   resultsEl.classList.add('active');
 }
 function openFav(k) {
@@ -867,7 +1095,7 @@ function updateBell() {
 function renderNotifyBar() {
   if (!current || current.t !== 'trip' || !current.stop) { return; }
   const w = curWatch();
-  if (w) chipsArea.innerHTML = `<div class="nbar on"><span>${icon('bell', 'sm')}Ti avviso <b>${w.lead} min</b> prima dell'arrivo a <b>${esc(w.stopName)}</b>${w.mode === 'poll' ? ' (con l\'app aperta)' : ''}</span><button type="button" class="nlink" data-nstop>Disattiva</button></div>`;
+  if (w) chipsArea.innerHTML = `<div class="nbar on"><span>${icon('bell', 'sm')}Ti avviso <b>${esc(String(w.lead))} min</b> prima dell'arrivo a <b>${esc(w.stopName)}</b>${w.mode === 'poll' ? ' (con l\'app aperta)' : ''}</span><button type="button" class="nlink" data-nstop>Disattiva</button></div>`;
   else if (notifyPick) chipsArea.innerHTML = `<div class="nbar"><span>${icon('bell', 'sm')}Avvisami prima dell'arrivo a <b>${esc(current.stopName)}</b>:</span>`
     + `<div class="chips">${[2, 5, 10, 15].map(m => `<button type="button" class="chip all" data-lead="${m}">${m} min</button>`).join('')}<button type="button" class="nlink" data-ncancel>Annulla</button></div></div>`;
   else chipsArea.innerHTML = '';
@@ -908,7 +1136,7 @@ async function onRowBell(e) {
   else rowPick = rowPick && rowPick.trip === trip && rowPick.stop === stop ? null : { trip, stop };
   renderDepartures();
 }
-Notify.init(() => { if (Info.isOpen()) Info.renderWatches(); if (current?.t === 'trip') { renderNotifyBar(); updateBell(); } else if (current) renderDepartures(); },
+Notify.init(() => { Info.updateWatchButton(); if (Info.isOpen()) Info.renderWatches(); if (current?.t === 'trip') { renderNotifyBar(); updateBell(); } else if (current) renderDepartures(); },
   m => toast(`${m.title}: ${m.body}`, m.silent ? 4000 : 9000));
 // apertura da una notifica: /?trip=src:id&stop=src:id (anche con l'app già aperta, tramite il service worker)
 function openFromUrl(href) {
@@ -931,13 +1159,127 @@ document.addEventListener('keydown', e => {
     if (Info.isOpen()) { const inside = $('info').contains(document.activeElement); Info.close(); if (inside) $('info-btn').focus(); }
     else if (Avvisi.isOpen()) { const inside = $('avvisi').contains(document.activeElement); Avvisi.close(); if (inside) $('avvisi-btn').focus(); }
     else if (Tide.isOpen()) { const inside = $('tide').contains(document.activeElement); Tide.close(); if (inside) $('tide-btn').focus(); }
+    else if (Plan.isPicking()) { Plan.pick(null); setPlanPick(false); }
     else if (searchOpen()) { setSearch(false); searchToggleBtn.focus(); }
     else if (!panel.hidden) closePanel();
-  } else if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.dep.go,.st,.search-item')) { e.preventDefault(); e.target.click(); }   // righe cliccabili anche da tastiera
+  } else if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.dep.go,.grp,.st,.search-item')) { e.preventDefault(); e.target.click(); }   // righe cliccabili anche da tastiera
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// PIANIFICA PERCORSO (percorso.js): pulsante sopra la ricerca; il percorso vive nel pannello come fermate e corse (con «indietro»)
+// ---------------------------------------------------------------------------------------------------------------------
+const planBtn = $('plan-btn');
+// «Scegli sulla mappa»: il pannello si fa da parte finché non si tocca un punto (Esc o un tocco sull'avviso annullano)
+function setPlanPick(on, msg) {
+  document.body.classList.toggle('plan-picking', !!on);
+  if (on) { collapseSearch(); toast(msg + ' · tocca qui per annullare', 60000); $('toast').onclick = () => { $('toast').hidden = true; Plan.pick(null); setPlanPick(false); }; }
+  else { $('toast').hidden = true; $('toast').onclick = () => { $('toast').hidden = true; }; }
+}
+// inquadra i punti nella parte di mappa non coperta da pannelli e controlli
+function fitFree(pts) {
+  if (!pts.length) return;
+  const box = freeBox(), size = map.getSize(), b = L.latLngBounds(pts);
+  map.fitBounds(b, { paddingTopLeft: L.point(box.l + 24, box.t + 24), paddingBottomRight: L.point(size.x - box.r + 24, size.y - box.b + 24), maxZoom: 17, animate: true });
+}
+Plan.init({
+  chips: chipsArea, plist, pbadge, pname, psub, pstatus, layer: planLayer, drawLine, stopById, stopLabel,
+  allStops: () => stops, me: () => meLL, isOpen: () => current?.t === 'plan' && !panel.hidden,
+  locate: () => { if (!meLL) locator.start(); }, setPick: (on, msg) => setPlanPick(on, msg), fit: fitFree, favChanged: () => updateFav(),
+  openTrip: t => {
+    const v = vehicles.find(c => c.src === t.src && c.tripId === t.tripId && (!t.veh || c.key === t.veh) && !c.co)
+      || { id: null, src: t.src, tripId: t.tripId, routeId: null, line: t.line, label: t.vehicle, headsign: t.headsign, color: t.color };
+    openFromPanel({ t: 'trip', v: vehSnap(v), follow: !!v.id, stop: t.da.id, stopName: stopLabel(t.da.id), seg: { a: t.da.id, b: t.a.id, p: t.pos || null } });
+  }
+});
+function openPlan() {
+  collapseSearch(); Tide.close(); Avvisi.close(); Info.close();
+  // dal pannello di una fermata: si parte da lì
+  const from = current && (current.t === 'stop' || current.t === 'zone') ? (current.t === 'zone' ? { kind: 'zone', key: current.key, label: zones.get(current.key)?.name, src: zones.get(current.key)?.src, lat: zones.get(current.key)?.center[0], lon: zones.get(current.key)?.center[1] }
+    : { kind: 'stop', id: current.id, label: current.name, src: current.src, lat: +(stopById.get(current.id)?.[2] ?? NaN), lon: +(stopById.get(current.id)?.[3] ?? NaN) }) : null;
+  if (from) openFromPanel({ t: 'plan', opts: { from } }); else openFromMap({ t: 'plan', opts: {} });   // dalla fermata: «indietro» la riapre
+}
+planBtn.onclick = e => { e.stopPropagation(); if (current?.t === 'plan') closePanel(); else openPlan(); };
+pplan.onclick = () => openPlan();
+
+// ---------------------------------------------------------------------------------------------------------------------
+// LINK CONDIVISIBILI (v23) e SCORCIATOIE dall'icona dell'app
+//   ?fermata=nav:5013 · ?zona=<chiave della zona> · ?corsa=nav:<corsa> · ?da=<punto>&a=<punto> (f:fermata, z:zona, p:lat,lon) · ?apri=percorso|vicine|preferiti
+// Ogni valore si usa solo per cercare nei dati già caricati (fermate, zone) o come parametro validato di /api/trip: mai come HTML.
+// «La mia posizione» non entra mai in un link. Dopo l'apertura l'indirizzo torna pulito (un ricaricamento non riapre il link).
+// ---------------------------------------------------------------------------------------------------------------------
+const LINK_ID = /^(nav|aut):[A-Za-z0-9_.:|\-]{1,128}$/;
+function shareUrl(e) {
+  const u = new URL('/', location.origin);
+  if (e.t === 'stop') u.searchParams.set('fermata', e.id);
+  else if (e.t === 'zone') u.searchParams.set('zona', e.key);
+  else if (e.t === 'trip' && e.v?.tripId) u.searchParams.set('corsa', `${e.v.src}:${e.v.tripId}`);
+  else if (e.t === 'plan') { const c = Plan.shareCodes(); if (!c.a) return null; if (c.da) u.searchParams.set('da', c.da); u.searchParams.set('a', c.a); }
+  else return null;
+  return u.toString();
+}
+const shareTitle = e => (e.t === 'zone' ? zones.get(e.key)?.name : e.t === 'stop' ? e.name : e.t === 'trip' ? `Linea ${e.v.line}${e.v.headsign ? ' per ' + e.v.headsign : ''}` : 'Percorso') || 'Venezia TPL live';
+function updateShare(e) { pshare.hidden = !e || !shareUrl(e); }
+pshare.onclick = async () => {
+  if (!current) return;
+  const url = shareUrl(current); if (!url) return;
+  const title = shareTitle(current);
+  try { if (navigator.share) { await navigator.share({ title, text: title + ' — Venezia TPL live', url }); return; } }
+  catch (err) { if (err?.name === 'AbortError') return; }                 // condivisione annullata dall'utente
+  try { await navigator.clipboard.writeText(url); toast('Link copiato: incollalo dove vuoi.', 3500); }
+  catch { toast('Link: ' + url, 12000); }
+};
+let linkDone = false;
+function openLink() {
+  if (linkDone) return; linkDone = true;
+  const P = new URLSearchParams(location.search), get = k => { const v = P.get(k); return v && v.length <= 200 ? v : null; };
+  const clean = () => { try { history.replaceState(null, '', location.pathname); } catch { /* facoltativo */ } };
+  const keys = ['fermata', 'zona', 'corsa', 'da', 'a', 'apri']; if (!keys.some(k => P.has(k))) return;
+  clean();
+  const fermata = get('fermata'), zona = get('zona'), corsa = get('corsa'), apri = get('apri');
+  if (fermata && LINK_ID.test(fermata)) { const s = stopById.get(aliasOf.get(fermata) || fermata); if (s) { openFromMap(entryForStop(s[0], s[1], s[4])); focusOn(L.latLng(+s[2], +s[3]), 16); } else toast('Questa fermata non è negli orari in uso adesso.', 5000); return; }
+  if (zona) { const z = zones.get(zona); if (z) { openFromMap({ t: 'zone', key: z.key, pick: '*' }); focusOn(L.latLng(z.center), 16); } else toast('Fermata non trovata negli orari in uso adesso.', 5000); return; }
+  if (corsa && LINK_ID.test(corsa)) { openTripLink(corsa); return; }
+  if (P.has('a') || P.has('da')) {
+    const ep = c => {
+      if (!c) return null;
+      if (c.startsWith('f:') && LINK_ID.test(c.slice(2))) { const s = stopById.get(aliasOf.get(c.slice(2)) || c.slice(2)); return s ? { kind: 'stop', id: s[0], label: s[1], src: s[4], lat: +s[2], lon: +s[3] } : null; }
+      if (c.startsWith('z:')) { const z = zones.get(c.slice(2)); return z ? { kind: 'zone', key: z.key, label: z.name, src: z.src, lat: z.center[0], lon: z.center[1] } : null; }
+      const m = /^p:(-?\d{1,2}\.\d{1,6}),(-?\d{1,3}\.\d{1,6})$/.exec(c);
+      if (m) { const lat = +m[1], lon = +m[2]; if (lat > 44.8 && lat < 46 && lon > 11.5 && lon < 13) return { kind: 'point', label: 'Punto sulla mappa', lat, lon }; }
+      return null;
+    };
+    const from = ep(get('da')), to = ep(get('a'));
+    if (to || from) { collapseSearch(); openFromMap({ t: 'plan', opts: { ...(from ? { from } : {}), ...(to ? { to } : {}) } }); }
+    else toast('Il percorso del link non è più valido.', 5000);
+    return;
+  }
+  if (apri === 'percorso') openPlan();
+  else if (apri === 'preferiti') setSearch(true);
+  else if (apri === 'vicine') { nearOnFix = true; locator.start(); }
+}
+// corsa da un link: la si chiede al server (linea, destinazione) e si apre come dal pannello di una fermata; il mezzo si segue se c'è
+async function openTripLink(full) {
+  try {
+    const d = await api(`/api/trip?id=${encodeURIComponent(full)}&mode=live`); if (d.error || !d.trip) throw new Error(d.error || 'corsa');
+    const src = full.slice(0, 3), tripId = full.slice(4);
+    const v = vehicles.find(c => c.src === src && c.tripId === tripId && !c.co) || { id: null, src, tripId, routeId: d.trip.routeId ? `${src}:${d.trip.routeId}` : null, line: d.trip.line, color: d.trip.color, label: d.trip.vehicle || null, headsign: d.trip.headsign };
+    openFromMap({ t: 'trip', v: vehSnap(v), follow: !!v.id });
+  } catch { toast('Questa corsa non è più disponibile.', 5000); }
+}
+// GUIDA: alla prima apertura, con la mappa pronta e nient'altro aperto. Se l'utente sta già facendo altro (es. ha aperto un link)
+// la guida della mappa aspetta la prossima apertura; quella del pannello parte alla prima fermata aperta.
+let guidePanelWait = null;
+function guideBoot(tries = 0) {
+  if (Guida.active()) return;
+  if (!panel.hidden || searchOpen() || Info.isOpen() || !$('tide').hidden || !$('avvisi').hidden) return;
+  if (!document.querySelector('.bus-marker') && tries < 10) { setTimeout(() => guideBoot(tries + 1), 1000); return; }
+  Guida.boot();
+}
+$('info-guide').addEventListener('click', () => { Info.close(); setTimeout(() => { if (!Guida.active()) Guida.restart(); }, 300); });
+let nearOnFix = false;                                                  // scorciatoia «Fermate vicine»: alla prima posizione si apre l'elenco
 
 // ---------------------------------------------------------------------------------------------------------------------
 // AVVIO
 // ---------------------------------------------------------------------------------------------------------------------
 $('tl-time').textContent = fmtSecs(+range.value); syncPlay(); setFollow(false); drawStops(); updateClock(); load();
-setInterval(() => { if (Date.now() - lastPushAt > 6000) load(); }, POLL_MS);
+

@@ -92,7 +92,7 @@ function render() {
     + `<div class="tide-cat" data-cat="${esc(d.category.key)}">${esc(d.category.label)}${d.cm > AA_CM ? warnBtn : ''}</div>`
     + `<div class="tide-trend">${icon(tr.icon)}<span>${tr.txt}${t && t.basis === 'previsione' ? ' <span class="muted">(da previsione)</span>' : ''}</span></div>`
     + (peakOf(d) > AA_CM ? `<a class="tide-aa" href="${AA_URL}" target="_blank" rel="noopener noreferrer">${icon('warn', 'sm')}<span>Oltre ${AA_CM} cm: servizi di navigazione previsti</span></a>` : '')
-    + (d.stale ? `<p class="tide-note" role="status">Ultimo dato di ${d.ageMin} minuti fa: potrebbe non essere aggiornato.</p>` : '')
+    + (d.stale ? `<p class="tide-note" role="status">Ultimo dato di ${Math.round(+d.ageMin) || 0} minuti fa: potrebbe non essere aggiornato.</p>` : '')
     + (next ? `<ul class="tide-next" aria-label="Prossime alte e basse maree previste">${next}</ul>` : '')
     + (d.chart ? chartHtml(d.chart) : '')
     + `<p class="tide-foot">${esc(d.station)} · rilevato alle ${hm(d.ts)}. Livello sullo zero mareografico di Punta della Salute; dati grezzi, non validati.<br>Fonte (licenza ${esc(d.source.license)}):<a href="${esc(safeUrl(d.source.url))}" target="_blank" rel="noopener noreferrer">${esc(d.source.name)}</a></p>`;

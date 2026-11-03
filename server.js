@@ -15,6 +15,10 @@ const sec = require('./security');
 const { equivalentStops } = require('./stopgroups');
 const { audit } = require('./feedaudit');
 const centrale = require('./centrale');
+const percorso = require('./percorso');
+const prossime = require('./prossime');
+const flusso = require('./flusso');
+const area = require('./area');
 const { D, S, IDS, ready } = live;
 
 const PORT = +process.env.PORT || 3000;
@@ -48,10 +52,71 @@ const labelsOf = i => new Map(S[i].vehicles.filter(x => x.tripId && x.label).map
 // Facoltativa: ACTV_CENTRALE=0 la spegne e il sito usa i soli dati del feed.
 centrale.init({ G: i => D[i], state: i => S[i]?.state, vacated: i => S[i]?.vacated, serviceActive: schedule.serviceActive, version: () => live.version() });
 live.setTurnoCheck(centrale.checkTurno);
+live.setPassCheck(centrale.checkPass);
+// PIANIFICA PERCORSO (percorso.js): usa gli orari in memoria e, per le partenze di adesso, gli stessi dati in tempo reale dei pannelli.
+// La riga del pannello fermata (rows) dà a ogni tratta proposta lo stesso orario e la stessa dicitura che si vedono aprendo la fermata.
+const LIVE_U = new URL('http://localhost/');
+percorso.init({ G: i => D[i], state: i => S[i]?.state, live: i => S[i]?.live, serviceActive: schedule.serviceActive, actvPlan: centrale.actvPlan,
+  rows: (i, sid) => { try { return departuresFor([[i, sid]], LIVE_U).out; } catch { return []; } } });
+// linee "src:route_id,…" (solo linee esistenti)
+function routesParam(u, key, max) {
+  const v = q(u, key); if (!v) return [];
+  if (v.length > 400) throw sec.bad(`parametro ${key} non valido`);
+  const out = [];
+  for (const x of v.split(',').slice(0, max)) {
+    const k = x.indexOf(':'), src = x.slice(0, k), r = x.slice(k + 1);
+    if (k < 0 || !IDS.includes(src) || !Object.hasOwn(D[src]?.routes || {}, r)) throw sec.bad(`parametro ${key} non valido`);
+    out.push(src + ':' + r);
+  }
+  return out;
+}
+// parametri comuni del pianificatore: da/a, orario, «arrivo entro», distanza in linea d'aria e filtri
+function planParams(u) {
+  const da = stopsParam(u, 'da'), a = stopsParam(u, 'a'), t = q(u, 'secs') != null ? timeParams(u) : null, pm = q(u, 'piedi');
+  const piediM = pm == null ? null : Number(pm); if (piediM != null && (!Number.isFinite(piediM) || piediM < 0 || piediM > 50000)) throw sec.bad('parametro piedi non valido');
+  if (!ready.aut && !ready.nav) throw fail(409, 'Orari in caricamento, riprova tra qualche secondo');
+  const entro = q(u, 'arrivo') === '1'; if (entro && !t) throw sec.bad('arrivo entro: manca l\'orario');
+  const one = (key, ok) => { const v = q(u, key); if (v == null || v === '') return undefined; if (!ok.includes(v)) throw sec.bad(`parametro ${key} non valido`); return v; };
+  const mz = q(u, 'mezzi'), mezzi = mz ? new Set(mz.split(',')) : null;
+  if (mezzi && (![...mezzi].every(x => ['nav', 'bus', 'tram'].includes(x)) || !mezzi.size)) throw sec.bad('parametro mezzi non valido');
+  const cambi = one('cambi', ['0', '1', '2', '3', '4']), pmax = one('piedimax', ['5', '10', '15', '20', '30']);
+  const prefs = { mezzi, cambi: cambi == null ? undefined : +cambi, piediMax: pmax == null ? undefined : +pmax, passo: one('passo', ['lento', 'normale', 'veloce']),
+    margine: one('margine', ['normale', 'largo']), pref: one('pref', ['equilibrata', 'veloce', 'cambi', 'piedi']), escludi: new Set(routesParam(u, 'escludi', 8)) };
+  return { da, a, secs: t ? t.secs : null, date: t ? t.date : null, piediM, entro, prefs };
+}
+// "src:id~metri,src:id~metri" (fermate vicine al punto scelto, con la distanza in linea d'aria calcolata dal telefono)
+function stopsParam(u, key) {
+  const v = q(u, key); if (!v || v.length > 1200) throw sec.bad(`parametro ${key} non valido`);
+  const out = [];
+  for (const part of v.split(',').slice(0, 16)) {
+    const [id, m] = part.split('~'), r = sec.vFullId(id, IDS), mm = m == null ? 0 : Number(m);
+    if (!r || !Number.isFinite(mm) || mm < 0 || mm > 5000) throw sec.bad(`parametro ${key} non valido`);
+    out.push([r[0] + ':' + r[1], Math.round(mm)]);
+  }
+  return out;
+}
 
 // Dati del veicolo esposti al pubblico: solo ciò che serve alla mappa (niente stati interni)
 const PUBLIC_VEH = ['id', 'src', 'label', 'lat', 'lon', 'bearing', 'speed', 'line', 'color', 'tripId', 'routeId', 'headsign', 'key', 'ts', 'old', 'sim', 'co', 'dup', 'dupWith', 'path', 'reassigned', 'idle'];
 const publicVehicle = v => { const o = {}; for (const k of PUBLIC_VEH) if (v[k] !== undefined && v[k] !== null && v[k] !== false) o[k] = v[k]; if (o.speed != null) o.speed = +o.speed.toFixed(1); return o; };
+
+// stato del feed per i servizi scelti (in testa alla risposta dei mezzi e in ogni messaggio del flusso)
+function vehMeta(list) {
+  const errors = list.map(i => S[i].error).filter(Boolean), now = Date.now();
+  return { updated: Math.max(0, ...list.map(i => S[i].updated)), feedTs: Math.max(0, ...list.map(i => S[i].feedTs || 0)) || null,
+    error: errors.join('; ') || null, version: live.version(), ready, sim: list.filter(i => S[i].sim),
+    stale: list.filter(i => S[i].feedTs && now - S[i].feedTs > 5 * 60e3) };   // servizi il cui feed non si aggiorna da oltre 5 minuti
+}
+// area servita, in cache per versione dei GTFS
+let areaCache = { ver: null, ent: null };
+function areaFor() {
+  const ver = live.version();
+  if (areaCache.ver === ver && areaCache.ent) return areaCache.ent;
+  const pts = []; for (const i of IDS) { const G = D[i]; for (const sid in G.stopIndex) { const l = G.stopLoc[sid]; if (l) pts.push([l[0], l[1]]); } }
+  const body = Buffer.from(JSON.stringify(area.outline(pts)));
+  const ent = { gz: zlib.gzipSync(body), etag: '"a' + crypto.createHash('md5').update(body).digest('hex').slice(0, 16) + '"' };
+  areaCache = { ver, ent }; return ent;
+}
 
 // marea con cache breve: più utenti = una sola richiesta al portale
 let tideCache = { t: 0, v: null };
@@ -80,6 +145,7 @@ function departuresFor(fulls, u) {
       }
     }
     if (liveMode && own) mine = centrale.mergeStop(i, sid, mine);                // tempi della centrale ACTV (se disponibili)
+    for (const d of mine) Object.defineProperty(d, '_G', { value: G, enumerable: false });   // versione del GTFS (fermate successive), non va nella risposta
     out.push(...mine);
     note = live.noteOf(G, date) || note; liveUpdated = Math.max(liveUpdated, S[i].updated);
   }
@@ -102,18 +168,22 @@ const validStyle = st => {
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
-const ABOUT_VERSION = 'v22';
+const ABOUT_VERSION = 'v23';
 const POSTS = new Set(['/api/reload-gtfs', '/api/watch', '/api/watch/cancel', '/api/watch/resub']);
 
 // ---- ROUTE API ----  auth: 'diag' | 'admin' | undefined;  method: 'POST' solo per azioni che modificano lo stato
 const API = new Map(Object.entries({
   // risposta CONDIVISA: calcolata una volta per stato del feed e servizi scelti, poi riusata per tutti (ETag: 304 a chi l'ha già)
   '/api/vehicles': { shared: u => wanted(u).map(i => `${i}:${S[i].updated}:${S[i].error ? 1 : 0}`).join('|') + '|' + live.version(), fn: u => {
-    const list = wanted(u), errors = list.map(i => S[i].error).filter(Boolean), now = Date.now();
-    return { updated: Math.max(0, ...list.map(i => S[i].updated)), feedTs: Math.max(0, ...list.map(i => S[i].feedTs || 0)) || null,
-      error: errors.join('; ') || null, version: live.version(), ready, sim: list.filter(i => S[i].sim),
-      stale: list.filter(i => S[i].feedTs && now - S[i].feedTs > 5 * 60e3),     // servizi il cui feed non si aggiorna da oltre 5 minuti
-      vehicles: list.flatMap(i => S[i].vehicles.map(publicVehicle)) };
+    const list = wanted(u);
+    return { ...vehMeta(list), vehicles: list.flatMap(i => S[i].vehicles.map(publicVehicle)) };
+  } },
+  // area servita: contorno intorno a tutte le fermate (area.js), uguale per tutti; ricalcolato solo con un GTFS nuovo
+  '/api/area': { raw: (u, req, res) => {
+    const ent = areaFor();
+    if (req.headers['if-none-match'] === ent.etag) { res.writeHead(304, { ETag: ent.etag, 'Cache-Control': 'no-cache' }); return res.end(); }
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Encoding': 'gzip', 'Cache-Control': 'no-cache', ETag: ent.etag });
+    res.end(ent.gz);
   } },
   '/api/scheduled': { fn: u => {
     const errors = [], vehicles = [], { secs, date } = timeParams(u);
@@ -147,7 +217,8 @@ const API = new Map(Object.entries({
     if (!has(G.stopIndex, sid)) throw fail(404, 'fermata sconosciuta');
     if (mode(u) === 'live') await centrale.prepareStops([[i, sid]]);
     const { out, note, liveUpdated } = departuresFor([[i, sid]], u);
-    return { stop: { id: `${i}:${sid}`, name: G.stopBaseNames?.get(sid) || G.stops[sid] || sid, src: i }, liveUpdated, note, departures: out.slice(0, 120) };
+    const departures = out.slice(0, 120), nexts = prossime.attach(departures);
+    return { stop: { id: `${i}:${sid}`, name: G.stopBaseNames?.get(sid) || G.stops[sid] || sid, src: i }, liveUpdated, note, departures, nexts };
   } },
   '/api/zone': { cache: true, fn: async u => {
     const list = (q(u, 'ids') || '').split(',').slice(0, 24).map(f => sec.vFullId(f, IDS));
@@ -155,7 +226,8 @@ const API = new Map(Object.entries({
     if (list.some(([i, sid]) => !has(D[i].stopIndex, sid))) throw fail(404, 'zona sconosciuta');
     if (mode(u) === 'live') await centrale.prepareStops(list);
     const { out, note, liveUpdated } = departuresFor(list, u);
-    return { liveUpdated, note, departures: out.slice(0, 300) };
+    const departures = out.slice(0, 300), nexts = prossime.attach(departures);
+    return { liveUpdated, note, departures, nexts };
   } },
   // AVVISI DI ARRIVO (notifiche): chiave pubblica, attivazione, annullamento, messaggi per i dispositivi senza Web Push
   // informazioni sul servizio per la pagina «i»: versione e, se impostato, contatto del titolare (variabile APP_CONTACT; nessun nome)
@@ -187,6 +259,15 @@ const API = new Map(Object.entries({
     if (sched) return live.tripDetail(i, tid, false, veh || null, G, timeParams(u));
     await centrale.prepareTrip(i, tid);                                   // solo corse senza nostro mezzo (le altre: tracciamento)
     return centrale.mergeTrip(i, tid, live.tripDetail(i, tid, true, veh || null, G, null));
+  } },
+  // pianifica percorso: da/a = fermate candidate (vedi stopsParam); secs/date = partenza scelta (assenti = adesso, in tempo reale)
+  '/api/percorso': { fn: u => percorso.plan(planParams(u)) },
+  // alternative di una soluzione scelta: stesso percorso ad altri orari, varianti con una linea diversa, altre linee
+  '/api/percorso-simili': { fn: u => {
+    const p = planParams(u), fam = q(u, 'fam') || '';
+    if (!fam || fam.length > 600) throw sec.bad('parametro fam non valido');
+    const arr = q(u, 'arr'); if (arr != null && !/^\d{2}:\d{2}$/.test(arr)) throw sec.bad('parametro arr non valido');
+    return percorso.simili({ ...p, fam, rotte: routesParam(u, 'rotte', 4), arr });
   } },
   // date selezionabili in modalità Pianificato: solo quelle coperte dai GTFS in archivio
   '/api/dates': { fn: () => live.dateRange() },
@@ -248,7 +329,7 @@ function loadStatics(dir, base = '') {
     if (f.isDirectory()) { loadStatics(full, url); continue; }
     const ext = path.extname(f.name).toLowerCase(); if (!MIME[ext]) continue;           // solo tipi noti
     const body = fs.readFileSync(full), compressible = /^\.(html|js|css|webmanifest|json|svg|txt)$/.test(ext);
-    const head = { 'Content-Type': MIME[ext], 'Cache-Control': ext === '.png' || url.startsWith('/vendor/') ? 'public, max-age=604800' : 'no-cache',
+    const head = { 'Content-Type': MIME[ext], 'Cache-Control': ext === '.png' || url.startsWith('/vendor/') ? 'public, max-age=604800' : url === '/icons/sprite.svg' ? 'public, max-age=3600' : 'no-cache',   // simboli: richiesti a ogni disegno, senza questa riga il browser li ricontrolla ogni volta
       ETag: '"' + crypto.createHash('md5').update(body).digest('hex').slice(0, 20) + '"' };
     if (f.name === 'sw.js') head['Service-Worker-Allowed'] = '/';
     statics.set(url, { head, body, gz: compressible ? zlib.gzipSync(body) : null });
@@ -270,9 +351,28 @@ function serveStatic(req, res, ent) {
 
 // ---- AGGIORNAMENTO A SPINTA (Server-Sent Events) ----
 // "1" = dati nuovi dal feed (ricaricare mezzi e pannelli); "0" = solo tempo trascorso (ricaricare i pannelli aperti).
-const sse = new Set();
-live.events.on('push', changed => { const m = `data: ${changed ? 1 : 0}\n\n`; for (const r of sse) { try { r.write(m); } catch { sse.delete(r); } } });
-setInterval(() => { for (const r of sse) { try { r.write(': ping\n\n'); } catch { sse.delete(r); } } }, 20000).unref();   // evita che i proxy chiudano la connessione
+// Due tipi di collegamento: quello «di vecchio tipo» (app non ancora aggiornata: solo "1"/"0") e il flusso con le differenze dei mezzi
+// (flusso.js: elenco completo all'apertura, poi solo i cambiamenti, compresso). Le differenze si calcolano una volta per lettura del feed.
+const sse = new Set(), flussi = new Set();
+const differ = Object.fromEntries(IDS.map(i => [i, flusso.makeDiffer()]));
+live.events.on('push', changed => {
+  const m = `data: ${changed ? 1 : 0}\n\n`; for (const r of sse) { try { r.write(m); } catch { sse.delete(r); } }
+  const delta = {}; for (const i of IDS) delta[i] = differ[i].diff(S[i].vehicles.map(publicVehicle));
+  const byKey = new Map();                                               // stesso messaggio per chi ha scelto gli stessi servizi
+  for (const f of flussi) {
+    let msg = byKey.get(f.key);
+    if (msg === undefined) {
+      const set = f.src.flatMap(i => delta[i].set), del = f.src.flatMap(i => delta[i].del), meta = vehMeta(f.src);
+      msg = flusso.event(set.length || del.length ? { t: 'd', ...(set.length ? { s: set } : {}), ...(del.length ? { d: del } : {}), m: meta } : { t: 'm', m: meta });
+      byKey.set(f.key, msg);
+    }
+    if (!f.conn.send(msg)) flussi.delete(f);
+  }
+});
+setInterval(() => {                                                       // evita che i proxy chiudano la connessione
+  for (const r of sse) { try { r.write(': ping\n\n'); } catch { sse.delete(r); } }
+  for (const f of flussi) if (!f.conn.send(': ping\n\n')) flussi.delete(f);
+}, 20000).unref();
 
 // ---- GESTORE RICHIESTE ----
 async function onRequest(req, res) {
@@ -291,9 +391,19 @@ async function onRequest(req, res) {
   if (p === '/api/stream') {
     const release = sec.sseAcquire(req);
     if (!release) return text(res, 429, 'Troppe connessioni', { 'Retry-After': '30' });
-    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-    res.write('retry: 2000\n\n'); sse.add(res);
-    req.on('close', () => { sse.delete(res); release(); });
+    const head = { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' };
+    if (q(u, 'd') !== '1') {                                               // vecchio tipo
+      res.writeHead(200, head); res.write('retry: 2000\n\n'); sse.add(res);
+      req.on('close', () => { sse.delete(res); release(); });
+      return;
+    }
+    const gzip = q(u, 'z') !== '0' && /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+    res.writeHead(200, gzip ? { ...head, 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' } : head);
+    const src = wanted(u), f = { conn: flusso.connection(res, { gzip }), src, key: src.join(',') };
+    f.conn.send('retry: 3000\n\n');
+    f.conn.send(flusso.event({ t: 'f', v: src.flatMap(i => differ[i].all()), m: vehMeta(src) }));
+    flussi.add(f);
+    req.on('close', () => { flussi.delete(f); f.conn.close(); release(); });
     return;
   }
 
@@ -420,6 +530,7 @@ process.on('uncaughtException', e => { console.error('errore non gestito, riavvi
 function shutdown(sig) {
   console.log(sig + ': chiusura ordinata');
   for (const r of sse) { try { r.end(); } catch { /* già chiusa */ } }
+  for (const f of flussi) f.conn.close();
   server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 8000).unref();
 }
 process.on('SIGTERM', () => shutdown('SIGTERM')); process.on('SIGINT', () => shutdown('SIGINT'));

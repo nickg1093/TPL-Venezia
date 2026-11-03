@@ -64,7 +64,10 @@ function candidates(src, sid, nowMs) {
         const tNow = secs + off, schedMs = nowMs + (stt.d[k] - tNow) * 1000;
         if (Math.abs(schedMs - nowMs) > C.WINDOW_S * 1000) continue;
         const ps0 = state[tid], ps = ps0 && ps0.dayOff === off ? ps0 : null;
-        const ourMs = ps && k >= ps.cur && Number.isFinite(ps.etaMs?.[k]) ? ps.etaMs[k] : null;
+        // tempo del NOSTRO mezzo localizzato. Una corsa con la sola previsione del feed (nessun mezzo) si abbina come una programmata: la sua
+        // previsione può essere un ritardo trascinato (4.1 a Guglie il 3/11: +140 e +101 sul passaggio del battello delle 16:09) e non deve
+        // «rubare» il passaggio ACTV alla corsa che lo fa davvero
+        const ourMs = ps?.vehKey && k >= ps.cur && Number.isFinite(ps.etaMs?.[k]) ? ps.etaMs[k] : null;
         const r = G.routes[trip.route] || {};
         out.push({ tid, k, off, st: stt, line: lineOf(r.name || trip.route), schedMs, passed: !!ps && k < ps.cur, ourMs, veh: ps?.vehKey || null,
           stale: ourMs != null && (ourMs - schedMs) / 60000 > C.STALE_DELAY_MIN });
@@ -185,6 +188,18 @@ function checkTurno(src, sid, line, etaMs, schedMs) {
   return other ? 'contro' : 'ok';
 }
 
+// ---- controllo per live.js (un passaggio, una riga): la centrale elenca un passaggio IN TEMPO REALE della linea vicino a etaMs (±3 min)? ----
+// 'si' | 'no' (dati freschi di quella palina, linea presente e istante entro il loro orizzonte, ma nessun passaggio) | null (niente dati)
+function checkPass(src, sid, line, etaMs) {
+  if (!st.ctx) return null;
+  st.wants.set(src + '|' + sid, Date.now());               // la palina entra nel controllo continuo: al giro dopo i dati ci sono
+  let R; try { R = rowsAt(src, sid); } catch { return null; }
+  if (!R) return null;
+  const L = lineOf(line);
+  if (R.rows.some(r => r.real && r.line === L && Math.abs(r.ms - etaMs) <= 180e3)) return 'si';
+  return R.lines.has(L) && etaMs <= R.horizon - 60e3 ? 'no' : null;
+}
+
 // ---- confronto continuo (diagnosi): tempo di ogni nostro mezzo alla prossima fermata vs passaggio ACTV più vicino della stessa linea ----
 function compareAll() {
   const c = { mezzi: 0, entro75s: 0, entro3min: 0, oltre3min: 0, senzaPassaggio: 0, casi: [] }, now = Date.now();
@@ -205,4 +220,4 @@ function compareAll() {
   st.stat.confronto = c;
 }
 
-module.exports = { timeOf, codesOf, parseRows, rowsAt, candidates, tpFit, match, checkTurno, compareAll };
+module.exports = { timeOf, codesOf, parseRows, rowsAt, candidates, tpFit, match, checkTurno, checkPass, compareAll };

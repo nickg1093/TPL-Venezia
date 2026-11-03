@@ -7,7 +7,6 @@
   "scripts": { "start": "node server.js", "test": "node --test", "update-gtfs": "node scripts/update-gtfs.js" },
   "engines": { "node": "22.x" },
   "dependencies": {
-    "adm-zip": "^0.5.16",
     "leaflet": "1.9.4",
     "protobufjs": "^7.2.6"
   }

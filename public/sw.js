@@ -3,13 +3,13 @@
 //  - icone, manifest e Leaflet (/icons, /vendor): dalla cache, aggiornati in background
 //  - /api/*, /healthz e mattonelle della mappa: MAI intercettati (dati live sempre freschi; le mattonelle le gestisce il browser)
 // Dopo modifiche ai file della shell (icone, manifest, elenco SHELL) incrementare VERSION: la cache vecchia viene cancellata.
-const VERSION = 'v22';
+const VERSION = 'v23';
 const CACHE = `tpl-venezia-${VERSION}`;
-const SHELL = ['/', '/css/app.css', '/js/app.js', '/js/util.js', '/js/zones.js', '/js/tide.js', '/js/avvisi.js', '/js/locate.js', '/js/fav.js', '/js/notify.js', '/js/info.js', '/js/pwa.js', '/js/theme-init.js', '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
+const SHELL = ['/', '/css/app.css', '/js/app.js', '/js/util.js', '/js/zones.js', '/js/tide.js', '/js/avvisi.js', '/js/locate.js', '/js/fav.js', '/js/notify.js', '/js/info.js', '/js/percorso.js', '/js/guida.js', '/js/pwa.js', '/js/theme-init.js', '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
   '/icons/sprite.svg', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/favicon-48.png'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => Promise.all(SHELL.map(u => c.add(u).catch(() => {})))).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then(c => Promise.all(SHELL.map(u => c.add(new Request(u, { cache: 'reload' })).catch(() => {})))).then(() => self.skipWaiting()));   // sempre dal server, mai dalla cache del browser
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('tpl-venezia-') && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
@@ -18,6 +18,7 @@ self.addEventListener('activate', e => {
 const store = (req, r) => { if (r.ok) { const c = r.clone(); caches.open(CACHE).then(ca => ca.put(req, c)); } return r; };
 const offline = () => new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
+const fresh = new Set();                                                                    // file già riletti dal server in questa vita del service worker
 self.addEventListener('fetch', e => {
   const req = e.request, url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin) return;                       // tutto il resto (mattonelle comprese) va direttamente alla rete
@@ -27,8 +28,10 @@ self.addEventListener('fetch', e => {
     e.respondWith(fetch(req).then(r => store('/', r)).catch(() => caches.match('/').then(r => r || offline())));
   } else if (p.startsWith('/js/') || p.startsWith('/css/')) {                               // codice dell'app: rete prima
     e.respondWith(fetch(req).then(r => store(req, r)).catch(() => caches.match(req).then(r => r || offline())));
-  } else {                                                                                  // icone, manifest, Leaflet: cache e aggiornamento in background
-    e.respondWith(caches.match(req).then(hit => {
+  } else {                                                                                  // icone, manifest, Leaflet: dalla cache; aggiornati in background
+    e.respondWith(caches.match(req).then(hit => {                                           // al massimo una volta per file finché il service worker resta attivo
+      if (hit && fresh.has(p)) return hit;                                                  // (prima: a ogni uso, es. il file dei simboli decine di volte al minuto)
+      fresh.add(p);
       const net = fetch(req).then(r => store(req, r)).catch(() => hit || offline());
       return hit || net;
     }));

@@ -39,8 +39,18 @@ const HEADERS = {
   'X-Permitted-Cross-Domain-Policies': 'none',
   'X-DNS-Prefetch-Control': 'off'
 };
+// Risposte dati (/api): non sono pagine, quindi bastano le intestazioni che contano per i dati (OWASP REST Security):
+// nessun contenuto eseguibile, niente incorniciamento, niente sniffing, solo stesso sito. Circa 600 byte in meno a risposta.
+const API_HEADERS = {
+  'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+  'Cross-Origin-Resource-Policy': 'same-origin'
+};
 function securityHeaders(req, res) {
-  for (const k in HEADERS) res.setHeader(k, HEADERS[k]);
+  const H = String(req.url || '').startsWith('/api/') ? API_HEADERS : HEADERS;
+  for (const k in H) res.setHeader(k, H[k]);
   if (isHttps(req)) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 }
 // HTTP -> HTTPS (solo se richiesto; /healthz resta raggiungibile in HTTP per i controlli di Render e dei pinger)
@@ -65,7 +75,7 @@ function limit(req, cls) {
 }
 setInterval(() => { const now = Date.now(); for (const [k, h] of hits) if (now >= h.reset) hits.delete(k); }, 60000).unref();
 // classe di una richiesta: le chiamate costose (zone, corse, orari) hanno un limite più stretto
-const HEAVY = new Set(['/api/zone', '/api/trip', '/api/stop', '/api/scheduled', '/api/audit', '/api/gtfs']);
+const HEAVY = new Set(['/api/zone', '/api/trip', '/api/stop', '/api/scheduled', '/api/audit', '/api/gtfs', '/api/percorso', '/api/percorso-simili']);
 const classOf = pathname => (pathname.startsWith('/api/') ? (HEAVY.has(pathname) ? 'heavy' : 'api') : 'static');
 
 // ---- connessioni SSE (flusso a spinta) ----
@@ -83,7 +93,9 @@ function sseAcquire(req) {
 const sha = s => crypto.createHash('sha256').update(String(s)).digest();
 function tokenOk(req, secret) {
   if (!secret || secret.length < 16) return false;                         // un token corto o assente non protegge: l'endpoint resta chiuso
-  const h = String(req.headers.authorization || ''), given = /^Bearer\s+(.+)$/i.exec(h)?.[1] || String(req.headers['x-token'] || '');
+  // «Bearer <token>» letto senza espressioni regolari (nessun rischio di tempi esplosivi su intestazioni costruite ad arte), lunghezza limitata
+  const h = String(req.headers.authorization || '').slice(0, 1024), bearer = h.slice(0, 7).toLowerCase() === 'bearer ' ? h.slice(7).trim() : '';
+  const given = bearer || String(req.headers['x-token'] || '').slice(0, 1024).trim();
   return !!given && crypto.timingSafeEqual(sha(given), sha(secret));
 }
 
@@ -106,4 +118,4 @@ const vDate = s => {
 };
 const bad = (msg = 'richiesta non valida') => Object.assign(new Error(msg), { code: 400 });
 
-module.exports = { clientIp, isHttps, securityHeaders, httpsRedirect, limit, LIMITS, classOf, sseAcquire, tokenOk, vId, vFullId, vVeh, vSecs, vDate, bad, CSP };
+module.exports = { API_HEADERS, clientIp, isHttps, securityHeaders, httpsRedirect, limit, LIMITS, classOf, sseAcquire, tokenOk, vId, vFullId, vVeh, vSecs, vDate, bad, CSP };

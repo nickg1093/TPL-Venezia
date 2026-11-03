@@ -19,6 +19,7 @@ const C = {
   STRONG_MIN: 3,            // nostro mezzo con ritardo del feed oltre 40 min: il passaggio ACTV è suo solo entro 3 min dal suo tempo
   SKIP_ROW: 25, SKIP_LIVE: 10, SKIP_SCHED: 3,           // costi dell'abbinamento (minuti equivalenti)
   WINDOW_S: 3 * 3600,
+  DRAGGED_MIN: 10,          // previsione del feed senza mezzo con almeno 10 min di ritardo: si tiene solo se la centrale la elenca
   DOUBT_MS: 10 * 60e3       // passaggio ACTV non agganciato entro 10 min da una corsa: quella corsa non si toglie
 };
 

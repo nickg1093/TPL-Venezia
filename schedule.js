@@ -105,7 +105,7 @@ function positionsNow(G, secsParam = null, date = null) {
 // ---- passaggi a una fermata ----
 // Ogni riga è un passaggio di UN mezzo (una corsa con più mezzi dà più righe). Righe "partite" (done): i mezzi già transitati dalla fermata
 // negli ultimi DONE_MS ms, con l'istante REALE di partenza registrato dal tracker (GPS/feed), per non far sparire la corsa di colpo.
-const DONE_MS = 120000;
+const DONE_MS = 180000;          // «partiti da poco»: restano 3 minuti
 function departures(G, live, stopId, secsParam = null, date = null, state = null) {
   const list = G.stopIndex[stopId];
   if (!list) return [];
@@ -140,7 +140,9 @@ function departures(G, live, stopId, secsParam = null, date = null, state = null
         // Con stato live (tracker.js): ETA fusa feed + GPS + orario, già corretta per le regole di partenza.
         let dl = lv ? lv.delays[i] : null, expMs = null, em;
         if (ps && i >= ps.cur && ps.etaMs && Number.isFinite(ps.etaMs[i])) { expMs = ps.etaMs[i]; em = (expMs - nowMs) / 1000; dl = em - (ts - tNow); }
-        if (ps && ps.preStart && !ps.feedPre && dl != null && dl < 60) dl = null;    // corsa non ancora partita, senza feed: orario programmato
+        // corsa non ancora partita, senza feed: nessun anticipo. Col mezzo localizzato è tracciata: «In orario» (come nel pannello della corsa);
+        // senza mezzo resta l'orario programmato («Da orario»)
+        if (ps && ps.preStart && !ps.feedPre && dl != null && dl < 60) dl = ps.vehKey ? 0 : null;
         const sm = ts - tNow; em ??= ts + (dl ?? 0) - tNow;
         const dm = dl != null ? Math.round(dl / 60) : null;     // ritardo in minuti interi: l'orario previsto si ricava da questo, così sono sempre coerenti
         if ((sm < -180 || sm > 7200) && (em < -180 || em > 7200)) continue;

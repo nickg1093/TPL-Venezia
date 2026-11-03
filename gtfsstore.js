@@ -17,7 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const AdmZip = require('adm-zip');
+const { Zip } = require('./zip');                 // lettore ZIP interno (zlib), al posto di adm-zip
 const { eachRow } = require('./csv');
 const cal = require('./calendar');
 const ids = require('./ids');
@@ -29,6 +29,7 @@ const SOURCES = {
   aut: { url: BASE + 'automobilistico/actv_aut.zip', legacy: 'actv_aut.zip' }
 };
 const REQUIRED = ['trips.txt', 'stop_times.txt', 'stops.txt', 'routes.txt'];
+const MAX_DOWNLOAD = 120 * 1024 * 1024;   // GTFS scaricato: al massimo 120 MB
 const KEEP_MAX = 6, KEEP_DAYS = 60;   // archivio: massimo 6 versioni; le scadute restano 60 giorni (si possono ancora consultare in "Pianificato")
 // il sito ACTV rifiuta le richieste senza User-Agent da browser
 const HEADERS = {
@@ -44,7 +45,7 @@ const entryOf = (zip, name) => zip.getEntries().find(e => { const n = e.entryNam
 function validZip(buf) {
   if (!buf || buf.length < 22 || buf[0] !== 0x50 || buf[1] !== 0x4b) return 'la risposta non è un file ZIP';
   try {
-    const names = new AdmZip(buf).getEntries().map(e => e.entryName.toLowerCase());
+    const names = new Zip(buf).getEntries().map(e => e.entryName.toLowerCase());
     const miss = REQUIRED.filter(n => !names.some(x => x === n || x.endsWith('/' + n)));
     return miss.length ? 'ZIP incompleto, mancano: ' + miss.join(', ') : null;
   } catch (e) { return 'ZIP danneggiato (' + e.message + ')'; }
@@ -52,7 +53,7 @@ function validZip(buf) {
 
 // Legge SOLO i file piccoli (calendari e feed_info): serve a capire la validità senza leggere i 50 MB di orari.
 async function inspect(buf) {
-  const zip = new AdmZip(buf), get = n => { const e = entryOf(zip, n); return e ? e.getData() : null; };
+  const zip = new Zip(buf), get = n => { const e = entryOf(zip, n); return e ? e.getData() : null; };
   const calendar = {}, exByDate = {}, ymd = x => String(x || '').replace(/\D/g, '').slice(0, 8);
   await eachRow(get('calendar.txt'), ['service_id', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'start_date', 'end_date'], c => {
     calendar[(c.service_id || '').trim()] = { days: [c.sunday, c.monday, c.tuesday, c.wednesday, c.thursday, c.friday, c.saturday].map(x => String(x).trim() === '1'), start: ymd(c.start_date), end: ymd(c.end_date) };
@@ -131,7 +132,7 @@ async function matchScore(cand, sample) {
   if (!sample || sample.length < 20) return null;
   const key = cand.hash + '|' + md5(sample.map(s => s.tripId + '>' + s.routeId).join('|'));
   if (matchCache.has(key)) return matchCache.get(key);
-  const zip = new AdmZip(cand.file), get = n => { const e = entryOf(zip, n); return e ? e.getData() : null; };
+  const zip = new Zip(cand.file), get = n => { const e = entryOf(zip, n); return e ? e.getData() : null; };
   const tripRoute = new Map(), routes = [];
   await eachRow(get('trips.txt'), ['trip_id', 'route_id'], t => tripRoute.set(t.trip_id, t.route_id));
   await eachRow(get('routes.txt'), ['route_id'], r => routes.push(r.route_id));
@@ -174,7 +175,10 @@ async function download(src, { force = false } = {}) {
       const res = await fetch(S.url, { signal: AbortSignal.timeout(have ? 30000 : 120000), redirect: 'follow', headers: h });
       if (res.status === 304) return { status: 'invariata' };
       if (!res.ok) throw new Error('HTTP ' + res.status);
-      const buf = Buffer.from(await res.arrayBuffer()), bad = validZip(buf); if (bad) throw new Error(bad);
+      // tetto alla dimensione scaricata (i GTFS ACTV sono 3-15 MB): una risposta anomala non riempie la memoria del server
+      if ((+res.headers.get('content-length') || 0) > MAX_DOWNLOAD) throw new Error('file troppo grande');
+      const buf = Buffer.from(await res.arrayBuffer()); if (buf.length > MAX_DOWNLOAD) throw new Error('file troppo grande');
+      const bad = validZip(buf); if (bad) throw new Error(bad);
       const hash = md5(buf);
       fs.writeFileSync(metaFile(src), JSON.stringify({ etag: res.headers.get('etag'), lastModified: res.headers.get('last-modified'), checkedAt: Date.now() }));
       if ((await list(src)).some(c => c.hash === hash)) return { status: 'gia-presente', hash };

@@ -33,7 +33,7 @@
     _add(m) { this.m = m; m._polys.add(this); } _rm() { this.m?._polys.delete(this); }
   }
   class Map_ extends Group {
-    constructor(id, o) { super(); this.el = typeof id === 'string' ? document.getElementById(id) : id; this._h = {}; this._all = new Set(); this._polys = new Set(); this.c = { lat: 45.437, lng: 12.335 }; this.z = 12;
+    constructor(id, o) { super(); this.options = { ...(o || {}) }; this.el = typeof id === 'string' ? document.getElementById(id) : id; this._h = {}; this._all = new Set(); this._polys = new Set(); this.c = { lat: 45.437, lng: 12.335 }; this.z = 12;
       this._els = document.createElement('div'); this._els.className = 'leaflet-pane'; this._els.style.cssText = 'position:absolute;inset:0;overflow:hidden'; this.el.classList.add('leaflet-container'); this.el.appendChild(this._els);
       this.el.addEventListener('click', () => this.fire('click', {})); this._map = this; window.__map = this; }
     k(z) { return 256 * 2 ** z / 360; }
@@ -47,10 +47,13 @@
     setView(p, z = this.z) { this.c = ll(p); this.z = z; this._moved(); return this; }
     panTo(p) { this.c = ll(p); this._moved(); } flyTo(p, z) { this.c = ll(p); this.z = z; this._moved(); }
     panBy(d) { const c = this.project(this.c); this.c = this.unproject(pt(c.x + d[0], c.y + d[1])); this._moved(); }
+    fitBounds(b) { this.c = b.getCenter(); this.z = 14; this._moved(); return this; }
+    setMaxBounds(b) { this._maxB = b; return this; } setMinZoom(z) { this._minZ = z; return this; } getBoundsZoom() { return 9; }   // area servita: solo stato
     invalidateSize() { this._moved(); } stopLocate() {} locate() { window.__geo ? this.fire('locationfound', { latlng: ll(window.__geo), accuracy: 10 }) : this.fire('locationerror', {}); }
   }
-  window.L = { map: (i, o) => new Map_(i, o), latLng: ll, point: pt, divIcon: o => o, tileLayer: () => ({ addTo() { return this; } }), layerGroup: () => new Group(),
-    marker: (p, o) => new Marker(p, o), circleMarker: (p, o) => new Circle(p, o), circle: (p, o) => new Acc(p, o), polyline: (p, o) => new Poly(p, o),
+  const bounds = (...a) => { const pts = a.length === 2 && !Array.isArray(a[0]?.[0]) && Array.isArray(a[0]) ? a : a[0]; const l = pts.map(x => ll(x)); return { pad() { return this; }, getCenter: () => ({ lat: l.reduce((s, p) => s + p.lat, 0) / l.length, lng: l.reduce((s, p) => s + p.lng, 0) / l.length }) }; };
+  window.L = { map: (i, o) => new Map_(i, o), latLng: ll, latLngBounds: bounds, point: pt, divIcon: o => o, tileLayer: (u, o) => ({ options: { ...(o || {}) }, addTo() { return this; }, redraw() { return this; } }), layerGroup: () => new Group(),
+    marker: (p, o) => new Marker(p, o), circleMarker: (p, o) => new Circle(p, o), circle: (p, o) => new Acc(p, o), polyline: (p, o) => new Poly(p, o), polygon: (p, o) => Object.assign(new Poly(p, o), { isPolygon: true }),   // area servita (contorno e oscuramento)
     control: { zoom: () => ({ addTo(m) {                                      // come Leaflet: angolo in basso a destra con due pulsanti
       const c = document.createElement('div'); c.className = 'leaflet-bottom leaflet-right'; c.style.cssText = 'position:absolute;right:0;bottom:0;z-index:1000';
       this.el = document.createElement('div'); this.el.className = 'leaflet-control-zoom leaflet-bar leaflet-control'; this.el.style.cssText = 'display:flex;flex-direction:column;float:right;clear:both';

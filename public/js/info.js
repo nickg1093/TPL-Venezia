@@ -3,16 +3,24 @@
 import { $, esc, icon, api } from './util.js';
 import * as Notify from './notify.js';
 
-const btn = $('info-btn'), card = $('info'), list = $('info-watches');
+const btn = $('info-btn'), card = $('info'), list = $('info-watches'), wbtn = $('watch-btn'), wcount = $('watch-count');
 let before = () => {};
 export const isOpen = () => !card.hidden;
 // pagina a tutto schermo: il tasto «indietro» del telefono la chiude (voce nella cronologia)
 let pushed = false;
 // avvisi di arrivo attivi su questo dispositivo, con la possibilità di disattivarli
+// campanella sopra la «i»: visibile solo con almeno un avviso attivo, con il numero; apre la lista (qui sotto, in cima alla pagina)
+export function updateWatchButton() {
+  const n = Notify.all().length;
+  wbtn.hidden = !n; wcount.textContent = n > 9 ? '9+' : String(n);
+  const lab = n === 1 ? '1 avviso di arrivo attivo: apri la lista' : `${n} avvisi di arrivo attivi: apri la lista`;
+  wbtn.setAttribute('aria-label', lab); wbtn.title = lab;
+}
 export function renderWatches() {
+  updateWatchButton();
   const ws = Notify.all();
   list.innerHTML = ws.length ? `<h3>${icon('bell', 'sm')} Avvisi di arrivo attivi</h3>` + ws.map(w =>
-    `<div class="iw"><span><b>Linea ${esc(w.line || '')}</b>${w.headsign ? ' → ' + esc(w.headsign) : ''}<br><small class="muted">${esc(w.stopName || '')} · ${w.lead} min prima</small></span>`
+    `<div class="iw"><span><b>Linea ${esc(w.line || '')}</b>${w.headsign ? ' → ' + esc(w.headsign) : ''}<br><small class="muted">${esc(w.stopName || '')} · ${esc(String(w.lead))} min prima</small></span>`
     + `<button type="button" class="nlink" data-wid="${esc(w.id)}">Disattiva</button></div>`).join('') : '';
 }
 list.addEventListener('click', async e => {
@@ -33,6 +41,14 @@ export function close(fromHistory = false) {
 export function init(beforeOpen) {
   before = beforeOpen || before;
   btn.onclick = () => (card.hidden ? open() : close());
+  // campanella: apre Informazioni direttamente sulla lista degli avvisi (subito sotto l'intestazione fissa), con il fuoco sul suo titolo
+  wbtn.onclick = () => {
+    if (card.hidden) open();
+    const top = list.getBoundingClientRect().top - card.getBoundingClientRect().top + card.scrollTop - card.querySelector('.fp-h').offsetHeight - 12;
+    card.scrollTop = Math.max(0, top);
+    const h = list.querySelector('h3'); if (h) { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
+  };
+  updateWatchButton();
   $('info-close').onclick = () => { close(); btn.focus(); };
   window.addEventListener('popstate', () => { if (!card.hidden) close(true); });
   // indice della pagina: scorrimento alla sezione senza toccare l'indirizzo (la voce #informazioni serve al tasto «indietro»)

@@ -41,6 +41,8 @@ module.exports = {
   mergeStop: off(fonde.mergeStop, (src, sid, rows) => rows),
   mergeTrip: off(fonde.mergeTrip, (src, tid, d) => d),
   checkTurno: off(abbina.checkTurno, () => null),
+  checkPass: off(abbina.checkPass, () => null),
+  actvPlan: off(fonde.actvPlan, () => null),
   // per le prove
   _t: { st, ...abbina, buildCatalog: lettura.buildCatalog, tick: lettura.tick }
 };

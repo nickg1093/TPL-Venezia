@@ -14,7 +14,7 @@ function run(samples, lvAt = k => feed(2)) {
   return last;
 }
 
-test('righe "partito": il mezzo appena ripartito resta 2 minuti, con l\'orario effettivo, poi sparisce', () => {
+test('righe "partito": il mezzo appena ripartito resta 3 minuti, con l\'orario effettivo, poi sparisce', () => {
   const state = { T1: run([[40, 1000, 0, 1000], [30, 1000, 0, 1010], [20, 1000, 0, 1020], [8, 1014, 2.5, 1032], [0, 1050, 4, 1040]]) };
   assert.equal(state.T1.cur, 3, 'dopo la ripartenza la corsa è alla fermata successiva');
   const rows = schedule.departures(ctx.G, null, 'S2', BASE + 270, '20261028', state);
@@ -23,9 +23,9 @@ test('righe "partito": il mezzo appena ripartito resta 2 minuti, con l\'orario e
   assert.equal(done.phase, 'departed');
   assert.ok(done.expMs <= Date.now() && Date.now() - done.expMs < 60000);
   assert.match(done.exp, /^\d\d:\d\d$/);
-  // la stessa riga, ma partita da oltre 2 minuti: non c'è più
-  state.T1.dep = { ...state.T1.dep, 2: Date.now() - 130000 };
-  assert.ok(!schedule.departures(ctx.G, null, 'S2', BASE + 270, '20261028', state).some(r => r.done), 'dopo 2 minuti la riga sparisce');
+  // la stessa riga, ma partita da oltre 3 minuti: non c'è più
+  state.T1.dep = { ...state.T1.dep, 2: Date.now() - 190000 };
+  assert.ok(!schedule.departures(ctx.G, null, 'S2', BASE + 270, '20261028', state).some(r => r.done), 'dopo 3 minuti la riga sparisce');
 });
 
 test('mezzo ancora in fermata: la riga NON è "partita" ed è la prossima partenza', () => {
@@ -43,4 +43,13 @@ test('corsa senza stato live: solo orario, nessuna riga partita', () => {
 
 test('date e orari invalidi ricadono su "adesso" senza errori', () => {
   assert.doesNotThrow(() => schedule.departures(ctx.G, null, 'S2', 'abc', 'zzz', null));
+});
+
+test('mezzo localizzato fermo al capolinea prima della partenza (senza feed): «In orario» come nel pannello della corsa, non «Da orario»', () => {
+  const vs = {}; let st;
+  for (const [ago, ts] of [[30, 900], [0, 930]]) st = tracker.update({ G: ctx.G, trip: ctx.trip, st: ctx.st, lv: null, hist: null, veh: veh(0, 0, { ts, stillS: 60 }), tNow: BASE - 300 - ago, nowMs: Date.now() - ago * 1000, vs });
+  const r = schedule.departures(ctx.G, null, 'S2', BASE - 300, '20261028', { T1: st }).find(x => !x.done);
+  assert.equal(r.veh, 'V1'); assert.equal(r.live, true); assert.equal(r.delay, 0);
+  const r0 = schedule.departures(ctx.G, null, 'S2', BASE - 300, '20261028', null).find(x => !x.done);
+  assert.equal(r0.live, false, 'senza mezzo: Da orario');
 });

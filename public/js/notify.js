@@ -7,7 +7,17 @@ import { api } from './util.js';
 
 const KEY = 'tpl.watches', LIFE = 3 * 3600e3;
 let list = load(), pollTimer = null, onChange = () => {}, onFront = () => {};
-function load() { try { const d = JSON.parse(localStorage.getItem(KEY) || '[]'); return Array.isArray(d) ? d.filter(w => w && w.id && w.until > Date.now()) : []; } catch { return []; } }
+// La memoria del browser non è affidabile (può essere stata modificata): ogni avviso si ricostruisce campo per campo, con tipi e lunghezze
+// controllati, prima di usarlo nell'interfaccia.
+const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
+function clean(w) {
+  if (!w || typeof w !== 'object') return null;
+  const lead = Number(w.lead), until = Number(w.until);
+  if (typeof w.id !== 'string' || !w.id || !Number.isInteger(lead) || lead < 1 || lead > 60 || !Number.isFinite(until)) return null;
+  return { id: str(w.id, 80), token: str(w.token, 200), mode: w.mode === 'poll' ? 'poll' : 'push', trip: str(w.trip, 120), stop: str(w.stop, 80),
+    stopName: str(w.stopName, 120), lead, line: str(w.line, 20), headsign: str(w.headsign, 120), until };
+}
+function load() { try { const d = JSON.parse(localStorage.getItem(KEY) || '[]'); return Array.isArray(d) ? d.map(clean).filter(w => w && w.until > Date.now()).slice(0, 50) : []; } catch { return []; } }
 function save() { list = list.filter(w => w.until > Date.now()); try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* solo in memoria */ } onChange(); }
 // onFront(msg): messaggio arrivato con l'app in primo piano (lo mostra l'app, non il sistema)
 export const init = (fn, front) => { onChange = fn || onChange; onFront = front || onFront; startPolling(); };

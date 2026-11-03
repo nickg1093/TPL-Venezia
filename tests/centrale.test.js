@@ -218,3 +218,47 @@ test('controllo dei turni: "contro" se un altro passaggio reale è più vicino a
   assert.equal(centrale.checkTurno('aut', '6063', 'T1', now + (b + 20 * 60 + 30 - S0) * 1000, sched), 'ok');
   assert.equal(centrale.checkTurno('aut', '9999', 'T1', now, sched), null, 'fermata senza dati: nessun parere');
 });
+
+test('pannello fermata e pannello della corsa concordano anche alle fermate senza pagina ACTV (orari ACTV delle altre fermate)', async () => {
+  const state = {}, b = Math.floor(S0 / 60) * 60;
+  const { G, tripIds } = setup([4], state, [row(hm(b + 9 * 60), true, { timingPoints: [{ time: hm(b + 9 * 60), stop: 'San Marco Molmenti' }, { time: hm(b + 22 * 60), stop: 'VENEZIA CORSIA C' }] })]);
+  await centrale.prepareStops([['aut', '6063']]);
+  centrale.mergeStop('aut', '6063', siteRows(G, tripIds, null, state), now);           // la centrale legge la palina 6063 (+5)
+  const st = G.stopTimes.get(tripIds[0]), ts = st.d[3], sm = ts - S0;
+  // capolinea VENEZIA CORSIA C (6084): nessuna pagina ACTV; riga «Da orario» nel pannello fermata
+  const x = { tripId: tripIds[0], seq: 3, line: 'T1', sched: hm(ts), exp: hm(ts), schedIn: R(sm / 60), schedSec: sm, expIn: R(sm / 60), expSec: sm, expMs: null, delay: null, live: false, veh: null, vehicle: null, done: false, arrival: false, cancel: null, src: 'aut', stop: 'aut:6084' };
+  const r = centrale.mergeStop('aut', '6084', [x], now)[0];
+  const d = { live: true, detected: false, delayNow: null, vehKey: null, stops: CODES.map((c, k) => ({ sched: hm(st.d[k]), state: k === 0 ? 'passed' : k === 1 ? 'next' : 'upcoming', expMs: null, delay: null, exp: null, inMin: null })) };
+  centrale.mergeTrip('aut', tripIds[0], d, now);
+  assert.equal(r.live, true);
+  assert.equal(r.delay, d.stops[3].delay, 'stesso ritardo nei due pannelli'); assert.equal(r.exp, d.stops[3].exp);
+});
+
+test('pannello della corsa: un orario «Da orario» non conta come previsione che coincide (diventa in tempo reale come nel pannello fermata)', async () => {
+  const state = {}, b = Math.floor(S0 / 60) * 60;
+  const { G, tripIds } = setup([4], state, [row(hm(b + 4 * 60), true)]);
+  await centrale.prepareTrip('aut', tripIds[0]);
+  const st = G.stopTimes.get(tripIds[0]);
+  const d = { live: true, detected: false, delayNow: null, vehKey: null, stops: CODES.map((c, k) => ({ sched: hm(st.d[k]), state: k === 0 ? 'next' : 'upcoming', expMs: now + (st.d[k] - S0) * 1000, delay: null, exp: null, inMin: null })) };
+  centrale.mergeTrip('aut', tripIds[0], d, now);
+  assert.equal(d.stops[1].delay, 0); assert.equal(d.detected, true);
+});
+
+test('un passaggio, una riga: previsione del feed senza mezzo (+20) che la centrale non elenca si toglie; se la elenca resta', async () => {
+  const b = Math.floor(S0 / 60) * 60;
+  // corse alle +5 e +30; la prima ha solo la previsione del feed a +25 (ritardo trascinato), la centrale elenca solo il passaggio delle +30
+  let state = {}, s = setup([5, 30], state, [row(hm(b + 30 * 60), true)]);
+  state[s.tripIds[0]] = psOf(now + 25 * 60e3, null);
+  await centrale.prepareStops([['aut', '6063']]);
+  let site = siteRows(s.G, s.tripIds, s.base, state); site[0].veh = null;
+  let rows = centrale.mergeStop('aut', '6063', site, now);
+  assert.equal(rows.find(x => x.tripId === s.tripIds[0]), undefined, 'tolta');
+  assert.ok(rows.find(x => x.tripId === s.tripIds[1]), 'la corsa elencata resta');
+  // stessa situazione, ma la centrale elenca anche un passaggio a +25: la previsione è confermata e resta
+  state = {}; s = setup([5, 30], state, [row(hm(b + 25 * 60), true), row(hm(b + 30 * 60), true)]);
+  state[s.tripIds[0]] = psOf(now + 25 * 60e3, null);
+  await centrale.prepareStops([['aut', '6063']]);
+  site = siteRows(s.G, s.tripIds, s.base, state); site[0].veh = null;
+  rows = centrale.mergeStop('aut', '6063', site, now);
+  assert.ok(rows.find(x => x.tripId === s.tripIds[0]), 'resta');
+});

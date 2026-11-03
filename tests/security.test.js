@@ -30,3 +30,11 @@ test('limite SSE per IP', () => {
 test('la CSP vieta script in linea e frame esterni', () => {
   assert.match(sec.CSP, /script-src 'self'(;|$)/); assert.doesNotMatch(sec.CSP, /script-src[^;]*unsafe/); assert.match(sec.CSP, /frame-ancestors 'none'/);
 });
+test('risposte dati (/api): intestazioni essenziali, nessun contenuto eseguibile', () => {
+  const sec = require('../security'), set = {}, res = { setHeader: (k, v) => { set[k] = v; } };
+  sec.securityHeaders({ url: '/api/vehicles', headers: {}, socket: {} }, res);
+  assert.equal(set['Content-Security-Policy'], "default-src 'none'; frame-ancestors 'none'");
+  assert.equal(set['X-Content-Type-Options'], 'nosniff'); assert.equal(set['X-Frame-Options'], 'DENY');
+  const page = {}; sec.securityHeaders({ url: '/', headers: {}, socket: {} }, { setHeader: (k, v) => { page[k] = v; } });
+  assert.match(page['Content-Security-Policy'], /script-src 'self'/, 'le pagine tengono la CSP completa');
+});

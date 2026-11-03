@@ -76,6 +76,7 @@ export function createLocator({ button, notify, onFix, onState, centerOn }) {
     get last() { return last; },
     // chiamata quando l'utente fa altro con la mappa (trascina, apre una fermata, segue un mezzo): resta il punto, finisce l'inseguimento
     release() { if (state === 'follow') set('on'); },
+    start: () => { if (state === 'off') start(); },            // richiesta da un'altra funzione (es. «La mia posizione» nel percorso)
     stop: () => { if (state !== 'off') off(); }
   };
 }
