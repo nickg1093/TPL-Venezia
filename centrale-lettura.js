@@ -1,82 +1,84 @@
-// CENTRALE ACTV — lettura sicura di oraritemporeale.actv.it con contromisure anti-Imperva e richieste On-Demand.
+// CENTRALE ACTV — lettura sicura tramite Playwright (Browser Umano On-Demand)
+const { chromium } = require('playwright');
 const { equivalentStops } = require('./stopgroups');
 const { C, st, lineOf, fresh, SRC } = require('./centrale-stato');
 
 const BASE = (process.env.ACTV_CENTRALE_URL || 'https://oraritemporeale.actv.it').replace(/\/+$/, '');
 const sleep = ms => new Promise(ok => setTimeout(ok, ms).unref?.());
 
-// ---- Gestione della Sessione e Cookie Jar per Imperva ----
-let cookieJar = '';
-const browserHeaders = {
-  'Accept': 'application/json, text/plain, */*',
-  'Accept-Language': 'it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7',
-  'Cache-Control': 'no-cache',
-  'Pragma': 'no-cache',
-  'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-  'Sec-Ch-Ua-Mobile': '?0',
-  'Sec-Ch-Ua-Platform': '"Windows"',
-  'Sec-Fetch-Dest': 'empty',
-  'Sec-Fetch-Mode': 'cors',
-  'Sec-Fetch-Site': 'same-origin',
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-};
+// ---- Gestione dell'istanza Browser On-Demand ----
+let browserInstance = null;
+let contextInstance = null;
 
-// ---- Code di richieste controllate (On-Demand) ----
-const queue = []; let inFlight = 0, minute = 0, perMinute = 0;
-function pump() {
-  const m = Math.floor(Date.now() / 60000); if (m !== minute) { minute = m; perMinute = 0; }
-  while (queue.length && inFlight < C.MAX_PARALLEL && perMinute < C.MAX_PER_MIN) { inFlight++; perMinute++; queue.shift()(); }
-  if (queue.length && perMinute >= C.MAX_PER_MIN) setTimeout(pump, 1000).unref?.();
+async function getBrowserContext() {
+  if (!browserInstance) {
+    // Avvia il browser in background (headless) ma con firme identiche a un browser reale
+    browserInstance = await chromium.launch({ 
+      headless: true,
+      args: ['--disable-blink-features=AutomationControlled']
+    });
+    contextInstance = await browserInstance.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      locale: 'it-IT',
+      viewport: { width: 1280, height: 800 }
+    });
+  }
+  return contextInstance;
 }
 
+// ---- Funzione di recupero JSON tramite Browser Reale (Superamento Imperva) ----
 async function getJson(path) {
   const s = st.stat;
   if (Date.now() < s.pausaFino) throw new Error('pausa dopo errori ripetuti');
-  await new Promise(ok => { queue.push(ok); pump(); });
-  
-  try {
-    const headers = { ...browserHeaders, 'Referer': BASE + '/' };
-    if (cookieJar) headers['Cookie'] = cookieJar;
 
-    const r = await fetch(BASE + path, { 
-      headers, 
-      signal: AbortSignal.timeout(C.TIMEOUT_MS) 
+  let page = null;
+  try {
+    const context = await getBrowserContext();
+    page = await context.newPage();
+
+    const targetUrl = BASE + path;
+    
+    // Navigazione gestita dal browser: risolve automaticamente i challenge JS e i cookie di Imperva
+    const response = await page.goto(targetUrl, { 
+      waitUntil: 'domcontentloaded', 
+      timeout: C.TIMEOUT_MS 
     });
 
-    // Cattura e aggiorna i cookie di Imperva (visid_incap, incap_ses, reese84)
-    const setCookie = r.headers.get('set-cookie');
-    if (setCookie) {
-      // Semplice estrazione e merge dei cookie per mantenere la sessione viva
-      cookieJar = setCookie.split(',').map(c => c.split(';')[0]).join('; ');
+    if (!response || !response.ok()) {
+      throw new Error(`HTTP error: ${response ? response.status() : 'risposta nulla'}`);
     }
 
-    const contentType = r.headers.get('content-type') || '';
-    
-    // Se Imperva restituisce HTML anziché JSON, è scattato il challenge di blocco
-    if (!r.ok || contentType.includes('text/html')) {
-      s.errori++;
-      s.ultimoErrore = `${new Date().toISOString()} ${path}: Rilevato blocco o challenge Imperva (HTTP ${r.status})`;
-      throw new Error('Blocco anti-bot Imperva attivo');
+    // Estrazione del JSON restituito dalla rotta backend
+    let json;
+    try {
+      json = await response.json();
+    } catch {
+      // Fallback nel caso in cui il contenuto venga letto come testo HTML/JSON grezzo dalla pagina
+      const textContent = await page.evaluate(() => document.body.innerText);
+      json = JSON.parse(textContent);
     }
 
-    const j = await r.json(); 
-    s.letture++; 
-    s.erroriDiFila = 0; 
-    return j;
+    s.letture++;
+    s.erroriDiFila = 0;
+    return json;
 
   } catch (e) {
-    s.errori++; 
-    if (e.name === 'TimeoutError') s.timeout++; 
+    s.errori++;
+    if (e.name === 'TimeoutError' || e.message.includes('Timeout')) s.timeout++;
     s.ultimoErrore = `${new Date().toISOString()} ${path}: ${e.message}`;
-    if (++s.erroriDiFila >= C.FAIL_MAX) { s.pausaFino = Date.now() + C.PAUSE_MS; s.erroriDiFila = 0; }
+    if (++s.erroriDiFila >= C.FAIL_MAX) {
+      s.pausaFino = Date.now() + C.PAUSE_MS;
+      s.erroriDiFila = 0;
+    }
     throw e;
-  } finally { 
-    inFlight--; 
-    pump(); 
+  } finally {
+    if (page) {
+      await page.close().catch(() => {}); // Chiude la scheda ma mantiene vivo il contesto e i cookie di sessione
+    }
   }
 }
 
-// ---- Catalogo fermate (memorizzato a lungo per ridurre le chiamate) ----
+// ---- Catalogo fermate ----
 function buildCatalog(list) {
   const byCode = new Map();
   for (const s of Array.isArray(list) ? list : []) {
@@ -97,7 +99,7 @@ async function ensureCatalog(src) {
   return c;
 }
 
-// ---- Lettura pagine On-Demand (eseguita SOLO all'apertura di una fermata/corsa) ----
+// ---- Lettura pagine On-Demand (Attivazione esclusivamente su richiesta utente) ----
 function fetchPage(src, page) {
   const k = src + '|' + page, e = st.pages.get(k) || st.pages.set(k, { t: 0, rows: null, p: null }).get(k);
   if (Date.now() - e.t < C.FRESH_MS || e.p) return e;
@@ -117,7 +119,7 @@ function pagesFor(src, sid) {
   return [...out.values()];
 }
 
-// Funzione principale richiamata ESCLUSIVAMENTE quando l'utente apre una fermata o una corsa
+// Chiamata eseguita SOLO quando l'utente apre un pannello (fermata o corsa)
 async function prepareStops(list) {
   if (!st.ctx) return;
   try {
@@ -129,10 +131,10 @@ async function prepareStops(list) {
       for (const ent of pagesFor(src, sid)) { const e = fetchPage(src, ent.page); if (!fresh(e) && e.p && waits.length < C.MAX_PAGES_WAIT) waits.push(e.p); }
     }
     if (waits.length) await Promise.race([Promise.allSettled(waits), sleep(C.WAIT_MS)]);
-  } catch { /* gestito in silenzio per non bloccare l'app se la centrale non risponde */ }
+  } catch { /* gestito in silenzio per continuità app */ }
 }
 
-// ---- Controllo continuo in sottofondo disattivato per azzerare il traffico automatico ----
+// ---- Sottofondo completamente disattivato (Zero richieste automatiche) ----
 function tick() {}
 function startBackground(after) {}
 
