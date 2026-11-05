@@ -1,84 +1,36 @@
-// CENTRALE ACTV — lettura sicura tramite Playwright (Browser Umano On-Demand)
-const { chromium } = require('playwright');
+// CENTRALE ACTV — lettura di oraritemporeale.actv.it: elenco fermate, partenze di una fermata, limiti verso ACTV, controllo continuo.
+// Si legge sempre la pagina della SINGOLA fermata (mai i "terminal", che uniscono fermate distinte nel GTFS: Mestre Centro + 27 Ottobre).
 const { equivalentStops } = require('./stopgroups');
 const { C, st, lineOf, fresh, SRC } = require('./centrale-stato');
 
 const BASE = (process.env.ACTV_CENTRALE_URL || 'https://oraritemporeale.actv.it').replace(/\/+$/, '');
 const sleep = ms => new Promise(ok => setTimeout(ok, ms).unref?.());
 
-// ---- Gestione dell'istanza Browser On-Demand ----
-let browserInstance = null;
-let contextInstance = null;
-
-async function getBrowserContext() {
-  if (!browserInstance) {
-    // Avvia il browser in background (headless) ma con firme identiche a un browser reale
-    browserInstance = await chromium.launch({ 
-      headless: true,
-      args: ['--disable-blink-features=AutomationControlled']
-    });
-    contextInstance = await browserInstance.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      locale: 'it-IT',
-      viewport: { width: 1280, height: 800 }
-    });
-  }
-  return contextInstance;
+// ---- richieste: al massimo MAX_PARALLEL insieme e MAX_PER_MIN al minuto; dopo FAIL_MAX errori di fila, pausa ----
+const queue = []; let inFlight = 0, minute = 0, perMinute = 0;
+function pump() {
+  const m = Math.floor(Date.now() / 60000); if (m !== minute) { minute = m; perMinute = 0; }
+  while (queue.length && inFlight < C.MAX_PARALLEL && perMinute < C.MAX_PER_MIN) { inFlight++; perMinute++; queue.shift()(); }
+  if (queue.length && perMinute >= C.MAX_PER_MIN) setTimeout(pump, 1000).unref?.();
 }
-
-// ---- Funzione di recupero JSON tramite Browser Reale (Superamento Imperva) ----
 async function getJson(path) {
   const s = st.stat;
   if (Date.now() < s.pausaFino) throw new Error('pausa dopo errori ripetuti');
-
-  let page = null;
+  await new Promise(ok => { queue.push(ok); pump(); });
   try {
-    const context = await getBrowserContext();
-    page = await context.newPage();
-
-    const targetUrl = BASE + path;
-    
-    // Navigazione gestita dal browser: risolve automaticamente i challenge JS e i cookie di Imperva
-    const response = await page.goto(targetUrl, { 
-      waitUntil: 'domcontentloaded', 
-      timeout: C.TIMEOUT_MS 
-    });
-
-    if (!response || !response.ok()) {
-      throw new Error(`HTTP error: ${response ? response.status() : 'risposta nulla'}`);
-    }
-
-    // Estrazione del JSON restituito dalla rotta backend
-    let json;
-    try {
-      json = await response.json();
-    } catch {
-      // Fallback nel caso in cui il contenuto venga letto come testo HTML/JSON grezzo dalla pagina
-      const textContent = await page.evaluate(() => document.body.innerText);
-      json = JSON.parse(textContent);
-    }
-
-    s.letture++;
-    s.erroriDiFila = 0;
-    return json;
-
+    const r = await fetch(BASE + path, { headers: { Accept: 'application/json', 'User-Agent': 'VeneziaTPL-live (orari ACTV per i passeggeri)' }, signal: AbortSignal.timeout(C.TIMEOUT_MS) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json(); s.letture++; s.erroriDiFila = 0; return j;
   } catch (e) {
-    s.errori++;
-    if (e.name === 'TimeoutError' || e.message.includes('Timeout')) s.timeout++;
-    s.ultimoErrore = `${new Date().toISOString()} ${path}: ${e.message}`;
-    if (++s.erroriDiFila >= C.FAIL_MAX) {
-      s.pausaFino = Date.now() + C.PAUSE_MS;
-      s.erroriDiFila = 0;
-    }
+    s.errori++; if (e.name === 'TimeoutError') s.timeout++; s.ultimoErrore = `${new Date().toISOString()} ${path}: ${e.message}`;
+    if (++s.erroriDiFila >= C.FAIL_MAX) { s.pausaFino = Date.now() + C.PAUSE_MS; s.erroriDiFila = 0; }
     throw e;
-  } finally {
-    if (page) {
-      await page.close().catch(() => {}); // Chiude la scheda ma mantiene vivo il contesto e i cookie di sessione
-    }
-  }
+  } finally { inFlight--; pump(); }
 }
+const budgetLeft = () => { const m = Math.floor(Date.now() / 60000); return m !== minute ? C.MAX_PER_MIN : C.MAX_PER_MIN - perMinute - queue.length; };
 
-// ---- Catalogo fermate ----
+// ---- elenco fermate: codice GTFS -> pagina ACTV più specifica che lo contiene ----
+// I nomi delle pagine contengono i codici ("392-1392-web-aut", "5009-5011-...-S.Marco_S.Zaccaria-nav-web").
 function buildCatalog(list) {
   const byCode = new Map();
   for (const s of Array.isArray(list) ? list : []) {
@@ -89,17 +41,16 @@ function buildCatalog(list) {
   }
   return byCode;
 }
-
 async function ensureCatalog(src) {
   const c = st.catalog[src] ||= { t: 0, byCode: new Map(), p: null };
   if (Date.now() - c.t < C.CATALOG_MS && c.byCode.size) return c;
   c.p ||= getJson(`/${src}/backend/page/stops`).then(j => { const m = buildCatalog(j); if (m.size) { c.byCode = m; c.t = Date.now(); } })
-    .catch(() => { c.t = Date.now() - C.CATALOG_MS + 60e3; }).finally(() => { c.p = null; });
+    .catch(() => { c.t = Date.now() - C.CATALOG_MS + 60e3; }).finally(() => { c.p = null; });   // errore: si riprova fra un minuto
   if (!c.byCode.size) await c.p;
   return c;
 }
 
-// ---- Lettura pagine On-Demand (Attivazione esclusivamente su richiesta utente) ----
+// ---- partenze di una pagina (lettura già in corso o dato fresco: nessuna nuova richiesta) ----
 function fetchPage(src, page) {
   const k = src + '|' + page, e = st.pages.get(k) || st.pages.set(k, { t: 0, rows: null, p: null }).get(k);
   if (Date.now() - e.t < C.FRESH_MS || e.p) return e;
@@ -112,6 +63,7 @@ function fetchPage(src, page) {
   return e;
 }
 
+// pagine ACTV di una fermata (codice e fermate equivalenti dello stesso palo)
 function pagesFor(src, sid) {
   const G = st.ctx?.G(src), c = st.catalog[src]; if (!G || !c) return [];
   const out = new Map();
@@ -119,7 +71,7 @@ function pagesFor(src, sid) {
   return [...out.values()];
 }
 
-// Chiamata eseguita SOLO quando l'utente apre un pannello (fermata o corsa)
+// Dati ACTV di più fermate (pannello fermata/zona, pannello del mezzo): lancia le letture e aspetta al massimo WAIT_MS quelle senza dato.
 async function prepareStops(list) {
   if (!st.ctx) return;
   try {
@@ -131,11 +83,42 @@ async function prepareStops(list) {
       for (const ent of pagesFor(src, sid)) { const e = fetchPage(src, ent.page); if (!fresh(e) && e.p && waits.length < C.MAX_PAGES_WAIT) waits.push(e.p); }
     }
     if (waits.length) await Promise.race([Promise.allSettled(waits), sleep(C.WAIT_MS)]);
-  } catch { /* gestito in silenzio per continuità app */ }
+  } catch { /* la centrale non è indispensabile */ }
 }
 
-// ---- Sottofondo completamente disattivato (Zero richieste automatiche) ----
-function tick() {}
-function startBackground(after) {}
+// ---- controllo continuo in sottofondo ----
+// Ogni 10 s, entro BG_PER_MIN letture al minuto (e lasciando sempre spazio alle richieste degli utenti): prima le fermate per cui turni.js ha
+// chiesto un controllo (mezzi molto in ritardo), poi, a rotazione, la prossima fermata di ogni mezzo in servizio. Così il confronto è continuo
+// su tutti i mezzi e le corse, e i dati sono già pronti quando un utente apre un pannello.
+let rot = 0, timer = null, onPages = null;
+function tick() {
+  if (!st.ctx || C.BG_PER_MIN <= 0) return;
+  const now = Date.now(), want = [], seen = new Set();
+  const push = (src, sid) => { const k = src + '|' + sid; if (!seen.has(k)) { seen.add(k); want.push([src, sid]); } };
+  for (const [k, t] of st.wants) { if (now - t > 60e3) { st.wants.delete(k); continue; } const [src, sid] = k.split('|'); push(src, sid); }
+  const all = [];
+  for (const src of SRC) {
+    const state = st.ctx.state(src) || {}, G = st.ctx.G(src); if (!G) continue;
+    for (const tid in state) { const ps = state[tid], s = G.stopTimes.get(tid); if (ps?.vehKey && s && ps.cur < s.s.length) all.push([src, s.s[ps.cur]]); }
+  }
+  for (let j = 0; j < all.length; j++) { const x = all[(rot + j) % all.length]; push(x[0], x[1]); }
+  let budget = Math.min(Math.ceil(C.BG_PER_MIN * C.BG_EVERY_MS / 60000), Math.max(0, budgetLeft() - 20)), used = 0;
+  const reads = [];
+  for (const [src, sid] of want) {
+    if (used >= budget) break;
+    if (!st.catalog[src]?.byCode.size) { ensureCatalog(src).catch(() => {}); continue; }
+    for (const ent of pagesFor(src, sid)) {
+      const e = st.pages.get(src + '|' + ent.page);
+      if (e && (e.p || now - e.t < C.FRESH_MS)) continue;                // dato recente o lettura in corso
+      const f = fetchPage(src, ent.page); if (f.p) { reads.push(f.p); used++; }
+    }
+  }
+  if (all.length) rot = (rot + Math.max(1, used)) % all.length;
+  if (reads.length && onPages) Promise.allSettled(reads).then(() => { try { onPages(); } catch { /* diagnosi */ } });
+}
+function startBackground(after) {
+  onPages = after;
+  if (!timer && C.BG_PER_MIN > 0) timer = setInterval(tick, C.BG_EVERY_MS), timer.unref?.();
+}
 
 module.exports = { BASE, getJson, buildCatalog, ensureCatalog, fetchPage, pagesFor, prepareStops, startBackground, tick };
