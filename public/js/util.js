@@ -21,7 +21,7 @@ export const vehIcon = (src, label, cls = '', line = '') => icon(vehIconName(src
 // ---------- NOMI DEI MEZZI ----------
 // Il feed dà solo un'etichetta (es. "476", "Tram_12", "Lido di Venezia"): il prefisso dipende dal tipo di mezzo.
 //  autobus: BUS n · tram: TRAM n · battelli: N/T (navi traghetto, riconosciute dal nome), M/B (numeri 1-99), M/S (100-300), altrimenti M/N
-const NT = ['lido di venezia', 'ammiana', 'san nicolo', 'san nicolò', 'metamauco', 'marco polo', 'pellestrina'];
+const NT = ['lido di venezia', 'ammiana', 'san nicolo', 'san marco', 'metamauco', 'marco polo', 'pellestrina'];
 export function vehName(src, label) {
   const l = String(label ?? '').trim();
   if (!l) return '';
