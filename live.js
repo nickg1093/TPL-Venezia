@@ -36,6 +36,12 @@ const MAX_DELAY_S = 4 * 3600;       // ritardi oltre 4 ore: dato incoerente, ign
 const SIM_AFTER_ERRORS = 3;         // errori consecutivi di lettura prima di passare alle posizioni da orario...
 const SIM_AFTER_MS = 3 * 60e3;      // ...oppure nessun dato valido da 3 minuti
 const START_TOL_S = 600;            // tolleranza fra l'orario di partenza dichiarato dal feed e quello della corsa trovata per codice
+// POSIZIONE BLOCCATA (registrazione del 6/11/2026): coordinate identiche per oltre 10 minuti, oppure ricomparse identiche dopo un silenzio,
+// LONTANO dalle fermate (in fermata sono normali: il sistema ACTV aggancia il mezzo al punto della fermata, osservati 0-14 m).
+// Il caso reale: battello 191 a 169 m dalla fermata, coordinate delle 17:30 ripresentate alle 18:10 con l'orario aggiornato.
+const FROZEN_SAME_S = 600, FROZEN_STOP_M = 60;
+// CORSA CONCLUSA ANCHE PER ACTV: mezzo fermo da 2 minuti davanti all'ultima fermata, la cui previsione ACTV (che c'era) è sparita da 1 minuto.
+const END_STILL_S = 120, END_TU_GONE_MS = 60e3, ENDED_KEEP_MS = 6 * 3600e3;
 
 // Schema GTFS-RT (solo i campi usati). I nomi diventano camelCase in uscita (tripUpdate, stopTimeUpdate, ...).
 const Feed = protobuf.parse(`syntax = "proto2";
@@ -56,7 +62,9 @@ const D = {}, S = {}, ready = {};
 for (const id of IDS) {
   D[id] = gtfs.empty(); ready[id] = false;
   S[id] = { updated: 0, goodAt: 0, error: null, vehicles: [], live: {}, hist: new Map(), track: new Map(), vs: new Map(), state: {}, snap: new Map(), sig: new Map(), owner: new Map(),
-    cache: {}, raw: {}, match: {}, errCount: 0, feedTs: null, sim: false, lastAgree: null };
+    cache: {}, raw: {}, match: {}, errCount: 0, feedTs: null, sim: false, lastAgree: null,
+    fixes: new Map(),   // ultima posizione di ogni mezzo (anche dopo che è sparito): coordinate ricomparse identiche = GPS bloccato (motion.js)
+    ended: new Map() }; // corse CONCLUSE (capolinea raggiunto): corsa -> { veh, at }. Non si riaprono: il mezzo che le dichiara ancora ne è staccato
 }
 let version = 0;        // cresce a ogni nuovo GTFS statico caricato: il client ricarica fermate e linee
 let cachedStopsGzip = null;
@@ -64,6 +72,26 @@ const dropStopsCache = () => { cachedStopsGzip = null; };
 
 const has = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
 const wrap = x => ((x + 43200) % 86400 + 86400) % 86400 - 43200;
+
+// Distanza (m) dalla fermata più vicina del servizio. Griglia di celle di ~0,005° costruita una volta per GTFS: si guardano le 9 celle attorno
+// (oltre ~400 m il valore esatto non serve: basta sapere che è lontano).
+function nearStopM(G, lat, lon) {
+  const K = 200;                                                                  // celle per grado (~550 m in latitudine)
+  let g = G._sgrid;
+  if (!g) {
+    g = new Map();
+    for (const sid in G.stopLoc) { const L = G.stopLoc[sid]; if (!L) continue; const c = Math.floor(L[0] * K) + ':' + Math.floor(L[1] * K); (g.get(c) || g.set(c, []).get(c)).push(L); }
+    Object.defineProperty(G, '_sgrid', { value: g, enumerable: false });
+  }
+  const ci = Math.floor(lat * K), cj = Math.floor(lon * K), mLon = 111320 * Math.cos(lat * Math.PI / 180);
+  let best = Infinity;
+  for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const L of g.get((ci + a) + ':' + (cj + b)) || []) {
+    const d = Math.hypot((L[0] - lat) * 111320, (L[1] - lon) * mLon); if (d < best) best = d;
+  }
+  return best;
+}
+// GPS bloccato? same = { s: secondi con coordinate identiche, afterGap: ricomparse identiche dopo un silenzio } (motion.sameFor)
+const frozenAt = (G, lat, lon, same) => (same.afterGap || same.s >= FROZEN_SAME_S) && nearStopM(G, lat, lon) > FROZEN_STOP_M;
 // ritardo (s) di un evento: dichiarato dal feed, oppure ricavato dall'orario assoluto; null se manca o è assurdo
 const delayOf = (ev, sched) => {
   if (!ev) return null;
@@ -218,13 +246,16 @@ async function refresh(id) {
       return { id: `${id}:${key}`, src: id, label: v.vehicle?.label || null,
         lat: +v.position.latitude.toFixed(5), lon: +v.position.longitude.toFixed(5),
         // velocità: dichiarata dal feed se plausibile (0..45 m/s), altrimenti da due rilevamenti successivi / differenza dei loro timestamp
-        speed: (calc => Number.isFinite(v.position.speed) && v.position.speed >= 0 && v.position.speed < 45 ? v.position.speed : calc)(motion.updateSpeed(s8.track, key, v.position.latitude, v.position.longitude, ts, now)),
+        speed: (calc => Number.isFinite(v.position.speed) && v.position.speed >= 0 && v.position.speed < 45 ? v.position.speed : calc)(motion.updateSpeed(s8.track, key, v.position.latitude, v.position.longitude, ts, now, s8.fixes)),
         stillS: motion.stillFor(s8.track, key), vInst: motion.instSpeed(s8.track, key), key, ts, old: now - ts > OLD_FLAG_MS, bearing: v.position.bearing ?? null,
+        frozen: frozenAt(G, v.position.latitude, v.position.longitude, motion.sameFor(s8.track, key)),
         status: v.currentStatus ?? null, seq: v.currentStopSequence ?? null,
         line: r.name || routeKey || '?', color: r.color || null, tripId,
         routeId: routeKey && has(G.routes, routeKey) ? `${id}:${routeKey}` : null, headsign: trip.headsign || null };
     });
     for (const [k, p] of s8.track) if (now - p.arr > 600000) { s8.track.delete(k); s8.snap.delete(k); }   // mezzi non più visti
+    for (const [k, f] of s8.fixes) if (now - f.t > 3 * 3600e3) s8.fixes.delete(k);
+    for (const v of s8.vehicles) if (v.frozen) v.old = true;            // posizione bloccata: sulla mappa come dato non aggiornato
     s8.lastAgree = tally;
     s8.match = { tripUpdates: { total: upd.length, collegati: tuOk, altroGiorno: wrongDay, eliminati: skippedDeleted },
       veicoli: { total: pos.length, collegati: vOk, posizioneNonValida: bad, datoTroppoVecchio: ghost },
@@ -260,6 +291,16 @@ function verifyTrips(i, tuOfVeh) {
     v.tripId = r.tid; v.line = rt.name || v.line; v.color = rt.color || v.color; v.headsign = trip.headsign || v.headsign;
     v.routeId = has(G.routes, trip.route) ? `${i}:${trip.route}` : v.routeId;
     v.reassigned = { from: from ? schedule.hhmm(from.start) : null, why: r.why };
+  }
+  // POSIZIONE BLOCCATA o CORSA GIÀ CONCLUSA: il mezzo resta sulla mappa ma si stacca dalla corsa (che non riapre e non riceve posizioni
+  // o ritardi falsi). Registrazione del 6/11: battello 16 arrivato a P.le Roma e ripartito con la corsa finita (riavvolta fino a +66 min);
+  // battello 191 con le coordinate di 40 minuti prima (corsa finita riaperta a +43 min). Si riassocia da solo quando dichiara un'altra corsa.
+  for (const v of list) {
+    if (!v.tripId) continue;
+    const why = v.frozen ? 'posizione bloccata' : s8.ended.has(v.tripId) ? 'corsa conclusa' : null;
+    if (!why) continue;
+    const from = G.stopTimes.get(v.tripId);
+    v.idle = { why, trip: from ? schedule.hhmm(from.start) : null }; v.tripId = null; idle.add(String(v.key));
   }
   if (s8.match) {
     s8.match.corseDaTripUpdate = s8.vehicles.filter(v => v.reassigned?.why === 'tu').map(v => ({ mezzo: v.label || v.key, posizione: v.feedTripId, tripUpdate: v.tripId }));
@@ -298,6 +339,7 @@ function chooseTU(i, cand, idle, vacated, now) {
   const s8 = S[i], live = {}, onTrip = new Map();
   for (const v of s8.vehicles) if (v.tripId && !v.sim) onTrip.set(String(v.key), v.tripId);
   for (const [tid, list] of cand) {
+    if (s8.ended.has(tid)) continue;                                      // corsa conclusa: le previsioni rimaste aperte non la riaprono
     // escluse: previsioni di mezzi staccati e quelle del mezzo che ha lasciato questa corsa per quella del suo turno (turni.js)
     // e quelle di un mezzo che il GPS mostra su UN'ALTRA corsa (ACTV continua a prevedere corse vecchie con quel mezzo: 4.1 a Guglie il 3/11,
     // corse delle 13:49 e 14:29 «in ritardo di 140 e 101 min» = il battello della 16:09)
@@ -434,12 +476,39 @@ function pickOwners(i) {
   for (const k of [...s8.owner.keys()]) if (!groups.has(k)) s8.owner.delete(k);
 }
 
+// Stato di una corsa CONCLUSA: tutte le fermate passate, nessun mezzo, nessuna previsione. Restano le partenze registrate (vs.dep), così
+// le righe «partito da poco» del pannello fermata e i passaggi del pannello corsa non spariscono di colpo.
+function endedState(st, vs, nowMs) {
+  const n = st.s.length; vs.seen = nowMs;
+  return { vehKey: null, label: null, cur: n, atStop: -1, phase: 'arrived', stage: 4, etaMs: new Float64Array(n).fill(NaN), dayOff: tripNow(st) >= 86400 ? 86400 : 0,
+    src: 'ended', sVeh: null, lateral: null, delayS: vs.delay ?? 0, atOrigin: false, waiting: false, speed: null, dep: vs.dep || {}, preStart: false, feedPre: false, ended: true, stale: null };
+}
+// CORSA CONCLUSA: dopo il calcolo degli stati. Prove fisiche, non la sola previsione ACTV (nei bus la previsione «a zero fermate» compare anche
+// a metà corsa: 78 casi in 2 ore, fino a 9 minuti di fila): (a) il mezzo che fa la corsa ha raggiunto l'ultima fermata o l'ha superata;
+// (b) è fermo da 2 minuti davanti all'ultima fermata e la previsione ACTV della corsa, che c'era, non c'è più da 1 minuto.
+function markEnded(i, out, now) {
+  const G = D[i], s8 = S[i];
+  for (const tid in out) {
+    const ps = out[tid]; if (!ps || ps.ended || !ps.vehKey || s8.ended.has(tid)) continue;
+    const st = G.stopTimes.get(tid), n = st.s.length;
+    const arrived = ps.cur >= n || (ps.atStop === n - 1 && ps.phase === 'arrived');
+    let gone = false;
+    if (!arrived && ps.cur >= n - 1 && !s8.live[tid]) {
+      const h = s8.hist.get(tid), v = s8.vehicles.find(x => x.key === ps.vehKey);
+      gone = !!h && now - h.seen >= END_TU_GONE_MS && (v?.stillS || 0) >= END_STILL_S;
+    }
+    if (arrived || gone) s8.ended.set(tid, { veh: ps.vehKey, at: now, why: arrived ? 'arrivo' : 'previsione chiusa' });
+  }
+  for (const [tid, e] of s8.ended) if (now - e.at > ENDED_KEEP_MS) s8.ended.delete(tid);
+}
+
 function buildStates(i) {
   const G = D[i], out = {}, now = Date.now(), byTrip = new Map();
   for (const v of S[i].vehicles) if (v.tripId && !v.co) { const o = byTrip.get(v.tripId); if (!o || (v.ts || 0) > (o.ts || 0)) byTrip.set(v.tripId, v); }   // doppioni: il rilevamento più fresco
-  for (const tid of new Set([...Object.keys(S[i].live), ...byTrip.keys()])) {
+  for (const tid of new Set([...Object.keys(S[i].live), ...byTrip.keys(), ...S[i].ended.keys()])) {
     const st = G.stopTimes.get(tid), trip = G.trips[tid]; if (!st || !trip) continue;
     let vs = S[i].vs.get(tid); if (!vs) S[i].vs.set(tid, vs = {});
+    if (S[i].ended.has(tid)) { out[tid] = endedState(st, vs, now); continue; }
     const veh = byTrip.get(tid), tp = veh && S[i].track.get(veh.key);
     if (veh && vs.ownerKey && vs.ownerKey !== veh.key) for (const k of Object.keys(vs)) delete vs[k];   // cambio di mezzo: la memoria dell'altro non vale
     if (veh) vs.ownerKey = veh.key;
@@ -461,6 +530,7 @@ function buildStates(i) {
     catch (e) { console.error('stato rinforzo', v.key, e.message); }
   }
   for (const [k, vs] of S[i].vs) if (now - (vs.seen || 0) > 900000) S[i].vs.delete(k);
+  markEnded(i, out, now);
   S[i].state = out;
 }
 
@@ -522,6 +592,8 @@ function tripDetail(i, tid, live, vehKey = null, G = D[i], when = null) {
   return {
     reassigned: live && veh?.reassigned ? veh.reassigned : null,
     live, detected: !live || !!(sel || lv), progress, atStop, phase: ss.phase, vehKey: ss.vehKey ?? null, others, speedKmh: ss.speed != null ? Math.round(ss.speed * 3.6) : null, cancelled: !!lv?.cancelled, note: noteOf(G, when?.date),
+    // corsa conclusa (capolinea raggiunto) e stima non confermata (tracker.js: da quanti minuti mancano prove e perché)
+    ended: live && !!ss.ended, stale: live && ss.stale && cur < n ? { why: ss.stale.why, min: Math.max(0, Math.floor((nowMs - ss.stale.since) / 60000)) } : null,
     // stato della corsa in testa al pannello: lo stesso delle righe (prima fermata non ancora servita con un ritardo); senza = «Da orario»
     delayNow: (nx => nx ? (dn != null && ss.vehKey ? Math.round(dn / 60) : nx.delay) : null)(stops.find(s => s.state !== 'passed' && s.delay != null)),
     historyKnown: stops.some(s => s.state === 'passed' && s.delay != null),
@@ -584,7 +656,7 @@ async function adopt(id, { force = false } = {}) {
       const g = await gtfs.load(id, { sample: rtSample(id), force });
       if (!g) return false;
       D[id] = g; const s8 = S[id];
-      s8.hist.clear(); s8.vs.clear(); s8.snap.clear(); s8.sig.clear(); s8.owner.clear(); s8.state = {}; s8.live = {};
+      s8.hist.clear(); s8.vs.clear(); s8.snap.clear(); s8.sig.clear(); s8.owner.clear(); s8.ended.clear(); s8.state = {}; s8.live = {};
       ready[id] = true; version++; dropStopsCache(); alt[id] = null;
       refresh(id);
       console.log(`GTFS statico [${id}] in uso: ${g.meta.file} (${g.meta.reason})`);

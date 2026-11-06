@@ -29,6 +29,14 @@ function step(w, d, now = Date.now(), next = null) {
   const eta = s.expMs ?? now + (s.inMin ?? 0) * 60000, mins = Math.max(0, Math.round((eta - now) / 60000));
   const est = d.live && d.detected !== false ? '' : ' (da orario)', when = `alle ${hm(eta)}${dly(s.delay)}${est}`;
   if (now - w.created > LIFE_MS || eta < now - 10 * 60e3) return { end: true };
+  // STIMA SENZA DATI (mezzo non rilevato e previsione che non si aggiorna): nessun preavviso né «in arrivo» basati su un orario vecchio.
+  // Lo si dice una volta; l'avviso riprende da solo appena tornano i dati.
+  if (d.live && d.stale && d.stale.why !== 'fermo' && !w.sent.arr) {
+    if (w.sent.nodata) return {};
+    w.sent.nodata = true;
+    return out('update', `Dati del mezzo non aggiornati da ${d.stale.min} min: l'ultimo orario previsto a ${stop} era alle ${hm(eta)}${dly(s.delay)}. Ti avviso appena tornano i dati.`, true);
+  }
+  if (w.sent.nodata && !(d.stale && d.stale.why !== 'fermo')) w.sent.nodata = false;
   const here = s.state === 'at' || s.phase === 'approaching' || mins <= 1;
   if (!w.sent.arr && here && (w.sent.lead || w.lead <= 2 || mins <= 1)) { w.sent.lead = w.sent.conf = w.sent.arr = true; return out('arrive', `In arrivo ora a ${stop}.`, false, true, 90); }
   // preavviso solo con stima STABILE: due controlli di fila entro la soglia (un GPS che salta non fa suonare il telefono in anticipo),

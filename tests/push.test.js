@@ -42,3 +42,16 @@ test('regole: conferma, aggiornamento ponderato, preavviso, arrivo, soppressione
   const w2 = { ...w, sent: {}, k: null }; r = Wt.step(w2, { ...D(10), cancelled: true }, now, '14:40'); assert.equal(r.msg.kind, 'cancel'); assert.ok(r.end && !r.msg.silent); assert.match(r.msg.body, /Prossima corsa della linea 80: alle 14:40/);
   const w3 = { ...w, sent: {}, k: null, src: 'nav' }; r = Wt.step(w3, D(3), now); assert.equal(r.msg.kind, 'lead'); assert.ok(r.msg.ttl >= 60 && r.msg.ttl <= 900);   // già entro il preavviso: subito quello
 });
+test('dati del mezzo non aggiornati (stima senza dati): un solo messaggio, nessun preavviso né «in arrivo» su un orario vecchio', () => {
+  const now = Date.UTC(2026, 10, 6, 17, 0), w = { stop: 'nav:5050', stopName: 'Fondamente Nove', src: 'nav', lead: 5, created: now, sent: { conf: true }, k: null, lastDelay: 4, lastAt: now };
+  const D = (mins, stale, at) => ({ live: true, detected: true, stale, trip: { line: '4.1', headsign: 'Murano' },
+    stops: [{ id: 'nav:5050', state: 'upcoming', expMs: at + mins * 60000, delay: 4, phase: null }, { id: 'nav:9', state: 'upcoming' }] });
+  let r = Wt.step(w, D(2, { why: 'nodata', min: 11 }, now), now);
+  assert.equal(r.msg.kind, 'update'); assert.match(r.msg.body, /non aggiornati da 11 min/);
+  assert.deepEqual(Wt.step(w, D(-1, { why: 'nodata', min: 14 }, now + 3 * 60e3), now + 3 * 60e3), {}, 'orario vecchio passato: niente «in arrivo»');
+  r = Wt.step(w, D(1, null, now + 5 * 60e3), now + 5 * 60e3);                     // tornano i dati: l'avviso riprende
+  assert.equal(r.msg.kind, 'arrive');
+  // mezzo fermo col GPS fresco: il dato è vero, l'avviso funziona come sempre
+  const w2 = { ...w, sent: { conf: true }, k: null };
+  assert.equal(Wt.step(w2, D(1, { why: 'fermo', min: 12 }, now), now).msg.kind, 'arrive');
+});

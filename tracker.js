@@ -36,7 +36,14 @@ const C = {
   HOLD_S: 20,          // senza GPS, la fermata si considera lasciata solo 20 s dopo la partenza prevista (orario + ritardo del feed)
   END_BACK_M: 300,     // capolinea di arrivo: un mezzo fermo fino a 300 m prima dell'ultima fermata ha concluso la corsa (stalli e banchine diversi)
   FEED_GAP_S: 600,     // previsione ACTV e ritardo misurato dal GPS che differiscono di oltre 10 minuti...
-  FEED_GAP_MS: 120000  // ...per oltre 2 minuti, con il mezzo in marcia sul percorso: la previsione di quella corsa non è affidabile
+  FEED_GAP_MS: 120000, // ...per oltre 2 minuti, con il mezzo in marcia sul percorso: la previsione di quella corsa non è affidabile
+  // PROVE CHE LA STIMA È VIVA (registrazione del 6/11/2026: ritardi cresciuti di un minuto al minuto fino a +92, da GPS assente o fermo
+  // e da previsioni ACTV che, senza GPS, spostano la corsa sempre più avanti). Una prova è: il mezzo avanza lungo il percorso di almeno
+  // EV_MOVE_M; sosta normale in fermata (fino a EV_DWELL_S dopo l'orario) o corsa non ancora partita; previsione ACTV aggiornata da meno
+  // di EV_TU_AGE_S il cui ritardo, in una finestra di EV_TU_WIN_S, NON cresce come l'orologio (meno di EV_TU_RATE s al secondo).
+  // Senza prove per EV_STALE_MS la stima è «non confermata»: senza GPS utile il ritardo resta l'ultimo provato (non cresce più);
+  // con il GPS fresco e il mezzo fermo il ritardo che cresce è vero (il mezzo non si muove) e lo si dice.
+  EV_MOVE_M: 30, EV_DWELL_S: 300, EV_TU_AGE_S: 180, EV_TU_WIN_S: 120, EV_TU_RATE: 0.6, EV_STALE_MS: 600000
 };
 const clamp = (x, a, b) => (x < a ? a : x > b ? b : x);
 
@@ -146,6 +153,9 @@ function update(x) {
   const dTo = k => { const L = G.stopLoc[st.s[k]]; return L && veh ? dist(veh.lat, veh.lon, L[0], L[1]) : Infinity; };
 
   if (vs.seen && nowMs - vs.seen > 900000) Object.keys(vs).forEach(k => delete vs[k]);   // corsa riusata: memoria azzerata
+  // CAPOLINEA GIÀ RAGGIUNTO (al ciclo precedente): la corsa è finita e non si riapre. Un mezzo che riparte da lì (verso la corsa successiva,
+  // in rimessa) dichiarando ancora questa corsa NON la fa tornare indietro (battello 16 della linea 1, 6/11: riavvolta fino a +66 min).
+  const doneBefore = (vs.cur ?? 0) >= n || ((vs.cur ?? 0) === n - 1 && vs.at?.k === n - 1);
 
   // 1) FEED / ORARIO: prima fermata attesa
   let feedCur;
@@ -164,7 +174,7 @@ function update(x) {
     // AUTOCORREZIONE DELLA POSIZIONE SUL TRACCIATO. La ricerca "vicino all'ultima posizione" può agganciare il tratto sbagliato dove il percorso
     // si sovrappone (andata/ritorno sulla stessa strada, anelli) o dopo un salto del GPS. Si calcola anche la posizione senza vincoli: se è
     // altrettanto vicina alla linea e molto più coerente con il ritardo atteso (feed o ultima stima) per 3 rilevamenti nuovi di fila, diventa quella buona.
-    if (vs.sMax != null) {
+    if (vs.sMax != null && !doneBefore) {
       const full = project(sh, veh.lat, veh.lon, null);
       if (full && full.lat <= C.OFFROUTE_M && (sv == null || Math.abs(full.s - sv) > 300)) {
         const exp = lv?.delays?.[Math.min(n - 1, vs.cur ?? 0)] ?? vs.delay ?? 0, dOf = s => tNow - schedAt(offs, st, s);
@@ -242,7 +252,7 @@ function update(x) {
   // superate davvero (feed avanti, dichiarazione del mezzo, aggancio sbagliato): si torna alla prima fermata davanti al mezzo e si cancellano
   // le partenze registrate da lì in poi. Il mezzo resta sul suo percorso, le fermate tornano "in arrivo".
   if (sv != null) { if (lateral <= 40) { if (veh.ts !== vs.okTs) { vs.okTs = veh.ts; vs.gpsOk = (vs.gpsOk || 0) + 1; } } else vs.gpsOk = 0; }
-  if (sv != null && lateral <= 60 && cur > 0) {
+  if (sv != null && lateral <= 60 && cur > 0 && !doneBefore) {
     const behind = offs[Math.min(cur, n) - 1] - sv;
     if (behind > 120) { if (veh.ts !== vs.backTs) { vs.backTs = veh.ts; vs.backN = (vs.backN || 0) + 1; } } else vs.backN = 0;
     if (vs.backN >= 2) {
@@ -292,7 +302,27 @@ function update(x) {
     // davvero avanti (nel debug il 63% degli anticipi mostrati era smentito dal passaggio reale, quasi tutti vaporetti dati a -2 arrivati in orario).
     if (delayGps != null && etaCur < at(cur)) etaCur = Math.max(etaCur, at(cur) - Math.max(0, -delayGps));
   } else if (cur === 0 && !veh) etaCur = Math.max(pred(0), at(0));                                        // niente partenza anticipata
-  if (cur < n) etaCur = Math.max(etaCur, tNow);
+  // PROVE CHE LA STIMA È VIVA (vedi C.EV_*)
+  let ev = false;
+  if (sv != null) {
+    if (vs.evS == null || Math.abs(sv - vs.evS) >= C.EV_MOVE_M) { ev = true; vs.evS = sv; }                    // si è spostato lungo il percorso
+    else if (atStop === cur && cur < n && tNow <= at(cur) + C.EV_DWELL_S) ev = true;                          // sosta normale in fermata
+  }
+  if (!ev && cur === 0 && n > 0 && tNow <= at(0) + C.EV_DWELL_S) ev = true;                                    // non ancora partita: l'attesa è normale
+  if (lv && cur < n && (lv.ageS ?? 0) < C.EV_TU_AGE_S) {                                                     // previsione ACTV aggiornata...
+    const d = dly(cur);
+    if (!vs.tuA) vs.tuA = { t: tNow, d };
+    else if (tNow - vs.tuA.t >= C.EV_TU_WIN_S) { if (d - vs.tuA.d < C.EV_TU_RATE * (tNow - vs.tuA.t)) ev = true; vs.tuA = { t: tNow, d }; }   // ...che non cresce con l'orologio
+  } else vs.tuA = null;
+  if (ev || vs.evAt == null || cur >= n) { vs.evAt = nowMs; vs.evD = cur < n ? etaCur - at(cur) : 0; }
+  // STIMA NON CONFERMATA: 'fermo' = GPS fresco sul percorso, il mezzo non si muove (il ritardo che cresce è vero); 'fuori' = GPS fresco
+  // fuori dal percorso (deviazione); 'nodata' = nessun GPS utile. Negli ultimi due casi il ritardo resta l'ultimo provato.
+  let stale = null;
+  if (cur < n && nowMs - vs.evAt >= C.EV_STALE_MS) {
+    stale = { why: sv != null ? 'fermo' : fresh ? 'fuori' : 'nodata', since: vs.evAt, delay: Math.round(vs.evD) };
+    if (stale.why !== 'fermo') etaCur = at(cur) + vs.evD;
+  }
+  if (cur < n && !(stale && stale.why !== 'fermo')) etaCur = Math.max(etaCur, tNow);
   if (cur === 0 && n > 0) etaCur = Math.max(etaCur, at(0));          // dal capolinea non si parte prima dell'orario programmato (il feed può dare anticipi irreali)
 
   const etaMs = new Float64Array(n).fill(NaN), effD = cur < n ? etaCur - at(cur) : 0;
@@ -344,7 +374,7 @@ function update(x) {
   // dayOff: a quale giorno di servizio appartiene l'istanza viva (0 = oggi, 86400 = ieri, orari 24:xx dopo mezzanotte)
   return { vehKey: veh?.key ?? null, label: veh?.label ?? null, cur, atStop, phase, stage, etaMs, dayOff: tNow >= 86400 ? 86400 : 0, src, sVeh: sv, lateral, delayS: vs.delay ?? 0,
     atOrigin: atStop === 0 || (!veh && cur === 0 && tNow < at(0)), waiting: atStop === cur && etaCur - tNow > 0, speed: sp, dep: vs.dep,
-    preStart: notStarted, feedPre: notStarted && !!lv };
+    preStart: notStarted, feedPre: notStarted && !!lv, stale, fixAt: vs.fixAt ?? null };
 }
 
 // Punto del tracciato all'ascissa s, e tratto di tracciato tra due ascisse (per muovere il mezzo SULLA linea, non in rettilineo).

@@ -182,7 +182,7 @@ dateEl.onchange = () => {
 // MEZZI SULLA MAPPA
 // ---------------------------------------------------------------------------------------------------------------------
 const busHtml = v => badge(v.line, v.color, v.src, `${mode === 'sched' || v.sim ? ' sched' : ''}${v.old ? ' old' : ''}${v.idle ? ' idle' : ''}${v.id === selVeh ? ' sel' : ''}`);
-const tip = v => `${vehIcon(v.src, v.label, 'sm', v.line)} <b>${esc(v.line)}</b>${v.headsign ? ' ' + icon('next', 'sm') + ' ' + esc(v.headsign) : ''}${v.label ? ' · ' + esc(vehName(v.src, v.label)) : ''}${v.idle ? ' · non associato a una corsa' : v.old ? ' · dato non aggiornato' : ''}`;
+const tip = v => `${vehIcon(v.src, v.label, 'sm', v.line)} <b>${esc(v.line)}</b>${v.headsign ? ' ' + icon('next', 'sm') + ' ' + esc(v.headsign) : ''}${v.label ? ' · ' + esc(vehName(v.src, v.label)) : ''}${v.idle ? (v.idle.why === 'corsa conclusa' ? ' · corsa conclusa' : v.idle.why === 'posizione bloccata' ? ' · posizione non aggiornata' : ' · non associato a una corsa') : v.old ? ' · dato non aggiornato' : ''}`;
 
 // MOVIMENTO (fedele ai dati ricevuti)
 // Regole: 1) la posizione vera è sempre l'ultimo rilevamento GPS; 2) il mezzo non va MAI oltre l'ultimo punto ricevuto
@@ -538,12 +538,25 @@ function depState(x, live) {
   if (x.cancel) return { cls: 'late', txt: x.cancel === 'trip' ? 'Corsa soppressa' : 'Fermata saltata', long: '' };
   if (!live || x.done) return { cls: '', txt: '', long: '' };
   if (!x.live) return { cls: 'sched', txt: 'Da orario', long: '' };
+  // stima senza prove da almeno 10 minuti (mezzo non rilevato o fuori percorso): l'ultimo ritardo noto resta, non cresce, e lo si dice
+  const u = uncOf(x);
+  if (u) return { cls: 'unc', txt: u.txt, long: `${u.long}. Ultimo ritardo noto: ${delayInfo(x.delay).long}.` };
   const di = delayInfo(x.delay); return { cls: di.cls, txt: di.txt, long: di.long };
 }
+// stima non confermata (server: tracker.js): «fermo» = il mezzo non si muove (il ritardo che cresce è vero); senza dati / fuori percorso =
+// ultimo ritardo noto, bloccato. Ritorna il testo breve e quello per i lettori di schermo, o null
+const minTxt = m => (m === 1 ? '1 min' : `${m} min`);
+function uncOf(x) {
+  const s = x && x.stale; if (!s) return null;
+  if (s.why === 'fermo') return null;                                                    // vedi stillOf: il dato è vero
+  return s.why === 'fuori' ? { txt: `Fuori percorso da ${minTxt(s.min)}`, long: `mezzo fuori dal percorso della linea da ${s.min} minuti` }
+    : { txt: `Nessun dato da ${minTxt(s.min)}`, long: `dati del mezzo non aggiornati da ${s.min} minuti` };
+}
+const stillOf = x => (x?.stale?.why === 'fermo' ? `Fermo da ${minTxt(x.stale.min)}` : '');
 // riga 3: corsia/pontile · stato · mezzo (ordine di sempre), con lo scorrimento avanti e indietro se non entra
 function stateLine(x, z, live) {
-  const st = depState(x, live), vName = live && x.vehicle ? vehName(x.src, x.vehicle) : '';
-  const parts = [st.txt ? `<span class="dst ${st.cls}">${esc(st.txt)}</span>` : '', vName ? `<span class="dvh">${esc(vName)}</span>` : ''].filter(Boolean).join('<span class="dsep"> · </span>');
+  const st = depState(x, live), vName = live && x.vehicle ? vehName(x.src, x.vehicle) : '', still = live && !x.done ? stillOf(x) : '';
+  const parts = [st.txt ? `<span class="dst ${st.cls}">${esc(st.txt)}</span>` : '', still ? `<span class="dst unc">${esc(still)}</span>` : '', vName ? `<span class="dvh">${esc(vName)}</span>` : ''].filter(Boolean).join('<span class="dsep"> · </span>');
   return `<div class="dn d-l3"${st.long ? ` title="${esc(st.long)}"` : ''}>${z ? ptHtml(z.letterOf.get(x.stop), true) : ''}${x.isRequest ? '<span class="req-tag">A richiesta</span>' : ''}<span><span class="mq">${parts}</span></span></div>`;
 }
 // riga 2: fermate successive dal server (elenco condiviso tra le corse con le stesse fermate: lastDeps.nexts[x.nx])
@@ -557,14 +570,15 @@ function nextLine(x) {
 }
 // colonna dell'orario: programmato barrato sopra (se cambia), previsto sotto, poi «Tra N min»
 function timeCol(x, live) {
-  const st = depState(x, live), changed = live && !x.done && Math.abs(x.delay) >= 1 && !x.cancel;
+  const st = depState(x, live), changed = live && !x.done && Math.abs(x.delay) >= 1 && !x.cancel, unc = live && !x.done && !!uncOf(x);
+  const past = unc && x.expMs && x.expMs < Date.now(), ticks = live && x.expMs && !unc;
   return `<div class="dt dt3"><span class="sched-crossed${changed ? '' : ' sp'}"${changed ? '' : ' aria-hidden="true"'}>${changed ? esc(x.sched) : ''}</span>`
-    + `<strong class="${st.cls === 'sched' ? '' : st.cls}">${esc(live ? x.exp : x.sched)}</strong>`
-    + `<div class="in-min" data-exp="${live && x.expMs ? Math.round(x.expMs) : ''}" data-ph="${live ? esc(x.phase || '') : ''}">${esc(etaText(x.phase, x.expMs, x.tIn, live))}</div></div>`;
+    + `<strong class="${st.cls === 'sched' ? '' : st.cls}"${unc ? ' title="Orario stimato con l\'ultimo dato disponibile"' : ''}>${unc ? '~' : ''}${esc(live ? x.exp : x.sched)}</strong>`
+    + `<div class="in-min" data-exp="${ticks ? Math.round(x.expMs) : ''}" data-ph="${live ? esc(x.phase || '') : ''}">${esc(past ? 'Atteso' : etaText(unc ? null : x.phase, x.expMs, x.tIn, live))}</div></div>`;
 }
 // mattonella della linea con avviso (in alto a destra) e fonte del passaggio (in basso a sinistra: onde = rilevato, orologio = orario)
 const badgeCol = (x, live) => `<span class="bw">${badge(x.line, x.color, x.src)}${Avvisi.lineHasAlert(x.src, x.line) ? `<span class="bdot" title="Avviso sulla linea ${esc(x.line)}">${icon('warn', 'sm')}</span>` : ''}`
-  + (live && !x.cancel && !x.done ? `<span class="bsrc ${x.live ? 'on' : ''}" title="${x.live ? 'Mezzo rilevato in tempo reale' : 'Orario programmato: mezzo non rilevato'}">${icon(x.live ? 'live' : 'clock', 'sm')}</span>` : '') + '</span>';
+  + (live && !x.cancel && !x.done ? (u => `<span class="bsrc ${x.live ? (u ? 'on unc' : 'on') : ''}" title="${x.live ? (u ? 'Dato in tempo reale non aggiornato' : 'Mezzo rilevato in tempo reale') : 'Orario programmato: mezzo non rilevato'}">${icon(x.live ? 'live' : 'clock', 'sm')}</span>`)(uncOf(x)) : '') + '</span>';
 const rowData = x => `data-trip="${esc(x.tripId)}" data-src="${esc(x.src)}" data-stop="${esc(x.stop || '')}" data-veh="${esc(x.veh || '')}"`;
 const pickAfter = x => (rowPick && rowPick.trip === `${x.src}:${x.tripId}` && rowPick.stop === x.stop ? pickHtml(x.stop) : '');
 // passaggio completo (vista «Orario»)
@@ -718,6 +732,13 @@ function openDeparture(ds) {
 // ---------------------------------------------------------------------------------------------------------------------
 // PANNELLO CORSA (mezzo)
 // ---------------------------------------------------------------------------------------------------------------------
+// mezzo staccato dalla corsa che dichiara (server: assign.js e live.js), con il motivo
+function idleText(i) {
+  const t = i.trip ? ` delle ${esc(i.trip)}` : '';
+  if (i.why === 'corsa conclusa') return `Questo mezzo ha concluso la corsa${t}: finché non indica la corsa successiva non viene associato a nessuna corsa (in attesa al capolinea, in trasferimento o a fine servizio).`;
+  if (i.why === 'posizione bloccata') return `La posizione di questo mezzo non si aggiorna: le coordinate sono ferme da tempo lontano dalle fermate. Non viene usata per la corsa${t}, che è mostrata con le previsioni ACTV o con l'orario programmato. Torna associato appena la posizione riprende ad aggiornarsi.`;
+  return `Mezzo fermo al capolinea da molto oltre l'orario della corsa che dichiara${i.trip ? ` (partenza delle ${esc(i.trip)})` : ''}: non viene associato a quella corsa, che è mostrata con le previsioni ACTV o con l'orario programmato. Torna associato appena riparte.`;
+}
 function showTrip(e) {
   const v = vehicles.find(x => x.id === e.v.id) || e.v;       // dati più freschi se il mezzo è ancora in elenco
   e.v = vehSnap(v); selVeh = v.id; render(); drawStops();
@@ -727,7 +748,7 @@ function showTrip(e) {
   pfollow.disabled = !v.id;
   keepInView = () => { const m = selVeh && markers.get(selVeh); return m ? m.m.getLatLng() : null; };
   if (!v.tripId) {
-    const why = v.idle ? `Mezzo fermo al capolinea da molto oltre l'orario della corsa che dichiara${v.idle.trip ? ` (partenza delle ${esc(v.idle.trip)})` : ''}: non viene associato a quella corsa, che è mostrata con le previsioni ACTV o con l'orario programmato. Torna associato appena riparte.`
+    const why = v.idle ? idleText(v.idle)
       : v.dup ? `La corsa di questo mezzo risulta assegnata anche al mezzo ${esc(v.dupWith)}: il sistema segue quello più coerente col percorso.` : 'Dati corsa non disponibili per questo mezzo.';
     plist.innerHTML = `<p class="muted pad">${why}</p>`;
     psub.textContent = ''; showRoutes([v.routeId], tripLayer); if (v.id) ensureVisible(L.latLng(v.lat, v.lon)); return;
@@ -763,13 +784,17 @@ function tripHtml(d) {
   const rows = d.stops.map((s, i) => {
     if (i < lo || i > hi) return `<div class="st out" data-i="${i}" hidden></div>`;   // fuori dal tratto: resta nell'elenco (posizione del mezzo) ma non si vede
     let timeHtml = '', sub = '', cls = '';
-    if (d.live && d.detected !== false && s.delay != null) {
+    const unc = d.live && !d.ended && s.state !== 'passed' && !s.skipped && !!uncOf(d);   // dati del mezzo fermi: l'orario è solo l'ultima stima (come nel pannello fermata)
+    if (unc && s.delay != null) {
+      sub = 'Stima non aggiornata'; cls = 'unc';
+      timeHtml = `<div class="tm-time-wrap">${Math.abs(s.delay) >= 1 ? `<span class="sched-crossed">${esc(s.sched)}</span>` : ''}<strong class="unc">~${esc(s.exp)}</strong></div>`;
+    } else if (d.live && d.detected !== false && s.delay != null) {
       const di = delayInfo(s.delay); sub = di.txt; cls = di.cls;
       timeHtml = Math.abs(s.delay) >= 1
         ? `<div class="tm-time-wrap"><span class="sched-crossed">${esc(s.sched)}</span><strong class="${di.cls}">${esc(s.exp)}</strong></div>`
         : `<div class="tm-time-wrap"><strong class="${di.cls}">${esc(s.exp)}</strong></div>`;
     } else { sub = d.live ? 'Da orario' : ''; timeHtml = `<div class="tm-time-wrap"><strong>${esc(s.sched)}</strong></div>`; }
-    const meta = s.skipped ? 'Fermata saltata' : (s.state === 'at' || s.state === 'next') ? etaText(s.phase, s.expMs, s.inMin, d.live && d.detected !== false) : (s.state === 'upcoming' ? (d.live && s.expMs ? `Tra ${Math.max(1, Math.round((s.expMs - Date.now()) / 60000))} min` : (s.inMin > 0 ? `Tra ${s.inMin} min` : '')) : '');
+    const meta = s.skipped ? 'Fermata saltata' : unc && s.expMs ? (s.expMs > Date.now() + 30000 ? `Tra ${Math.max(1, Math.round((s.expMs - Date.now()) / 60000))} min` : 'Atteso') : (s.state === 'at' || s.state === 'next') ? etaText(s.phase, s.expMs, s.inMin, d.live && d.detected !== false) : (s.state === 'upcoming' ? (d.live && s.expMs ? `Tra ${Math.max(1, Math.round((s.expMs - Date.now()) / 60000))} min` : (s.inMin > 0 ? `Tra ${s.inMin} min` : '')) : '');
     const end = seg && (i === seg[0] || i === seg[1]) ? (i === seg[0] ? ' seg-on' : ' seg-off') : '';
     return `<div class="st ${s.state}${s.skipped ? ' cx' : ''}${i === lo ? ' first' : ''}${i === hi ? ' last' : ''}${end}" data-i="${i}" role="button" tabindex="0" title="Apri la fermata">`
       + `<div class="rail-col"><div class="rail-line"></div><span class="dot">${s.state === 'passed' ? icon('check') : ''}</span></div>`
@@ -809,8 +834,11 @@ function renderTrip(first) {
   if (first) renderNotifyBar();
   let status = 'programmato';
   // stesse diciture del pannello fermata: in tempo reale «In orario / In ritardo di / In anticipo di», altrimenti «Da orario»
-  if (d.live && (d.detected === false || d.delayNow == null)) status = 'Da orario';
-  else if (d.live) status = `<span class="${delayInfo(d.delayNow).cls}" title="${esc(delayInfo(d.delayNow).long)}">${esc(delayInfo(d.delayNow).txt)}</span>`;
+  if (d.live && d.ended) status = 'Corsa conclusa';
+  else if (d.live && (d.detected === false || d.delayNow == null)) status = 'Da orario';
+  else if (d.live && uncOf(d)) status = `<span class="unc" title="${esc(uncOf(d).long)}. Ultimo ritardo noto: ${esc(delayInfo(d.delayNow).long)}.">${esc(uncOf(d).txt)}</span>`;
+  else if (d.live) status = `<span class="${delayInfo(d.delayNow).cls}" title="${esc(delayInfo(d.delayNow).long)}">${esc(delayInfo(d.delayNow).txt)}</span>`
+    + (stillOf(d) ? ` <span class="unc">· ${esc(stillOf(d))}</span>` : '');
   pname.innerHTML = `${icon('next', 'sm')}<span>${d.trip.headsign ? esc(d.trip.headsign) : 'Linea ' + esc(d.trip.line)}</span>`;
   const o = d.stops[0], seg = segRange(d);
   psub.innerHTML = (seg ? `il tuo tratto: ${esc(d.stops[seg[0]].name)} → ${esc(d.stops[seg[1]].name)}` : o ? `da ${esc(o.name)}${o.sched ? ', ' + esc(o.sched) : ''}` : '') + (d.note ? `<br>${esc(d.note)}` : '');
@@ -819,7 +847,7 @@ function renderTrip(first) {
     `<span class="reassign">${icon('info', 'sm')} Corsa indicata dalle previsioni ACTV: la posizione del mezzo riportava la corsa delle ${esc(d.reassigned.from || '?')}.</span>`;
   // UNA riga: stato · mezzo (con "insieme a…", accorciato se serve) · velocità stimata (etichetta che non va mai a capo)
   const vtxt = vehName(d.trip.src, d.trip.vehicle || current.v.label) + (d.others?.length ? ` · insieme a ${d.others.join(', ')}` : '');
-  const spd = d.live && d.detected !== false && d.speedKmh != null ? `<span class="spd" title="Velocità stimata dalle posizioni GPS: il feed ACTV non trasmette la velocità reale" aria-label="velocità stimata circa ${+d.speedKmh} chilometri orari">≈ ${+d.speedKmh} km/h · stima</span>` : '';
+  const spd = d.live && d.detected !== false && !d.ended && !uncOf(d) && d.speedKmh != null ? `<span class="spd" title="Velocità stimata dalle posizioni GPS: il feed ACTV non trasmette la velocità reale" aria-label="velocità stimata circa ${+d.speedKmh} chilometri orari">≈ ${+d.speedKmh} km/h · stima</span>` : '';
   pstatus.innerHTML = d.live && d.detected === false ? 'Da orario' : `<span class="stx">${status}</span><span class="vn">· ${esc(vtxt)}</span>${spd}`;
   // avvisi del mezzo: quelli sulla sua linea e quelli che citano una sua fermata (se non riguardano solo altre linee)
   const key = Avvisi.keyOf(d.trip.src, d.trip.line), only = new Set([key]);

@@ -164,3 +164,52 @@ test('linea circolare: al capolinea il mezzo è all\'inizio del giro, non alla f
   const r = step(tracker, c2, { ...veh(0, 0, { ts: 1 }), lat: LAT + 0.00002, lon: lonAt(0) }, feed(0, 0, 6), { tNow: BASE - 60, vs: vsNew() });
   assert.equal(r.cur, 0, 'non deve risultare a fine giro');
 });
+
+// ---- registrazione del 6/11/2026 ----
+test('capolinea raggiunto: un mezzo che riparte all\'indietro con la stessa corsa NON la riapre (niente riavvolgimenti)', () => {
+  const vs = vsNew(), n = ctx.st.s.length, last = (n - 1) * 500;
+  step(tracker, ctx, veh(last - 150, 6, { ts: 1000 }), feed(n - 1), { tNow: BASE + 590, vs });
+  let r = step(tracker, ctx, veh(last, 0, { ts: 1010 }), feed(n - 1), { tNow: BASE + 600, vs });
+  assert.equal(r.atStop, n - 1); assert.equal(r.phase, 'arrived');
+  // riparte in senso opposto: 300, 600, 900 m indietro, rilevamenti nuovi
+  for (const [k, back] of [[1, 300], [2, 600], [3, 900], [4, 1200]]) {
+    r = step(tracker, ctx, veh(last - back, 6, { ts: 1010 + k * 15 }), null, { tNow: BASE + 600 + k * 15, vs });
+    assert.ok(r.cur >= n - 1, `fermata tornata indietro a ${r.cur}`); assert.notEqual(r.src, 'gps-fix');
+  }
+});
+
+test('previsione ACTV che cresce come l\'orologio, senza mezzo: dopo 10 minuti il ritardo non cresce più ed è «non confermato»', () => {
+  const vs = vsNew(); let r;
+  for (let m = 0; m <= 20; m++) {
+    const lv = feed(2, 120 + m * 60);                                    // +1 minuto di ritardo ogni minuto
+    r = step(tracker, ctx, null, lv, { tNow: BASE + 200 + m * 60, vs });
+    if (m < 10) assert.equal(r.stale, null, `minuto ${m}: ancora confermato`);
+  }
+  assert.equal(r.stale?.why, 'nodata');
+  assert.ok(r.delayS <= 180, `ritardo bloccato all'ultimo provato, non ${r.delayS} s (ACTV: ${120 + 20 * 60} s)`);
+});
+
+test('previsione ACTV stabile (mezzo in viaggio senza GPS nel feed): resta confermata', () => {
+  const vs = vsNew(); let r;
+  for (let m = 0; m <= 15; m++) r = step(tracker, ctx, null, feed(Math.min(5, 1 + Math.floor(m / 2)), 180), { tNow: BASE + 100 + m * 60, vs });
+  assert.equal(r.stale, null);
+});
+
+test('mezzo fermo col GPS fresco lontano dalla fermata per oltre 10 minuti: «fermo», il ritardo (vero) continua a crescere', () => {
+  const vs = vsNew(); let r, first = null;
+  for (let m = 0; m <= 14; m++) {
+    r = step(tracker, ctx, veh(1250 + (m % 2), 0, { ts: 1000 + m * 60, stillS: m * 60 }), null, { tNow: BASE + 300 + m * 60, vs });
+    if (m === 1) first = r.delayS;
+  }
+  assert.equal(r.stale?.why, 'fermo');
+  assert.ok(r.delayS > first + 600, 'il mezzo non si muove: il ritardo cresce davvero');
+});
+
+test('mezzo che non trasmette più, senza previsioni ACTV: dopo 10 minuti la stima è «senza dati» e il ritardo non cresce', () => {
+  const long = makeG(6, { headway: 900 }), vs = vsNew();
+  let r = step(tracker, long, veh(995, 0, { ts: 1000 }), null, { tNow: BASE + 1800, vs });
+  const d0 = r.delayS;
+  for (let m = 1; m <= 30; m++) r = step(tracker, long, veh(995, 0, { ts: 1000, ageS: m * 60 }), null, { tNow: BASE + 1800 + m * 60, vs });
+  assert.equal(r.stale?.why, 'nodata');
+  assert.ok(r.delayS <= d0 + 60, `ritardo cresciuto da ${d0} a ${r.delayS} s senza dati`);
+});

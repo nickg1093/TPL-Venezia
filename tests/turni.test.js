@@ -26,7 +26,8 @@ function makeG(trips) {
 // stato del ciclo precedente: il mezzo `veh` sulla corsa tid, prossima fermata F1, atteso fra etaMin minuti (o fermo in F1)
 // tempi sulla stessa griglia degli orari (minuti dall'inizio del minuto corrente)
 const at = m => now + ((base - S0) + m * 60) * 1000 - (now % 1000);
-const ps = (veh, etaMin, atStop = false) => ({ vehKey: veh, label: veh, cur: 1, atStop: atStop ? 1 : -1, etaMs: [NaN, atStop ? now : at(etaMin), NaN, NaN], dayOff: 0 });
+// come lo stato vero del tracker per un mezzo col GPS fresco sul percorso (sVeh = posizione lungo il tracciato, stima confermata)
+const ps = (veh, etaMin, atStop = false, extra = {}) => ({ vehKey: veh, label: veh, cur: 1, atStop: atStop ? 1 : -1, etaMs: [NaN, atStop ? now : at(etaMin), NaN, NaN], dayOff: 0, sVeh: 500, stale: null, fixAt: null, ...extra });
 const veh = (key, tripId, ts = 1) => ({ key, tripId, ts });
 function run({ G, vehicles, prev, vehOfTu = new Map(), mem = new Map(), check = null, times = 2 }) {
   let out;
@@ -96,4 +97,35 @@ test('fermo al capolinea oltre l\'orario della corsa scelta (partenza in ritardo
   // 4 minuti dopo: la partenza di B (+2) è passata da 2 minuti, il tram è ancora fermo
   const later = { B: { ...ps('TRAM_06', 0, true) } };
   assert.equal(turni.plan({ G, vehicles, prev: later, mem, nowMs: now + 4 * 60e3, tNowOf: () => tNowOf() + 240, activeNow }).get('TRAM_06')?.to, 'B');
+});
+
+// ---- prudenza (registrazione del 6/11/2026) ----
+test('nessuno spostamento senza GPS fresco sul percorso, con GPS bloccato o con stima senza dati', () => {
+  const G = makeG([{ id: 'A', off: 5 }, { id: 'B', off: 20 }]);
+  assert.equal(run({ G, vehicles: [veh('T1', 'A')], prev: { A: ps('T1', 21.5, false, { sVeh: null }) } }).size, 0, 'senza posizione sul percorso');
+  assert.equal(run({ G, vehicles: [{ ...veh('T1', 'A'), frozen: true }], prev: { A: ps('T1', 21.5) } }).size, 0, 'GPS bloccato');
+  assert.equal(run({ G, vehicles: [veh('T1', 'A')], prev: { A: ps('T1', 21.5, false, { stale: { why: 'nodata' } }) } }).size, 0, 'stima senza dati');
+  assert.equal(run({ G, vehicles: [veh('T1', 'A')], prev: { A: ps('T1', 21.5, false, { stale: { why: 'fermo' } }) } }).get('T1')?.to, 'B', 'mezzo fermo col GPS fresco: la regola resta valida');
+});
+
+test('posizione corretta all\'indietro da poco: nessuno spostamento per 5 minuti', () => {
+  const G = makeG([{ id: 'A', off: 5 }, { id: 'B', off: 20 }]);
+  assert.equal(run({ G, vehicles: [veh('T1', 'A')], prev: { A: ps('T1', 21.5, false, { fixAt: now - 60e3 }) } }).size, 0);
+  assert.equal(run({ G, vehicles: [veh('T1', 'A')], prev: { A: ps('T1', 21.5, false, { fixAt: now - 400e3 }) } }).get('T1')?.to, 'B', 'correzione vecchia: vale di nuovo');
+});
+
+test('mezzo che va all\'indietro lungo il percorso: nessuno spostamento', () => {
+  const G = makeG([{ id: 'A', off: 5 }, { id: 'B', off: 20 }]), mem = new Map(), vehicles = [veh('T1', 'A')];
+  run({ G, vehicles, prev: { A: ps('T1', 21.5, false, { sVeh: 2000 }) }, mem, times: 1 });
+  assert.equal(run({ G, vehicles, prev: { A: ps('T1', 21.5, false, { sVeh: 1500 }) }, mem, times: 1 }).size, 0);
+});
+
+test('spostamento annullato: per 5 minuti nessun nuovo spostamento (niente avanti e indietro)', () => {
+  const G = makeG([{ id: 'A', off: 5 }, { id: 'B', off: 20 }]), mem = new Map(), vehicles = [veh('T1', 'A')];
+  assert.equal(run({ G, vehicles, prev: { A: ps('T1', 21.5) }, mem }).get('T1')?.to, 'B');
+  // il ciclo dopo il mezzo è sulla corsa B ma la sua posizione non è più utilizzabile: lo spostamento si annulla
+  assert.equal(run({ G, vehicles, prev: { B: ps('T1', 21.5, false, { sVeh: null }) }, mem, times: 1 }).size, 0);
+  // torna il GPS buono: per 5 minuti niente nuovo spostamento
+  assert.equal(run({ G, vehicles, prev: { A: ps('T1', 21.5) }, mem }).size, 0);
+  assert.ok(mem.get('T1').coolUntil > now);
 });

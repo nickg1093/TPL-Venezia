@@ -730,6 +730,10 @@ body.plan-picking #map{cursor:crosshair}
 /* riga 3: corsia/pontile · stato · mezzo; colore solo sullo stato */
 .d-l3 .dst.late{color:var(--late);font-weight:700}.d-l3 .dst.ok,.d-l3 .dst.early{color:var(--ok);font-weight:700}.d-l3 .dst.sched{color:var(--muted)}
 .d-l3 .dvh,.d-l3 .dsep{color:var(--muted)}
+/* stima NON CONFERMATA (nessun dato nuovo da 10 minuti, oppure mezzo fermo): colore di avviso, non rosso/verde; orario con «~» */
+.d-l3 .dst.unc,.unc{color:var(--warn);font-weight:700}
+strong.unc{color:var(--warn)}
+.bsrc.on.unc{color:var(--warn)}
 .d-l3{color:var(--fg)}
 /* orario: programmato barrato sopra il previsto */
 .dt.dt3{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;gap:0;min-width:3.6rem;line-height:1.15}

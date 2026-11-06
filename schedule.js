@@ -145,10 +145,14 @@ function departures(G, live, stopId, secsParam = null, date = null, state = null
         if (ps && ps.preStart && !ps.feedPre && dl != null && dl < 60) dl = ps.vehKey ? 0 : null;
         const sm = ts - tNow; em ??= ts + (dl ?? 0) - tNow;
         const dm = dl != null ? Math.round(dl / 60) : null;     // ritardo in minuti interi: l'orario previsto si ricava da questo, così sono sempre coerenti
-        if ((sm < -180 || sm > 7200) && (em < -180 || em > 7200)) continue;
+        // STIMA NON CONFERMATA (tracker.js): da quanti minuti mancano prove. Senza dati il ritardo resta l'ultimo provato e l'orario previsto
+        // può essere già passato: la riga resta («atteso») fino a 30 minuti senza dati, invece di sparire o di inventare minuti.
+        const sx = ps?.stale && i >= ps.cur ? { why: ps.stale.why, min: Math.max(0, Math.floor((nowMs - ps.stale.since) / 60000)) } : null;
+        const hold = !!sx && sx.why !== 'fermo' && sx.min < 30 && em < 0 && em > -3600;
+        if (!hold && (sm < -180 || sm > 7200) && (em < -180 || em > 7200)) continue;
         out.push({ ...base, exp: hhmm(ts + (dm ?? 0) * 60), schedIn: Math.round(sm / 60), schedSec: sm, expIn: Math.round(em / 60),
-          delay: dm, live: dl != null, veh: ps?.vehKey ?? null, vehLabel: ps?.label ?? null,
-          atStop: !!ps && ps.atStop === i, phase: ps && i >= ps.cur ? (i === ps.cur ? ps.phase : 'enroute') : null, done: false, expMs, expSec: em,
+          delay: dm, live: dl != null, veh: ps?.vehKey ?? null, vehLabel: ps?.label ?? null, stale: dl != null ? sx : null,
+          atStop: !!ps && ps.atStop === i, phase: ps && i >= ps.cur ? (i === ps.cur ? ps.phase : 'enroute') : null, done: false, expMs, expSec: hold ? 0 : em,
           cancel: lv0?.cancelled ? 'trip' : (lv0?.skipped.has(i) ? 'stop' : null) });
       }
     }

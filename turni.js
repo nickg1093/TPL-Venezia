@@ -19,12 +19,19 @@
 // in fermata: finché non sono passati 8 minuti dall'orario di partenza di B).
 // La corsa A resta senza mezzo: le sue previsioni (che erano di quel mezzo) non le si attribuiscono, e nel pannello fermata compare solo se la
 // centrale ACTV ne elenca un passaggio (centrale-fonde.js). Il mezzo non sparisce mai dalla mappa.
+// PRUDENZA (registrazione del 6/11/2026: il battello 16, ripartito dal capolinea in senso opposto con la corsa finita, è stato spostato 11
+// volte avanti e indietro su corse della direzione opposta). Nessuno spostamento se:
+//   7. la posizione del mezzo non è fresca e sul percorso (GPS assente, bloccato, fuori percorso);
+//   8. la posizione è stata corretta all'indietro da meno di 5 minuti (aggancio dubbio al tracciato);
+//   9. il mezzo va all'indietro lungo il percorso (oltre 50 m rispetto al rilevamento precedente);
+//  10. uno spostamento è stato annullato da meno di 5 minuti (niente avanti e indietro).
 const C = {
   DELAY_MIN: 10,                  // ritardo sulla corsa del feed oltre cui si cerca la corsa vera
   BEFORE_S: 120, AFTER_S: 300,    // finestra per scegliere B: da 2 min prima a 5 min dopo il suo orario
   KEEP_BEFORE_S: 180, KEEP_AFTER_S: 480,   // finestra per tenerla
   WAIT_S: 900, WAIT_ETA_S: 120,   // mezzo fermo in fermata (entro 2 min): la prima corsa che parte entro 15 min
-  NEED: 2                         // conferme (rilevamenti GPS nuovi)
+  NEED: 2,                        // conferme (rilevamenti GPS nuovi)
+  FIX_COOL_MS: 300000, BACK_M: 50, COOL_MS: 300000   // regole 8, 9 e 10
 };
 
 // Stesse fermate da kA (in A) e kB (in B) fino al capolinea
@@ -48,6 +55,12 @@ function slotsAt(G, tidA, kA, nowMs, tNowOf, activeNow) {
   return out;
 }
 
+// Annulla la scelta in corso; se c'era uno spostamento attivo, per COOL_MS non se ne fanno altri (regola 10)
+function drop(m, nowMs) {
+  if (m.to) m.coolUntil = nowMs + C.COOL_MS;
+  Object.assign(m, { to: null, cand: null, n: 0 });
+}
+
 // Calcola le corse "vere" dei mezzi. Non modifica nulla: restituisce il piano, applicato da live.js.
 //  vehicles: mezzi con tripId (corsa del feed, dopo assign.plan) e ts (istante del rilevamento GPS)
 //  prev: stato delle corse al ciclo precedente (live.js: S.state), per conoscere il passaggio previsto di ogni mezzo
@@ -69,6 +82,12 @@ function plan({ G, vehicles, prev = {}, vehOfTu = new Map(), mem, nowMs = Date.n
     if (!ps) { Object.assign(m, { to: null, cand: null, n: 0 }); continue; }
     const T = ps === onB ? G.stopTimes.get(m.to) : A, kT = ps.atStop >= 0 ? ps.atStop : ps.cur;
     if (!T || kT >= T.s.length) { Object.assign(m, { to: null, cand: null, n: 0 }); continue; }
+    // regole 7-10: posizione fresca sul percorso e stima confermata, nessuna correzione recente, nessuna marcia indietro, nessun ripensamento recente
+    const tripS = ps === onB ? m.to : v.tripId, back = ps.sVeh != null && m.sTrip === tripS && m.sLast != null && ps.sVeh < m.sLast - C.BACK_M;
+    if (ps.sVeh != null) { m.sLast = ps.sVeh; m.sTrip = tripS; }
+    // (una stima «ferma» con GPS fresco NON blocca: è proprio il tram al capolinea con la corsa vecchia che deve passare alla successiva)
+    const unsure = v.frozen || ps.sVeh == null || (ps.stale && ps.stale.why !== 'fermo') || (ps.fixAt && nowMs - ps.fixAt < C.FIX_COOL_MS) || back;
+    if (unsure || (m.coolUntil && nowMs < m.coolUntil)) { drop(m, nowMs); continue; }
     const waiting = ps.atStop >= 0, eta = waiting ? Math.max(nowMs, ps.etaMs?.[kT] || nowMs) : ps.etaMs?.[kT];
     if (!Number.isFinite(eta)) continue;
     // stessa fermata nella corsa A (stesso percorso fino al capolinea)
@@ -95,7 +114,7 @@ function plan({ G, vehicles, prev = {}, vehOfTu = new Map(), mem, nowMs = Date.n
       if (score < bd) { bd = score; best = s; }
     }
     if (best && check && check(G.stopTimes.get(v.tripId).s[kA], line, eta, best.schedMs) === 'contro') best = null;
-    if (!best) { Object.assign(m, { to: null, cand: null, n: 0 }); continue; }
+    if (!best) { drop(m, nowMs); continue; }
     if (best.tid === sticky) { busy.add(best.tid); out.set(v.key, { from: v.tripId, to: best.tid, k: best.k }); continue; }
     if (m.cand === best.tid) { if (fresh) m.n++; } else { m.cand = best.tid; m.n = fresh ? 1 : 0; }
     if (m.n >= C.NEED) {
