@@ -78,7 +78,7 @@ function render() {
   if (card.hidden) return;
   if (!data) { body.innerHTML = err ? `<p class="av-note">Avvisi non disponibili: ${esc(err)}</p>` : 'Caricamento…'; return; }
   const item = a => {
-    const links = [safeUrl(a.url) && `<a href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${a.source === 'telegram' ? 'Apri il messaggio' : 'Leggi l\'avviso completo'}</a>`,
+    const links = [safeUrl(a.url) && `<a href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${/^https:\/\/(t|telegram)\.me\//.test(a.url) ? 'Apri il messaggio' : 'Leggi l\'avviso completo'}</a>`,
       a.tgUrl && a.tgUrl !== a.url && safeUrl(a.tgUrl) && `<a href="${esc(a.tgUrl)}" target="_blank" rel="noopener noreferrer">Messaggio Telegram</a>`].filter(Boolean).join('');
     return `<article class="av${a.id === highlight ? ' hl' : ''}${a.resolved ? ' ok' : ''}" id="av-${esc(a.id)}"><div class="av-top"><span class="av-src">${a.resolved ? icon('check', 'sm') : ''}${esc(SRC[a.source] || '')}</span>${effTag(a)}<span class="av-when">${esc(validity(a))}</span></div>`
       + `<h3>${esc(a.title)}</h3>${a.text ? `<p>${esc(a.text)}</p>` : ''}`

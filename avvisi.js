@@ -66,7 +66,20 @@ const secsOf = (h, m) => (+h * 3600 + +m * 60);
 const WD = '(?:lunedi|martedi|mercoledi|giovedi|venerdi|sabato|domenica)';
 const TM = '(\\d{1,2})(?:[.:](\\d{2}))?';
 const tsec = (h, m) => { h = +h; m = +(m || 0); return h >= 0 && h <= 24 && m < 60 ? Math.min(86399, h * 3600 + m * 60) : null; };
-function findDates(text, pubMs) {
+// prima di un nome di luogo: via, viale, piazza, corso…, oppure un codice di linea («9E 27 Ottobre», «linea 4 Novembre»: capolinea o strada)
+const PLACE_WORD = /\b(?:via|viale|v\.le|piazza|p\.za|piazzale|p\.le|corso|c\.so|largo|calle|campo|fondamenta|riva|rotatoria|ponte|stazione|scuola|istituto|parco)\s+$/i;
+const PLACE_CODE = /(?:\b[A-Z]{0,3}\d{1,3}[A-Z]{1,2}|\b[Ll]inea\s+[A-Z0-9.]{1,6})\s+$/;     // maiuscole vere: «9E 27 Ottobre», non «il 2a»
+const DATE_CUE = new RegExp(`(?:\\b(?:dal|dall'|al|il|di|del|entro|fino|sino|da|a partire|a decorrere|giorno|giorni|tra|fra|e|ed|oggi|domani|${WD.slice(3, -1)})|[\\u{1F4C5}\\u{1F4C6}\\u{1F5D3}:,(])\\s*$`, 'u');
+// date contenute nei nomi delle fermate del GTFS («27 ottobre», «25 aprile»): calcolate una volta per contesto
+const DS = new WeakMap();
+function dateStops(ctx) {
+  if (!ctx?.byName) return new Set();
+  let set = DS.get(ctx.byName); if (set) return set; set = new Set();
+  const re = new RegExp(`\\b(\\d{1,2}) ${MON_RE}\\b`);
+  for (const k of ctx.byName.keys()) { const m = re.exec(k); if (m) set.add(`${m[1]} ${m[2]}`); }
+  DS.set(ctx.byName, set); return set;
+}
+function findDates(text, pubMs, ctx = null) {
   const t = noAccents(text.toLowerCase()), out = [], pubY = +cal.romeYmd(pubMs).slice(0, 4);
   const push = (d, mon, y, idx, end, extra = {}) => {
     const m = typeof mon === 'number' ? mon : MONTHS[mon.slice(0, 3)]; d = +d; if (!m || d < 1 || d > 31) return;
@@ -74,14 +87,25 @@ function findDates(text, pubMs) {
     if (!y && romeMs(yy, m, d) < pubMs - 90 * DAY) yy++;           // senza anno: la prima occorrenza nel futuro prossimo
     out.push({ y: yy, m, d, idx, end, ...extra });
   };
-  // intervalli compatti "1-2 novembre [2026]" / "1 e 2 novembre" / "dal 2 al 4 gennaio"
+  // NOMI DI LUOGO CHE SEMBRANO DATE (registrazione avvisi del 6/11/2026: «linea 9E 27 Ottobre – Altinia» letto come «dal 9 al 27 ottobre»):
+  // una data preceduta da una via/piazza o da un codice di linea, o seguita da un trattino di percorso («27 Ottobre – Altinia»), è un luogo.
+  const place = (at, end) => {
+    const b = text.slice(Math.max(0, at - 24), at), d = text.slice(at, end);
+    if (PLACE_WORD.test(b) || PLACE_CODE.test(b)) return true;
+    // nome di fermata che contiene una data («27 Ottobre D4», «Mira 25 Aprile», «Boscochiaro 4 Novembre»): mese con la maiuscola, senza anno,
+    // non introdotto da una parola di data («dal», «il», «sabato», «📆»…). «sabato 25 Aprile» resta una data.
+    return !/\d{4}/.test(d) && /\d\s+[A-ZÀ-Ý]/.test(d) && !DATE_CUE.test(noAccents(b.toLowerCase())) && dateStops(ctx).has(norm(d));
+  };
+  // elenchi e intervalli compatti "10, 11 e 12 novembre" / "1-2 novembre [2026]" / "1 e 2 novembre" / "dal 2 al 4 gennaio": dal primo all'ultimo giorno.
+  // I numeri devono essere parole a sé: in «9E 27 ottobre» la E del codice di linea non è la congiunzione «e».
   const used = [];
-  for (const r of t.matchAll(new RegExp(`(\\d{1,2})\\s*(?:-|–|—|e|al)\\s*(\\d{1,2})\\s+${MON_RE}(?:\\s+(\\d{4}))?`, 'g'))) {
-    const end = r.index + r[0].length;
-    push(r[1], r[3], r[4], r.index, end, { pair: 'from' }); push(r[2], r[3], r[4], r.index + 1, end, { pair: 'to' }); used.push([r.index, end]);
+  for (const r of t.matchAll(new RegExp(`(?<![\\w.,/])(\\d{1,2})((?:\\s*,\\s*\\d{1,2})*)\\s*(?:-|–|—|\\s+e\\s+|\\s+al\\s+|\\s+ed\\s+)\\s*(\\d{1,2})\\s+${MON_RE}(?:\\s+(\\d{4}))?(?![\\w])`, 'g'))) {
+    const end = r.index + r[0].length; if (place(r.index, end)) { used.push([r.index, end]); continue; }
+    push(r[1], r[4], r[5], r.index, end, { pair: 'from' }); push(r[3], r[4], r[5], r.index + 1, end, { pair: 'to' }); used.push([r.index, end]);
   }
-  for (const r of t.matchAll(new RegExp(`(\\d{1,2})\\s*(?:°|º)?\\s+${MON_RE}(?:\\s+(\\d{4}))?`, 'g'))) {
+  for (const r of t.matchAll(new RegExp(`(?<![\\w.,/])(\\d{1,2})\\s*(?:°|º)?\\s+${MON_RE}(?:\\s+(\\d{4}))?(?![\\w])`, 'g'))) {
     if (used.some(([a, b]) => r.index >= a && r.index < b)) continue;
+    if (place(r.index, r.index + r[0].length)) continue;
     push(r[1], r[2], r[3], r.index, r.index + r[0].length);
   }
   // giorni relativi alla pubblicazione: solo se il testo non ha date esplicite (altrimenti "oggi 30 ottobre" la conterebbe due volte)
@@ -93,7 +117,8 @@ function findDates(text, pubMs) {
   for (const dt of out) {                                         // ruolo e orari vicini
     const before = t.slice(Math.max(0, dt.idx - 48), dt.idx), after = t.slice(dt.end, dt.end + 64);
     let m;
-    if ((m = new RegExp(`\\b(?:fino alle|sino alle|alle)\\s*(?:ore\\s*)?${TM}\\s*(?:di|del|della|dello)\\s*(?:${WD}\\s*)?$`).exec(before))) { dt.e = tsec(m[1], m[2]); dt.role = 'to'; }   // "fino alle 6 di lunedì 2 novembre"
+    if ((m = new RegExp(`(?:\\bdalle|\\bdall'|a partire dalle)\\s*(?:ore\\s*)?${TM}\\s*(?:alle|-|–|fino alle|sino alle)\\s*(?:ore\\s*)?${TM}\\s*(?:di|del|della|dello)\\s*(?:${WD}\\s*)?$`).exec(before))) { dt.s = tsec(m[1], m[2]); dt.e = tsec(m[3], m[4]); }   // "dalle 6.30 alle 22.30 di domenica 8 novembre": fascia di quel giorno
+    else if ((m = new RegExp(`\\b(?:fino alle|sino alle|alle)\\s*(?:ore\\s*)?${TM}\\s*(?:di|del|della|dello)\\s*(?:${WD}\\s*)?$`).exec(before))) { dt.e = tsec(m[1], m[2]); dt.role = 'to'; }   // "fino alle 6 di lunedì 2 novembre"
     else if ((m = new RegExp(`(?:\\bdalle|\\bdall'|a partire dalle|\\bore)\\s*(?:ore\\s*)?${TM}\\s*(?:di|del|della|dello)?\\s*(?:${WD}\\s*)?$`).exec(before))) dt.s = tsec(m[1], m[2]);   // "dalle ore 8.30 di venerdì 30 ottobre"
     if ((m = new RegExp(`^\\s*(?:\\d{4})?\\s*,?\\s*(?:\\(?${WD}\\)?\\s*,?\\s*)?(?:dalle ore|dalle|a partire dalle|dall'|alle ore|ore|alle)\\s*(?:ore\\s*)?${TM}(?:\\s*(?:alle|-|–|fino alle)\\s*(?:ore\\s*)?${TM})?`).exec(after))) {
       if (dt.s == null) dt.s = tsec(m[1], m[2]); if (m[3] != null) dt.e = tsec(m[3], m[4]);
@@ -109,10 +134,11 @@ function findDates(text, pubMs) {
 //  · "dal X" senza fine e "fino a nuova comunicazione": vale a lungo (open);  "fino al termine della manifestazione": fino a fine giornata (untilEnd);
 //  · più fasce orarie nello stesso giorno (es. sciopero con fasce garantite): giornata intera.
 const INCIDENT = /\b(guast\w*|incident\w*|rallentament\w*|ritard\w*|traffico|interruzion\w*|interrott\w*|bloccat\w*|avari\w*|soccorso|malore|code)\b/;
-function parseValidity(text, pubMs, kind = 'rss') {
-  const t = noAccents(text.toLowerCase()), dates = findDates(text, pubMs);
+function parseValidity(text, pubMs, kind = 'rss', ctx = null) {
+  const t = noAccents(text.toLowerCase()), dates = findDates(text, pubMs, ctx);
   const untilNotice = /fino a (?:nuov[oa] (?:avviso|comunicazione|disposizione)|diversa comunicazione|cessate esigenze|data da destinarsi|revoca)|fino al ripristino|a tempo indeterminato/.test(t);
-  const untilEvent = /fino al(?:la)? (?:termine|fine|conclusione)\b/.test(t);
+  // «fino al termine…», «dalle 20.30 al termine dei servizi», «a fine servizi»: fino a fine servizio di quel giorno (anche dopo mezzanotte)
+  const untilEvent = /fino al(?:la)? (?:termine|fine|conclusione)\b|\bal(?:la)? (?:termine|fine|conclusione) (?:dei servizi|del servizio|della manifestazione|dell['’]evento|della giornata)|\ba fine serviz/.test(t);
   const slots = [...t.matchAll(/(?:dalle?|a partire dalle)\s+(?:ore\s+)?(\d{1,2})(?:[.:](\d{2}))?\s*(?:,\s*|e\s+)?(?:alle?|fino\s+alle?|sino\s+alle?)\s+(?:ore\s+)?(\d{1,2})(?:[.:](\d{2}))?/g)];
   if (!dates.length) {
     const p = cal.romeYmd(pubMs), day = romeMs(+p.slice(0, 4), +p.slice(4, 6), +p.slice(6, 8));
@@ -142,7 +168,18 @@ function parseValidity(text, pubMs, kind = 'rss') {
   else to = romeMs(last.y, last.m, last.d, last.e ?? g1 ?? 86399);
   if (untilEvent && !open) to = Math.max(to, from + 4 * 3600e3);              // evento senza ora di fine: almeno 4 ore
   if (to <= from) to = Math.max(romeMs(last.y, last.m, last.d, 86399), from + 3600e3);
-  return { from, to, open, dated: true, untilEnd: (untilEvent && !tos.some(d => d.e != null)) || undefined };
+  // UNA SOLA CORSA in un solo giorno («la corsa di linea 17 delle ore 15:20 … posticipata di un'ora circa», «soppressa la partenza delle 7.10»):
+  // l'avviso riguarda quella partenza, non la giornata. Vale fino a 2 ore dopo l'orario della corsa, più il ritardo annunciato.
+  const run = distinct === 1 && !open && !untilNotice && last.e == null && g1 == null && !slots.length
+    ? new RegExp(`\\b(?:la|una|l['’]ultima|la prima|l['’]unica)\\s+(?:corsa|partenza)\\b[^.;]{0,60}?\\bdelle\\s+(?:ore\\s+)?${TM}`).exec(t) : null;
+  if (run && !/\b(?:corse|partenze)\b/.test(t)) {
+    const rs = tsec(run[1], run[2]), pp = /(?:posticipat|ritardat|rinviat)\w*\s+di\s+(?:circa\s+)?(un['’]ora|mezz['’]ora|(\d{1,3})\s*(minut\w*|or[ae]))/.exec(t);
+    const extra = !pp ? 0 : /^un/.test(pp[1]) ? 3600 : /^mezz/.test(pp[1]) ? 1800 : +pp[2] * (/^or/.test(pp[3]) ? 3600 : 60);
+    if (rs != null) { const end = romeMs(last.y, last.m, last.d, rs) + (extra + 2 * 3600) * 1000; if (end > from && end < to) to = end; }
+  }
+  // «fino al termine» si mostra così solo per un evento di un giorno; con una data di fine («fino al termine dei servizi di sabato 30 novembre») si mostra la data
+  const sameDayEnd = cal.romeYmd(from) === cal.romeYmd(romeMs(last.y, last.m, last.d, 43200));
+  return { from, to, open, dated: true, untilEnd: (untilEvent && sameDayEnd && last.e == null && !tos.some(d => d.e != null)) || undefined };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -221,10 +258,11 @@ function analyzeBase(title, text, ctx) {
   const served = x => ctx.lineStops?.get(x.s + ':' + String(x.n).toUpperCase());
   const hits = x => { const sv = served(x); let n = 0; if (sv) for (const id of strongIds) if (sv.has(id)) n++; return n; };
   const lines = new Map();
-  const clean = full.replace(new RegExp(`\\d{1,2}\\s*(?:-|–|e)?\\s*\\d{0,2}\\s+${MON_RE}(?:\\s+\\d{4})?`, 'gi'), ' ').replace(/\b\d{1,2}[.:]\d{2}\b/g, ' ')
+  const clean = full.replace(new RegExp(`(?<![\\w.,/])\\d{1,2}(?:\\s*,\\s*\\d{1,2})*(?:\\s*[-–]\\s*\\d{1,2}|\\s+(?:e|ed|al)\\s+\\d{1,2})?\\s+${MON_RE}(?:\\s+\\d{4})?`, 'gi'), ' ')   // date (anche «10, 11 e 12 novembre»), ma non «9E 27 Ottobre».replace(/\b\d{1,2}[.:]\d{2}\b/g, ' ')
     .replace(/[“"]\s*[A-Z]\s*[”"]/g, ' ');                      // "B", "D" tra virgolette doppie = lettera del pontile, non una linea
+  const kn = tok => known?.get(String(tok).replace(/[./]+$/, '').toUpperCase());
   const decide = (tok, around, hint) => {
-    let c = known?.get(tok.replace(/[./]+$/, '').toUpperCase()); if (!c) return;
+    let c = kn(tok); if (!c) return;
     if (hint && c.length > 1 && c.some(x => x.s === hint)) c = c.filter(x => x.s === hint);     // "bus 2", "vaporetto 2": il servizio è detto
     let pick = c;
     if (c.length > 1) {
@@ -234,16 +272,38 @@ function analyzeBase(title, text, ctx) {
       pick = top.length === 1 && best > 0 ? top : [];   // numero ambiguo senza prove: meglio non indicare la linea che indicarne una sbagliata
     }
     for (const x of pick) {
-      if (mSrc.size === 1 && !mSrc.has(x.s) && served(x) && !hits(x)) continue;   // altro servizio, e nessuna delle fermate citate è sua
+      // altro servizio, e nessuna delle fermate citate è sua: scartata, a meno che il servizio sia detto dal testo per quell'elenco («SERVIZIO AUTOMOBILISTICO… linee 2, 4L…»)
+      if (x.s !== hint && mSrc.size === 1 && !mSrc.has(x.s) && served(x) && !hits(x)) continue;
       lines.set(x.s + ':' + x.n, { n: x.n, s: x.s, c: x.c || null });
     }
   };
   // linee: elenchi che seguono una parola di linea ("linee 9S, 21 e 56E", "bus 7", "tram T1", "vaporetto 4.1", "linee interessate: 2, 6") e i tram T1/T2 ovunque
   for (const m of clean.matchAll(TRIG)) {
     const rest = clean.slice(m.index + m[0].length), { toks, rest: after } = listAfter(rest); if (!toks.length) continue;
-    const around = clean.slice(Math.max(0, m.index - 150), m.index + 250), hint = hintOf(m[0]);
+    // elenco «codice + percorso» («linee 15 Mestre FS - Aeroporto e 19 Venezia - Altinia»): dopo ogni descrizione può seguire un altro codice
+    if (/^\s+[A-ZÀ-Ý][a-zà-ÿ]/.test(after)) {
+      const clause = after.slice(0, 220).split(/[.;:](?:\s|$)|\n/)[0];
+      for (const x of clause.matchAll(/(?:,|\s(?:e|ed))\s+([A-Z]{0,3}\d{1,3}(?:\.\d)?[A-Z]{0,2})\s+(?=[A-ZÀ-Ý][a-zà-ÿ])/g)) if (kn(x[1])) toks.push(x[1]);
+    }
+    const around = clean.slice(Math.max(0, m.index - 150), m.index + 250);
+    // servizio dell'elenco: detto dalla parola («bus 2»); altrimenti dalle linee dell'elenco che esistono in un solo servizio («linee 2, 4L, 6, 6L e 7»:
+    // 4L, 6L e 7 sono solo bus, quindi anche 2 e 6); altrimenti dall'intestazione di servizio più vicina prima dell'elenco («SERVIZIO AUTOMOBILISTICO URBANO - …»)
+    let hint = hintOf(m[0]);
+    if (!hint) {
+      const one = new Set(toks.map(kn).filter(c => c && new Set(c.map(x => x.s)).size === 1).map(c => c[0].s));
+      if (one.size === 1) hint = [...one][0];
+    }
+    if (!hint) {
+      const back = clean.slice(Math.max(0, m.index - 300), m.index);
+      const ia = Math.max(...[...back.matchAll(/automobilistic\w*|\bautobus\b|\bbus\b|\btram\b/gi)].map(x => x.index), -1);
+      const iv = Math.max(...[...back.matchAll(/\bnavigazione\b|vaporett\w*|battell\w*|motonav\w*/gi)].map(x => x.index), -1);
+      if (ia !== iv) hint = ia > iv ? 'aut' : 'nav';
+    }
     toks.forEach((tok, j) => {
-      if (/^[A-Z]$/.test(tok) && (j > 0 || /^\s*[a-zà-ÿ]/.test(after))) return;   // "linea 13 e A partire…": non è la linea A
+      // una lettera sola che è anche una parola italiana («linea 13 e A partire…», «E inoltre»): linea solo se prima dell'elenco e non seguita da una
+      // parola minuscola; le altre lettere (N) sono codici di linea anche in fondo a un elenco («linee 1, 2 e N provenienti…»)
+      if (/^[AEIO]$/.test(tok) && (j > 0 || /^\s*[a-zà-ÿ]/.test(after))) return;
+      if (/^[A-Z]$/.test(tok) && j === 0 && toks.length === 1 && /^\s*[a-zà-ÿ]/.test(after) && !/\blinea\s*$/i.test(m[0].trim())) return;
       decide(tok, around, hint);
     });
   }
@@ -253,17 +313,29 @@ function analyzeBase(title, text, ctx) {
   // fermate: con linee nell'avviso, solo le fermate (id) servite da almeno una di quelle linee; senza linee, solo nomi sicuri del servizio indicato dal testo
   let want = null; if (!srcs.size) { if (gNav >= gAut + 2) want = new Set(['nav']); else if (gAut >= gNav + 2) want = new Set(['aut']); }
   const ids = [], names = new Map();
+  // FERMATA INDICATA CON IL SUO CODICE («la fermata di Mestre FS C3 ID164»): è quella, e non le altre con un nome simile («Stazione Mestre FS»)
+  const exact = [];
+  for (const x of full.matchAll(/\b(?:ID|Id|id|cod(?:ice)?\.?\s*fermata|fermata\s+n\.?)\s*[:.°n]?\s*(\d{1,5})\b/g)) {
+    const c = ['aut', 'nav'].map(src => `${src}:${x[1]}`).filter(id => ctx.nameOf?.(id));
+    const pick = c.length > 1 ? c.filter(id => id.startsWith(gNav > gAut ? 'nav' : 'aut')) : c;
+    for (const id of pick) if (!exact.includes(id)) exact.push(id);
+  }
+  const exactNames = exact.map(id => norm(ctx.nameOf(id)));
+  for (const id of exact) { const src = id.split(':')[0], nm = ctx.nameOf(id); ids.push(id); names.set(src + '|' + nm, { n: nm, s: src }); }
   for (const [k, v] of mentions) for (const id of v.ids) {
+    if (exactNames.some(e => e.startsWith(k) || k.startsWith(e))) continue;           // stesso nome della fermata indicata con il codice
     const src = id.split(':')[0];
+    // un nome di una sola parola senza indizi («in direzione Venezia», «19 Venezia - Altinia», «Lido») è un luogo, non una fermata: serve sempre un nome sicuro
+    if (!v.strong) continue;
     if (srcs.size) {
       if (!lineList.some(l => l.s === src && (served(l)?.has(id) ?? true))) continue;
-    } else if (!v.strong || (want && !want.has(src))) continue;
+    } else if (want && !want.has(src)) continue;
     const nm = ctx.nameOf ? ctx.nameOf(id) : k; ids.push(id); names.set(src + '|' + nm, { n: nm, s: src });
   }
   // avvisi generali sugli orari (centinaia di fermate citate di passaggio): niente segnalazione sulle fermate
   // (e molte linee: avviso di rete, non di singole linee: resta nell'elenco ma non si appende a fermate e mezzi)
   const general = /\borari\b|modifiche ai? serviz/i.test(title) || names.size > 30 || lineList.length > 12;
-  return { lines: lineList, stops: general ? [] : ids.slice(0, 80), stopNames: general ? [] : [...names.values()].slice(0, 30), general: general || undefined };
+  return { lines: lineList, stops: general ? [] : [...new Set(ids)].slice(0, 80), stopNames: general ? [] : [...names.values()].slice(0, 30), general: general || undefined };
 }
 
 
@@ -526,18 +598,42 @@ const EFFECTS = [
 ];
 function classify(it) {
   if (it.resolved) return { effect: 'resolved', effectLabel: 'Risolto', severity: 'info' };
-  const s = noAccents((it.title + ' ' + String(it.text).slice(0, 400)).toLowerCase());
+  const s = noAccents((it.title + ' ' + String(it.text).slice(0, 600)).toLowerCase());
   if (it.water) { const lv = it.water.level; return { effect: 'water', effectLabel: 'Acqua alta', severity: lv > 140 ? 'severe' : 'warning' }; }
-  const e = EFFECTS.find(([, , , re]) => re.test(s)) || ['other', 'Avviso', 'warning'];
+  let e = EFFECTS.find(([, , , re]) => re.test(s)) || ['other', 'Avviso', 'warning'];
+  // fermata o capolinea SPOSTATO («è sospeso il capolinea… capolinea provvisorio alla fermata…», «la fermata C3 viene spostata avanti di 50 m»):
+  // la linea passa, cambia il punto. Resta «Sospeso» se è sospesa la linea, o se la fermata è chiusa senza un punto sostitutivo indicato.
+  const moved = /\b(?:fermat[ae]|pontil[ei]|capolinea|approd[oi])\b[^.;]{0,70}?\b(?:spostat[oaie]|trasferit[oaie]|provvisori[oaie])\b|\b(?:capolinea|fermat[ae]|pontil[ei]) provvisori/;
+  const lineOff = /\b(?:sospes[oaie]|soppress[oaie]|interrott[oaie])\s+(?:la|le|il|i)\s+(?:linea|linee|servizio|servizi|corsa|corse|tram|collegament)|\b(?:linea|linee|servizio|tram)\b[^.;]{0,40}\b(?:sospes|soppress|interrott)/;
+  if (moved.test(s) && (e[0] === 'other' || e[0] === 'modified' || e[0] === 'detour' || (e[0] === 'no_service' && !lineOff.test(s)))) e = EFFECTS.find(x => x[0] === 'stop_moved');
   return { effect: e[0], effectLabel: e[1], severity: it.general && e[2] !== 'severe' ? 'info' : e[2] };
 }
 const SEV = { severe: 0, warning: 1, info: 2 };
+
+// DATA DI PUBBLICAZIONE IN TESTA ALLA PAGINA (avvisi del 6/11/2026): le pagine ACTV hanno, sotto il titolo, la data della notizia
+// («Tram: servizio sostitutivo linea T1 · 6 Novembre 2026 · AVM/Actv informa che, lunedì 9 novembre…»). Non è una data dell'evento: letta
+// come tale, faceva iniziare l'avviso il giorno della pubblicazione (T1 sostituito da bus «in corso» tre giorni prima). Si toglie se è proprio
+// all'inizio (dopo il titolo) e coincide con il giorno di pubblicazione (±1 giorno).
+function dropPubDate(body, title, pubMs) {
+  let b = String(body || ''), head = '';
+  const ti = title ? b.indexOf(title) : -1;
+  if (ti >= 0 && ti < 40) { head = b.slice(0, ti + title.length); b = b.slice(ti + title.length); }
+  const m = new RegExp(`^\\s*(?:(?:${WD})\\s*,?\\s*)?(\\d{1,2})\\s+${MON_RE}\\s+(\\d{4})\\b\\s*[,.\\-–—|]?`, 'i').exec(noAccents(b.slice(0, 80)));
+  if (!m) return String(body || '');
+  const at = romeMs(+m[3], MONTHS[m[2].toLowerCase().slice(0, 3)], +m[1]);
+  if (Math.abs(at - romeMs(...cal.romeYmd(pubMs).match(/^(\d{4})(\d{2})(\d{2})$/).slice(1).map(Number))) > DAY + 3600e3) return String(body || '');
+  return head + '\n' + b.slice(m[0].length).replace(/^\s+/, '');
+}
+
+// NOTIZIE CHE NON SONO AVVISI DI SERVIZIO (avvisi del 6/11/2026: «Actv, chiusa la prima fase delle selezioni per il personale» mostrata tra
+// gli avvisi attivi per un mese): selezioni, bandi, concorsi, bilanci, nomine, premi. Escluse solo se non citano linee né fermate né effetti sul servizio.
+const NOT_SERVICE = /\b(?:selezion[ei]|bando|bandi|concors[oi]|candidat[oi]|assunzion[ei]|curricul\w*|bilancio|nomin[ae]|premi(?:o|azione)|intervista|convegno|conferenza stampa|comunicato stampa)\b/;
 
 // Elenco finale: unisce le due fonti (un messaggio Telegram che rimanda a una notizia ACTV è la stessa cosa), calcola validità, linee, fermate
 function build(now = Date.now()) {
   const ctx = ST.ctx() || {}, items = [], byUrl = new Map();
   for (const r of ST.rss) {
-    const body = ST.pages.get(r.url) || r.text, full = r.title + '\n' + body, v = parseValidity(full, r.pubMs, 'rss');
+    const body = dropPubDate(ST.pages.get(r.url) || r.text, r.title, r.pubMs), full = r.title + '\n' + body, v = parseValidity(full, r.pubMs, 'rss', ctx);
     const it = { id: idOf(r.key), source: 'actv', title: r.title, text: short(body.replace(r.title, '').trim() || r.text, 700), url: r.url, published: r.pubMs, ...v,
       ...analyze(r.title, body, ctx) };
     items.push(it); byUrl.set(r.url, it);
@@ -549,7 +645,7 @@ function build(now = Date.now()) {
     if (first) { const it = byUrl.get(first); it.source = 'both'; it.tgUrl = m.url; continue; }
     if (SERVICE_MSG.test(m.text) || !m.text.trim()) continue;                // "… pinned a photo": messaggi di servizio del canale
     const rows = m.text.split('\n').map(s => s.trim()).filter(Boolean), k = rows.findIndex(r => cleanTitle(r).length >= 3);
-    const title = short(cleanTitle(rows[k] ?? '') || 'Avviso', 110), body = rows.slice(k + 1).join(' '), v = parseValidity(m.text, m.pubMs, 'tg');
+    const title = short(cleanTitle(rows[k] ?? '') || 'Avviso', 110), body = rows.slice(k + 1).join(' '), v = parseValidity(m.text, m.pubMs, 'tg', ctx);
     items.push({ id: idOf(m.key), source: 'telegram', title, text: short(body || title, 700), url: m.links.find(l => /actv|avm/.test(l)) || m.url, tgUrl: m.url,
       published: m.pubMs, ...v, ...analyze(title, m.text, ctx) });
   }
@@ -561,7 +657,9 @@ function build(now = Date.now()) {
     if (it.drop || it.to < now - KEEP_EXPIRED_MS) continue;                 // unito a un altro, sostituito, chiuso o scaduto
     const state = it.from <= now ? 'active' : it.from - now <= UPCOMING_MS ? 'upcoming' : null;
     if (!state) continue;                                                   // troppo lontano nel tempo
-    const { drop, words, ...pub } = it; out.push({ ...pub, ...classify(it), state });
+    const cl = classify(it);
+    if (cl.effect === 'other' && !it.lines.length && !it.stops.length && NOT_SERVICE.test(noAccents((it.title + ' ' + String(it.text).slice(0, 300)).toLowerCase()))) continue;   // notizie aziendali: non sono avvisi
+    const { drop, words, ...pub } = it; out.push({ ...pub, ...cl, state });
   }
   out.sort((a, b) => (a.state === b.state ? 0 : a.state === 'active' ? -1 : 1) || SEV[a.severity] - SEV[b.severity] || b.published - a.published);
   return out.slice(0, 40);

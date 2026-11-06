@@ -1,0 +1,88 @@
+{
+ "nota": "Avvisi reali pubblicati da ACTV (sito e canale Telegram) il 6/11/2026, come li riceveva l'app: titolo, testo, link, data di pubblicazione. Servono a tests/avvisi-reali.test.js.",
+ "items": [
+  {
+   "source": "actv",
+   "title": "Tram: servizio sostitutivo linea T1",
+   "text": "6 Novembre 2026 AVM/Actv Informa che, lunedì 9 novembre 2026 dalle ore 20.30 al termine dei servizi , per interventi di manutenzione, viene sospesa la linea T1 Favaro – Venezia A/R e attivato il servizio sostitutivo con bus: ultima partenza con tram da Favaro alle ore 20.14 ultima partenza con tram da Venezia alle ore 20.59",
+   "url": "https://actv.avmspa.it/it/content/tram-servizio-sostitutivo-linea-t1-21",
+   "published": 1793977450000
+  },
+  {
+   "source": "actv",
+   "title": "Venezia: sospensione piazzale Roma \"G\"",
+   "text": "5 Novembre 2026 AVM/Actv informa che, per consentire l’esecuzione di lavori di straordinaria manutenzione, dalle ore 22:30 di lunedì 9 novembre alle ore 01:30 di martedì 10 novembre 2026 , verrà sospesa la fermata di P. le Roma “G”. Durante tutto il periodo della sospensione le linee 1, 2 e N provenienti dal Canal Grande utilizzeranno il vicino impianto di P.le Roma “E” Ultima partenza di linea 2 da P. le Roma “G” prima della sospensione alle ore 22:10: Ultimo arrivo della linea 1 a P. le Roma “G” prima della sospensione alle ore 22:24. Prima partenza di linea 2 da P. le Roma “E” dopo la sospensione alle ore 22:30. Prima partenza di linea N da P. le Roma “E” dopo la sospensione alle ore…",
+   "url": "https://actv.avmspa.it/it/content/sospensione-approdo-piazzale-roma-g",
+   "published": 1793869235000
+  },
+  {
+   "source": "both",
+   "title": "Rio San Martino: spostamento capolinea",
+   "text": "4 Novembre 2026 AVM/Actv informa che, da inizio servizi di mercoledì 4 novembre a fine servizi di lunedì 23 novembre 2026 , in occasione di una sagra paesana, p.za Cappelletto sarà occupata dal Luna Park; è quindi sospeso il capolinea di partenza/arrivo. Pertanto, i bus di linea 2E Scorzè – Rio San Martino effettueranno capolinea provvisorio alla fermata fronte p.za Cappelletto.",
+   "url": "https://actv.avmspa.it/it/content/rio-san-martino-spostamento-capolinea-1",
+   "tgUrl": "https://t.me/muoversivenezia/11887",
+   "published": 1793781169000
+  },
+  {
+   "source": "telegram",
+   "title": "Ferry-boat",
+   "text": "📆 venerdì 6 novembre 2026 Si informa che, per motivi tecnici - la corsa di linea 17 delle ore 15:20 da San Nicolò – Punta Sabbioni sarà effettuata posticipata di un’ora circa.",
+   "url": "https://t.me/muoversivenezia/11892",
+   "tgUrl": "https://t.me/muoversivenezia/11892",
+   "published": 1793974224000
+  },
+  {
+   "source": "actv",
+   "title": "Interruzione energia elettrica presso IAT Venezia Unica Ferrovia",
+   "text": "6 Novembre 2026 AVM/Actv informa che, martedì 10 novembre , a seguito di un intervento da parte di E-distribuzione presso la postazione IAT Venezia Unica presso Ferrovia Scalzi, il servizio di vendita sarà irregolare dalle ore 8.00 per tutta la mattinata, e comunque fino a fine lavori. Presso tale postazione sarà possibile acquistare solamente titoli a tariffa ordinaria con pagamento POS e contanti, mentre non sarà possibile caricare biglietti o altri titoli nelle tessere Venezia Unica e Imob. Oltre alla rete vendita Venezia Unica, si ricorda che è possibile acquistare i titoli di viaggio tramite canale di pagamento contactless Tap to Pay, le applicazioni mobile Avm Venezia Official App e…",
+   "url": "https://actv.avmspa.it/it/content/interruzione-energia-elettrica-presso-iat-venezia-unica-ferrovia",
+   "published": 1793961057000
+  },
+  {
+   "source": "both",
+   "title": "Campalto: deviazione bus per manifestazione",
+   "text": "6 Novembre 2026 AVM/Actv informa la gentile clientela che, dalle ore 6.30 alle 22.30 di domenica 8 novembre 2026 , per chiusura al traffico di un tratto di via Orlanda, da via Gobbi a via Sabbadino, in occasione della “Festa di San Martino in Strata”, gli autobus delle linee interessate al transito sono così deviati: linee 15 Mestre FS - Aeroporto e 19 Venezia - Altinia da MestreFS/Venezia, giunti in via Orlanda, incrocio via Sabbadino, proseguono per quest’ultima, via Passo Campalto e dall’incrocio con via Orlanda riprendono il regolare percorso; in partenza da Aeroporto/Altinia percorso inverso. linea 9E 27 Ottobre – Altinia delle 21.51 giunta in via Orlanda, incrocio via Sabbadino,…",
+   "url": "https://actv.avmspa.it/it/content/campalto-deviazione-bus-san-martino",
+   "tgUrl": "https://t.me/muoversivenezia/11893",
+   "published": 1793949310000
+  },
+  {
+   "source": "actv",
+   "title": "Park Candiani: chiusura anticipata",
+   "text": "5 Novembre 2026 AVM informa che, per lavori alla rampa di uscita e interni al parcheggio, il Parcheggio Candiani nei giorni 10, 11 e 12 novembre 2026 chiuderà anticipatamente alle ore 22:00 (anziché alle ore 01:30). Per tutta la durata della chiusura della struttura verrà inibito il transito sulle rampe di ingresso e uscita , con conseguente impossibilità di parcheggiare e prelevare la propria vettura, Dalle ore 20:00 alle ore 08:30 il pagamento della sosta potrà avvenire tramite cassa automatica o direttamente alla sbarra in uscita con carta bancaria contactless VISA o Mastercard. In caso di necessità, rivolgersi alla portineria all’ingresso.",
+   "url": "https://actv.avmspa.it/it/content/park-candiani-chiusura-anticipata",
+   "published": 1793895503000
+  },
+  {
+   "source": "actv",
+   "title": "Actv, chiusa la prima fase delle selezioni per il personale della navigazione",
+   "text": "4 Novembre 2026 ACTV, chiusa la prima fase delle selezioni per il personale della navigazione Nuovi bandi per i candidati senza la qualifica di Autorizzato, con scadenza il 2 dicembre Si è chiusa lunedì 2 novembre la prima fase della selezione Actv per Comandante grandi unità (Motobattello Foraneo, Motonave e Nave Traghetto), Direttore di Macchina (Motonave e Nave Traghetto), Preposto al Comando (Motoscafi e Vaporetti) e Motorista Navale. La selezione esterna ha coinvolto circa cinquanta candidati. Otto sono in possesso di tutti i titoli richiesti. Circa venti non li hanno ancora completi, ma possono acquisire i requisiti mancanti seguendo i percorsi previsti dalla normativa . In…",
+   "url": "https://actv.avmspa.it/it/content/actv-chiusa-la-prima-fase-delle-selezioni-il-personale-della-navigazione",
+   "published": 1793782058000
+  },
+  {
+   "source": "telegram",
+   "title": "Mestre - via Pio X",
+   "text": "👉 Viene ulteriormente prorogata, fino al termine dei servizi di sabato 30 novembre 2026, la chiusura di via Pio X dovuta al rinvenimento di reperti di interesse archeologico. Quindi i bus delle linee interessate al transito continueranno ad effettuare le deviazioni in corso. tutte le info 🔗 https://actv.avmspa.it/it/content/mestre-chiusura-di-pio-x-ulteriore-proroga-lavori",
+   "url": "https://actv.avmspa.it/it/content/mestre-chiusura-di-pio-x-ulteriore-proroga-lavori",
+   "tgUrl": "https://t.me/muoversivenezia/11880",
+   "published": 1793542208000
+  },
+  {
+   "source": "both",
+   "title": "Partita Lega Serie A, Venezia-Udinese: modifiche ed integrazioni al servizio di trasporto pubblico",
+   "text": "4 Novembre 2026 AVM/Actv informa che, venerdì 6 novembre 2026, in occasione della partita di Lega Serie A del Venezia FC in casa allo stadio P. L. Penzo contro l'Udinese (ore 20:45), vengono introdotte le seguenti modifiche ed integrazioni ai servizi di trasporto pubblico: SERVIZIO AUTOMOBILISTICO URBANO - dalle ore 18.20 alle 19.00 circa tutte le corse delle linee 2, 4L, 6, 6L e 7 in direzione Venezia , prima di raggiungere P.le Roma, vengono deviate per il Tronchetto, dove effettuano fermata in transito Vedi la mappa dell'area SERVIZIO DI NAVIGAZIONE - partenze alle ore 19.00 da Tronchetto mercato corsa diretta a Sant'Elena, inoltre le corse di linea 14 in partenza da P.ta Sabbioni alle…",
+   "url": "https://actv.avmspa.it/it/content/partita-lega-serie-venezia-udinese-modifiche-ed-integrazioni-al-servizio-di-trasporto",
+   "tgUrl": "https://t.me/muoversivenezia/11888",
+   "published": 1793783505000
+  },
+  {
+   "source": "telegram",
+   "title": "Cantiere Stazione Mestre FS - AGGIORNAMENTO",
+   "text": "📆 da sabato 7 novembre 🚍 🚏 la fermata di Mestre FS C3 ID164 direzione Venezia, viene spostata avanti di circa 50 mt, adiacente alla fermata C5. tutte le info 👉 https://actv.avmspa.it/it/content/mestre-avvio-lavori-nuova-stazione-ferroviaria",
+   "url": "https://actv.avmspa.it/it/content/mestre-avvio-lavori-nuova-stazione-ferroviaria",
+   "tgUrl": "https://t.me/muoversivenezia/11891",
+   "published": 1793962922000
+  }
+ ]
+}
