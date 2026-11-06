@@ -600,7 +600,13 @@ function classify(it) {
   if (it.resolved) return { effect: 'resolved', effectLabel: 'Risolto', severity: 'info' };
   const s = noAccents((it.title + ' ' + String(it.text).slice(0, 600)).toLowerCase());
   if (it.water) { const lv = it.water.level; return { effect: 'water', effectLabel: 'Acqua alta', severity: lv > 140 ? 'severe' : 'warning' }; }
-  let e = EFFECTS.find(([, , , re]) => re.test(s)) || ['other', 'Avviso', 'warning'];
+  // SINGOLE CORSE («la corsa delle 7:26 da Altinia per Gritti è soppressa», «la corsa delle 15:20 … posticipata»): riguardano quella partenza, non
+  // la linea. Un elenco di modifiche d'orario con una corsa soppressa non è una linea «Sospesa» (avvisi del 6/11/2026: «Automobilistico: modifiche ai servizi»).
+  const RUN = /\b(?:la|una|l['’]ultima|la prima)\s+(?:corsa|partenza)\b[^.;]{0,140}?\b(?:soppress|cancellat|annullat|posticipat|anticipat|ritardat)\w*/g;
+  const runs = s.match(RUN) || [], s2 = s.replace(RUN, ' ');
+  let e = EFFECTS.find(([, , , re]) => re.test(s2)) || null;
+  if (runs.length && (!e || e[0] === 'other')) e = runs.some(r => /soppress|cancellat|annullat/.test(r)) ? ['reduced', 'Corse soppresse', 'warning'] : ['delays', 'Corsa in ritardo', 'warning'];
+  e ||= ['other', 'Avviso', 'warning'];
   // fermata o capolinea SPOSTATO («è sospeso il capolinea… capolinea provvisorio alla fermata…», «la fermata C3 viene spostata avanti di 50 m»):
   // la linea passa, cambia il punto. Resta «Sospeso» se è sospesa la linea, o se la fermata è chiusa senza un punto sostitutivo indicato.
   const moved = /\b(?:fermat[ae]|pontil[ei]|capolinea|approd[oi])\b[^.;]{0,70}?\b(?:spostat[oaie]|trasferit[oaie]|provvisori[oaie])\b|\b(?:capolinea|fermat[ae]|pontil[ei]) provvisori/;

@@ -94,3 +94,16 @@ test('una sola corsa in ritardo: l\'avviso finisce poco dopo; notizie aziendali 
   assert.equal(r.effect, 'stop_moved'); assert.equal(r.severity, 'warning'); assert.deepEqual(L(r), ['aut 2E']); assert.deepEqual(r.stops, ['aut:2674']);
   assert.equal(find(eve, /Pio X/).effect, 'detour');
 });
+
+test('singole corse soppresse o posticipate: non è la linea «Sospesa»', () => {
+  const cl = (title, text, extra = {}) => A.classify({ title, text, lines: [], stops: [], ...extra });
+  // «Automobilistico: modifiche ai servizi» (sito ACTV, 28/10/2026): orari cambiati da lunedì 2 novembre, due corse soppresse
+  const m = cl('Automobilistico: modifiche ai servizi', 'AVM/Actv informa che, da lunedì 2 novembre 2026, vengono apportate le seguenti modifiche al servizio automobilistico: '
+    + 'linea 9S: la corsa delle 7:26 da Altinia per Gritti è soppressa; la corsa delle 7:11 da Marcon viene posticipata alle 7:13. Linea 9E: la corsa delle 7:00 da Casale sul Sile è soppressa.', { general: true });
+  assert.equal(m.effect, 'modified'); assert.equal(m.severity, 'info');
+  assert.equal(cl('Linea 12', 'Oggi la corsa delle 7:10 da Burano è soppressa per motivi tecnici.').effectLabel, 'Corse soppresse');
+  const f = cl('Ferry-boat', 'Si informa che, per motivi tecnici - la corsa di linea 17 delle ore 15:20 da San Nicolò – Punta Sabbioni sarà effettuata posticipata di un’ora circa.');
+  assert.equal(f.effectLabel, 'Corsa in ritardo');
+  assert.equal(cl('Tram', 'viene sospesa la linea T1 Favaro – Venezia e attivato il servizio sostitutivo con bus').effect, 'no_service');
+  assert.equal(cl('Linea 2', 'Sospesa la linea 2 per lavori; la corsa delle 6:10 è soppressa.').effect, 'no_service');
+});
