@@ -1,0 +1,63 @@
+name: Archivio avvisi ACTV
+
+# Conserva le comunicazioni ACTV (feed RSS con il testo delle pagine, canale Telegram) nel ramo separato «archivio-avvisi»,
+# cartella avvisi/ (indice.json + comunicazioni/AAAA-MM.jsonl). Il server su Render le legge in sola lettura per ricostruire gli eventi
+# dopo un riavvio e per non perdere gli avvisi che escono dalle pagine pubbliche. Vedi avvisi-archivio.js e scripts/archivia-avvisi.js.
+# Scrive SOLO sul ramo «archivio-avvisi»: non tocca «main», quindi non interferisce con update-gtfs.yml e non provoca deploy.
+on:
+  schedule:
+    - cron: '7,27,47 * * * *'   # ogni 20 minuti (GitHub può ritardare: la pagina Telegram mostra comunque alcuni giorni di messaggi)
+  workflow_dispatch:
+    inputs:
+      indietro:
+        description: 'Pagine Telegram precedenti da leggere (0 = solo la pagina corrente; con archivio vuoto si leggono comunque 6 pagine)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: archivio-avvisi
+  cancel-in-progress: false
+
+jobs:
+  archivia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Prepara il ramo dell'archivio
+        run: |
+          git config user.name "Bot Archivio avvisi"
+          git config user.email "bot@actions.github.io"
+          if git ls-remote --exit-code --heads origin archivio-avvisi >/dev/null 2>&1; then
+            git fetch --depth=1 origin archivio-avvisi
+            git worktree add -B archivio-avvisi archivio FETCH_HEAD
+          else
+            git worktree add --detach archivio
+            git -C archivio checkout --orphan archivio-avvisi
+            git -C archivio rm -rf --quiet . || true
+          fi
+
+      - name: Acquisisce le comunicazioni nuove o modificate
+        id: arc
+        env:
+          INDIETRO: ${{ github.event.inputs.indietro }}
+        run: |
+          if [ -n "$INDIETRO" ]; then node scripts/archivia-avvisi.js archivio/avvisi --indietro "$INDIETRO" | tee out.txt
+          else node scripts/archivia-avvisi.js archivio/avvisi | tee out.txt; fi
+          echo "changes=$(grep -o 'CHANGES=[01]' out.txt | tail -1 | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Salva nel ramo archivio-avvisi
+        if: steps.arc.outputs.changes == '1'
+        run: |
+          cd archivio
+          git add avvisi
+          git commit -m "Archivio avvisi: $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push origin HEAD:archivio-avvisi

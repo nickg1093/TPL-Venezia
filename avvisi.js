@@ -7,6 +7,7 @@
 // i link usciti da qui sono sempre dei domini ACTV/Telegram.
 const crypto = require('crypto');
 const cal = require('./calendar');
+const archivio = require('./avvisi-archivio');
 
 const SRC = {
   rss: 'https://actv.avmspa.it/it/rss-news.xml',
@@ -15,7 +16,7 @@ const SRC = {
 const OK_HOSTS = new Set(['actv.avmspa.it', 'avm.avmspa.it', 't.me', 'telegram.me']);
 const HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', 'Accept-Language': 'it-IT,it;q=0.9' };
 const MAX_BYTES = 2e6, DAY = 864e5;
-const RSS_EVERY = 10 * 60e3, TG_EVERY = 5 * 60e3, STALE_AFTER = 45 * 60e3;
+const RSS_EVERY = 10 * 60e3, TG_EVERY = 5 * 60e3, STALE_AFTER = 45 * 60e3, ARCHIVE_EVERY = 15 * 60e3;
 const UNDATED_TG_MS = 6 * 3600e3, UNDATED_RSS_MS = 3 * DAY, OPEN_ENDED_MS = 7 * DAY, KEEP_EXPIRED_MS = 0;
 const UPCOMING_MS = 3 * DAY;     // avvisi che iniziano entro 3 giorni sono "in arrivo"
 
@@ -389,7 +390,7 @@ function planForLevel(level, ctx) {
 // AVVISO AUTOMATICO dal livello di marea (misurato ora o previsto nelle prossime 12 ore): serve quando ACTV non pubblica nulla.
 // Ha la precedenza ogni comunicazione ufficiale con un piano acqua alta (sito ACTV o Telegram): in quel caso l'automatico sparisce e l'avviso ufficiale riporta il livello misurato come conferma.
 let tideSource = () => null;
-function setTideSource(fn) { tideSource = fn; ST.cache = null; }
+function setTideSource(fn) { tideSource = fn; ST.cache = null; ST.gen = (ST.gen || 0) + 1; }
 const hhmm = ms => { const p = cal.romeParts(ms), s = p.secs; return String(Math.floor(s / 3600)).padStart(2, '0') + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0'); };
 // Acqua alta: valgono INSIEME il livello misurato, la previsione (picco nelle prossime 12 ore) e gli avvisi ufficiali (Telegram / sito ACTV).
 //  · livello di riferimento = il più alto fra misurato, previsto e indicato dall'avviso ufficiale; il piano ACTV si applica a quel livello;
@@ -469,17 +470,23 @@ function parseRss(xml) {
   }
   return out;
 }
-// Telegram: [{ key, id, text, links, pubMs, url }]  (struttura nota della pagina pubblica: div.tgme_widget_message[data-post], div.tgme_widget_message_text, time[datetime])
+// Telegram: [{ key, id, text, links, pubMs, url, replyTo?, quote? }]  (struttura nota della pagina pubblica: div.tgme_widget_message[data-post],
+// div.tgme_widget_message_text, time[datetime]). RISPOSTE (a.tgme_widget_message_reply, es. «✅ T1 regolare» in risposta a «T1 e T2 fermi»):
+// il testo è solo quello del messaggio (senza la citazione), replyTo è il numero del messaggio citato = riferimento esplicito all'evento.
 function parseTelegram(html) {
   const out = [];
   const parts = String(html).split(/(?=<div class="tgme_widget_message_wrap)/);
   for (const p of parts) {
     const post = /data-post="[^"/]+\/(\d+)"/.exec(p); if (!post) continue;
-    const body = /<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?:<div class="tgme_widget_message_(?:footer|reactions)|<div class="tgme_widget_message_info|<\/div>)/.exec(p) || /<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/.exec(p);
+    const rep = /<a class="tgme_widget_message_reply[^"]*"[^>]*\bhref="[^"]*\/(\d+)"[^>]*>([\s\S]*?)<\/a>/.exec(p);
+    const q = rep ? p.replace(rep[0], ' ') : p;
+    const body = /<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?:<div class="tgme_widget_message_(?:footer|reactions)|<div class="tgme_widget_message_info|<\/div>)/.exec(q) || /<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/.exec(q);
     const tm = /<time[^>]*datetime="([^"]+)"/.exec(p); const pubMs = tm ? Date.parse(tm[1]) : NaN;
     if (!body || !Number.isFinite(pubMs)) continue;
     const links = [...body[1].matchAll(/href="([^"]+)"/g)].map(x => safeUrl(decode(x[1]))).filter(Boolean);
-    out.push({ key: 'tg:' + post[1], id: +post[1], text: toText(body[1]), links, pubMs, url: SRC.tgBase + post[1] });
+    const it = { key: 'tg:' + post[1], id: +post[1], text: toText(body[1]), links, pubMs, url: SRC.tgBase + post[1] };
+    if (rep && +rep[1] !== it.id) { it.replyTo = +rep[1]; const qt = /<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/.exec(rep[2]); if (qt) it.quote = toText(qt[1]).slice(0, 300); }
+    out.push(it);
   }
   return out;
 }
@@ -497,7 +504,7 @@ const ST = { rss: [], tg: [], pages: new Map(), rssAt: 0, tgAt: 0, rssOk: 0, tgO
 const idOf = key => crypto.createHash('sha1').update(key).digest('hex').slice(0, 10);
 
 // contesto per riconoscere linee e fermate: forniti da server.js (dipendono dai GTFS in uso)
-function setContext(fn) { ST.ctx = fn; ST.cache = null; }
+function setContext(fn) { ST.ctx = fn; ST.cache = null; ST.gen = (ST.gen || 0) + 1; }
 
 // una riga di log solo quando lo stato cambia (nuovo errore, errore risolto, primo caricamento)
 function note(src, err, ok) {
@@ -516,13 +523,13 @@ async function refreshRss() {
     }
     for (const k of [...ST.pages.keys()]) if (!ST.rss.some(i => i.url === k)) ST.pages.delete(k);
   } catch (e) { note('rss', e.message); }
-  ST.cache = null;
+  ST.cache = null; ST.gen = (ST.gen || 0) + 1;
 }
 async function refreshTg() {
   ST.tgAt = Date.now();
   try { ST.tg = parseTelegram(await fetchText(SRC.tg, ['https://telegram.me/s/muoversivenezia'])).slice(-40); ST.tgOk = Date.now(); note('tg', null, `${ST.tg.length} messaggi`); }
   catch (e) { note('tg', e.message); }
-  ST.cache = null;
+  ST.cache = null; ST.gen = (ST.gen || 0) + 1;
 }
 
 const RELINK_MS = 2 * DAY;   // un messaggio Telegram si unisce alla notizia ACTV che cita solo se pubblicato entro 2 giorni da essa
@@ -549,35 +556,181 @@ const wordsOf = it => new Set(norm(it.title + ' ' + String(it.text || '').slice(
 const kindsOf = it => { const s = noAccents((it.title + ' ' + it.text).toLowerCase()); return new Set(KINDS.map((re, i) => (re.test(s) ? i : -1)).filter(i => i >= 0)); };
 const overlap = (a, b) => { if (a.size < 2 || b.size < 2) return 0; let n = 0; for (const w of a) if (b.has(w)) n++; return n / Math.min(a.size, b.size); };
 const shares = (a, b) => a.some(x => b.includes(x));
+// GUARDIE DEI FILI (correzione del 7/11/2026, caso T1: due messaggi Telegram su un guasto di venerdì notte avevano sostituito l'avviso del
+// servizio sostitutivo T1 programmato per lunedì 9/11, perché i testi avevano abbastanza parole in comune).
+//  · EVENTO FUTURO: un avviso che inizia più di 30 minuti dopo la pubblicazione di un messaggio non viene chiuso, sostituito né fuso da quel messaggio,
+//    salvo riferimento esplicito: risposta Telegram, stessa pagina ACTV, oppure il messaggio parla dello stesso giorno in cui l'avviso inizia;
+//  · CORRELAZIONE PRUDENTE: se un messaggio è collegabile a più avvisi, non si modifica nessuno (salvo un solo riferimento esplicito);
+//  · DIREZIONE E TRATTO: «direzione X» e «nel tratto X - Y» diversi tra i due messaggi = eventi diversi; un ripristino limitato a una direzione o a
+//    un tratto che l'avviso non dichiara è PARZIALE: l'avviso resta com'è (il messaggio compare da solo, come oggi le chiusure isolate);
+//  · RIPRISTINO IN CORSO («torna progressivamente regolare», «graduale ripristino»): l'avviso collegato con certezza diventa «Ripristino in corso»
+//    e termina PROGRESSIVE_MS dopo il messaggio se non arrivano altre comunicazioni (chiusura tecnica). Mai per i ripristini parziali.
+//    Un messaggio successivo collegato decide in base al suo contenuto: ripristino completo = chiusura esplicita; nuovo «progressivamente» = nuova
+//    scadenza da quel messaggio; nuovo disservizio = aggiornamento normale (il timer non vale più).
+//  · Dato interno `closure` (non esce dall'API): 'esplicita' = chiuso da un messaggio di ripristino; 'tecnica' = fine per i PROGRESSIVE_MS;
+//    'scadenza' = il ripristino in corso termina prima, alla fine già prevista dell'avviso.
+// MODELLO DEGLI EVENTI (8/11/2026): ogni avviso appartiene a un evento (`ev`) che tiene le comunicazioni collegate con il loro ruolo e la certezza
+// del collegamento ('esplicita' = risposta / pagina / data; 'regole' = un solo avviso compatibile), la cronologia e i collegamenti incerti (mai applicati).
+//  · RIPRISTINO DI UNA PARTE DELLE LINEE («La Linea T2 riprende regolare» in un evento su 15, 9E, T2): l'evento resta aperto senza quelle linee;
+//  · ANNULLAMENTO («annullato», «revocato») di un evento futuro citato esplicitamente: l'evento sparisce dagli avvisi (stato 'annullato');
+//  · VARIAZIONE («rinviato», «posticipato», «prorogato»… con nuove date) di un evento citato esplicitamente: valgono le nuove date;
+//    RINVIO senza nuova data («intervento rinviato»): l'evento in corso termina (chiusura 'rinviato').
+const FUTURE_MARGIN_MS = 30 * 60e3;
+const PROGRESSIVE_MS = 60 * 60e3;   // 60 min dalla pubblicazione del messaggio (scelta del 7/11/2026: soglia iniziale prudenziale, da verificare sul campo;
+                                    // osservati 34-35 min tra guasto e ripristino, nessun dato sulla durata della fase progressiva)
+const PROG_RE = /\b(?:progressivament\w*|gradual\w*|in via di|in fase di|in corso di)\b/;
+const RETURN_RE = /\b(?:torn\w*|ritorn\w*|riprend\w*|ripres\w*|ripristin\w*|regolar\w*|normal\w*|riattiv\w*)\b/;
+const CANCEL_RE = /\b(?:annullat\w*|revocat\w*|precettat\w*|confermat\w* come regolar\w*)\b/;   // «servizi confermati come regolari» (sciopero precettato, 29/10/2026)
+// «✅ T1 regolare», «✅ linea T2 regolare», «linea 2 regolare» (manifestazione del 30/10/2026): la linea è di nuovo regolare
+const REG_LINE_RE = /(?:^|[\s\u2705])(?:(?:la\s+)?linea\s+)?[a-z]{0,2}\d{1,3}(?:\.\d)?[a-z]{0,2}\s+(?:e\s+)?regolar[ei]\b/;
+const DISRUPT_RE = /\b(?:deviat\w*|sospes\w*|chius[aeio]\b|interrott\w*|bloccat\w*|soppress\w*|ferm[ai]\b|ferm[io] per)/;
+const LINE_TOK = /\b(?:linea|linee|tram|bus)\s+([a-z0-9][a-z0-9.]{0,5})(?![a-z0-9])/g;
+const CHANGE_RE = /\b(?:rinviat\w*|rimandat\w*|differit\w*|posticipat\w*|anticipat\w*|prorogat\w*)\b/;   // non «spostata» (fermata spostata) né «modificato»: sono effetti, non nuove date
+const GENERIC_TITLE = /^(?:\d+ )?(?:aggiornament\w*|ultim\w* aggiornament\w*|update|avviso|comunicazione|informazione)(?: \d.*)?$/;
+const POSTPONE_RE = /\b(?:rinviat\w*|rimandat\w*|differit\w*)\b/;
+const DIR_RE = /\bdirezione\s+([a-z][a-z' .]{1,40}?)(?=\s*(?:[,;:()\n]|\.(?:\s|$)|$|\s+(?:e|ed|con|dalle|alle|fino|da|per|il|la|i|le|viene|vengono|sono)\b))/g;
+const SEG_RE = /\bnel tratto\s+(.{3,60}?)(?=\s+direzione\b|[,;:\n]|\.(?:\s|$)|$)/;
+const textOf = it => noAccents((it.title + ' ' + String(it.text || '')).toLowerCase());
+const dirOf = it => { const d = new Set([...textOf(it).matchAll(DIR_RE)].map(m => norm(m[1]))); return d.size === 1 ? [...d][0] : null; };   // più direzioni = nessuna in particolare
+const segOf = it => { const m = SEG_RE.exec(textOf(it)); return m ? norm(m[1]) : null; };
+const sameOrMissing = (a, b) => !a || !b || a === b;
+const startsLater = (A, B) => A.from > B.published + FUTURE_MARGIN_MS;
+// riferimento esplicito di B all'evento di A: risposta Telegram a un suo messaggio, stessa pagina ACTV, o lo stesso giorno di inizio di un evento futuro
+function refOf(A, B) {
+  if (B.replyTo && A.ev?.keys.has('tg:' + B.replyTo)) return 'risposta';
+  if (A.url && A.url === B.url && !/\/\/(?:t|telegram)\.me\//.test(A.url)) return 'pagina';
+  if (B.dated && B.from > B.published + FUTURE_MARGIN_MS && cal.romeYmd(B.from) === cal.romeYmd(A.from)) return 'data';
+  return null;
+}
+const explicitRef = (A, B) => !!refOf(A, B);
+// COSA RIPRISTINA il messaggio rispetto all'evento: si guardano solo le frasi di ripristino («la linea 4l riprende regolare. … le linee 9E, 15 deviate»)
+//  'tutte' = l'intero evento · 'parte' = solo alcune delle sue linee (lk) · 'altre' = linee che l'evento non ha (collegamento incerto: nessuna modifica)
+//  'misto' = nessuna linea indicata, ma nello stesso messaggio c'è un nuovo disservizio: non è una chiusura, vale come aggiornamento
+function restoreScope(A, B) {
+  const clauses = textOf(B).split(/[.;:\n!]+|\s[-–]\s/).map(c => c.trim()).filter(Boolean);
+  const isRet = c => CLOSE_RE.test(c) || REG_LINE_RE.test(c) || (RETURN_RE.test(c) && /regolar|normal/.test(c));
+  const ret = clauses.filter(isRet), mixed = clauses.some(c => !isRet(c) && DISRUPT_RE.test(c));
+  const names = new Map(A.lines.map(l => [String(l.n).toLowerCase(), l.s + ':' + l.n]));
+  if (!names.size) return { kind: mixed ? 'misto' : 'tutte' };
+  const hit = new Set(); let alien = false;
+  for (const c of ret) {
+    for (const [n, k] of names) if (new RegExp(`(?:^|[^a-z0-9.])${n.replace(/\./g, '\\.')}(?![a-z0-9])`).test(c)) hit.add(k);
+    for (const m of c.matchAll(LINE_TOK)) if (/\d/.test(m[1]) && !names.has(m[1])) alien = true;
+  }
+  if (hit.size) return hit.size >= names.size ? { kind: 'tutte' } : { kind: 'parte', lk: [...hit] };
+  return { kind: alien ? 'altre' : mixed ? 'misto' : 'tutte' };
+}
+function newEv(it) {
+  return { id: it.id, head: it, keys: new Set([it.key]), chiusura: null, incerte: [],
+    msgs: [{ key: it.key, url: it.tgUrl || it.url, fonte: it.source, pub: it.published, ruolo: 'origine', certezza: null }],
+    hist: [{ at: it.published, azione: 'creato', msg: it.key }] };
+}
+function joinEv(ev, B, ruolo, certezza, azione) {
+  ev.keys.add(B.key); ev.msgs.push({ key: B.key, url: B.tgUrl || B.url, fonte: B.source, pub: B.published, ruolo, certezza });
+  ev.hist.push({ at: B.published, azione, msg: B.key, certezza }); B.ev = ev;
+}
+const removeLines = (A, lk) => { const rm = new Set(lk); A.lines = A.lines.filter(l => !rm.has(l.s + ':' + l.n)); A.lk = A.lines.map(l => l.s + ':' + l.n); };
 function thread(items) {
   const list = items.filter(i => i.source !== 'auto').sort((a, b) => a.published - b.published);
-  for (const it of list) { it.words = wordsOf(it); it.kinds = kindsOf(it); it.lk = it.lines.map(l => l.s + ':' + l.n); }
+  for (const it of list) { it.words = wordsOf(it); it.kinds = kindsOf(it); it.lk = it.lines.map(l => l.s + ':' + l.n); it.dir = dirOf(it); it.seg = segOf(it); if (!it.ev) it.ev = newEv(it); }
   for (let j = 0; j < list.length; j++) {
     const B = list[j]; if (B.drop) continue;
-    const closing = CLOSE_RE.test(noAccents((B.title + ' ' + String(B.text).slice(0, 200)).toLowerCase())) && !(B.dated && B.from > B.published + 3600e3);
+    const head = noAccents((B.title + ' ' + String(B.text).slice(0, 200)).toLowerCase());
+    const restoring = PROG_RE.test(head) && RETURN_RE.test(head) && !(B.dated && B.from > B.published + 3600e3);
+    const retWords = CLOSE_RE.test(head) || REG_LINE_RE.test(head);
+    const closing = !restoring && retWords && !(B.dated && B.from > B.published + 3600e3);
+    const schedRestore = !restoring && retWords && B.dated && B.from > B.published + 3600e3;   // «da inizio servizi del 27 ottobre … riprende il regolare servizio»
     if (closing) { B.resolved = true; B.to = B.published + 3600e3; B.from = Math.min(B.from, B.published); B.stops = []; B.stopNames = []; }   // anche senza un avviso precedente da chiudere: è una notizia di fine, non un problema in corso
+    if (restoring) B.restoring = true;                                       // senza avviso collegato resta un messaggio a sé, con la sua durata
+    // avvisi collegabili: la risposta Telegram è sempre un riferimento certo; altrimenti stesse regole di somiglianza di prima, più le guardie
+    const cands = [];
     for (let i = j - 1; i >= 0; i--) {
       const A = list[i]; if (A.drop || A.to <= B.published || A.published > B.published) continue;
+      const ref = refOf(A, B);
+      if (ref === 'risposta') { cands.push({ A, ov: overlap(A.words, B.words), ref }); continue; }
       const ov = overlap(A.words, B.words), sameKind = [...A.kinds].some(k => B.kinds.has(k)), common = shares(A.lk, B.lk) || shares(A.stops, B.stops);
       const longA = A.dated && A.to - A.from > DAY;
-      const related = ov >= 0.6 || (!longA && ((sameKind && (common || ov >= 0.3)) || (common && ov >= 0.3)));
+      const related = ov >= 0.6 || (!longA && ((sameKind && (common || ov >= 0.3)) || (common && ov >= 0.3))) || (ref === 'data' && sameKind && CANCEL_RE.test(textOf(B)));   // annullamento dello stesso tipo di evento per lo stesso giorno («sciopero del 30 ottobre … servizi regolari»)
       if (!related) continue;
-      if (closing) {                                                        // fine dell'evento: chiude il precedente
-        A.to = Math.max(Math.min(A.to, B.published), A.from); if (A.from > B.published) A.drop = true;
-        B.resolved = true; B.to = B.published + 3600e3; B.from = Math.min(B.from, B.published); B.stops = []; B.stopNames = [];
-        if (!B.lines.length) B.lines = A.lines;
+      if (startsLater(A, B) && !ref) continue;                               // un evento programmato futuro non si tocca senza riferimento esplicito
+      if (!sameOrMissing(A.dir, B.dir) || !sameOrMissing(A.seg, B.seg)) continue;   // altra direzione o altro tratto: altro evento
+      cands.push({ A, ov, ref });
+    }
+    let targets = cands;
+    const replies = cands.filter(c => c.ref === 'risposta');
+    if (replies.length) targets = [replies.find(c => c.A === c.A.ev.head) || replies[0]];   // la risposta vale per l'evento, rappresentato dal suo avviso attuale
+    else if (cands.length > 1) {                                             // nel dubbio non si modifica nulla
+      const refs = cands.filter(c => c.ref); targets = refs.length === 1 ? refs : [];
+      if (!targets.length) B.ev.incerte.push({ msg: B.key, candidati: cands.map(c => c.A.ev.id) });
+    }
+    for (const { A, ov, ref } of targets) {
+      const ev = A.ev, certezza = ref ? 'esplicita' : 'regole';
+      if (GENERIC_TITLE.test(norm(B.title)) && !GENERIC_TITLE.test(norm(A.title))) B.title = A.title;   // «aggiornamento:», «+++ AGGIORNAMENTO +++»: vale il titolo dell'evento
+      const future = A.from > B.published;
+      // ANNULLAMENTO di un evento futuro citato esplicitamente
+      if (future && ref && CANCEL_RE.test(textOf(B))) {
+        A.drop = true; ev.chiusura = 'annullato'; joinEv(ev, B, 'annullamento', certezza, 'annullato');
+        B.resolved = true; B.to = B.published + 3600e3; B.from = Math.min(B.from, B.published); B.stops = []; B.stopNames = []; if (!B.lines.length) B.lines = A.lines;
         continue;
       }
-      if (A.source !== 'telegram' && B.source === 'telegram' && ov >= 0.5) { A.source = 'both'; A.tgUrl = A.tgUrl || B.tgUrl; B.drop = true; break; }   // stessa notizia del sito
+      // VARIAZIONE DI DATE di un evento citato esplicitamente («rinviato a…», «prorogata fino al…»)
+      if (ref && B.dated && CHANGE_RE.test(head) && (B.from !== A.from || B.to !== A.to) && !closing && !restoring) {
+        if (!B.lines.length && A.lines.length) { B.lines = A.lines; B.lk = A.lk; }
+        if (!B.stops.length && A.stops.length) { B.stops = A.stops; B.stopNames = A.stopNames; }
+        B.updated = (B.updated || 0) + 1 + (A.updated || 0); A.drop = true; ev.head = B; ev.chiusura = null; joinEv(ev, B, 'variazione', certezza, 'date modificate');
+        continue;
+      }
+      // RIPRISTINO PROGRAMMATO di un evento citato esplicitamente: l'evento termina alla data indicata (il messaggio resta come avviso a sé)
+      if (ref && schedRestore && !CANCEL_RE.test(textOf(B))) {
+        A.to = Math.max(A.from, Math.min(A.to, B.from)); ev.chiusura = 'esplicita'; B.drop = true;   // l'avviso mostra già la fine; il messaggio non diventa un nuovo avviso
+        joinEv(ev, B, 'ripristino programmato', certezza, `fine prevista ${cal.romeYmd(B.from)}`);
+        continue;
+      }
+      // RINVIO senza nuova data: l'evento termina
+      if (ref && !B.dated && POSTPONE_RE.test(head)) {
+        A.to = Math.max(Math.min(A.to, B.published), A.from); ev.chiusura = 'rinviato'; if (A.from > B.published) A.drop = true;
+        joinEv(ev, B, 'rinvio', certezza, 'rinviato');
+        B.resolved = true; B.to = B.published + 3600e3; B.from = Math.min(B.from, B.published); B.stops = []; B.stopNames = []; if (!B.lines.length) B.lines = A.lines;
+        continue;
+      }
+      if (closing || restoring) {
+        // ripristino PARZIALE: una direzione o un tratto che l'avviso non dichiara (l'avviso resta invariato) ...
+        if ((B.dir && !A.dir) || (B.seg && !A.seg)) { B.partial = true; joinEv(ev, B, 'ripristino parziale', certezza, 'ripristino parziale (direzione o tratto): evento ancora aperto'); continue; }
+        // ... o solo alcune delle linee dell'evento (le altre restano)
+        const scope = restoreScope(A, B);
+        if (scope.kind === 'altre') { B.ev.incerte.push({ msg: B.key, candidati: [ev.id], motivo: 'linee diverse' }); continue; }
+        if (scope.kind === 'parte') { removeLines(A, scope.lk); joinEv(ev, B, 'ripristino parziale', certezza, `ripristino delle linee ${scope.lk.map(k => k.split(':')[1]).join(', ')}: evento ancora aperto`); continue; }
+        if (scope.kind === 'misto') { B.resolved = undefined; B.restoring = undefined; B.to = B.published + UNDATED_TG_MS; B.closure = undefined; }   // ripristino e nuovo disservizio insieme: è un aggiornamento
+      }
+      if (closing && B.resolved) {                                          // fine dell'evento: chiude il precedente
+        A.to = Math.max(Math.min(A.to, B.published), A.from); A.closure = 'esplicita'; ev.chiusura = 'esplicita'; if (A.from > B.published) A.drop = true;
+        B.resolved = true; B.to = B.published + 3600e3; B.from = Math.min(B.from, B.published); B.stops = []; B.stopNames = [];
+        if (!B.lines.length) B.lines = A.lines;
+        joinEv(ev, B, 'ripristino completo', certezza, 'chiuso (ripristino comunicato)');
+        continue;
+      }
+      if (restoring && B.restoring) {                                       // ripristino in corso: sostituisce l'avviso e termina dopo PROGRESSIVE_MS
+        // nuovo «progressivamente» su un ripristino già in corso: la scadenza riparte da questo messaggio (nuova comunicazione ACTV, non un rinnovo automatico)
+        B.from = Math.min(A.from, B.from); B.to = A.restoring ? B.published + PROGRESSIVE_MS : Math.min(Math.max(A.to, B.published), B.published + PROGRESSIVE_MS);
+        B.closure = B.to === B.published + PROGRESSIVE_MS ? 'tecnica' : 'scadenza';
+        B.dated = A.dated; B.open = false; B.untilEnd = undefined;
+        if (!B.lines.length && A.lines.length) { B.lines = A.lines; B.lk = A.lk; }
+        if (!B.stops.length && A.stops.length) { B.stops = A.stops; B.stopNames = A.stopNames; }
+        B.updated = (B.updated || 0) + 1 + (A.updated || 0); A.drop = true; ev.head = B;
+        joinEv(ev, B, 'ripristino in corso', certezza, `ripristino in corso: chiusura tecnica alle ${hhmm(B.to)} senza altre comunicazioni`);
+        continue;
+      }
+      if (A.source !== 'telegram' && B.source === 'telegram' && ov >= 0.5) { A.source = 'both'; A.tgUrl = A.tgUrl || B.tgUrl; B.drop = true; joinEv(ev, B, 'stessa notizia', certezza, 'stessa notizia su Telegram'); break; }   // stessa notizia del sito
       // aggiornamento: B sostituisce A
       if (!B.dated && A.dated) { B.from = Math.min(A.from, B.from); B.to = Math.max(A.to, B.to); B.dated = true; B.open = A.open; B.untilEnd = A.untilEnd; }
       if (!B.lines.length && A.lines.length) { B.lines = A.lines; B.lk = A.lk; }
       if (!B.stops.length && A.stops.length) { B.stops = A.stops; B.stopNames = A.stopNames; }
       if (!B.water && A.water) B.water = A.water;
-      B.updated = (B.updated || 0) + 1 + (A.updated || 0); A.drop = true;
+      B.updated = (B.updated || 0) + 1 + (A.updated || 0); A.drop = true; ev.head = B; ev.chiusura = null;
+      joinEv(ev, B, 'aggiornamento', certezza, 'aggiornato');
     }
   }
-  for (const it of list) { delete it.words; delete it.kinds; delete it.lk; }
+  for (const it of list) { delete it.words; delete it.kinds; delete it.lk; delete it.partial; }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -598,6 +751,7 @@ const EFFECTS = [
 ];
 function classify(it) {
   if (it.resolved) return { effect: 'resolved', effectLabel: 'Risolto', severity: 'info' };
+  if (it.restoring) return { effect: 'restoring', effectLabel: 'Ripristino in corso', severity: 'warning' };   // ripristino progressivo: non ancora regolare
   const s = noAccents((it.title + ' ' + String(it.text).slice(0, 600)).toLowerCase());
   if (it.water) { const lv = it.water.level; return { effect: 'water', effectLabel: 'Acqua alta', severity: lv > 140 ? 'severe' : 'warning' }; }
   // SINGOLE CORSE («la corsa delle 7:26 da Altinia per Gritti è soppressa», «la corsa delle 15:20 … posticipata»): riguardano quella partenza, non
@@ -635,27 +789,74 @@ function dropPubDate(body, title, pubMs) {
 // gli avvisi attivi per un mese): selezioni, bandi, concorsi, bilanci, nomine, premi. Escluse solo se non citano linee né fermate né effetti sul servizio.
 const NOT_SERVICE = /\b(?:selezion[ei]|bando|bandi|concors[oi]|candidat[oi]|assunzion[ei]|curricul\w*|bilancio|nomin[ae]|premi(?:o|azione)|intervista|convegno|conferenza stampa|comunicato stampa)\b/;
 
-// Elenco finale: unisce le due fonti (un messaggio Telegram che rimanda a una notizia ACTV è la stessa cosa), calcola validità, linee, fermate
-function build(now = Date.now()) {
-  const ctx = ST.ctx() || {}, items = [], byUrl = new Map();
-  for (const r of ST.rss) {
-    const body = dropPubDate(ST.pages.get(r.url) || r.text, r.title, r.pubMs), full = r.title + '\n' + body, v = parseValidity(full, r.pubMs, 'rss', ctx);
-    const it = { id: idOf(r.key), source: 'actv', title: r.title, text: short(body.replace(r.title, '').trim() || r.text, 700), url: r.url, published: r.pubMs, ...v,
-      ...analyze(r.title, body, ctx) };
+// COMUNICAZIONI IN USO: archivio (avvisi-archivio.js) + fonti in diretta. Per lo stesso id vale la lettura in diretta (più recente); l'archivio
+// completa ciò che le pagine pubbliche non mostrano più. La pagina ACTV dell'archivio (riletta dal workflow nei primi giorni) ha la precedenza.
+function sources() {
+  const rss = new Map(), tg = new Map(), pages = new Map(), ver = new Map();
+  for (const [id, e] of archivio.records()) {
+    const r = e.last; ver.set(id, e.versions);
+    if (r.src === 'rss') {
+      const url = safeUrl(r.url); if (!url || !r.title) continue;
+      rss.set(id, { key: id, title: String(r.title).slice(0, 200), url, text: String(r.text || ''), pubMs: r.pub });
+      if (r.page) pages.set(url, String(r.page).slice(0, 6000));
+    } else {
+      const n = +String(id).slice(3); if (!Number.isFinite(n)) continue;
+      tg.set(id, { key: id, id: n, text: String(r.text || ''), links: (r.links || []).map(safeUrl).filter(Boolean), pubMs: r.pub, url: SRC.tgBase + n, ...(r.replyTo ? { replyTo: +r.replyTo } : {}) });
+    }
+  }
+  for (const r of ST.rss) rss.set(r.key, r);
+  for (const [u, t] of ST.pages) if (!pages.has(u)) pages.set(u, t);
+  for (const m of ST.tg) tg.set(m.key, m);
+  return { rss: [...rss.values()].sort((a, b) => b.pubMs - a.pubMs), tg: [...tg.values()].sort((a, b) => a.id - b.id), pages, ver };
+}
+
+// INTERPRETAZIONE di ogni comunicazione (date, linee, fermate) calcolata una volta sola per testo e versione dei GTFS: l'archivio non si rielabora
+// a ogni richiesta. Si restituisce sempre una copia (i fili e l'acqua alta modificano gli avvisi).
+const MEMO = { ctx: null, map: new Map() };
+function interp(ctx, kind, key, content, fn) {
+  if (MEMO.ctx !== ctx) { MEMO.ctx = ctx; MEMO.map.clear(); }
+  const k = kind + '|' + key + '|' + crypto.createHash('sha1').update(content).digest('hex');
+  let v = MEMO.map.get(k); if (!v) { if (MEMO.map.size > 20000) MEMO.map.clear(); v = fn(); MEMO.map.set(k, v); }
+  return structuredClone(v);
+}
+const WINDOW_MS = 90 * DAY;   // per gli avvisi in elenco bastano le comunicazioni recenti o ancora valide (l'archivio completo serve al modello degli eventi)
+
+// Comunicazioni -> avvisi collegati in eventi (fili). window: solo comunicazioni utili all'elenco di adesso.
+function prepare(now, { window = true } = {}) {
+  const ctx = ST.ctx() || {}, items = [], byUrl = new Map(), src = sources();
+  const keep = it => !window || it.published >= now - WINDOW_MS || it.to >= now - 7 * DAY;
+  for (const r of src.rss) {
+    const body = dropPubDate(src.pages.get(r.url) || r.text, r.title, r.pubMs), full = r.title + '\n' + body;
+    const it = { key: r.key, id: idOf(r.key), source: 'actv', title: r.title, text: short(body.replace(r.title, '').trim() || r.text, 700), url: r.url, published: r.pubMs,
+      ...interp(ctx, 'rss', r.key, full + '|' + r.pubMs, () => ({ ...parseValidity(full, r.pubMs, 'rss', ctx), ...analyze(r.title, body, ctx) })) };
+    if (!keep(it)) continue;
     items.push(it); byUrl.set(r.url, it);
   }
-  for (const m of ST.tg) {
+  for (const m of src.tg) {
     // già presente dal sito ACTV: si unisce. MA se il messaggio è molto più recente della notizia a cui rimanda (ACTV aggiorna spesso la stessa
     // pagina, es. "chiusura di via Pio X: ulteriore proroga" datata settembre e riannunciata a novembre), vale il messaggio: date e testo nuovi.
     const first = m.links.find(l => byUrl.has(l) && m.pubMs - byUrl.get(l).published <= RELINK_MS);
-    if (first) { const it = byUrl.get(first); it.source = 'both'; it.tgUrl = m.url; continue; }
+    if (first) {
+      const it = byUrl.get(first); it.source = 'both'; it.tgUrl = m.url;
+      it.ev ||= newEv(it); it.ev.keys.add(m.key); it.ev.msgs.push({ key: m.key, url: m.url, fonte: 'telegram', pub: m.pubMs, ruolo: 'stessa notizia', certezza: 'esplicita' });
+      it.ev.hist.push({ at: m.pubMs, azione: 'stessa notizia su Telegram (link alla pagina ACTV)', msg: m.key, certezza: 'esplicita' });
+      continue;
+    }
     if (SERVICE_MSG.test(m.text) || !m.text.trim()) continue;                // "… pinned a photo": messaggi di servizio del canale
     const rows = m.text.split('\n').map(s => s.trim()).filter(Boolean), k = rows.findIndex(r => cleanTitle(r).length >= 3);
-    const title = short(cleanTitle(rows[k] ?? '') || 'Avviso', 110), body = rows.slice(k + 1).join(' '), v = parseValidity(m.text, m.pubMs, 'tg', ctx);
-    items.push({ id: idOf(m.key), source: 'telegram', title, text: short(body || title, 700), url: m.links.find(l => /actv|avm/.test(l)) || m.url, tgUrl: m.url,
-      published: m.pubMs, ...v, ...analyze(title, m.text, ctx) });
+    const title = short(cleanTitle(rows[k] ?? '') || 'Avviso', 110), body = rows.slice(k + 1).join(' ');
+    const it = { key: m.key, id: idOf(m.key), source: 'telegram', title, text: short(body || title, 700), url: m.links.find(l => /actv|avm/.test(l)) || m.url, tgUrl: m.url,
+      published: m.pubMs, ...(m.replyTo ? { replyTo: m.replyTo } : {}),
+      ...interp(ctx, 'tg', m.key, m.text + '|' + m.pubMs, () => ({ ...parseValidity(m.text, m.pubMs, 'tg', ctx), ...analyze(title, m.text, ctx) })) };
+    if (keep(it)) items.push(it);
   }
   thread(items);
+  return { items, ctx, ver: src.ver };
+}
+
+// Elenco finale (API /api/avvisi): avvisi in corso o in arrivo entro 3 giorni, con lo stesso formato della v23
+function build(now = Date.now(), { interni = false } = {}) {   // interni: solo per i test (dati interni dell'evento, es. closure)
+  const { items, ctx } = prepare(now);
   const aw = autoWater(now, ctx, items);                                     // acqua alta: misura + previsione + avvisi ufficiali
   if (aw.item) items.push(aw.item);
   const out = [];
@@ -665,16 +866,57 @@ function build(now = Date.now()) {
     if (!state) continue;                                                   // troppo lontano nel tempo
     const cl = classify(it);
     if (cl.effect === 'other' && !it.lines.length && !it.stops.length && NOT_SERVICE.test(noAccents((it.title + ' ' + String(it.text).slice(0, 300)).toLowerCase()))) continue;   // notizie aziendali: non sono avvisi
-    const { drop, words, ...pub } = it; out.push({ ...pub, ...cl, state });
+    const { drop, words, restoring, closure, key, ev, replyTo, dir, seg, ...pub } = it; out.push({ ...pub, ...(interni ? { closure, eventId: ev?.id } : {}), ...cl, state });
   }
   out.sort((a, b) => (a.state === b.state ? 0 : a.state === 'active' ? -1 : 1) || SEV[a.severity] - SEV[b.severity] || b.published - a.published);
   return out.slice(0, 40);
 }
 
+// risposta condivisa per 30 s (lo stato dipende dall'ora) e ricalcolata subito quando cambiano fonti, archivio, contesto o marea
+let avCache = null;
 function getAvvisi() {
   const now = Date.now();
+  if (avCache && now >= avCache.at && now - avCache.at < 30e3 && avCache.gen === ST.gen && avCache.v === archivio.version()) return avCache.out;
   const stale = Math.max(ST.rssOk, ST.tgOk) === 0 ? true : now - Math.max(ST.rssOk, ST.tgOk) > STALE_AFTER;
-  return { updated: Math.max(ST.rssOk, ST.tgOk) || null, stale, errors: { ...ST.errors }, items: build(now) };
+  const out = { updated: Math.max(ST.rssOk, ST.tgOk) || null, stale, errors: { ...ST.errors }, items: build(now) };
+  avCache = { at: now, gen: ST.gen, v: archivio.version(), out };
+  return out;
+}
+
+// MODELLO DEGLI EVENTI (diagnosi /api/avvisi-eventi): tutti gli eventi ricostruiti dall'archivio e dalle fonti, passati, in corso e futuri,
+// con comunicazioni, ruoli, certezza dei collegamenti e cronologia. Deterministico: dopo un riavvio si ottiene lo stesso risultato.
+const CAUSES = [['STRIKE', /sciopero/], ['WEATHER', /acqua alta|alta marea|nebbia|\bvento\b|bora|maltempo|temporal|neve|ghiaccio|mareggiat/],
+  ['DEMONSTRATION', /manifestazion|corteo|presidio|manifestanti/], ['SPECIAL_EVENT', /marathon|maratona|regata|partita|concerto|processione|sagra|festa|commemorazione|evento/],
+  ['CONSTRUCTION', /lavori|cantiere|asfaltatur|potatur/], ['MAINTENANCE', /manutenzion/], ['ACCIDENT', /incident/],
+  ['TECHNICAL_PROBLEM', /guast|avari|motivi tecnici|problem\w* tecnic|interruzione energia/], ['MEDICAL_EMERGENCY', /malore|soccorso/], ['POLICE_ACTIVITY', /polizia|forze dell.ordine/]];
+const causeOf = it => { const s = textOf(it); return (CAUSES.find(([, re]) => re.test(s)) || ['UNKNOWN_CAUSE'])[0]; };
+let evCache = null;
+function eventi(now = Date.now()) {
+  if (evCache && now >= evCache.at && now - evCache.at < 60e3 && evCache.v === archivio.version() && evCache.st === ST.gen) return evCache.out;
+  const { items, ver } = prepare(now, { window: false });
+  const evs = new Set(items.map(i => i.ev).filter(Boolean)), out = [];
+  for (const ev of evs) {
+    const h = ev.head, cl = classify(h);
+    let stato = ev.chiusura === 'annullato' ? 'annullato' : h.to < now ? 'concluso' : h.from > now ? 'programmato' : h.restoring ? 'ripristino in corso' : 'in corso';
+    if (h.resolved && ev.msgs.length === 1) stato = 'notizia di ripristino';
+    const chiusura = stato === 'concluso' ? (ev.chiusura || (h.closure === 'tecnica' ? 'tecnica' : 'scadenza')) : stato === 'annullato' ? 'annullato' : null;
+    const hist = [...ev.hist];
+    for (const m of ev.msgs) for (const v of (ver.get(m.key) || []).slice(1)) hist.push({ at: v.seen, azione: `testo modificato dalla fonte (versione ${v.v})`, msg: m.key });
+    if (stato === 'concluso' && !ev.chiusura) hist.push({ at: h.to, azione: chiusura === 'tecnica' ? 'chiusura tecnica (60 minuti dal ripristino in corso)' : 'fine del periodo di validità', msg: null });
+    hist.sort((a, b) => a.at - b.at);
+    out.push({ id: ev.id, stato, chiusura, titolo: h.title, testo: h.text, fonte: h.source, url: h.url, tgUrl: h.tgUrl,
+      linee: h.lines.map(l => l.s + ':' + l.n), direzione: h.dir || null, tratto: h.seg || null, fermate: (h.stopNames || []).map(x => x.n),
+      causa: causeOf(h), effetto: cl.effect, etichetta: cl.effectLabel, gravita: cl.severity,
+      periodo: { inizio: h.from, fine: h.to, aperto: !!h.open, conDate: !!h.dated },
+      comunicazioni: ev.msgs.map(m => ({ ...m, versioni: (ver.get(m.key) || []).length || 1 })), cronologia: hist, incerte: ev.incerte });
+  }
+  out.sort((a, b) => b.periodo.inizio - a.periodo.inizio);
+  evCache = { at: now, v: archivio.version(), st: ST.gen, out };
+  return out;
+}
+function eventiDiag() {
+  const ev = eventi(), count = {}; for (const e of ev) count[e.stato] = (count[e.stato] || 0) + 1;
+  return { archivio: archivio.status(), fontiInDiretta: { rss: ST.rss.length, telegram: ST.tg.length, errori: { ...ST.errors } }, conteggio: count, eventi: ev };
 }
 
 let started = false;
@@ -682,7 +924,8 @@ function start() {
   if (started) return; started = true;
   const run = (fn, every) => { fn().catch(() => {}); setInterval(() => fn().catch(() => {}), every).unref?.(); };
   run(refreshRss, RSS_EVERY); run(refreshTg, TG_EVERY);
+  run(async () => { const ch = await archivio.refresh(); const st = archivio.status(); if (ch || st.errore !== ST.archErr) console.log(`avvisi [archivio]: ${st.errore ? 'errore: ' + st.errore : `ok, ${st.comunicazioni} comunicazioni`}`); ST.archErr = st.errore; }, ARCHIVE_EVERY);
 }
 // per i test
-function _load({ rss = [], tg = [], pages = {} } = {}) { ST.rss = rss; ST.tg = tg; ST.pages = new Map(Object.entries(pages)); ST.rssOk = ST.tgOk = Date.now(); }
-module.exports = { classify, setTideSource, planForLevel, autoWater, analyze, waterLevel, waterPlan, stopMentions, start, getAvvisi, setContext, parseRss, parseTelegram, parseValidity, articleText, toText, safeUrl, norm, build, _load, refreshRss, refreshTg };
+function _load({ rss = [], tg = [], pages = {} } = {}) { ST.rss = rss; ST.tg = tg; ST.pages = new Map(Object.entries(pages)); ST.rssOk = ST.tgOk = Date.now(); ST.gen = (ST.gen || 0) + 1; }
+module.exports = { classify, setTideSource, planForLevel, autoWater, analyze, waterLevel, waterPlan, stopMentions, start, getAvvisi, setContext, parseRss, parseTelegram, parseValidity, articleText, toText, safeUrl, norm, build, eventi, eventiDiag, _load, refreshRss, refreshTg, fetchText, SRC };

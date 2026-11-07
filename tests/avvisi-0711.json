@@ -1,0 +1,29 @@
+{
+ "nota": "Testi reali del 6-7/11/2026 per tests/avvisi-0711.test.js (caso T1). rss: voce del feed ACTV come la legge parseRss; page: testo della pagina ACTV come lo legge articleText; tg: messaggi 11894 e 11895 come li legge parseTelegram dalla pagina pubblica t.me/s/muoversivenezia (letti il 7/11/2026, emoji comprese). Orari in UTC (ms).",
+ "rss": {
+  "key": "rss:10605 at https://actv.avmspa.it",
+  "title": "Tram: servizio sostitutivo linea T1",
+  "url": "https://actv.avmspa.it/it/content/tram-servizio-sostitutivo-linea-t1-21",
+  "text": "lunedì 9 novembre 2026 dalle ore 20.30 al termine dei servizi",
+  "pubMs": 1793977450000
+ },
+ "page": "Tram: servizio sostitutivo linea T1\n\n6 Novembre 2026\n\nAVM/Actv Informa che, lunedì 9 novembre 2026 dalle ore 20.30 al termine dei servizi , per interventi di manutenzione, viene sospesa la linea T1 Favaro – Venezia A/R e attivato il servizio sostitutivo con bus:\n\nultima partenza con tram da Favaro alle ore 20.14\n\nultima partenza con tram da Venezia alle ore 20.59",
+ "tg": [
+  {
+   "key": "tg:11894",
+   "id": 11894,
+   "text": "🚌 🚊 SERVIZIO INFOMOBILITÀ ⚠\n\nAttivato servizio automobilistico sostitutivo TRAM Linea T1 nel tratto VENEZIA - FAVARO direzione Favaro.\n\n🔗 http://bit.ly/ServiziSostitutiviTram",
+   "links": [],
+   "pubMs": 1794007142000,
+   "url": "https://t.me/muoversivenezia/11894"
+  },
+  {
+   "key": "tg:11895",
+   "id": 11895,
+   "text": "🚌 🚊 SERVIZIO INFOMOBILITÀ ⚠\n\nLinea T1 nel tratto VENEZIA - FAVARO direzione Favaro, il servizio torna progressivamente regolare.\n\n🔗 http://bit.ly/ServiziSostitutiviTram",
+   "links": [],
+   "pubMs": 1794009243000,
+   "url": "https://t.me/muoversivenezia/11895"
+  }
+ ]
+}

@@ -294,6 +294,8 @@ const API = new Map(Object.entries({
     tripUpdates: S[i].raw.tripUpdates ? audit(S[i].raw.tripUpdates.buf) : null
   }])) },
   '/api/gtfs': { auth: 'diag', fn: () => live.gtfsStatus() },
+  // MODELLO DEGLI EVENTI DEGLI AVVISI (riservato, DIAG_TOKEN): archivio delle comunicazioni, eventi passati, in corso e futuri con cronologia
+  '/api/avvisi-eventi': { auth: 'diag', fn: () => avvisi.eventiDiag() },
   // CENTRALE ACTV (riservata, DIAG_TOKEN): letture, errori, righe abbinate alle corse GTFS e tempi sostituiti o confermati
   '/api/centrale': { auth: 'diag', fn: () => centrale.status() },
   // quale IP vede il server per chi chiama (serve a scegliere TRUST_PROXY): intestazione X-Forwarded-For grezza e IP usato per i limiti
