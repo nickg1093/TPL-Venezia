@@ -614,7 +614,7 @@ function restoreScope(A, B) {
   if (!names.size) return { kind: mixed ? 'misto' : 'tutte' };
   const hit = new Set(); let alien = false;
   for (const c of ret) {
-    for (const [n, k] of names) if (new RegExp(`(?:^|[^a-z0-9.])${n.replace(/\./g, '\\.')}(?![a-z0-9])`).test(c)) hit.add(k);
+    for (const [n, k] of names) if (new RegExp(`(?:^|[^a-z0-9.])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9])`).test(c)) hit.add(k);
     for (const m of c.matchAll(LINE_TOK)) if (/\d/.test(m[1]) && !names.has(m[1])) alien = true;
   }
   if (hit.size) return hit.size >= names.size ? { kind: 'tutte' } : { kind: 'parte', lk: [...hit] };
