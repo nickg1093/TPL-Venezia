@@ -1,0 +1,21 @@
+{
+ "nota": "Testi reali: notizia ACTV del 5/11/2026 (RSS e pagina) e messaggio Telegram 11897 dell8/11/2026 letto dal ramo archivio-avvisi (avvisi/comunicazioni/2026-11.jsonl, hash 2a48c95c8810).",
+ "rss": {
+  "key": "rss:6624 at https://actv.avmspa.it",
+  "title": "Venezia: sospensione piazzale Roma \"G\"",
+  "url": "https://actv.avmspa.it/it/content/sospensione-approdo-piazzale-roma-g",
+  "text": "Italiano\n\ndalle ore 22:30 di lunedì 9 novembre alle ore 01:30 di martedì 10 novembre 2026",
+  "pubMs": 1793869235000
+ },
+ "page": "Venezia: sospensione piazzale Roma \"G\"\n\n5 Novembre 2026\n\nAVM/Actv informa che, per consentire l’esecuzione di lavori di straordinaria manutenzione, dalle ore 22:30 di lunedì 9 novembre alle ore 01:30 di martedì 10 novembre 2026 , verrà sospesa la fermata di P. le Roma “G”.\n\nDurante tutto il periodo della sospensione le linee 1, 2 e N provenienti dal Canal Grande utilizzeranno il vicino impianto di P.le Roma “E”\n\nUltima partenza di linea 2 da P. le Roma “G” prima della sospensione alle ore 22:10:\n\nUltimo arrivo della linea 1 a P. le Roma “G” prima della sospensione alle ore 22:24.\n\nPrima partenza di linea 2 da P. le Roma “E” dopo la sospensione alle ore 22:30.\n\nPrima partenza di linea N da P. le Roma “E” dopo la sospensione alle ore 00:10.\n\nPrima partenza di linea N da P. le Roma “G” dopo la sospensione alle ore 01:50.",
+ "tg": {
+  "key": "tg:11897",
+  "id": 11897,
+  "pubMs": 1794129006000,
+  "url": "https://t.me/muoversivenezia/11897",
+  "links": [
+   "https://actv.avmspa.it/it/content/sospensione-approdo-piazzale-roma-g"
+  ],
+  "text": "🚏 #muoversivenezia 🛳 | VENEZIA Piazzale Roma\n\n🔴 dalle ore 22:30 di lunedì 9 novembre alle ore 01:30 di martedì 10 novembre 2026\n\n🚏 sospensione approdo Piazzale Roma \"G\", le linee 2 e N utilizzeranno il vicino impianto di P.le Roma “E”.\n\n👉 https://actv.avmspa.it/it/content/sospensione-approdo-piazzale-roma-g"
+ }
+}
