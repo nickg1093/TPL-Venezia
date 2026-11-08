@@ -206,10 +206,11 @@ function listAfter(s) {
   }
   return { toks, rest: s.slice(i) };
 }
-const AUT_EMO = /[\u{1F68C}\u{1F68D}\u{1F68E}\u{1F68B}\u{1F68A}\u{1F68F}\u{1F683}]/gu, NAV_EMO = /[\u26F4\u{1F6A4}\u{1F6E5}\u{1F6A2}\u2693]/gu;
+// 🚏 (U+1F68F, «fermata») non indica il servizio: il canale lo usa anche come punto elenco negli avvisi di navigazione («🚏 sospensione approdo…»)
+const AUT_EMO = /[\u{1F68C}\u{1F68D}\u{1F68E}\u{1F68B}\u{1F68A}\u{1F683}]/gu, NAV_EMO = /[\u26F4\u26F5\u{1F6F3}\u{1F6F6}\u{1F6A4}\u{1F6E5}\u{1F6A2}\u2693]/gu;
 // parole che indicano il tipo di servizio (usate solo per scegliere tra due linee con lo stesso numero, e come indizio per le fermate)
 const AUT_WORDS = /\b(bus|autobus|automobilistic\w*|tranvia\w*|tram|mestre|marghera|favaro|chirignago|terraferma|extraurban\w*|urban[oa]|rotatoria|deviazion\w*|capolinea)\b/gi;
-const NAV_WORDS = /\b(pontil\w*|imbarcader\w*|vaporett\w*|battell\w*|navigazione|lagun\w*|motonav\w*|lido|giudecca|murano|burano|pellestrina|torcello|san michele|cimitero di s\.?)\b/gi;
+const NAV_WORDS = /\b(pontil\w*|imbarcader\w*|approd[oi]|vaporett\w*|battell\w*|navigazione|lagun\w*|motonav\w*|lido|giudecca|murano|burano|pellestrina|torcello|san michele|cimitero di s\.?)\b/gi;
 const count = (re, t) => (t.match(re) || []).length;
 
 // Fermate citate in qualunque punto del testo: sequenze di 1-5 parole che iniziano con la maiuscola e coincidono con il nome di una fermata del GTFS.
@@ -532,6 +533,7 @@ async function refreshTg() {
   ST.cache = null; ST.gen = (ST.gen || 0) + 1;
 }
 
+const RELINK_NEWS = /\b(?:ripristin\w*|riattiv\w*|ulterior\w*|aggiornament\w*)\b/;   // messaggio con novità rispetto alla pagina: non si unisce oltre i 2 giorni
 const RELINK_MS = 2 * DAY;   // un messaggio Telegram si unisce alla notizia ACTV che cita solo se pubblicato entro 2 giorni da essa
 const short = (s, n) => { s = String(s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s\S*$/, '') + '…' : s; };
 
@@ -614,7 +616,7 @@ function restoreScope(A, B) {
   if (!names.size) return { kind: mixed ? 'misto' : 'tutte' };
   const hit = new Set(); let alien = false;
   for (const c of ret) {
-    for (const [n, k] of names) if (new RegExp(`(?:^|[^a-z0-9.])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9])`).test(c)) hit.add(k);
+    for (const [n, k] of names) if (new RegExp(`(?:^|[^a-z0-9.])${n.replace(/\./g, '\\.')}(?![a-z0-9])`).test(c)) hit.add(k);
     for (const m of c.matchAll(LINE_TOK)) if (/\d/.test(m[1]) && !names.has(m[1])) alien = true;
   }
   if (hit.size) return hit.size >= names.size ? { kind: 'tutte' } : { kind: 'parte', lk: [...hit] };
@@ -835,7 +837,15 @@ function prepare(now, { window = true } = {}) {
   for (const m of src.tg) {
     // già presente dal sito ACTV: si unisce. MA se il messaggio è molto più recente della notizia a cui rimanda (ACTV aggiorna spesso la stessa
     // pagina, es. "chiusura di via Pio X: ulteriore proroga" datata settembre e riannunciata a novembre), vale il messaggio: date e testo nuovi.
-    const first = m.links.find(l => byUrl.has(l) && m.pubMs - byUrl.get(l).published <= RELINK_MS);
+    let first = m.links.find(l => byUrl.has(l) && m.pubMs - byUrl.get(l).published <= RELINK_MS), tgv = null;
+    // oltre i 2 giorni: stessa notizia solo se il messaggio ripete il periodo della pagina (date proprie, tutte dentro quel periodo) e non annuncia
+    // variazioni, annullamenti o ripristini (es. P.le Roma "G", notizia del 5/11 e messaggio dell'8/11 con le stesse date). Date nuove: vale il messaggio (Pio X).
+    if (!first && m.links.some(l => byUrl.has(l)) && !SERVICE_MSG.test(m.text)) {
+      tgv = interp(ctx, 'tgv', m.key, m.text + '|' + m.pubMs, () => parseValidity(m.text, m.pubMs, 'tg', ctx));
+      const t = noAccents(m.text.toLowerCase());
+      if (tgv.dated && !tgv.open && !CANCEL_RE.test(t) && !CHANGE_RE.test(t) && !RELINK_NEWS.test(t))
+        first = m.links.find(l => { const r = byUrl.get(l); return r && r.dated && !r.open && tgv.from >= r.from && tgv.to <= r.to; });
+    }
     if (first) {
       const it = byUrl.get(first); it.source = 'both'; it.tgUrl = m.url;
       it.ev ||= newEv(it); it.ev.keys.add(m.key); it.ev.msgs.push({ key: m.key, url: m.url, fonte: 'telegram', pub: m.pubMs, ruolo: 'stessa notizia', certezza: 'esplicita' });
