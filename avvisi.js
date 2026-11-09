@@ -605,6 +605,9 @@ function refOf(A, B) {
   return null;
 }
 const explicitRef = (A, B) => !!refOf(A, B);
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 // COSA RIPRISTINA il messaggio rispetto all'evento: si guardano solo le frasi di ripristino («la linea 4l riprende regolare. … le linee 9E, 15 deviate»)
 //  'tutte' = l'intero evento · 'parte' = solo alcune delle sue linee (lk) · 'altre' = linee che l'evento non ha (collegamento incerto: nessuna modifica)
 //  'misto' = nessuna linea indicata, ma nello stesso messaggio c'è un nuovo disservizio: non è una chiusura, vale come aggiornamento
@@ -616,7 +619,7 @@ function restoreScope(A, B) {
   if (!names.size) return { kind: mixed ? 'misto' : 'tutte' };
   const hit = new Set(); let alien = false;
   for (const c of ret) {
-    for (const [n, k] of names) if (new RegExp(`(?:^|[^a-z0-9.])${n.replace(/\./g, '\\.')}(?![a-z0-9])`).test(c)) hit.add(k);
+    for (const [n, k] of names) if (new RegExp(`(?:^|[^a-z0-9.])${escapeRegExp(n)}(?![a-z0-9])`).test(c)) hit.add(k);
     for (const m of c.matchAll(LINE_TOK)) if (/\d/.test(m[1]) && !names.has(m[1])) alien = true;
   }
   if (hit.size) return hit.size >= names.size ? { kind: 'tutte' } : { kind: 'parte', lk: [...hit] };
