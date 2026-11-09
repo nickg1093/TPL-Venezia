@@ -4,6 +4,9 @@ name: Archivio avvisi ACTV
 # cartella avvisi/ (indice.json + comunicazioni/AAAA-MM.jsonl). Il server su Render le legge in sola lettura per ricostruire gli eventi
 # dopo un riavvio e per non perdere gli avvisi che escono dalle pagine pubbliche. Vedi avvisi-archivio.js e scripts/archivia-avvisi.js.
 # Scrive SOLO sul ramo «archivio-avvisi»: non tocca «main», quindi non interferisce con update-gtfs.yml e non provoca deploy.
+# INTERPRETAZIONE AI (facoltativa): se esistono i secrets CLOUDFLARE_ACCOUNT_ID e CLOUDFLARE_API_TOKEN, le comunicazioni nuove o modificate
+# vengono interpretate con Cloudflare Workers AI (piano gratuito) e i risultati salvati a parte in avvisi/ai/ (scripts/interpreta-avvisi.js).
+# Senza secrets, con quota esaurita o con errori dell'AI il passo non blocca nulla: l'archiviazione prosegue e gli avvisi usano le sole regole.
 on:
   schedule:
     - cron: '7,27,47 * * * *'   # ogni 20 minuti (GitHub può ritardare: la pagina Telegram mostra comunque alcuni giorni di messaggi)
@@ -11,6 +14,10 @@ on:
     inputs:
       indietro:
         description: 'Pagine Telegram precedenti da leggere (0 = solo la pagina corrente; con archivio vuoto si leggono comunque 6 pagine)'
+        required: false
+        default: ''
+      ai_rielabora:
+        description: 'Facoltativo: id da rielaborare con l''AI anche se già interpretati, separati da virgola (es. tg:11897). Vuoto = solo le nuove'
         required: false
         default: ''
 
@@ -24,7 +31,7 @@ concurrency:
 jobs:
   archivia:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -54,8 +61,22 @@ jobs:
           else node scripts/archivia-avvisi.js archivio/avvisi | tee out.txt; fi
           echo "changes=$(grep -o 'CHANGES=[01]' out.txt | tail -1 | cut -d= -f2)" >> "$GITHUB_OUTPUT"
 
+      - name: Interpreta con Cloudflare Workers AI (facoltativo)
+        id: ai
+        continue-on-error: true
+        timeout-minutes: 8
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          AI_MODELLO: ${{ vars.AI_MODELLO }}
+          AI_RIELABORA: ${{ github.event.inputs.ai_rielabora }}
+        run: |
+          if [ -n "$AI_RIELABORA" ]; then node scripts/interpreta-avvisi.js --archivio archivio/avvisi --out archivio/avvisi/ai --id "$AI_RIELABORA" --forza | tee ai.txt
+          else node scripts/interpreta-avvisi.js --archivio archivio/avvisi --out archivio/avvisi/ai | tee ai.txt; fi
+          echo "changes=$(grep -o 'AI_CHANGES=[01]' ai.txt | tail -1 | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
       - name: Salva nel ramo archivio-avvisi
-        if: steps.arc.outputs.changes == '1'
+        if: steps.arc.outputs.changes == '1' || steps.ai.outputs.changes == '1'
         run: |
           cd archivio
           git add avvisi
