@@ -182,7 +182,8 @@ function validate(ai, rec, ctx = null, candidati = []) {
     if (!LINE_RE.test(n) || !s) { scarti.push(`linea "${clip(l?.linea, 12)}": formato o servizio non valido`); continue; }
     if (!cites(l.citazione)) { scarti.push(`linea ${n}: citazione non presente nel testo`); continue; }
     const pc = plain(l.citazione);
-    if (!new RegExp(`(?:^|[^a-z0-9.])${n.toLowerCase().replace(/\./g, '\\.')}(?![a-z0-9])`).test(pc)) { scarti.push(`linea ${n}: non compare nella citazione`); continue; }
+    const nEsc = n.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (!new RegExp(`(?:^|[^a-z0-9.])${nEsc}(?![a-z0-9])`).test(pc)) { scarti.push(`linea ${n}: non compare nella citazione`); continue; }
     // numeri semplici e lettere (2, 13, N, G) si confondono con date, orari e pontili: servono «linea/linee/bus…» nella citazione; codici come T1, 4.1, 6E no
     if (/^(?:\d{1,3}|[A-Z]{1,2})$/.test(n) && !LINE_WORD.test(pc)) { scarti.push(`linea ${n}: la citazione non parla di linee`); continue; }
     if (new RegExp(`"\\s*${n.toLowerCase()}\\s*"`).test(pc) && n.length <= 2 && /^[A-Z]+$/.test(n)) { scarti.push(`linea ${n}: lettera di pontile tra virgolette`); continue; }
