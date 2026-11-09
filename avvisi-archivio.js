@@ -7,6 +7,7 @@
 //      { id, src: 'rss'|'tg', v, hash, pub, seen, title?, url, text, page?, links?, replyTo?, quote? }
 //    id stabile (rss:<guid> / tg:<numero>); una riga nuova solo se il testo cambia (hash): le versioni precedenti restano (cronologia delle modifiche).
 //    Solo testo semplice, mai HTML.
+//  · INTERPRETAZIONI AI (facoltative): avvisi/ai/indice.json + avvisi/ai/interpretazioni/AAAA-MM.jsonl, separate dalle comunicazioni (avvisi-ai.js).
 const crypto = require('crypto'), fs = require('fs'), path = require('path');
 const cal = require('./calendar');
 
@@ -106,12 +107,45 @@ async function refresh(base = baseUrl()) {
     }
     for (const k of [...AR.files.keys()]) if (!wanted.some(f => f.nome === k)) { AR.files.delete(k); changed = true; }
     if (changed) { const m = new Map(); for (const f of [...AR.files.keys()].sort()) mergeLines(AR.files.get(f).text, m); AR.recs = m; AR.version++; }
-    AR.okAt = Date.now(); AR.error = null; return changed;
+    AR.okAt = Date.now(); AR.error = null;
+    if (await refreshAi(base)) changed = true;
+    return changed;
   } catch (e) { AR.error = e.message || String(e); return false; }
 }
+// INTERPRETAZIONI AI (avvisi/ai/, scritte dal workflow con Cloudflare Workers AI): stesse regole di lettura (solo file cambiati, ultimi 6 mesi).
+// Cartella assente (AI non configurata) o illeggibile: nessun errore, si conserva quanto già letto e gli avvisi usano le sole regole.
+async function refreshAi(base) {
+  try {
+    const idx = JSON.parse(await readRemote(base, 'ai/indice.json'));
+    if (!idx || idx.formato !== 1 || !Array.isArray(idx.file)) throw new Error('indice AI non valido');
+    const wanted = idx.file.filter(f => /^\d{4}-\d{2}\.jsonl$/.test(f.nome)).slice(-KEEP_MONTHS);
+    let changed = false;
+    for (const f of wanted) {
+      if (AI.files.get(f.nome)?.sha === f.sha) continue;
+      AI.files.set(f.nome, { sha: f.sha, text: await readRemote(base, `ai/interpretazioni/${f.nome}`) }); changed = true;
+    }
+    for (const k of [...AI.files.keys()]) if (!wanted.some(f => f.nome === k)) { AI.files.delete(k); changed = true; }
+    if (changed) { const m = new Map(); for (const f of [...AI.files.keys()].sort()) aiMerge(AI.files.get(f).text, m); AI.map = m; AI.version++; }
+    AI.okAt = Date.now(); AI.error = null; return changed;
+  } catch (e) { AI.error = e.message || String(e); return false; }
+}
+// righe JSONL delle interpretazioni -> mappa "id|hash" -> ultima interpretazione riuscita (esito 'ok')
+function aiMerge(text, into = new Map()) {
+  for (const line of String(text).split('\n')) {
+    if (!line.trim()) continue;
+    let r; try { r = JSON.parse(line); } catch { continue; }
+    if (!r || typeof r.id !== 'string' || typeof r.hash !== 'string' || r.esito !== 'ok' || !r.ai || typeof r.ai !== 'object') continue;
+    into.set(r.id + '|' + r.hash, r);
+  }
+  return into;
+}
+const AI = { files: new Map(), map: new Map(), okAt: 0, error: null, version: 0 };
+function _setAi(rows) { AI.map = aiMerge((rows || []).map(r => JSON.stringify(r)).join('\n')); AI.version++; AI.okAt = Date.now(); AI.error = null; }
+const aiRecords = () => AI.map;
+const aiStatus = () => ({ interpretazioni: AI.map.size, file: [...AI.files.keys()], lettoAlle: AI.okAt || null, errore: AI.error });
 // per i test: carica righe già pronte
 function _setRecords(lines) { AR.recs = mergeLines(Array.isArray(lines) ? lines.map(r => JSON.stringify(r)).join('\n') : lines); AR.version++; AR.okAt = Date.now(); AR.error = null; }
 const records = () => AR.recs;
 const status = () => ({ url: AR.url, comunicazioni: AR.recs.size, file: [...AR.files.keys()], lettoAlle: AR.okAt || null, errore: AR.error });
 
-module.exports = { FORMATO, hashOf, recordOf, mergeLines, monthOf, openDir, refresh, records, status, baseUrl, _setRecords, version: () => AR.version };
+module.exports = { FORMATO, hashOf, recordOf, mergeLines, monthOf, openDir, refresh, records, status, baseUrl, _setRecords, aiRecords, aiStatus, _setAi, version: () => AR.version + AI.version };

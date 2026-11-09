@@ -1,0 +1,114 @@
+{
+ "nota": "Righe REALI del ramo archivio-avvisi (avvisi/comunicazioni/*.jsonl, copiate il 9/11/2026) per i test dell interpretazione AI.",
+ "record": [
+  {
+   "id": "tg:11897",
+   "src": "tg",
+   "pub": 1794129006000,
+   "url": "https://t.me/muoversivenezia/11897",
+   "text": "🚏 #muoversivenezia 🛳 | VENEZIA Piazzale Roma\n\n🔴 dalle ore 22:30 di lunedì 9 novembre alle ore 01:30 di martedì 10 novembre 2026\n\n🚏 sospensione approdo Piazzale Roma \"G\", le linee 2 e N utilizzeranno il vicino impianto di P.le Roma “E”.\n\n👉 https://actv.avmspa.it/it/content/sospensione-approdo-piazzale-roma-g",
+   "links": [
+    "https://actv.avmspa.it/it/content/sospensione-approdo-piazzale-roma-g"
+   ],
+   "hash": "2a48c95c8810",
+   "seen": 1794130004018,
+   "v": 1
+  },
+  {
+   "id": "rss:6624 at https://actv.avmspa.it",
+   "src": "rss",
+   "pub": 1793869235000,
+   "title": "Venezia: sospensione piazzale Roma \"G\"",
+   "url": "https://actv.avmspa.it/it/content/sospensione-approdo-piazzale-roma-g",
+   "text": "Italiano\n\ndalle ore 22:30 di lunedì 9 novembre alle ore 01:30 di martedì 10 novembre 2026",
+   "page": "Venezia: sospensione piazzale Roma \"G\"\n\n5 Novembre 2026\n\nAVM/Actv informa che, per consentire l’esecuzione di lavori di straordinaria manutenzione, dalle ore 22:30 di lunedì 9 novembre alle ore 01:30 di martedì 10 novembre 2026 , verrà sospesa la fermata di P. le Roma “G”.\n\nDurante tutto il periodo della sospensione le linee 1, 2 e N provenienti dal Canal Grande utilizzeranno il vicino impianto di P.le Roma “E”\n\nUltima partenza di linea 2 da P. le Roma “G” prima della sospensione alle ore 22:10:\n\nUltimo arrivo della linea 1 a P. le Roma “G” prima della sospensione alle ore 22:24.\n\nPrima partenza di linea 2 da P. le Roma “E” dopo la sospensione alle ore 22:30.\n\nPrima partenza di linea N da P. le Roma “E” dopo la sospensione alle ore 00:10.\n\nPrima partenza di linea N da P. le Roma “G” dopo la sospensione alle ore 01:50.",
+   "hash": "9850aa6a0ffa",
+   "seen": 1794077208876,
+   "v": 1
+  },
+  {
+   "id": "tg:11894",
+   "src": "tg",
+   "pub": 1794007142000,
+   "url": "https://t.me/muoversivenezia/11894",
+   "text": "🚌 🚊 SERVIZIO INFOMOBILITÀ ⚠\n\nAttivato servizio automobilistico sostitutivo TRAM Linea T1 nel tratto VENEZIA - FAVARO direzione Favaro.\n\n🔗 http://bit.ly/ServiziSostitutiviTram",
+   "links": [],
+   "hash": "ab45d070c430",
+   "seen": 1794077208876,
+   "v": 1
+  },
+  {
+   "id": "tg:11895",
+   "src": "tg",
+   "pub": 1794009243000,
+   "url": "https://t.me/muoversivenezia/11895",
+   "text": "🚌 🚊 SERVIZIO INFOMOBILITÀ ⚠\n\nLinea T1 nel tratto VENEZIA - FAVARO direzione Favaro, il servizio torna progressivamente regolare.\n\n🔗 http://bit.ly/ServiziSostitutiviTram",
+   "links": [],
+   "hash": "077f20f9fc84",
+   "seen": 1794077208876,
+   "v": 1
+  },
+  {
+   "id": "rss:10605 at https://actv.avmspa.it",
+   "src": "rss",
+   "pub": 1793977450000,
+   "title": "Tram: servizio sostitutivo linea T1",
+   "url": "https://actv.avmspa.it/it/content/tram-servizio-sostitutivo-linea-t1-21",
+   "text": "lunedì 9 novembre 2026 dalle ore 20.30 al termine dei servizi",
+   "page": "Tram: servizio sostitutivo linea T1\n\n6 Novembre 2026\n\nAVM/Actv Informa che, lunedì 9 novembre 2026 dalle ore 20.30 al termine dei servizi , per interventi di manutenzione, viene sospesa la linea T1 Favaro – Venezia A/R e attivato il servizio sostitutivo con bus:\n\nultima partenza con tram da Favaro alle ore 20.14\n\nultima partenza con tram da Venezia alle ore 20.59",
+   "hash": "8a5b134d5d8b",
+   "seen": 1794077208876,
+   "v": 1
+  },
+  {
+   "id": "tg:11863",
+   "src": "tg",
+   "pub": 1793349608000,
+   "url": "https://t.me/muoversivenezia/11863",
+   "text": "Servizio tranviario T1 e T2 temporaneamente fermi per manifestazione.\n- corso del Popolo bloccato bus deviati su percorso alternativo",
+   "links": [],
+   "replyTo": 11862,
+   "quote": "⚠️ AGGIORNAMENTO 30/10 - Il corteo prevede un cambio percorso: da Mestre Centro prosegue per corso del popolo, via Gozzi, via Cappuccina, p.le Donatori Sangue ---------------------------------------------- #muoversivenezia | 📢 Mestre centro manifestazione…",
+   "hash": "457bf2b2513a",
+   "seen": 1794077208876,
+   "v": 1
+  },
+  {
+   "id": "tg:11865",
+   "src": "tg",
+   "pub": 1793350836000,
+   "url": "https://t.me/muoversivenezia/11865",
+   "text": "✅ T1 regolare",
+   "links": [],
+   "replyTo": 11863,
+   "quote": "Servizio tranviario T1 e T2 temporaneamente fermi per manifestazione. - corso del Popolo bloccato bus deviati su percorso alternativo",
+   "hash": "ca2c5abdee21",
+   "seen": 1794077208876,
+   "v": 1
+  },
+  {
+   "id": "tg:11889",
+   "src": "tg",
+   "pub": 1793954346000,
+   "url": "https://t.me/muoversivenezia/11889",
+   "text": "Si informa che il servizio di prenotazione ferry-boat on line è temporaneamente in manutenzione. Ci scusiamo per il disagio.",
+   "links": [],
+   "hash": "f640b3ff2034",
+   "seen": 1794077208876,
+   "v": 1
+  },
+  {
+   "id": "tg:11890",
+   "src": "tg",
+   "pub": 1793956391000,
+   "url": "https://t.me/muoversivenezia/11890",
+   "text": "✅ il sistema è stato ripristinato",
+   "links": [],
+   "replyTo": 11889,
+   "quote": "Si informa che il servizio di prenotazione ferry-boat on line è temporaneamente in manutenzione. Ci scusiamo per il disagio.",
+   "hash": "755f36bfc08a",
+   "seen": 1794077208876,
+   "v": 1
+  }
+ ]
+}

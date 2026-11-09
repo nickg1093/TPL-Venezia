@@ -1,0 +1,15 @@
+{
+ "nota": "Casi di riferimento su comunicazioni REALI dell'archivio (ramo archivio-avvisi). Le attese sono scritte a mano leggendo i testi; servono a misurare i modelli (scripts/interpreta-avvisi.js --confronta) e non dimostrano da sole la correttezza di altre interpretazioni. 'tipo': valori accettati; 'linee': insieme esatto atteso dopo la validazione; 'vietate': relazioni che non devono comparire; 'attese': relazioni che devono comparire se la comunicazione indicata è tra quelle proposte.",
+ "casi": [
+  { "id": "tg:11897", "tema": "navigazione con 🚏 nel testo; linee 2 e N esistono anche nei bus; pontili tra virgolette", "servizio": ["navigazione"], "linee": ["nav:2", "nav:N"], "tipo": ["sospensione", "spostamento_fermata"] },
+  { "id": "tg:11894", "tema": "guasto tram T1 con bus sostitutivo, notte del 6/11", "servizio": ["automobilistico"], "linee": ["aut:T1"], "tipo": ["sospensione", "limitazione", "altro"], "vietate": [{ "id": "rss:10605 at https://actv.avmspa.it", "tipi": ["aggiorna", "ripristina", "revoca", "rettifica", "stessa_notizia"] }] },
+  { "id": "tg:11895", "tema": "ripristino progressivo dello stesso guasto; il servizio sostitutivo programmato per lunedì è un evento diverso", "servizio": ["automobilistico"], "linee": ["aut:T1"], "tipo": ["ripristino_progressivo"], "attese": [{ "id": "tg:11894", "tipi": ["ripristina", "aggiorna"] }], "vietate": [{ "id": "rss:10605 at https://actv.avmspa.it", "tipi": ["aggiorna", "ripristina", "revoca", "rettifica", "stessa_notizia"] }] },
+  { "id": "tg:11857", "tema": "sciopero dichiarato illegittimo: revoca", "servizio": ["entrambi", "nessuno", "automobilistico", "navigazione"], "linee": [], "tipo": ["revoca"], "attese": [{ "id": "tg:11855", "tipi": ["revoca"] }] },
+  { "id": "tg:11865", "tema": "risposta «✅ T1 regolare» a un messaggio su T1 e T2 fermi e bus deviati: ripristino solo di una parte", "servizio": ["automobilistico"], "linee": ["aut:T1"], "tipo": ["ripristino_parziale"], "attese": [{ "id": "tg:11863", "tipi": ["ripristina", "aggiorna"] }] },
+  { "id": "tg:11882", "tema": "stessa notizia del sito (San Basilio), navigazione", "servizio": ["navigazione"], "linee": null, "tipo": ["sospensione"], "attese": [{ "id": "rss:9230 at https://actv.avmspa.it", "tipi": ["stessa_notizia"] }] },
+  { "id": "tg:11890", "tema": "ripristino del sistema di prenotazione ferry (risposta), nessuna linea", "servizio": ["nessuno", "navigazione"], "linee": [], "tipo": ["ripristino"], "attese": [{ "id": "tg:11889", "tipi": ["ripristina"] }] },
+  { "id": "tg:11887", "tema": "bus con 🚏 come punto elenco: capolinea spostato", "servizio": ["automobilistico"], "linee": null, "tipo": ["spostamento_fermata", "deviazione"] },
+  { "id": "rss:10641 at https://actv.avmspa.it", "tema": "notizia aziendale sull'approdo dei ferry: nessun effetto sul servizio, nessuna linea", "servizio": ["navigazione", "nessuno"], "linee": [], "tipo": ["informativa", "altro"] },
+  { "id": "rss:10605 at https://actv.avmspa.it", "tema": "servizio sostitutivo T1 programmato (lunedì 9/11)", "servizio": ["automobilistico"], "linee": ["aut:T1"], "tipo": ["sospensione", "limitazione"] }
+ ]
+}

@@ -8,6 +8,7 @@
 const crypto = require('crypto');
 const cal = require('./calendar');
 const archivio = require('./avvisi-archivio');
+const aiv = require('./avvisi-ai');   // solo validazione: il server non chiama mai il modello
 
 const SRC = {
   rss: 'https://actv.avmspa.it/it/rss-news.xml',
@@ -605,9 +606,6 @@ function refOf(A, B) {
   return null;
 }
 const explicitRef = (A, B) => !!refOf(A, B);
-function escapeRegExp(s) {
-  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 // COSA RIPRISTINA il messaggio rispetto all'evento: si guardano solo le frasi di ripristino («la linea 4l riprende regolare. … le linee 9E, 15 deviate»)
 //  'tutte' = l'intero evento · 'parte' = solo alcune delle sue linee (lk) · 'altre' = linee che l'evento non ha (collegamento incerto: nessuna modifica)
 //  'misto' = nessuna linea indicata, ma nello stesso messaggio c'è un nuovo disservizio: non è una chiusura, vale come aggiornamento
@@ -619,7 +617,7 @@ function restoreScope(A, B) {
   if (!names.size) return { kind: mixed ? 'misto' : 'tutte' };
   const hit = new Set(); let alien = false;
   for (const c of ret) {
-    for (const [n, k] of names) if (new RegExp(`(?:^|[^a-z0-9.])${escapeRegExp(n)}(?![a-z0-9])`).test(c)) hit.add(k);
+    for (const [n, k] of names) if (new RegExp(`(?:^|[^a-z0-9.])${n.replace(/\./g, '\\.')}(?![a-z0-9])`).test(c)) hit.add(k);
     for (const m of c.matchAll(LINE_TOK)) if (/\d/.test(m[1]) && !names.has(m[1])) alien = true;
   }
   if (hit.size) return hit.size >= names.size ? { kind: 'tutte' } : { kind: 'parte', lk: [...hit] };
@@ -641,9 +639,17 @@ function thread(items) {
   for (let j = 0; j < list.length; j++) {
     const B = list[j]; if (B.drop) continue;
     const head = noAccents((B.title + ' ' + String(B.text).slice(0, 200)).toLowerCase());
-    const restoring = PROG_RE.test(head) && RETURN_RE.test(head) && !(B.dated && B.from > B.published + 3600e3);
+    let restoring = PROG_RE.test(head) && RETURN_RE.test(head) && !(B.dated && B.from > B.published + 3600e3);
     const retWords = CLOSE_RE.test(head) || REG_LINE_RE.test(head);
-    const closing = !restoring && retWords && !(B.dated && B.from > B.published + 3600e3);
+    let closing = !restoring && retWords && !(B.dated && B.from > B.published + 3600e3);
+    // ripristino completo secondo le regole, ma l'AI (certezza alta) legge altro: progressivo -> «ripristino in corso»; parziale -> l'evento resta aperto;
+    // nessun ripristino (es. nuova sospensione) -> nessuna modifica all'evento. L'AI non dichiara mai da sola un ripristino.
+    let aiStop = null;
+    if (closing && B.ai?.certezza === 'alta') {
+      if (B.ai.tipo === 'ripristino_progressivo') { closing = false; restoring = true; B.aiInfo?.campi.push('ripristino progressivo'); }
+      else if (B.ai.tipo === 'ripristino_parziale') { B.aiPartial = true; B.aiInfo?.campi.push('ripristino parziale'); }
+      else if (!['ripristino', 'revoca', 'informativa', 'altro'].includes(B.ai.tipo)) { closing = false; aiStop = 'ripristino non confermato dall\'interpretazione AI'; B.aiInfo?.campi.push('ripristino non confermato'); }
+    }
     const schedRestore = !restoring && retWords && B.dated && B.from > B.published + 3600e3;   // «da inizio servizi del 27 ottobre … riprende il regolare servizio»
     if (closing) { B.resolved = true; B.to = B.published + 3600e3; B.from = Math.min(B.from, B.published); B.stops = []; B.stopNames = []; }   // anche senza un avviso precedente da chiudere: è una notizia di fine, non un problema in corso
     if (restoring) B.restoring = true;                                       // senza avviso collegato resta un messaggio a sé, con la sua durata
@@ -657,6 +663,7 @@ function thread(items) {
       const longA = A.dated && A.to - A.from > DAY;
       const related = ov >= 0.6 || (!longA && ((sameKind && (common || ov >= 0.3)) || (common && ov >= 0.3))) || (ref === 'data' && sameKind && CANCEL_RE.test(textOf(B)));   // annullamento dello stesso tipo di evento per lo stesso giorno («sciopero del 30 ottobre … servizi regolari»)
       if (!related) continue;
+      if (ref !== 'pagina' && B.ai?.relazioni.some(r => r.tipo === 'indipendente' && A.ev.keys.has(r.id))) { B.aiInfo?.campi.push('evento indipendente da ' + A.key); continue; }   // somiglianza di parole, ma per l'AI è un altro evento
       if (startsLater(A, B) && !ref) continue;                               // un evento programmato futuro non si tocca senza riferimento esplicito
       if (!sameOrMissing(A.dir, B.dir) || !sameOrMissing(A.seg, B.seg)) continue;   // altra direzione o altro tratto: altro evento
       cands.push({ A, ov, ref });
@@ -666,10 +673,16 @@ function thread(items) {
     if (replies.length) targets = [replies.find(c => c.A === c.A.ev.head) || replies[0]];   // la risposta vale per l'evento, rappresentato dal suo avviso attuale
     else if (cands.length > 1) {                                             // nel dubbio non si modifica nulla
       const refs = cands.filter(c => c.ref); targets = refs.length === 1 ? refs : [];
+      if (!targets.length && B.ai) {                                         // più candidati senza riferimento esplicito: decide l'AI se indica uno solo di essi
+        const rel = B.ai.relazioni.filter(r => ['aggiorna', 'ripristina', 'revoca', 'rettifica'].includes(r.tipo));
+        const hit = cands.filter(c => rel.some(r => c.A.ev.keys.has(r.id)));
+        if (hit.length === 1) { targets = [{ ...hit[0], ai: true }]; B.aiInfo?.campi.push('evento scelto tra ' + cands.length); }
+      }
       if (!targets.length) B.ev.incerte.push({ msg: B.key, candidati: cands.map(c => c.A.ev.id) });
     }
-    for (const { A, ov, ref } of targets) {
-      const ev = A.ev, certezza = ref ? 'esplicita' : 'regole';
+    if (aiStop && targets.length) { B.ev.incerte.push({ msg: B.key, candidati: targets.map(c => c.A.ev.id), motivo: aiStop }); targets = []; }
+    for (const { A, ov, ref, ai } of targets) {
+      const ev = A.ev, certezza = ref ? 'esplicita' : ai ? 'regole+ai' : 'regole';
       if (GENERIC_TITLE.test(norm(B.title)) && !GENERIC_TITLE.test(norm(A.title))) B.title = A.title;   // «aggiornamento:», «+++ AGGIORNAMENTO +++»: vale il titolo dell'evento
       const future = A.from > B.published;
       // ANNULLAMENTO di un evento futuro citato esplicitamente
@@ -700,7 +713,7 @@ function thread(items) {
       }
       if (closing || restoring) {
         // ripristino PARZIALE: una direzione o un tratto che l'avviso non dichiara (l'avviso resta invariato) ...
-        if ((B.dir && !A.dir) || (B.seg && !A.seg)) { B.partial = true; joinEv(ev, B, 'ripristino parziale', certezza, 'ripristino parziale (direzione o tratto): evento ancora aperto'); continue; }
+        if ((B.dir && !A.dir) || (B.seg && !A.seg) || (closing && B.aiPartial)) { B.partial = true; joinEv(ev, B, 'ripristino parziale', certezza, 'ripristino parziale (direzione o tratto): evento ancora aperto'); continue; }
         // ... o solo alcune delle linee dell'evento (le altre restano)
         const scope = restoreScope(A, B);
         if (scope.kind === 'altre') { B.ev.incerte.push({ msg: B.key, candidati: [ev.id], motivo: 'linee diverse' }); continue; }
@@ -735,7 +748,7 @@ function thread(items) {
       joinEv(ev, B, 'aggiornamento', certezza, 'aggiornato');
     }
   }
-  for (const it of list) { delete it.words; delete it.kinds; delete it.lk; delete it.partial; }
+  for (const it of list) { delete it.words; delete it.kinds; delete it.lk; delete it.partial; delete it.aiPartial; }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -766,6 +779,7 @@ function classify(it) {
   let e = EFFECTS.find(([, , , re]) => re.test(s2)) || null;
   if (runs.length && (!e || e[0] === 'other')) e = runs.some(r => /soppress|cancellat|annullat/.test(r)) ? ['reduced', 'Corse soppresse', 'warning'] : ['delays', 'Corsa in ritardo', 'warning'];
   e ||= ['other', 'Avviso', 'warning'];
+  if (e[0] === 'other' && it.aiEffect) e = EFFECTS.find(x => x[0] === it.aiEffect) || e;   // effetto non riconosciuto dalle regole: quello dell'interpretazione AI validata
   // fermata o capolinea SPOSTATO («è sospeso il capolinea… capolinea provvisorio alla fermata…», «la fermata C3 viene spostata avanti di 50 m»):
   // la linea passa, cambia il punto. Resta «Sospeso» se è sospesa la linea, o se la fermata è chiusa senza un punto sostitutivo indicato.
   const moved = /\b(?:fermat[ae]|pontil[ei]|capolinea|approd[oi])\b[^.;]{0,70}?\b(?:spostat[oaie]|trasferit[oaie]|provvisori[oaie])\b|\b(?:capolinea|fermat[ae]|pontil[ei]) provvisori/;
@@ -802,16 +816,19 @@ function sources() {
     const r = e.last; ver.set(id, e.versions);
     if (r.src === 'rss') {
       const url = safeUrl(r.url); if (!url || !r.title) continue;
-      rss.set(id, { key: id, title: String(r.title).slice(0, 200), url, text: String(r.text || ''), pubMs: r.pub });
+      rss.set(id, { key: id, title: String(r.title).slice(0, 200), url, text: String(r.text || ''), pubMs: r.pub, hash: r.hash, rec: r });
       if (r.page) pages.set(url, String(r.page).slice(0, 6000));
     } else {
       const n = +String(id).slice(3); if (!Number.isFinite(n)) continue;
-      tg.set(id, { key: id, id: n, text: String(r.text || ''), links: (r.links || []).map(safeUrl).filter(Boolean), pubMs: r.pub, url: SRC.tgBase + n, ...(r.replyTo ? { replyTo: +r.replyTo } : {}) });
+      tg.set(id, { key: id, id: n, text: String(r.text || ''), links: (r.links || []).map(safeUrl).filter(Boolean), pubMs: r.pub, url: SRC.tgBase + n, ...(r.replyTo ? { replyTo: +r.replyTo } : {}), hash: r.hash, rec: r });
     }
   }
   for (const r of ST.rss) rss.set(r.key, r);
   for (const [u, t] of ST.pages) if (!pages.has(u)) pages.set(u, t);
   for (const m of ST.tg) tg.set(m.key, m);
+  // impronta del testo come nell'archivio (avvisi-archivio.recordOf): l'interpretazione AI vale solo per la versione del testo che ha letto
+  for (const r of rss.values()) if (!r.rec) { const rec = archivio.recordOf('rss', r, pages.get(r.url) || null, 0); r.hash = rec.hash; r.rec = rec; }
+  for (const m of tg.values()) if (!m.rec) { const rec = archivio.recordOf('tg', m, null, 0); m.hash = rec.hash; m.rec = rec; }
   return { rss: [...rss.values()].sort((a, b) => b.pubMs - a.pubMs), tg: [...tg.values()].sort((a, b) => a.id - b.id), pages, ver };
 }
 
@@ -827,6 +844,40 @@ function interp(ctx, kind, key, content, fn) {
 const WINDOW_MS = 90 * DAY;   // per gli avvisi in elenco bastano le comunicazioni recenti o ancora valide (l'archivio completo serve al modello degli eventi)
 
 // Comunicazioni -> avvisi collegati in eventi (fili). window: solo comunicazioni utili all'elenco di adesso.
+// INTERPRETAZIONE AI GIÀ PRONTA (avvisi-ai.js, ramo archivio-avvisi): si usa solo se riguarda questa versione del testo e supera la validazione
+// (dati citati nel testo, linee esistenti, certezza non bassa). Cosa può cambiare, e solo in queste direzioni:
+//  · linee: servizio corretto per lo stesso numero (2 bus -> 2 vaporetto) e linee citate che le regole non hanno trovato; le altre linee delle regole restano;
+//  · fermate: tolte quelle dell'altro servizio quando le linee sono tutte di un servizio;
+//  · effetto: solo se le regole non lo riconoscono («Avviso» generico);
+//  · periodo: solo se le regole non trovano date.
+// Collegamenti tra comunicazioni e ripristini: vedi thread() (l'AI sceglie o blocca, non crea). Interpretazione assente o scartata: solo regole.
+function applyAi(it, src, ctx) {
+  const row = src?.hash && archivio.aiRecords().get(it.key + '|' + src.hash); if (!row) return;
+  const v = aiv.validate(row.ai, { ...src.rec, id: it.key }, ctx?.known ? ctx : null, row.candidati || []);
+  it.aiInfo = { modello: row.modello, esito: v.ok ? 'usata' : 'scartata', certezza: v.certezza, tipo: v.tipo, campi: [], scarti: v.scarti.slice(0, 8) };
+  if (!v.ok) return;
+  it.ai = v;
+  const key = l => l.s + ':' + l.n, before = it.lines.map(key).join(',');
+  if (!it.water && v.tipo !== 'sciopero') {
+    const one = v.servizio === 'navigazione' ? 'nav' : v.servizio === 'automobilistico' ? 'aut' : null;
+    const known = ctx?.known, aiNums = new Set(v.linee.map(l => String(l.n).toUpperCase()));
+    const lines = new Map(v.linee.map(l => [key(l), l]));
+    for (const l of it.lines) {
+      const N = String(l.n).toUpperCase();
+      if (aiNums.has(N)) continue;                                           // stesso numero: vale il servizio indicato dall'AI (citato nel testo)
+      if (one && l.s !== one) { const alt = known?.get(N)?.find(x => x.s === one); if (alt) { lines.set(one + ':' + alt.n, { n: alt.n, s: one, c: alt.c || null }); continue; } }
+      lines.set(key(l), l);
+    }
+    it.lines = [...lines.values()];
+    if (it.lines.map(key).join(',') !== before) it.aiInfo.campi.push('linee');
+    const svc = new Set(it.lines.map(l => l.s));
+    if (svc.size === 1 && it.stops.some(id => !svc.has(String(id).split(':')[0]))) {
+      it.stops = it.stops.filter(id => svc.has(String(id).split(':')[0])); it.stopNames = (it.stopNames || []).filter(x => !x.s || svc.has(x.s)); it.aiInfo.campi.push('fermate');
+    }
+  }
+  if (v.effetto && v.certezza !== 'bassa') it.aiEffect = v.effetto;
+  if (!it.dated && v.periodo) { it.from = v.periodo.from; it.to = v.periodo.to; it.dated = true; it.open = false; it.aiInfo.campi.push('periodo'); }
+}
 function prepare(now, { window = true } = {}) {
   const ctx = ST.ctx() || {}, items = [], byUrl = new Map(), src = sources();
   const keep = it => !window || it.published >= now - WINDOW_MS || it.to >= now - 7 * DAY;
@@ -835,6 +886,7 @@ function prepare(now, { window = true } = {}) {
     const it = { key: r.key, id: idOf(r.key), source: 'actv', title: r.title, text: short(body.replace(r.title, '').trim() || r.text, 700), url: r.url, published: r.pubMs,
       ...interp(ctx, 'rss', r.key, full + '|' + r.pubMs, () => ({ ...parseValidity(full, r.pubMs, 'rss', ctx), ...analyze(r.title, body, ctx) })) };
     if (!keep(it)) continue;
+    applyAi(it, r, ctx);
     items.push(it); byUrl.set(r.url, it);
   }
   for (const m of src.tg) {
@@ -861,7 +913,7 @@ function prepare(now, { window = true } = {}) {
     const it = { key: m.key, id: idOf(m.key), source: 'telegram', title, text: short(body || title, 700), url: m.links.find(l => /actv|avm/.test(l)) || m.url, tgUrl: m.url,
       published: m.pubMs, ...(m.replyTo ? { replyTo: m.replyTo } : {}),
       ...interp(ctx, 'tg', m.key, m.text + '|' + m.pubMs, () => ({ ...parseValidity(m.text, m.pubMs, 'tg', ctx), ...analyze(title, m.text, ctx) })) };
-    if (keep(it)) items.push(it);
+    if (keep(it)) { applyAi(it, m, ctx); items.push(it); }
   }
   thread(items);
   return { items, ctx, ver: src.ver };
@@ -879,7 +931,7 @@ function build(now = Date.now(), { interni = false } = {}) {   // interni: solo 
     if (!state) continue;                                                   // troppo lontano nel tempo
     const cl = classify(it);
     if (cl.effect === 'other' && !it.lines.length && !it.stops.length && NOT_SERVICE.test(noAccents((it.title + ' ' + String(it.text).slice(0, 300)).toLowerCase()))) continue;   // notizie aziendali: non sono avvisi
-    const { drop, words, restoring, closure, key, ev, replyTo, dir, seg, ...pub } = it; out.push({ ...pub, ...(interni ? { closure, eventId: ev?.id } : {}), ...cl, state });
+    const { drop, words, restoring, closure, key, ev, replyTo, dir, seg, ai, aiInfo, aiEffect, ...pub } = it; out.push({ ...pub, ...(interni ? { closure, eventId: ev?.id } : {}), ...cl, state });
   }
   out.sort((a, b) => (a.state === b.state ? 0 : a.state === 'active' ? -1 : 1) || SEV[a.severity] - SEV[b.severity] || b.published - a.published);
   return out.slice(0, 40);
@@ -907,7 +959,7 @@ let evCache = null;
 function eventi(now = Date.now()) {
   if (evCache && now >= evCache.at && now - evCache.at < 60e3 && evCache.v === archivio.version() && evCache.st === ST.gen) return evCache.out;
   const { items, ver } = prepare(now, { window: false });
-  const evs = new Set(items.map(i => i.ev).filter(Boolean)), out = [];
+  const evs = new Set(items.map(i => i.ev).filter(Boolean)), out = [], aiOf = new Map(items.filter(i => i.aiInfo).map(i => [i.key, i.aiInfo]));
   for (const ev of evs) {
     const h = ev.head, cl = classify(h);
     let stato = ev.chiusura === 'annullato' ? 'annullato' : h.to < now ? 'concluso' : h.from > now ? 'programmato' : h.restoring ? 'ripristino in corso' : 'in corso';
@@ -921,7 +973,7 @@ function eventi(now = Date.now()) {
       linee: h.lines.map(l => l.s + ':' + l.n), direzione: h.dir || null, tratto: h.seg || null, fermate: (h.stopNames || []).map(x => x.n),
       causa: causeOf(h), effetto: cl.effect, etichetta: cl.effectLabel, gravita: cl.severity,
       periodo: { inizio: h.from, fine: h.to, aperto: !!h.open, conDate: !!h.dated },
-      comunicazioni: ev.msgs.map(m => ({ ...m, versioni: (ver.get(m.key) || []).length || 1 })), cronologia: hist, incerte: ev.incerte });
+      comunicazioni: ev.msgs.map(m => ({ ...m, versioni: (ver.get(m.key) || []).length || 1, ...(aiOf.get(m.key) ? { ai: aiOf.get(m.key) } : {}) })), cronologia: hist, incerte: ev.incerte });
   }
   out.sort((a, b) => b.periodo.inizio - a.periodo.inizio);
   evCache = { at: now, v: archivio.version(), st: ST.gen, out };
@@ -929,7 +981,7 @@ function eventi(now = Date.now()) {
 }
 function eventiDiag() {
   const ev = eventi(), count = {}; for (const e of ev) count[e.stato] = (count[e.stato] || 0) + 1;
-  return { archivio: archivio.status(), fontiInDiretta: { rss: ST.rss.length, telegram: ST.tg.length, errori: { ...ST.errors } }, conteggio: count, eventi: ev };
+  return { archivio: archivio.status(), ai: archivio.aiStatus(), fontiInDiretta: { rss: ST.rss.length, telegram: ST.tg.length, errori: { ...ST.errors } }, conteggio: count, eventi: ev };
 }
 
 let started = false;

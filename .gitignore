@@ -3,3 +3,4 @@ data/**/*.tmp*
 *.log
 .env.local
 certs/
+tmp/
