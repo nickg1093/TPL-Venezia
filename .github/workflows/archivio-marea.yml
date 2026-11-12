@@ -1,0 +1,57 @@
+name: Archivio marea
+
+# Conserva i livelli di marea letti dal Centro Previsioni e Segnalazioni Maree (open data CC BY) nel ramo separato «archivio-marea»,
+# cartella marea/ (un file AAAA-MM-GG.jsonl al giorno). Il server su Render lo rilegge all'avvio: dopo un riavvio o un deploy il grafico
+# delle ultime ore e la tendenza non ripartono vuoti. Vedi marea-archivio.js e scripts/archivia-marea.js.
+# Ogni esecuzione legge il livello 3 volte a 5 minuti di distanza (il portale lo aggiorna ogni 5 minuti): con l'avvio ogni 15 minuti si
+# coprono tutte le letture; i ritardi di GitHub lasciano al più qualche buco, le sovrapposizioni non creano doppioni.
+# Scrive SOLO sul ramo «archivio-marea»: non tocca «main» e non provoca deploy.
+on:
+  schedule:
+    - cron: '2,17,32,47 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: archivio-marea
+  cancel-in-progress: false
+
+jobs:
+  archivia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Prepara il ramo dell'archivio
+        run: |
+          git config user.name "Bot Archivio marea"
+          git config user.email "bot@actions.github.io"
+          if git ls-remote --exit-code --heads origin archivio-marea >/dev/null 2>&1; then
+            git fetch --depth=1 origin archivio-marea
+            git worktree add -B archivio-marea archivio FETCH_HEAD
+          else
+            git worktree add --detach archivio
+            git -C archivio checkout --orphan archivio-marea
+            git -C archivio rm -rf --quiet . || true
+          fi
+
+      - name: Legge il livello (3 volte, ogni 5 minuti)
+        run: node scripts/archivia-marea.js archivio/marea --letture 3 --intervallo 300
+
+      - name: Pubblica sul ramo archivio-marea
+        if: always()
+        run: |
+          cd archivio
+          [ -f LEGGIMI.md ] || printf '%s\n' "# Ramo «archivio-marea» di TPL Venezia" "" "Livelli di marea letti dal Centro Previsioni e Segnalazioni Maree del Comune di Venezia (open data, licenza CC BY)," "scritti dal workflow .github/workflows/archivio-marea.yml. Dati grezzi, non validati. Non modificare a mano." > LEGGIMI.md
+          git add -A
+          if git diff --cached --quiet; then echo "Nessuna lettura nuova"; exit 0; fi
+          git commit --quiet -m "Marea: letture del $(date -u +'%Y-%m-%d %H:%M UTC')"
+          for k in 1 2 3; do git push --quiet origin archivio-marea && exit 0; sleep 5; git pull --quiet --rebase origin archivio-marea || true; done
+          exit 1

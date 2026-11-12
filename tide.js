@@ -172,6 +172,21 @@ async function getTide({ debug = false } = {}) {
   return out;
 }
 
-// Raccolta periodica: serve a costruire la storia da cui si ricava la tendenza anche senza utenti collegati
-function start() { refresh(true).catch(() => {}); setInterval(() => refresh(true).catch(() => {}), 150000).unref?.(); }
-module.exports = { snapshot, buildCurve, getTide, start, parseLevels, parseForecast, trendOf, categoryOf, solarToMs, toCm };
+// Storia recuperata dall'archivio (marea-archivio.js) unita a quella raccolta: un punto per istante, ultime 6 ore, in ordine di tempo
+function mergeHist(points, now = Date.now()) {
+  const by = new Map();
+  for (const p of [...points, ...S.hist]) if (p && Number.isFinite(p.t) && Number.isFinite(p.cm)) by.set(p.t, { t: p.t, cm: p.cm });
+  const all = [...by.values()].sort((a, b) => a.t - b.t), last = all.length ? all[all.length - 1].t : now;
+  S.hist = all.filter(p => p.t >= Math.min(now, last) - HIST_MS);
+  return S.hist.length;
+}
+// Raccolta periodica: serve a costruire la storia da cui si ricava la tendenza anche senza utenti collegati.
+// archivio: { repo } = all'avvio si recuperano le ultime ore dal ramo «archivio-marea» (dopo un riavvio il grafico non riparte vuoto).
+function start({ archivio = null } = {}) {
+  if (archivio?.repo) {
+    const load = () => require('./marea-archivio').restore({ repo: archivio.repo }).then(p => { if (p.length) mergeHist(p); return p.length; }).catch(() => 0);
+    load().then(n => { if (!n) setTimeout(load, 5 * 60e3).unref?.(); });   // archivio non raggiungibile: un altro tentativo tra 5 minuti
+  }
+  refresh(true).catch(() => {}); setInterval(() => refresh(true).catch(() => {}), 150000).unref?.();
+}
+module.exports = { snapshot, buildCurve, getTide, start, mergeHist, getJson, parseLevels, parseForecast, trendOf, categoryOf, solarToMs, toCm, _S: S };
