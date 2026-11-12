@@ -20,9 +20,10 @@ test('unione: nessun duplicato, ordine di tempo, il dato vero sostituisce il man
   assert.deepStrictEqual(rows.map(r => [r.t, r.cm]), [[T0 - M5, 74], [T0, 79], [T0 + M5, 85]]);
 });
 
-test('conservazione: file oltre 400 giorni da cancellare, gli altri restano', () => {
-  const names = ['2025-09-01.jsonl', '2025-10-14.jsonl', '2026-11-12.jsonl', 'LEGGIMI.md'];
-  assert.deepStrictEqual(A.expired(names, T0), ['2025-09-01.jsonl']);
+test('conservazione: file oltre 30 giorni da cancellare, gli altri restano', () => {
+  const names = ['2025-09-01.jsonl', '2026-10-12.jsonl', '2026-10-14.jsonl', '2026-11-12.jsonl', 'LEGGIMI.md'];
+  assert.strictEqual(A.KEEP_DAYS, 30);
+  assert.deepStrictEqual(A.expired(names, T0), ['2025-09-01.jsonl', '2026-10-12.jsonl']);
 });
 
 test('ripristino: ultime 6 ore da oggi e ieri, principale preferita, valori mancanti e file guasti ignorati', async () => {

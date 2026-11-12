@@ -5,7 +5,7 @@ name: Archivio marea
 # delle ultime ore e la tendenza non ripartono vuoti. Vedi marea-archivio.js e scripts/archivia-marea.js.
 # Ogni esecuzione legge il livello 3 volte a 5 minuti di distanza (il portale lo aggiorna ogni 5 minuti): con l'avvio ogni 15 minuti si
 # coprono tutte le letture; i ritardi di GitHub lasciano al più qualche buco, le sovrapposizioni non creano doppioni.
-# Scrive SOLO sul ramo «archivio-marea»: non tocca «main» e non provoca deploy.
+# Conservazione: 30 giorni (i file più vecchi si cancellano). Scrive SOLO sul ramo «archivio-marea»: non tocca «main» e non provoca deploy.
 on:
   schedule:
     - cron: '2,17,32,47 * * * *'

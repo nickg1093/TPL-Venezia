@@ -5,8 +5,8 @@
 //  · FORMATO: marea/AAAA-MM-GG.jsonl (giorno UTC), una riga per lettura, in ordine di tempo:
 //      { t: istante in ms UTC, cm: livello in cm (null = dato mancante), st: id della stazione, f: "cpsm", s: "grezzo" | "mancante" }
 //    «grezzo»: valore così come pubblicato dal Centro Maree (non validato). Nessun duplicato: una riga per stazione e istante.
-//  · CONSERVAZIONE: 400 giorni (circa 12 kB al giorno), i file più vecchi si cancellano dal ramo.
-const KEEP_DAYS = 400, STATI = new Set(['grezzo', 'mancante']), MAX_FILE = 2e6;
+//  · CONSERVAZIONE: 30 giorni (circa 12 kB al giorno, ~350 kB in tutto), i file più vecchi si cancellano dal ramo.
+const KEEP_DAYS = 30, STATI = new Set(['grezzo', 'mancante']), MAX_FILE = 2e6;
 const dayOf = t => new Date(t).toISOString().slice(0, 10);
 const valid = r => r && typeof r === 'object' && Number.isFinite(r.t) && r.t > 946684800000 && r.t < 4102444800000
   && (r.cm === null || (Number.isInteger(r.cm) && r.cm > -400 && r.cm < 500)) && /^\d{3,6}$/.test(String(r.st || '')) && r.f === 'cpsm' && STATI.has(r.s);
