@@ -236,3 +236,15 @@ test('v24: mezzi «aut» = autobus e tram (filtro del pianificatore)', () => {
   assert.equal(percorso.plan({ ...q, prefs: { mezzi: new Set(['bus', 'tram']) } }).soluzioni.length > 0, true);
   assert.equal(percorso.plan({ ...q, prefs: { mezzi: new Set(['nav']) } }).soluzioni.filter(o => o.tratte.some(t => t.tipo === 'mezzo')).length, 0);
 });
+
+test('v25: distanze misurate dal telefono lungo le strade («~r»): usate così come sono, anche oltre 1,5 km', () => {
+  // 500 m in linea d'aria = 500 × 1,3 / 1,33 ≈ 8 min; 500 m lungo le strade = 500 / 1,33 ≈ 6 min
+  const aria = percorso.plan({ da: [['aut:M1', 500]], a: [['aut:M2', 0]], secs: 8 * 3600, date: '20261102' }).soluzioni[0].tratte[0];
+  const vera = percorso.plan({ da: [['aut:M1', 500, 1]], a: [['aut:M2', 0]], secs: 8 * 3600, date: '20261102' }).soluzioni[0].tratte[0];
+  assert.equal(vera.tipo, 'piedi'); assert.ok(vera.min < aria.min, `${vera.min} < ${aria.min}`); assert.equal(vera.min, Math.round(500 / 1.33 / 60));
+  const lontana = percorso.plan({ da: [['aut:M1', 2400, 1]], a: [['aut:M2', 0]], secs: 8 * 3600, date: '20261102' }).soluzioni[0].tratte[0];
+  assert.equal(lontana.min, Math.round(2400 / 1.33 / 60), 'fino a 30 minuti a passo svelto, non tagliata a 1,5 km');
+  // tutto a piedi misurato lungo le strade
+  const w = percorso.plan({ da: [['aut:M1', 300, 1]], a: [['aut:M2', 200, 1]], secs: 8 * 3600, date: '20261102', piediM: 1200, piediReale: true });
+  assert.equal(w.piedi, Math.round(1200 / 1.33 / 60));
+});

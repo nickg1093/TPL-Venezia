@@ -8,7 +8,8 @@
 //   · gli orari NON si copiano: le "linee-percorso" (corse con le stesse fermate) puntano agli array già in memoria di gtfs.js;
 //   · l'indice si costruisce alla prima richiesta e solo quando cambia il GTFS (≈ 1-2 MB per ~900 percorsi, ~52.000 corse);
 //   · una ricerca usa qualche array grande quanto le fermate (≈ 2.500), dura pochi millisecondi ed è messa in cache 30 s;
-//   · la posizione dell'utente NON arriva al server: il telefono manda solo le fermate vicine con la distanza in linea d'aria.
+//   · la posizione dell'utente NON arriva al server: il telefono manda solo le fermate vicine con la distanza in linea d'aria, oppure
+//     («~r») misurata da lui lungo le strade sulla rete pedonale scaricata dal CDN (public/js/camminata.js): allora si usa così com'è.
 //
 // A piedi: le distanze tra fermate vengono dalla rete pedonale di OpenStreetMap, precalcolate in pedonale-laguna.txt (centro storico,
 // Giudecca, isole, Lido, Pellestrina, Chioggia: niente scorciatoie attraverso i canali) e pedonale-terraferma.txt (tutte le altre zone
@@ -35,6 +36,7 @@ const C = {
   ALT_LATER_S: 30 * 60,      // alternative di una soluzione: al massimo 30 minuti più tardi
   WALK_ONLY_MAX_S: 40 * 60,  // «tutto a piedi» lungo la rete, anche passando per altre fermate: fino a 40 minuti
   ACCESS_MAX_M: 1500,        // fermate di partenza/arrivo fino a 1,5 km in linea d'aria
+  REAL_MAX_M: 3500,          // distanze misurate dal telefono lungo le strade (camminata.js: fino a 30 minuti a passo svelto)
   LIVE_BACK_S: 1800,         // in tempo reale si guardano anche corse fino a 30 min prima (in ritardo)
   HORIZON_S: 5 * 3600,       // viaggi fino a 5 ore
   CACHE_MS: 30000, CACHE_MAX: 300,
@@ -258,9 +260,18 @@ function journey(q, R, k, g) {
 // ---------------------------------------------------------------------------------------------------------------------
 const hhmm = s => { s = ((Math.round(s) % 86400) + 86400) % 86400; return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}`; };
 // candidati di partenza/arrivo: [[ "src:sid", metri in linea d'aria ]] -> Map(g -> secondi a piedi). In laguna: dal più vicino, lungo le calli.
+// Candidati [[ "src:sid", metri, 1 ]]: metri GIÀ lungo le strade (calcolati dal telefono sulla rete pedonale): usati così come sono.
 // wf: fattore del passo; maxS: camminata massima (filtro)
 function walkTo(cands, wf = 1, maxS = INF) {
-  const out = new Map(), list = cands.map(([id, m]) => [IX.gid.get(id), Math.max(0, Math.min(C.ACCESS_MAX_M, m))]).filter(([g]) => g != null);
+  const out = new Map();
+  for (const [id, m, real] of cands) {
+    if (!real) continue;
+    const g = IX.gid.get(id); if (g == null) continue;
+    const s = Math.round(Math.max(0, Math.min(C.REAL_MAX_M, m)) / (IX.isLag[g] ? C.V_LAG : C.V_MAIN) * wf);
+    if (s <= maxS && (!out.has(g) || out.get(g) > s)) out.set(g, s);
+  }
+  if (out.size || cands.some(c => c[2])) return out;
+  const list = cands.map(([id, m]) => [IX.gid.get(id), Math.max(0, Math.min(C.ACCESS_MAX_M, m))]).filter(([g]) => g != null);
   if (!list.length) return out;
   list.sort((a, b) => a[1] - b[1]);
   // dal punto si arriva in linea d'aria × 1,3 solo alle fermate più vicine; alle altre lungo la rete pedonale passando da quelle
@@ -303,7 +314,7 @@ const famOf = legs => legs.filter(l => l.t === 'ride').map(l => l.P.rk + '@' + b
 // ---------------------------------------------------------------------------------------------------------------------
 // RICERCA: più passate di RAPTOR (all'ora chiesta, «meno a piedi», partenze successive, linee diverse) -> soluzioni candidate
 // ---------------------------------------------------------------------------------------------------------------------
-function search({ da, a, secs = null, date = null, piediM = null, entro = false, pr, nowMs, runsMax = 6, discover = true, from = null }) {
+function search({ da, a, secs = null, date = null, piediM = null, piediReale = false, entro = false, pr, nowMs, runsMax = 6, discover = true, from = null }) {
   const live = secs == null, ymd = date || cal.romeYmd(nowMs);
   const D = entro && !live ? secs : null;                      // «arrivo entro le»
   const T = live ? cal.romeParts(nowMs).secs : D != null ? D - C.BY_BACK_S : secs;
@@ -394,7 +405,10 @@ function search({ da, a, secs = null, date = null, piediM = null, entro = false,
   if (D != null) for (let k = opts.length - 1; k >= 0; k--) if (opts[k].arr > D) opts.splice(k, 1);
   // solo a piedi: fermate di partenza e arrivo collegate a piedi (laguna) o punti vicini in linea d'aria (terraferma)
   let walkOnly = null;
-  if (piediM != null && piediM <= 2500 && !(IX && [...acc.keys()].some(g => IX.isLag[g]))) walkOnly = Math.round(piediM * C.DETOUR / C.V_MAIN * pr.wf);
+  if (piediReale && piediM != null && piediM <= C.REAL_MAX_M) {   // misurata dal telefono lungo le strade (anche in laguna: ponti compresi)
+    const lag = IX && [...acc.keys(), ...egr.keys()].some(g => IX.isLag[g]);
+    walkOnly = Math.round(piediM / (lag ? C.V_LAG : C.V_MAIN) * pr.wf);
+  } else if (piediM != null && piediM <= 2500 && !(IX && [...acc.keys()].some(g => IX.isLag[g]))) walkOnly = Math.round(piediM * C.DETOUR / C.V_MAIN * pr.wf);
   // lungo la rete pedonale anche passando per altre fermate (catena di tratti tra fermate vicine), fino a 40 minuti: copre i tragitti
   // a piedi più lunghi di quelli precalcolati (es. P.le Roma -> S. Tomà). Dijkstra sulle sole fermate: poche centinaia di nodi in laguna.
   if (acc.size && egr.size) {
@@ -420,12 +434,12 @@ const timeKey = (secs, nowMs) => (secs == null ? 'now' + Math.floor(nowMs / C.CA
 // da / a: [[ "src:sid", metri ]]; secs/date: orario scelto (null = adesso, tempo reale); piediM: distanza in linea d'aria tra i due punti (facoltativa)
 // entro: secs è l'orario entro cui ARRIVARE (soluzioni che partono il più tardi possibile); prefs: filtri (vedi normPref)
 // Gs (facoltativo): orari da usare [aut, nav] per la data scelta (server.js -> live.dataFor); assente = quelli in uso adesso
-function plan({ da, a, secs = null, date = null, piediM = null, entro = false, prefs = {}, Gs = null }) {
+function plan({ da, a, secs = null, date = null, piediM = null, piediReale = false, entro = false, prefs = {}, Gs = null }) {
   if (!ctx) throw new Error('pianificatore non inizializzato');
   build(Gs || undefined);
   const nowMs = Date.now(), pr = normPref(prefs);
-  return cached(JSON.stringify(['p', IX.key, da, a, timeKey(secs, nowMs), date, piediM, entro, prefKey(pr)]), nowMs, () => {
-    const r = search({ da, a, secs, date, piediM, entro, pr, nowMs });
+  return cached(JSON.stringify(['p', IX.key, da, a, timeKey(secs, nowMs), date, piediM, piediReale, entro, prefKey(pr)]), nowMs, () => {
+    const r = search({ da, a, secs, date, piediM, piediReale, entro, pr, nowMs });
     return present({ ...r, nowMs, pr });
   });
 }
@@ -433,7 +447,7 @@ function plan({ da, a, secs = null, date = null, piediM = null, entro = false, p
 // ALTERNATIVE di una soluzione scelta (famiglia `fam`, linee `rotte`):
 //   stesso: lo stesso percorso ad altri orari · varianti: una linea sostituita · altre: nessuna delle sue linee
 // arr: arrivo della soluzione scelta («hh:mm»): le alternative non arrivano più di 30 minuti dopo (né, con «arrivo entro», oltre l'orario)
-function simili({ da, a, secs = null, date = null, piediM = null, entro = false, prefs = {}, fam, rotte = [], arr = null, Gs = null }) {
+function simili({ da, a, secs = null, date = null, piediM = null, piediReale = false, entro = false, prefs = {}, fam, rotte = [], arr = null, Gs = null }) {
   if (!ctx) throw new Error('pianificatore non inizializzato');
   build(Gs || undefined);
   const nowMs = Date.now(), base = normPref(prefs), rs = [...new Set(rotte)].slice(0, 4);
@@ -446,11 +460,11 @@ function simili({ da, a, secs = null, date = null, piediM = null, entro = false,
     // varianti: senza una delle sue linee (alla volta); altre linee: senza nessuna
     const famsSeen = new Set([fam]), varianti = [], altre = [];
     for (const rk of rs.length > 1 ? rs : []) {
-      const r = search({ da, a, secs, date, piediM, entro, pr: { ...base, escludi: new Set([...(base.escludi || []), rk]) }, nowMs, runsMax: 2, discover: false });
+      const r = search({ da, a, secs, date, piediM, piediReale, entro, pr: { ...base, escludi: new Set([...(base.escludi || []), rk]) }, nowMs, runsMax: 2, discover: false });
       const v = present({ ...r, nowMs, pr: base }).soluzioni.find(o => !famsSeen.has(o.famiglia) && o.rotte.some(x => rs.includes(x)));
       if (v) { famsSeen.add(v.famiglia); varianti.push(v); }
     }
-    const r = search({ da, a, secs, date, piediM, entro, pr: { ...base, escludi: new Set([...(base.escludi || []), ...rs]) }, nowMs, runsMax: 3, discover: false });
+    const r = search({ da, a, secs, date, piediM, piediReale, entro, pr: { ...base, escludi: new Set([...(base.escludi || []), ...rs]) }, nowMs, runsMax: 3, discover: false });
     for (const o of present({ ...r, nowMs, pr: base }).soluzioni) if (!famsSeen.has(o.famiglia) && altre.length < 3) { famsSeen.add(o.famiglia); altre.push(o); }
     if (arr) {
       const ref = toS(arr, live ? cal.romeParts(nowMs).secs : secs), near = o => toS(o.arrivi, ref) <= ref + C.ALT_LATER_S;

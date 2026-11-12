@@ -13,6 +13,7 @@ import * as Plan from './percorso.js';
 import * as Guida from './guida.js';
 import * as Nav from './nav.js';
 import * as Favs from './favs.js';
+import * as Fissi from './fissi.js';
 
 const POLL_MS = 2000, MIN_STOP_ZOOM = 14;
 onBusy(b => { $('busybar').hidden = !b; document.body.classList.toggle('busy', b); });   // barra di caricamento per le richieste lente
@@ -345,10 +346,13 @@ map.on('moveend', drawStopsSoon);
 // DATI STATICI (linee, fermate) E PERCORSI
 // ---------------------------------------------------------------------------------------------------------------------
 const shapeCache = new Map();
+// fermate, linee e tracciati: salvati sul telefono e riscaricati solo con una nuova versione dei GTFS, di preferenza dal CDN (fissi.js)
 function loadStatics() {
   shapeCache.clear();
-  api('/api/routes').then(d => { if (d && !d.error) routesData = d; }).catch(() => {});
-  api('/api/stops').then(d => { if (Array.isArray(d)) { buildZones(d); stops = mergeDuplicates(d); stopById.clear(); for (const s of stops) stopById.set(s[0], s); drawStops(); updateNear(); openLink(); setTimeout(guideBoot, 1200); } }).catch(() => {});
+  Fissi.manifest(true).finally(() => {
+    Fissi.routes().then(d => { if (d && !d.error) routesData = d; }).catch(() => {});
+    Fissi.stops().then(d => { if (Array.isArray(d)) { buildZones(d); stops = mergeDuplicates(d); stopById.clear(); for (const s of stops) stopById.set(s[0], s); drawStops(); updateNear(); openLink(); setTimeout(guideBoot, 1200); } }).catch(() => {});
+  });
 }
 async function showRoutes(ids, layer = lineLayer) {
   const tok = ++routeToken;
@@ -357,7 +361,7 @@ async function showRoutes(ids, layer = lineLayer) {
     if (!id) continue;
     let shapes = shapeCache.get(id);
     if (!shapes) {
-      try { shapes = (await api('/api/shapes?id=' + encodeURIComponent(id))).shapes; if (shapes?.length) shapeCache.set(id, shapes); }
+      try { shapes = await Fissi.shapes(id); if (shapes?.length) shapeCache.set(id, shapes); }
       catch { continue; }
     }
     if (tok !== routeToken) return;

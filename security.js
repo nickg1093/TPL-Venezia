@@ -22,10 +22,12 @@ const isHttps = req => !!req.socket.encrypted || (TRUST > 0 && String(req.header
 
 // ---- intestazioni ----
 // Le mattonelle della mappa vengono da OpenStreetMap; tutto il resto è dello stesso sito (Leaflet incluso, servito da /vendor).
+// connect-src: oltre al sito, SOLO i due CDN da cui il telefono scarica i dati fissi e la rete pedonale (fissi.js), e solo come DATI
+// (fetch di JSON, controllati con l'impronta SHA-256 prima dell'uso): nessuno script esterno, script-src resta 'self'.
 // style-src 'unsafe-inline': Leaflet e i colori delle linee impostano stili in linea (attributi style). Gli SCRIPT invece non possono essere in linea.
 const CSP = [
   "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: https://tile.openstreetmap.org",
-  "connect-src 'self'", "font-src 'self'", "manifest-src 'self'", "worker-src 'self'", "object-src 'none'", "base-uri 'none'",
+  "connect-src 'self' https://cdn.jsdelivr.net https://raw.githubusercontent.com", "font-src 'self'", "manifest-src 'self'", "worker-src 'self'", "object-src 'none'", "base-uri 'none'",
   "form-action 'none'", "frame-ancestors 'none'", 'upgrade-insecure-requests'
 ].join('; ');
 const HEADERS = {

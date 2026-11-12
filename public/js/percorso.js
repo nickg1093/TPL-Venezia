@@ -1,10 +1,12 @@
 // PIANIFICA PERCORSO (client): da / a, quando, soluzioni e dettaglio tappa per tappa, nel pannello laterale (o in basso sul telefono).
 // Il calcolo lo fa il server (/api/percorso). La posizione dell'utente NON esce dal telefono: si inviano solo le fermate vicine al punto
-// scelto, con la distanza in linea d'aria calcolata qui. Ogni tratta in mezzo usa gli stessi orari, simboli e diciture del pannello fermata,
+// scelto, con la distanza calcolata qui: lungo le strade (camminata.js, rete pedonale di OpenStreetMap scaricata dal CDN, fino a 30 minuti
+// a passo svelto) o, se la rete non è disponibile, in linea d'aria come prima. Anche i tratti a piedi sulla mappa seguono le strade. Ogni tratta in mezzo usa gli stessi orari, simboli e diciture del pannello fermata,
 // e si apre nel pannello del mezzo (con «indietro» al percorso).
 import { esc, icon, badge, colorInfo, lum, delayInfo, etaText, api, srcIcon, vehName, localDate } from './util.js';
 import { zones, zoneOf, norm, snorm, groups, aliasOf } from './zones.js';
 import * as Fav from './fav.js';
+import * as Walk from './camminata.js';
 
 const NEAR_M = 1500, NEAR_N = 14, REFRESH_MS = 60000, KEY = 'tpl.percorso', KEY_OPZ = 'tpl.percorso.opz';
 let X = null;                      // contesto dato da app.js (mappa, pannello, fermate, posizione…)
@@ -12,7 +14,7 @@ let X = null;                      // contesto dato da app.js (mappa, pannello, 
 // mezzi: battelli (nav) e autobus/tram (aut, come i pulsanti della mappa)
 const OPZ0 = { mezzi: ['nav', 'aut'], pref: 'equilibrata', cambi: '4', piedimax: '', passo: 'normale', margine: 'normale' };
 // when: 'now' (parti adesso, tempo reale) · 'at' (parti alle) · 'by' (arriva entro); date: giorno scelto (AAAA-MM-GG), entro le date dei GTFS in archivio
-const S = { from: null, to: null, when: 'now', time: '', date: '', res: null, err: null, sel: -1, det: null, alts: null, edit: null, q: '', picking: null, loading: false, asked: 0,
+const S = { walkShow: false, from: null, to: null, when: 'now', time: '', date: '', res: null, err: null, sel: -1, det: null, alts: null, edit: null, q: '', picking: null, loading: false, asked: 0,
   opz: { ...OPZ0 }, showOpz: false, opzDirty: false };
 let timer = null, token = 0, retry = null, range = { min: '', max: '' };
 // date con orari disponibili: le stesse della modalità «Programmato» (/api/dates, versioni dei GTFS in archivio)
@@ -34,11 +36,44 @@ function cands(ep) {
   if (!ep) return null;
   if (ep.kind === 'zone') { const z = zones.get(ep.key); if (!z) return null; return z.items.flatMap(i => groups.get(i.id) || [i.id]).map(id => id + '~0'); }
   if (ep.kind === 'stop') return (groups.get(ep.id) || [ep.id]).map(id => id + '~0');
-  const near = [];
-  for (const s of X.allStops()) { const d = mDist(ep.lat, ep.lon, +s[2], +s[3]); if (d <= NEAR_M) near.push([s[0], d]); }
-  near.sort((a, b) => a[1] - b[1]);
-  return near.slice(0, NEAR_N).flatMap(([id, d]) => (groups.get(id) || [id]).map(x => x + '~' + Math.round(d)));
+  // distanze lungo le strade già calcolate per questo punto (prepWalk): «~r» = metri reali, il server non aggiunge la sua stima
+  const real = walkVal.get(ptKey(ep));
+  if (real?.size) return [...real].sort((a, b) => a[1] - b[1]).slice(0, NEAR_N).flatMap(([id, d]) => (groups.get(id) || [id]).map(x => x + '~' + d + '~r'));
+  return nearStops(ep).slice(0, NEAR_N).flatMap(([id, d]) => (groups.get(id) || [id]).map(x => x + '~' + Math.round(d)));
 }
+function nearStops(ep) {
+  const near = [];
+  for (const s of X.allStops()) { const d = mDist(ep.lat, ep.lon, +s[2], +s[3]); if (d <= NEAR_M) near.push([s[0], d, +s[2], +s[3]]); }
+  return near.sort((a, b) => a[1] - b[1]);
+}
+// ---- a piedi lungo le strade (camminata.js) ----
+// walkMemo: calcoli in corso o fatti (chiave -> Promise); walkVal: risultati pronti, usati in modo sincrono da cands() e baseQs()
+//   «lat,lon»            Map(fermata -> metri) dal punto alle fermate vicine
+//   «w|da|a»             { m, pts } tutto a piedi tra i due punti
+//   «p|lat,lon|lat,lon»  { m, pts } tratto a piedi disegnato sulla mappa
+const walkMemo = new Map(), walkVal = new Map();
+const ptKey = ep => `${(+ep.lat).toFixed(5)},${(+ep.lon).toFixed(5)}`;
+function memoWalk(k, fn) {
+  if (walkMemo.has(k)) return walkMemo.get(k);
+  if (walkMemo.size > 80) { walkMemo.clear(); walkVal.clear(); }
+  const p = fn().then(v => { if (v == null) walkMemo.delete(k); else walkVal.set(k, v); return v; }, () => { walkMemo.delete(k); return null; });   // non riuscito: si riprova la volta dopo
+  walkMemo.set(k, p); return p;
+}
+const isPoint = ep => ep && (ep.kind === 'me' || ep.kind === 'point') && ep.lat != null;
+const walkKey = () => (S.from?.lat != null && S.to?.lat != null ? `w|${ptKey(S.from)}|${ptKey(S.to)}` : null);
+// prima di chiedere le soluzioni: distanze reali dai punti alle fermate vicine e percorso «tutto a piedi» (se entro 30 minuti)
+async function prepWalk() {
+  const jobs = [];
+  for (const ep of [S.from, S.to]) if (isPoint(ep)) jobs.push(memoWalk(ptKey(ep), async () => {
+    const near = nearStops(ep); if (!near.length) return null;
+    const m = await Walk.distanze({ lat: +ep.lat, lon: +ep.lon }, near.map(([id, , lat, lon]) => ({ key: id, lat, lon })));
+    return m && m.size ? m : null;                                 // nessuna fermata raggiungibile lungo la rete: linea d'aria, come prima
+  }));
+  const wk = walkKey();
+  if (wk && mDist(S.from.lat, S.from.lon, S.to.lat, S.to.lon) <= Walk.LIMITE_M) jobs.push(memoWalk(wk, () => Walk.percorso({ lat: +S.from.lat, lon: +S.from.lon }, { lat: +S.to.lat, lon: +S.to.lon })));
+  await Promise.all(jobs);
+}
+const pathFor = (a, b) => memoWalk(`p|${a[0].toFixed(5)},${a[1].toFixed(5)}|${b[0].toFixed(5)},${b[1].toFixed(5)}`, () => Walk.percorso({ lat: a[0], lon: a[1] }, { lat: b[0], lon: b[1] }));
 const epName = ep => (ep ? ep.label : '');
 const save = () => { try { const k = ep => (ep && (ep.kind === 'stop' || ep.kind === 'zone') ? ep : null); localStorage.setItem(KEY, JSON.stringify({ v: 1, from: k(S.from), to: k(S.to) })); } catch { /* facoltativo */ } };
 function restore() {
@@ -136,7 +171,9 @@ function baseQs() {
   const da = cands(S.from), a = cands(S.to);
   if (!da || !a || !da.length || !a.length) return null;
   let qs = `da=${encodeURIComponent(da.join(','))}&a=${encodeURIComponent(a.join(','))}`;
-  if (S.from.lat != null && S.to.lat != null) qs += `&piedi=${Math.round(mDist(S.from.lat, S.from.lon, S.to.lat, S.to.lon))}`;
+  const wv = walkVal.get(walkKey());
+  if (wv) qs += `&piedi=${wv.m}&piedir=1`;                       // tutto a piedi: metri lungo le strade
+  else if (S.from.lat != null && S.to.lat != null) qs += `&piedi=${Math.round(mDist(S.from.lat, S.from.lon, S.to.lat, S.to.lon))}`;
   if (S.when !== 'now' && S.time) {
     const [h, m] = S.time.split(':').map(Number);
     qs += `&secs=${h * 3600 + m * 60}&date=${clampDate(S.date).replace(/-/g, '')}`;
@@ -145,6 +182,8 @@ function baseQs() {
   return qs + opzQs();
 }
 async function run(quiet) {
+  if (!quiet) { S.walkShow = false; if (S.from && S.to) { S.loading = true; S.err = null; S.sel = -1; S.det = null; S.alts = null; renderBody(); } }
+  const my0 = ++token; await prepWalk(); if (my0 !== token) return;   // al massimo pochi secondi (la prima volta); poi linea d'aria
   const da = cands(S.from), a = cands(S.to);
   if (!da || !a) { S.res = null; render(); return; }
   if (!da.length || !a.length) { S.res = null; S.err = `Nessuna fermata entro 1,5 km dal punto di ${!da.length ? 'partenza' : 'arrivo'}.`; renderBody(); return; }
@@ -262,6 +301,9 @@ function optCard(o, attr, live, compact = false) {
     + `<span class="pp-o4">${when}<span>${cambiTxt(o)}${o.piedi ? ` · ${o.piedi} min a piedi` : ''}</span>${o.etichetta && !compact ? `<span class="pp-tag">${esc(o.etichetta)}</span>` : ''}${o.rischio ? '<span class="pp-tag warn">coincidenza a rischio</span>' : ''}</span>`
     + (compact ? '' : poi) + '</button>';
 }
+const kmTxt = m => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`);
+// «tutto a piedi» disegnato sulla mappa: scelto toccando la scheda, o da solo se nessun mezzo conviene
+const walkShown = () => !S.det && !!walkVal.get(walkKey()) && S.res?.piedi != null && (S.walkShow || !S.res.soluzioni.length);
 const PREF_TXT = { equilibrata: 'Equilibrata', veloce: 'Più veloce', cambi: 'Meno cambi', piedi: 'Meno a piedi' };
 function renderBody() {
   if (S.edit) return;
@@ -276,7 +318,7 @@ function renderBody() {
   const head = `<p class="pp-meta muted">${live ? `In tempo reale · aggiornato alle ${new Date(r.aggiornato).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : r.entro ? `Orari programmati · arrivo entro le ${esc(r.entro)}` : `Orari programmati · partenza dalle ${esc(r.ora)}`}`
     + (nf ? ` · <button type="button" class="nlink pp-opzlink">${nf} ${nf > 1 ? 'opzioni attive' : 'opzione attiva'}</button>` : '') + '</p>';
   const walkOnly = r.piedi != null && (!r.soluzioni.length || r.piedi <= Math.min(...r.soluzioni.map(o => o.minuti)) + 5)
-    ? `<div class="pp-walkonly">${icon('walk')}<span><b>A piedi: circa ${minTxt(r.piedi)}</b>${r.soluzioni.length ? (r.piedi <= Math.min(...r.soluzioni.map(o => o.minuti)) ? '<small>fai prima a piedi</small>' : '') : '<small>nessun mezzo conviene per questo tragitto</small>'}</span></div>` : '';
+    ? `<${walkVal.get(walkKey()) ? `button type="button" data-walkonly aria-pressed="${walkShown()}"` : 'div'} class="pp-walkonly${walkShown() ? ' on' : ''}">${icon('walk')}<span><b>A piedi: circa ${minTxt(r.piedi)}${walkVal.get(walkKey()) ? ` · ${kmTxt(walkVal.get(walkKey()).m)}` : ''}</b>${r.soluzioni.length ? (r.piedi <= Math.min(...r.soluzioni.map(o => o.minuti)) ? '<small>fai prima a piedi</small>' : '') : '<small>nessun mezzo conviene per questo tragitto</small>'}${walkVal.get(walkKey()) ? `<small>${walkShown() ? 'sulla mappa il percorso a piedi' : 'tocca per vederlo sulla mappa'}</small>` : ''}</span></${walkVal.get(walkKey()) ? 'button' : 'div'}>` : '';
   if (!r.soluzioni.length) {
     X.plist.innerHTML = head + walkOnly + (walkOnly ? '' : `<p class="muted pad">${r.senzaFermate ? `Nessuna fermata ${S.opz.piedimax ? `entro ${S.opz.piedimax} minuti a piedi` : 'vicina'} al punto scelto.` : r.entro ? `Nessuna soluzione per arrivare entro le ${esc(r.entro)} (si guardano le 5 ore prima). Prova un orario più tardi.` : 'Nessuna soluzione nelle prossime ore con autobus, tram o battelli. Prova un altro orario o un punto vicino.'}${nf ? ' Le opzioni attive possono escludere delle soluzioni.' : ''}</p>`);
     return;
@@ -307,7 +349,7 @@ function renderDetail(o, live) {
   o.tratte.forEach((t, k) => {
     if (t.tipo === 'piedi') {
       const to = t.a ? `fino a ${stopName(t.a)}` : t.estremo === 'arrivo' ? 'fino all\'arrivo' : '';
-      steps.push(`<li class="pp-step walk"><span class="pp-sic">${icon('walk')}</span><div><b>A piedi ${t.min} min</b><small>${to}</small></div></li>`);
+      steps.push(`<li class="pp-step walk" data-wk="${k}"><span class="pp-sic">${icon('walk')}</span><div><b>A piedi ${t.min} min</b><small>${to}</small></div></li>`);
       return;
     }
     const d = legStatus(t.da, live), a = legStatus(t.a, live), k0 = colorInfo(t.color, t.line), rail = lum(k0.rail) > .8 || lum(k0.rail) < .03 ? 'var(--fg)' : k0.rail;
@@ -346,22 +388,38 @@ function renderAlts() {
 // ---------------------------------------------------------------------------------------------------------------------
 // MAPPA: tratte colorate come le linee, tratti a piedi tratteggiati, partenza e arrivo
 // ---------------------------------------------------------------------------------------------------------------------
+let drawTok = 0;
 function draw() {
   X.layer.clearLayers();
-  const r = S.res, o = S.det || r?.soluzioni?.[0], pts = [];
+  const r = S.res, o = S.det || r?.soluzioni?.[0], pts = [], myDraw = ++drawTok;
   const mark = (ep, end) => { if (!ep || ep.lat == null) return; L.circleMarker([ep.lat, ep.lon], { radius: 8, weight: 3, color: end ? '#b42318' : '#0b62c4', fillColor: '#fff', fillOpacity: 1, interactive: false }).addTo(X.layer); pts.push([ep.lat, ep.lon]); };
-  if (o) {
+  const dash = { color: '#475467', weight: 3, opacity: .85, dashArray: '2 7', lineCap: 'round', interactive: false };
+  // tratto a piedi: subito in linea retta, poi (appena calcolato sul telefono) lungo le strade; k = tappa nel dettaglio (per i metri)
+  const walkLine = (a, b, k) => {
+    const line = L.polyline([a, b], dash).addTo(X.layer);
+    if (mDist(a[0], a[1], b[0], b[1]) < 15) return;
+    pathFor(a, b).then(w => {
+      if (!w || myDraw !== drawTok) return;
+      X.layer.removeLayer(line); L.polyline(w.pts, dash).addTo(X.layer);
+      const st = k != null && X.plist.querySelector(`.pp-step.walk[data-wk="${k}"] small`);
+      if (st && !st.dataset.m) { st.dataset.m = '1'; st.textContent += `${st.textContent ? ' · ' : ''}${kmTxt(w.m)}`; }
+    });
+  };
+  if (walkShown()) {                                              // tutto a piedi
+    const w = walkVal.get(walkKey());
+    L.polyline(w.pts, { ...dash, weight: 4 }).addTo(X.layer); pts.push(...w.pts);
+  } else if (o) {
     let prev = S.from?.lat != null ? [S.from.lat, S.from.lon] : null;
-    const walkTo = p => { if (prev && p) L.polyline([prev, p], { color: '#475467', weight: 3, opacity: .85, dashArray: '2 7', lineCap: 'round', interactive: false }).addTo(X.layer); };
-    for (const t of o.tratte) {
-      if (t.tipo === 'piedi') { const p = t.a?.lat != null ? [t.a.lat, t.a.lon] : t.estremo === 'arrivo' && S.to?.lat != null ? [S.to.lat, S.to.lon] : null; if (t.da?.lat != null) prev = [t.da.lat, t.da.lon]; walkTo(p); if (p) prev = p; continue; }
+    const walkTo = (p, k) => { if (prev && p) walkLine(prev, p, k); };
+    o.tratte.forEach((t, k) => {
+      if (t.tipo === 'piedi') { const p = t.a?.lat != null ? [t.a.lat, t.a.lon] : t.estremo === 'arrivo' && S.to?.lat != null ? [S.to.lat, S.to.lon] : null; if (t.da?.lat != null) prev = [t.da.lat, t.da.lon]; walkTo(p, k); if (p) prev = p; return; }
       const start = t.da.lat != null ? [t.da.lat, t.da.lon] : null; if (prev && start && mDist(prev[0], prev[1], start[0], start[1]) > 25) walkTo(start);
       const line = t.shape?.length ? t.shape : t.stops.map(s => [s[0], s[1]]);
       X.drawLine(line, colorInfo(t.color, t.line), X.layer, .95);
       for (const s of [t.stops[0], t.stops[t.stops.length - 1]]) L.circleMarker([s[0], s[1]], { radius: 5, weight: 2, color: '#0f172a', fillColor: '#fff', fillOpacity: 1 }).bindTooltip(esc(s[2])).addTo(X.layer);
       pts.push(...line);
       prev = t.a.lat != null ? [t.a.lat, t.a.lon] : prev;
-    }
+    });
     if (S.to?.lat != null && prev && mDist(prev[0], prev[1], S.to.lat, S.to.lon) > 25 && o.tratte[o.tratte.length - 1].tipo === 'mezzo') walkTo([S.to.lat, S.to.lon]);
   }
   mark(S.from, false); mark(S.to, true);
@@ -401,6 +459,7 @@ function onClick(e) {
   const oo = t.closest('[data-o]'); if (oo) { S.opz[oo.dataset.o] = oo.dataset.v; S.opzDirty = true; saveOpz(); renderForm(); renderOpz(); return; }
   if (t.closest('.pp-oreset')) { S.opz = { ...OPZ0, mezzi: [...OPZ0.mezzi] }; S.opzDirty = true; saveOpz(); renderForm(); renderOpz(); return; }
   if (t.closest('.pp-ook, .pp-oback')) { const d = S.opzDirty; S.showOpz = false; S.opzDirty = false; renderForm(); if (d) run(); else renderBody(); X.plist.scrollTop = 0; return; }
+  if (t.closest('[data-walkonly]')) { S.walkShow = !walkShown(); renderBody(); draw(); return; }
   // soluzioni e alternative
   const alt = t.closest('[data-alt]');
   if (alt && S.alts?.data) { const [kind, k] = alt.dataset.alt.split(':'), x = S.alts.data[kind]?.[+k]; if (x) { S.det = x; S.sel = -1; renderBody(); draw(); X.plist.scrollTop = 0; } return; }

@@ -4,7 +4,7 @@ Mappa in tempo reale di autobus, tram e vaporetti ACTV di Venezia, con pannelli 
 avvisi di servizio, avvisi di arrivo (notifiche), marea e preferiti. È una **PWA** (si installa come app) servita da un **server Node.js
 senza database**, che gira gratis su Render oppure su un computer di casa.
 
-Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v24**
+Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v25**
 
 ---
 
@@ -21,8 +21,8 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 9. [Prove e test: comandi da digitare](#9-prove-e-test)
 10. [Modifiche frequenti: ricette](#10-modifiche-frequenti)
 11. [Pubblicare una nuova versione e tornare indietro](#11-pubblicare-e-tornare-indietro)
-12. [Novità della v24](#12-novità-della-v24)
-- Appendici tecniche: [A. GTFS statici](#a-gtfs-statici-perché-non-si-sovrascrivono-più) · [B. Regole del motore tempo reale](#b-eccezioni-e-contromisure-del-codice-elenco-dettagliato) · [C. Sicurezza](#c-sicurezza-securityjs-serverjs)
+12. [Novità della v25](#12-novità-della-v25) · [Novità della v24](#novità-della-v24)
+- Appendici tecniche: [A. GTFS statici](#a-gtfs-statici-perché-non-si-sovrascrivono-più) · [B. Regole del motore tempo reale](#b-eccezioni-e-contromisure-del-codice-elenco-dettagliato) · [C. Sicurezza](#c-sicurezza-securityjs-serverjs) · [D. Dati sul telefono e CDN](#d-dati-sul-telefono-e-cdn-ramo-dati)
 
 ---
 
@@ -37,6 +37,10 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
  Marea CPSM (dati.venezia.it) ──────────► tide.js                                       │                          preferiti, notifiche)
  Rete pedonale OSM (pedonale-*.txt) ────► percorso.js (RAPTOR) ─────────────────────────┘                          service worker sw.js
  Servizi Web Push (Google, Apple…) ◄──── watch.js + push.js (avvisi di arrivo)
+
+ GitHub Actions «dati» ─► ramo «dati» (fermate, linee, tracciati, rete pedonale OSM in mattonelle) ─► CDN jsDelivr ─► telefono
+                          (il server pubblica solo le impronte in /api/fissi: il telefono usa un file solo se coincide)   (salvati sul dispositivo;
+                                                                                                                             percorsi a piedi calcolati lì)
 ```
 
 - **Il server** legge i dati ACTV, li collega tra loro e risponde alle richieste. Non salva nulla su disco durante il funzionamento
@@ -44,7 +48,10 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
   impostazioni, avvisi di arrivo attivi).
 - **La pagina** (`public/`) è un'app a pagina singola: niente framework, moduli JavaScript nativi, Leaflet per la mappa, nessuno script
   di terze parti, CSP rigida.
-- **GitHub Actions** scarica le nuove versioni dei GTFS (ogni 6 ore), archivia gli avvisi (ogni 20 minuti) e tiene sveglio il server.
+- **GitHub Actions** scarica le nuove versioni dei GTFS (ogni 6 ore), archivia gli avvisi (ogni 20 minuti), prepara i dati fissi e la rete
+  pedonale per i telefoni (ramo `dati`) e tiene sveglio il server.
+- **Il telefono** tiene salvati fermate, linee, tracciati e la rete pedonale e li riscarica solo quando cambiano, dal **CDN** e non dal server
+  (appendice [D](#d-dati-sul-telefono-e-cdn-ramo-dati)); i percorsi a piedi li calcola lui.
 
 ---
 
@@ -65,6 +72,7 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 | `schedule.js`, `calendar.js` | Orari programmati, passaggi alle fermate, calendario dei servizi (date di Venezia). | regole degli orari |
 | `gtfs.js`, `gtfsstore.js`, `csv.js`, `zip.js`, `ids.js` | Lettura dei GTFS (zip in memoria), archivio e scelta della versione, collegamento degli identificativi feed ↔ GTFS. | formati nuovi di ACTV |
 | `stopgroups.js`, `prossime.js`, `area.js` | Fermate equivalenti (stesso palo), fermate successive mostrate nei pannelli, area servita sulla mappa. | raramente |
+| `fissi.js` | **Dati fissi per i telefoni**: file di fermate, linee e tracciati per versione dei GTFS con impronta SHA-256 (`/api/fissi`, `/api/fisso`), lettura dell'indice del ramo `dati`. Usato anche dal workflow, così i byte coincidono. | formato dei file (cambiare anche `FORMATO`) |
 | `percorso.js` | **Pianificatore** (algoritmo RAPTOR): soluzioni con cambi e tratti a piedi, preferenze, alternative; usa gli orari della data scelta. | parametri del calcolo (oggetto `C`) |
 | `pedonale-laguna.txt`, `pedonale-terraferma.txt` | Distanze a piedi tra fermate sulla rete pedonale di OpenStreetMap (generate da `scripts/pedonale.js`). | dopo grandi cambi di fermate |
 | `avvisi.js` | Avvisi di servizio: legge RSS ACTV e Telegram, riconosce linee, fermate, date ed eventi (aggiornamenti, ripristini, annullamenti). | regole di riconoscimento |
@@ -81,10 +89,13 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 | File | Cosa fa |
 |---|---|
 | `index.html` | Struttura della pagina: mappa, controlli, schede (marea, avvisi, preferiti, informazioni), pannello con la linguetta dei comandi, barra in basso. Testi legali e privacy. |
-| `css/app.css` | Tutto lo stile. In testa le variabili (colori dei due temi, misure); in fondo la sezione **v24** (scala, linguetta, preferiti, pianificatore). |
+| `css/app.css` | Tutto lo stile. In testa le variabili (colori dei due temi, misure); in fondo le sezioni **v24** (scala, linguetta, preferiti, pianificatore) e **v25** (scheda «tutto a piedi»). |
 | `js/app.js` | App principale: mappa e mezzi in movimento, ricerca, pannelli fermata/zona/corsa, navigazione tra pannelli e tasto «indietro», mezzi «?», collegamento di tutti i moduli. |
 | `js/nav.js` | Tasto e gesto **«indietro»** del sistema: una voce di cronologia per ogni livello aperto. |
 | `js/percorso.js` | Pianificatore lato telefono: punti di partenza/arrivo, quando, opzioni, soluzioni, dettaglio, disegno sulla mappa. |
+| `js/fissi.js` | **Dati fissi sul telefono**: fermate, linee e tracciati salvati nella cache del sito (`tpl-fissi-1`), scaricati dal CDN con controllo dell'impronta, o dal server. Restituisce gli stessi dati dei vecchi `/api/stops`, `/api/routes`, `/api/shapes`. |
+| `js/pedoni.js` | **Percorsi a piedi**: rete pedonale in mattonelle caricate quando servono, aggancio dei punti alla strada, ricerca del percorso (Dijkstra/A*). Puro, senza import (provato anche con `node --test`). |
+| `js/camminata.js` | Collega `pedoni.js` al CDN e al pianificatore: distanze verso le fermate vicine e percorsi da disegnare, entro 30 minuti a passo svelto; se la rete non c'è, linea d'aria come prima. |
 | `js/fav.js` | Memoria dei preferiti (fermate e percorsi), copia di sicurezza (esporta/importa). |
 | `js/favs.js` | Pannello **Preferiti** (stella in basso a destra): schede Fermate/Percorsi, modifica, copia. |
 | `js/notify.js` | Avvisi di arrivo sul telefono: permessi, iscrizione push, elenco attivo, ripristino dopo un riavvio del server. |
@@ -102,9 +113,9 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 | Cartella | Contenuto |
 |---|---|
 | `data/gtfs/<nav\|aut>/` | Archivio dei GTFS statici (`<inizio validità>_<hash>.zip`), aggiornato dal workflow. `data/actv_*.zip` sono versioni storiche ancora usate per le date vecchie: **non cancellarle**. |
-| `scripts/` | `update-gtfs.js` (scarica i GTFS), `archivia-avvisi.js` e `interpreta-avvisi.js` (workflow degli avvisi), `pedonale.js` (rete pedonale), `vapid-keys.js` (chiavi delle notifiche). |
+| `scripts/` | `update-gtfs.js` (scarica i GTFS), `archivia-avvisi.js` e `interpreta-avvisi.js` (workflow degli avvisi), `pedonale.js` (distanze a piedi tra fermate), `genera-dati.js` e `pedoni-core.js` (file del ramo `dati`: dati fissi e rete pedonale in mattonelle), `vapid-keys.js` (chiavi delle notifiche). |
 | `tests/` | Prove automatiche (`*.test.js`, `node --test`), feed simulato (`fakefeed.js`), prove dell'interfaccia (`ui/run.py`, Playwright). |
-| `.github/workflows/` | `update-gtfs.yml`, `archivio-avvisi.yml`, `keepalive.yml` (vedi [7](#7-github)). |
+| `.github/workflows/` | `update-gtfs.yml`, `archivio-avvisi.yml`, `dati.yml`, `keepalive.yml` (vedi [7](#7-github)). |
 
 ---
 
@@ -144,6 +155,11 @@ più in alto o torna al pannello precedente; con nulla aperto esce dall'app. L'o
   aperta); per un orario futuro i mezzi compaiono quando le corse entrano in servizio. Chiudendo il pianificatore tornano tutti.
 - **Percorsi preferiti**: stella nella linguetta; nel pannello Preferiti (scheda Percorsi) si possono **rinominare** («Casa → Lavoro»), riordinare ed eliminare.
 - Tempo reale per le partenze di adesso, orari programmati per gli altri orari; «a piedi» sulla rete pedonale OSM.
+- **A piedi lungo le strade** (v25): dal punto di partenza (posizione o punto sulla mappa) alle fermate vicine e dalle fermate all'arrivo il telefono
+  misura la distanza **lungo calli, ponti e marciapiedi** (fino a 30 minuti a passo svelto, circa 3 km) e la manda al server al posto della linea
+  d'aria (`~r`); anche «tutto a piedi» (`piedi=…&piedir=1`). I tratti a piedi sulla mappa seguono le strade e nel dettaglio ne compare la lunghezza;
+  la scheda «A piedi: circa …» si tocca per vedere il percorso. La posizione non esce dal telefono. Senza rete pedonale (CDN irraggiungibile,
+  browser senza HTTPS) tutto funziona come prima, in linea d'aria.
 
 ### 3.5 Preferiti
 Stella in basso a destra → pannello con schede **Fermate** e **Percorsi**. Un tocco apre; **Modifica** per riordinare, rinominare (percorsi) ed eliminare;
@@ -158,7 +174,7 @@ ripresenta da solo gli avvisi attivi (`/api/watch/restore`), all'apertura dell'a
 - **Avvisi**: sito ACTV + Telegram, collegati a linee e fermate (bordo rosso sulla mappa, «!» nei pannelli); archivio storico nel ramo `archivio-avvisi`.
 - **Marea**: livello CPSM, tendenza, prossimi estremi, grafico con cursore.
 - **Programmato** (barra in basso): posizioni e orari di un altro giorno o di un'altra ora, con riproduzione accelerata.
-- **Guida**: alla prima apertura e, dopo un aggiornamento, solo le novità (`guida.js`, `GUIDA_VER = 'v24'`).
+- **Guida**: alla prima apertura e, dopo un aggiornamento, solo le novità (`guida.js`, `GUIDA_VER = 'v25'`).
 - **Link condivisibili**: `?fermata=nav:5013`, `?zona=…`, `?corsa=nav:…`, `?da=…&a=…`; scorciatoie `?apri=percorso|vicine|preferiti`.
 
 ### 3.8 Scala della grafica
@@ -178,6 +194,8 @@ I bersagli di tocco restano tra 44 e 48 px. La regola è in testa alla sezione v
 | Chiavi delle notifiche (VAPID) | variabili d'ambiente su Render | sempre | senza, le iscrizioni non valgono più dopo un riavvio |
 | GTFS statici | repository GitHub (`data/gtfs/`) | sempre | aggiunti dal workflow, mai sovrascritti |
 | Archivio avvisi e interpretazioni AI | ramo GitHub `archivio-avvisi` | 6 mesi letti dal server | scritto solo dal workflow |
+| Fermate, linee, tracciati, rete pedonale | telefono (cache del sito `tpl-fissi-1`) | finché non cambiano | riscaricati solo con una nuova versione dei GTFS o della rete; le versioni vecchie si cancellano da sole |
+| File per i telefoni (dati fissi, mattonelle) | ramo GitHub `dati`, letto dal CDN jsDelivr | sempre | scritto solo dal workflow `dati.yml` |
 | Stato tempo reale, cache | memoria del server | fino al riavvio | si ricostruisce in pochi secondi |
 
 **Perché niente database**: il piano gratuito di Render ha disco temporaneo e il Postgres gratuito scade dopo 30 giorni; tutto ciò che è
@@ -192,10 +210,12 @@ personale resta sul dispositivo dell'utente (privacy) e ciò che è pubblico sta
 | `/api/vehicles?src=nav,aut` | GET | mezzi in tempo reale (risposta condivisa, ETag) |
 | `/api/stream?d=1&src=…` | GET (SSE) | flusso dei mezzi: elenco completo, poi differenze |
 | `/api/scheduled?src=…&secs=…&date=AAAAMMGG` | GET | posizioni da orario (modalità Programmato) |
-| `/api/stops`, `/api/routes`, `/api/shapes?id=…`, `/api/area` | GET | fermate, linee, tracciati, area servita |
+| `/api/fissi` | GET | indice dei dati fissi: impronte SHA-256 dei file della versione in uso, indirizzi del CDN, rete pedonale (ETag) |
+| `/api/fisso?src=nav&f=stops\|routes\|shapes&h=<impronta>` | GET | un file dei dati fissi (se l'impronta è quella in uso; in cache per sempre) |
+| `/api/stops`, `/api/routes`, `/api/shapes?id=…`, `/api/area` | GET | fermate, linee, tracciati, area servita (per le app non aggiornate e come riserva; stops e routes con ETag) |
 | `/api/stop?id=nav:5013`, `/api/zone?ids=…` | GET | passaggi di una fermata o di una zona (`&secs=&date=` per Programmato) |
 | `/api/trip?id=nav:<corsa>` | GET | dettaglio di una corsa |
-| `/api/percorso?da=…&a=…[&secs=&date=&arrivo=1&mezzi=nav,aut&pref=…&cambi=…&piedimax=…&passo=…&margine=…]` | GET | soluzioni del pianificatore |
+| `/api/percorso?da=…&a=…[&secs=&date=&arrivo=1&mezzi=nav,aut&pref=…&cambi=…&piedimax=…&passo=…&margine=…&piedi=…&piedir=1]` | GET | soluzioni del pianificatore. `da`/`a`: `src:id~metri` (linea d'aria) o `src:id~metri~r` (lungo le strade, misurati dal telefono) |
 | `/api/percorso-simili?…&fam=…&rotte=…&arr=hh:mm` | GET | alternative di una soluzione |
 | `/api/dates` | GET | date coperte dai GTFS in archivio |
 | `/api/avvisi`, `/api/tide`, `/api/about`, `/api/push-key` | GET | avvisi, marea, versione e contatto, chiave pubblica VAPID |
@@ -222,6 +242,8 @@ personale resta sul dispositivo dell'utente (privacy) e ciò che è pubblico sta
 | `PUSH_CONTACT` | facoltativa | `mailto:…` per i servizi di notifica |
 | `RT_POLL_MS` | facoltativa | intervallo massimo di lettura dei feed (default 5000, minimo 3000) |
 | `AVVISI_ARCHIVIO` | facoltativa | indirizzo della cartella `avvisi` dell'archivio, oppure `0` per non usarlo |
+| `DATI_CDN` | facoltativa | `0` = niente CDN: dati fissi solo dal server e niente percorsi a piedi lungo le strade (prove) |
+| `DATI_REPO` | facoltativa | repository del ramo `dati` (`utente/nome`); predefinito quello da cui Render prende il codice |
 | `KEEPALIVE_URL` | facoltativa | su Render basta `RENDER_EXTERNAL_URL`, impostata da Render |
 | `PORT`, `HOST`, `TLS_CERT`, `TLS_KEY` | solo in locale | porta, indirizzo di ascolto, HTTPS in rete di casa |
 
@@ -247,11 +269,13 @@ Cloudflare servono solo alle prove locali dell'interpretazione AI.
 |---|---|---|
 | **Aggiorna GTFS ACTV** (`update-gtfs.yml`) | ogni 6 ore e a mano | scarica le versioni nuove dei GTFS in `data/gtfs/` senza sovrascrivere; commit su `main` solo se c'è qualcosa di nuovo |
 | **Archivio avvisi ACTV** (`archivio-avvisi.yml`) | ogni 20 minuti e a mano | salva RSS e Telegram nel ramo `archivio-avvisi`; se ci sono i segreti Cloudflare, interpreta con l'AI le comunicazioni nuove |
+| **Dati per i telefoni (CDN)** (`dati.yml`) | dopo ogni aggiornamento dei GTFS, ogni lunedì (rete pedonale) e a mano | scrive nel ramo `dati` fermate, linee e tracciati di ogni versione dei GTFS e, il lunedì, la rete pedonale da OpenStreetMap (Geofabrik + osmium, 2-3 minuti). A mano: *Run workflow*, con `pedoni = 1` per rifare subito la rete |
 | **Keep-alive Render** (`keepalive.yml`) | ogni 10 minuti | chiama `/healthz` perché il servizio gratuito non si addormenti (GitHub può ritardare: consigliato anche un pinger esterno, es. UptimeRobot ogni 5 min) |
 
 ### 7.2 Rami
 - `main`: codice e GTFS. È il ramo che Render pubblica.
 - `archivio-avvisi`: solo dati degli avvisi (scritto dal workflow). **Non** unirlo a `main`.
+- `dati`: solo file per i telefoni (scritto dal workflow `dati.yml`, letto dal CDN). **Non** unirlo a `main` e non modificarlo a mano.
 - `dependabot/npm_and_yarn/adm-zip-0.6.1`: **obsoleto** (adm-zip non è più una dipendenza dalla sostituzione con `zip.js`): chiudi la richiesta di
   modifica e cancella il ramo (*Pull requests* → la richiesta di Dependabot → *Close*; poi *Delete branch*).
 
@@ -309,7 +333,14 @@ Tutti i comandi sono per **PowerShell** di Windows, dalla cartella del progetto 
 npm ci                                   # installa le librerie esattamente come su Render (la prima volta e dopo un cambio di package-lock.json)
 npm test                                 # tutte le prove (atteso: «# fail 0»)
 node --test tests/percorso.test.js       # un solo file di prove
-node --test --test-name-pattern="v24"    # solo le prove il cui nome contiene «v24»
+node --test --test-name-pattern="v25"    # solo le prove il cui nome contiene «v25»
+node --test tests/pedoni.test.js tests/fissi.test.js   # percorsi a piedi e dati fissi
+```
+
+Rigenerare in locale i file del ramo `dati` (di solito lo fa il workflow):
+```powershell
+node scripts/genera-dati.js fissi C:\temp\dati              # fermate, linee e tracciati di ogni GTFS in data/gtfs
+# la rete pedonale richiede osmium (https://osmcode.org/osmium-tool/) e l'estratto Geofabrik: vedi i passi in .github/workflows/dati.yml
 ```
 
 ### 9.2 Avviare l'app sul computer
@@ -320,10 +351,11 @@ Oppure doppio clic su `avvia-windows.bat`. Per cambiare porta: `$env:PORT=3111; 
 
 ### 9.3 App con dati simulati (senza internet per i feed ACTV)
 ```powershell
-$env:PORT=3111; $env:TRUST_PROXY=1; $env:AVVISI_ARCHIVIO=0
+$env:PORT=3111; $env:TRUST_PROXY=1; $env:AVVISI_ARCHIVIO=0; $env:DATI_CDN=0
 node -r ./tests/fakefeed.js server.js    # mezzi, avvisi e marea simulati: utile per provare l'interfaccia
 ```
-Per richiudere: `Ctrl+C`. Per tornare alle impostazioni normali nella stessa finestra: `Remove-Item Env:PORT, Env:TRUST_PROXY, Env:AVVISI_ARCHIVIO`.
+Per richiudere: `Ctrl+C`. Per tornare alle impostazioni normali nella stessa finestra: `Remove-Item Env:PORT, Env:TRUST_PROXY, Env:AVVISI_ARCHIVIO, Env:DATI_CDN`.
+Senza `DATI_CDN=0` l'app usa il CDN anche in locale (serve internet): così si provano i percorsi a piedi lungo le strade.
 
 ### 9.4 Prove dell'interfaccia (6 dimensioni di schermo, con screenshot)
 Una volta sola: `pip install playwright` e `python -m playwright install chromium`. Poi, con l'app simulata avviata (9.3) in un'altra finestra:
@@ -390,7 +422,22 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ---
 
-## 12. Novità della v24
+## 12. Novità della v25
+
+- **Dati fissi sul telefono**: fermate, linee e tracciati non si riscaricano più a ogni apertura (prima ~36 KB ogni volta solo per le fermate):
+  restano salvati e si aggiornano solo con una nuova versione dei GTFS, scaricati dal **CDN jsDelivr** (ramo `dati`) invece che dal server.
+  Il server pubblica solo le impronte (`/api/fissi`, poche centinaia di byte, di solito «non cambiato»). Riserve: raw.githubusercontent.com,
+  poi il server (`/api/fisso`), poi i vecchi indirizzi. `/api/stops` e `/api/routes` ora rispondono «non cambiato» (ETag) a chi li ha già.
+- **Percorsi a piedi lungo le strade**, calcolati sul telefono sulla rete pedonale di OpenStreetMap (mattonelle dal CDN, caricate solo dove
+  servono): distanze vere verso le fermate vicine e per «tutto a piedi», fino a 30 minuti a passo svelto; tratti a piedi disegnati lungo calli e
+  ponti, con la lunghezza; scheda «A piedi» da toccare per vederlo sulla mappa. Il server non fa nessun calcolo in più.
+- Workflow **`dati.yml`** e ramo **`dati`**; `fissi.js`, `scripts/genera-dati.js`, `scripts/pedoni-core.js`; `public/js/fissi.js`, `pedoni.js`, `camminata.js`.
+- Sicurezza: la CSP ammette jsDelivr e raw.githubusercontent.com **solo per scaricare dati** (`connect-src`), mai script; ogni file è controllato
+  con l'impronta SHA-256 data dal server prima dell'uso. Informativa privacy aggiornata (jsDelivr e GitHub come fonti dei file).
+- Novità nella guida; service worker `v25`.
+- **Da fare su Render dopo il deploy**: nulla (nessuna variabile nuova obbligatoria).
+
+### Novità della v24
 
 - **Centrale ACTV tolta** (era spenta con `ACTV_CENTRALE=0`): via `centrale*.js`, `/api/centrale` e le relative prove; il comportamento resta quello
   con la centrale spenta. Meno memoria e meno codice.
@@ -499,8 +546,50 @@ Caso reale (Guglie, 4.1, 3/11): le corse delle 13:49 «in ritardo di 140 min» e
 - **Validazione dei parametri** (id, orari, date, liste) con regole rigide; routing con `hasOwn` (nessun accesso a proprietà ereditate); errori interni mascherati ("errore interno"), dettagli solo nei log.
 - **Risposta pubblica dei mezzi** limitata a campi in whitelist.
 - **Timeout** anti-slowloris, chiusura ordinata (SIGTERM), file statici in memoria con ETag, niente elenco di cartelle, niente file fuori da `public/`.
-- **Interfaccia**: tutto il testo che arriva da fuori passa da `esc()` prima di `innerHTML`; colori delle linee accettati solo come `#RRGGBB`; link esterni con `rel="noopener noreferrer"`; Leaflet servito dal proprio server (nessuna dipendenza da CDN esterne, quindi niente rischio di script compromessi); service worker che non intercetta mai `/api`.
+- **Interfaccia**: tutto il testo che arriva da fuori passa da `esc()` prima di `innerHTML`; colori delle linee accettati solo come `#RRGGBB`; link esterni con `rel="noopener noreferrer"`; Leaflet servito dal proprio server (nessuno script da CDN esterne, quindi niente rischio di script compromessi); service worker che non intercetta mai `/api`.
+- **CDN per i dati (v25)**: `connect-src` ammette `https://cdn.jsdelivr.net` e `https://raw.githubusercontent.com` solo per scaricare JSON
+  (fermate, linee, tracciati, rete pedonale). `script-src` resta `'self'`: nessun codice arriva dal CDN. Gli indirizzi usano il numero di commit
+  (immutabili) e il telefono controlla l'impronta SHA-256 data dal server prima di usare un file: un file alterato si scarta e si riscarica dal server.
+  Le richieste al CDN partono senza cookie né pagina di provenienza (`credentials: 'omit'`, `referrerPolicy: 'no-referrer'`). Il contenuto
+  passa comunque da `esc()` prima di entrare nella pagina, come ogni altro dato.
 - **Accessibilità**: bersagli di tocco ≥ 44 px, contrasti WCAG AA, tastiera (Invio/Spazio sulle righe, Esc chiude), movimento ridotto rispettato, nessuna informazione solo a colori.
 
 ---
+
+---
+
+## D. Dati sul telefono e CDN (ramo `dati`)
+
+**Perché.** Il piano gratuito di Render ha un tetto di banda in uscita. Le parti dei dati che cambiano di rado (fermate, linee, tracciati,
+rete pedonale) non devono passare ogni volta dal server: le scarica il telefono **una volta** dal CDN jsDelivr, che le legge dal ramo `dati`
+di GitHub, e le tiene salvate.
+
+**Chi produce i file.** Il workflow `dati.yml` con `scripts/genera-dati.js`:
+- `fissi/<nav|aut>/<versione>/{stops,routes,shapes}.json` per **ogni** GTFS in archivio (`versione` = prime 12 cifre dell'md5 dello ZIP),
+  calcolati con `fissi.js`, lo **stesso** codice del server: i byte coincidono e quindi anche le impronte;
+- `pedoni/m/<impronta>.json`: mattonelle di circa 1,1 × 1,1 km della rete pedonale OSM (stesse strade di `pedonale-core.js`; scale × 1,3),
+  solo nella zona servita (entro ~3 km da una fermata). Oggi circa 1.600 mattonelle, 8 MB in tutto (3,7 MB compressi); quella più grande in
+  centro storico ~90 kB. Il nome è l'impronta: una mattonella che non cambia resta lo stesso file e i telefoni non la riscaricano;
+- `pedoni/i/<versione>.json` (indice delle mattonelle) e `pedoni/ultimo.json`;
+- `indice.json`, scritto **dopo** il commit dei file, con il suo numero: gli indirizzi del CDN usano quel commit (`…/gh/utente/repo@<commit>/…`),
+  quindi sono immutabili e restano in cache per sempre.
+
+**Chi decide cosa è valido.** Il server legge `indice.json` da GitHub ogni 30 minuti e in `/api/fissi` pubblica, per la versione dei GTFS
+**che sta usando**, l'impronta SHA-256 di ogni file e se quella versione è già sul CDN. Il telefono (`public/js/fissi.js`):
+1. usa il file salvato se l'impronta coincide;
+2. altrimenti lo scarica dal CDN (jsDelivr, poi raw.githubusercontent.com) e lo accetta solo se l'impronta coincide;
+3. altrimenti dal server (`/api/fisso`), poi i vecchi indirizzi (`/api/stops`…). Il resto dell'app riceve gli stessi dati di prima.
+
+**Allineamento.** Una versione dei GTFS scaricata dal server ma non ancora elaborata dal workflow non è «sul CDN» e si serve dal server finché
+il workflow non la pubblica (parte da solo dopo «Aggiorna GTFS ACTV»). Quando cambia la versione in uso, l'app ricarica l'indice e scarica
+solo i file nuovi; quelli vecchi si cancellano dal telefono.
+
+**Percorsi a piedi** (`public/js/pedoni.js`, `camminata.js`). Le mattonelle si caricano quando la ricerca ci arriva (di solito 1-6 per un
+percorso in centro storico, già salvate dalla seconda volta). Ogni punto si aggancia ai tratti di strada più vicini (entro 200 m; più di uno,
+così un parcheggio o la strada del terminal non isolano il punto); poi Dijkstra (verso le fermate vicine, fermandosi alle 14 più vicine) o A*
+(tra due punti), fino a 3 km. Se la rete non risponde entro 4 secondi si usa la linea d'aria e la rete servirà la volta dopo.
+
+**Se il CDN non va.** Nulla si rompe: dati fissi dal server, percorsi a piedi in linea d'aria. Per spegnerlo apposta: `DATI_CDN=0`.
+**Rifare subito i file**: GitHub → *Actions* → «Dati per i telefoni (CDN)» → *Run workflow* (`pedoni = 1` per la rete pedonale).
+Licenze: rete pedonale © OpenStreetMap contributors, ODbL (i file derivati restano ODbL, vedi `LEGGIMI.md` nel ramo `dati`).
 

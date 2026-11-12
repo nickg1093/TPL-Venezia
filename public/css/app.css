@@ -905,3 +905,10 @@ button.fv-it:hover{background:var(--accent-soft)}
 }
 /* tastiera aperta: la barra in basso si toglie (resta tutto lo spazio per quello che si scrive) */
 html.kbd .dock{display:none}
+
+/* ---- v25: percorsi a piedi lungo le strade ---- */
+/* «tutto a piedi» si può toccare per vederlo sulla mappa */
+button.pp-walkonly{width:calc(100% - 4px);border:1.5px solid transparent;font:inherit;color:inherit;text-align:left;cursor:pointer;min-height:48px}
+button.pp-walkonly:hover{border-color:var(--line)}
+button.pp-walkonly.on{border-color:var(--accent);background:var(--accent-soft, var(--surface-2))}
+button.pp-walkonly:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

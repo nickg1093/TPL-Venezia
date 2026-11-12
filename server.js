@@ -18,6 +18,7 @@ const percorso = require('./percorso');
 const prossime = require('./prossime');
 const flusso = require('./flusso');
 const area = require('./area');
+const fissi = require('./fissi');
 const { D, S, IDS, ready } = live;
 
 const PORT = +process.env.PORT || 3000;
@@ -77,7 +78,8 @@ function planParams(u) {
   const cambi = one('cambi', ['0', '1', '2', '3', '4']), pmax = one('piedimax', ['5', '10', '15', '20', '30']);
   const prefs = { mezzi, cambi: cambi == null ? undefined : +cambi, piediMax: pmax == null ? undefined : +pmax, passo: one('passo', ['lento', 'normale', 'veloce']),
     margine: one('margine', ['normale', 'largo']), pref: one('pref', ['equilibrata', 'veloce', 'cambi', 'piedi']), escludi: new Set(routesParam(u, 'escludi', 8)) };
-  return { da, a, secs: t ? t.secs : null, date: t ? t.date : null, piediM, entro, prefs, Gs: t ? plannerGtfs(t.date) : null };
+  const piediReale = q(u, 'piedir') === '1' && piediM != null;   // «tutto a piedi» misurato lungo le strade dal telefono
+  return { da, a, secs: t ? t.secs : null, date: t ? t.date : null, piediM, piediReale, entro, prefs, Gs: t ? plannerGtfs(t.date) : null };
 }
 // orari per il pianificatore in un'altra data: la stessa versione dei GTFS usata dalla modalità «Programmato» (live.dataFor),
 // in ordine [aut, nav] come in percorso.js. null = orari in uso adesso.
@@ -87,14 +89,15 @@ function plannerGtfs(date) {
   if (!Gs[0] && !Gs[1]) throw fail(404, NO_GTFS);
   return Gs;
 }
-// "src:id~metri,src:id~metri" (fermate vicine al punto scelto, con la distanza in linea d'aria calcolata dal telefono)
+// "src:id~metri,src:id~metri~r" (fermate vicine al punto scelto, con la distanza calcolata dal telefono: in linea d'aria, oppure
+// con «~r» lungo le strade, sulla rete pedonale scaricata dal CDN: allora il server la usa così com'è)
 function stopsParam(u, key) {
-  const v = q(u, key); if (!v || v.length > 1200) throw sec.bad(`parametro ${key} non valido`);
+  const v = q(u, key); if (!v || v.length > 1400) throw sec.bad(`parametro ${key} non valido`);
   const out = [];
   for (const part of v.split(',').slice(0, 16)) {
-    const [id, m] = part.split('~'), r = sec.vFullId(id, IDS), mm = m == null ? 0 : Number(m);
-    if (!r || !Number.isFinite(mm) || mm < 0 || mm > 5000) throw sec.bad(`parametro ${key} non valido`);
-    out.push([r[0] + ':' + r[1], Math.round(mm)]);
+    const [id, m, f] = part.split('~'), r = sec.vFullId(id, IDS), mm = m == null ? 0 : Number(m);
+    if (!r || !Number.isFinite(mm) || mm < 0 || mm > 5000 || (f != null && f !== 'r')) throw sec.bad(`parametro ${key} non valido`);
+    out.push(f === 'r' ? [r[0] + ':' + r[1], Math.round(mm), 1] : [r[0] + ':' + r[1], Math.round(mm)]);
   }
   return out;
 }
@@ -181,7 +184,28 @@ const validStyle = st => {
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
-const ABOUT_VERSION = 'v24';
+const ABOUT_VERSION = 'v25';
+// DATI FISSI sul telefono e dal CDN (fissi.js): file per versione dei GTFS con impronta, indice del ramo «dati» letto da GitHub.
+// DATI_REPO: repository del ramo dati (predefinito: quello da cui Render ha preso il codice); DATI_CDN=0 spegne il CDN (tutto dal server).
+const DATI_REPO = /^[\w.-]+\/[\w.-]+$/.test(process.env.DATI_REPO || '') ? process.env.DATI_REPO : (process.env.RENDER_GIT_REPO_SLUG || 'nickg1093/TPL-Venezia');
+const fissiStore = fissi.store(gtfs.toLL), datiRemote = fissi.remote({ repo: DATI_REPO, enabled: process.env.DATI_CDN !== '0' });
+function fissiManifest() {
+  const idx = datiRemote.get(), src = [];
+  for (const i of IDS) {
+    const c = ready[i] ? fissiStore.get(i, D[i]) : null; if (!c) continue;
+    src.push({ id: i, v: c.v, cdn: !!idx?.fissi.has(`${i}/${c.v}`), ...Object.fromEntries(fissi.NOMI.map(k => [k, c.files[k].sha])) });
+  }
+  return { formato: fissi.FORMATO, cdn: datiRemote.bases(), src, pedoni: idx?.pedoni || null };
+}
+const etagOf = buf => '"' + crypto.createHash('md5').update(buf).digest('hex').slice(0, 20) + '"';
+// risposta JSON piccola con ETag (304 a chi l'ha già) e «ricontrolla ogni volta»
+function sendTagged(req, res, body, gz, etag, cc = 'no-cache') {
+  if (req.headers['if-none-match'] === etag) { res.writeHead(304, { ETag: etag, 'Cache-Control': cc }); return res.end(); }
+  const z = gz && /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': cc, ETag: etag, Vary: 'Accept-Encoding', ...(z ? { 'Content-Encoding': 'gzip' } : {}) });
+  res.end(req.method === 'HEAD' ? undefined : z ? gz : (body || zlib.gunzipSync(gz)));
+}
+let stopsTag = null, routesMemo = null;
 const POSTS = new Set(['/api/reload-gtfs', '/api/watch', '/api/watch/cancel', '/api/watch/resub', '/api/watch/restore']);
 
 // ---- ROUTE API ----  auth: 'diag' | 'admin' | undefined;  method: 'POST' solo per azioni che modificano lo stato
@@ -222,8 +246,17 @@ const API = new Map(Object.entries({
       }
       live.setStopsCache(gz = zlib.gzipSync(Buffer.from(JSON.stringify(out))));
     }
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Encoding': 'gzip', 'Cache-Control': 'no-store' });
-    res.end(gz);
+    if (stopsTag?.gz !== gz) stopsTag = { gz, etag: etagOf(gz) };      // stesso elenco: 304 (prima si riscaricava a ogni apertura)
+    sendTagged(req, res, null, gz, stopsTag.etag);
+  } },
+  // DATI FISSI: indice (impronte dei file per la versione dei GTFS in uso, CDN, rete pedonale) e singoli file (fissi.js)
+  '/api/fissi': { raw: (u, req, res) => { const body = Buffer.from(JSON.stringify(fissiManifest())); sendTagged(req, res, body, null, etagOf(body)); } },
+  '/api/fisso': { raw: (u, req, res) => {
+    const i = q(u, 'src'), f = q(u, 'f'), h = q(u, 'h');
+    if (!IDS.includes(i) || !fissi.NOMI.includes(f) || !/^[0-9a-f]{64}$/.test(h || '')) return send(req, res, { error: 'parametri non validi' }, 400);
+    const e = ready[i] ? fissiStore.get(i, D[i])?.files[f] : null;
+    if (!e || e.sha !== h) return send(req, res, { error: 'versione non più in uso' }, 404);
+    sendTagged(req, res, null, e.gz, '"' + h.slice(0, 32) + '"', 'public, max-age=31536000, immutable');   // stessa impronta = stessi byte, per sempre
   } },
   '/api/stop': { cache: true, fn: async u => {
     const [i, sid] = fullId(u, 'id'), G = D[i];
@@ -281,10 +314,13 @@ const API = new Map(Object.entries({
   } },
   // date selezionabili in modalità Pianificato: solo quelle coperte dai GTFS in archivio
   '/api/dates': { fn: () => live.dateRange() },
-  '/api/routes': { fn: () => {
-    const out = {};
-    for (const i of IDS) for (const r in D[i].routes) out[`${i}:${r}`] = { ...D[i].routes[r], src: i };
-    return out;
+  '/api/routes': { raw: (u, req, res) => {
+    if (routesMemo?.ver !== live.version()) {
+      const out = {};
+      for (const i of IDS) for (const r in D[i].routes) out[`${i}:${r}`] = { ...D[i].routes[r], src: i };
+      const body = Buffer.from(JSON.stringify(out)); routesMemo = { ver: live.version(), body, gz: zlib.gzipSync(body), etag: etagOf(body) };
+    }
+    sendTagged(req, res, routesMemo.body, routesMemo.gz, routesMemo.etag);
   } },
   '/api/shapes': { fn: u => {
     const [i, rid] = fullId(u, 'id');
@@ -481,6 +517,7 @@ server.listen(PORT, HOST, () => {
 // ---- AVVIO ----
 live.startLoops();
 live.startStatic();
+datiRemote.start();
 // avvisi: linee e fermate si riconoscono con i GTFS in uso (indici ricostruiti solo quando cambia la versione dei dati)
 let avCtx = { v: -1 };
 avvisi.setContext(() => {

@@ -7,7 +7,7 @@
 // Memoria sul telefono (localStorage «tpl.guida»): versione della guida vista e quali parti; nessun dato esce dal telefono.
 import { esc, icon } from './util.js';
 
-export const GUIDA_VER = 'v24';
+export const GUIDA_VER = 'v25';
 const KEY = 'tpl.guida';
 
 // Nei testi: html scritto qui (fisso), mai dati che arrivano da fuori.
@@ -55,6 +55,8 @@ const GUIDA_PANNELLO = [
 // novità senza un punto nell'app (solo a chi aveva già visto la guida di una versione precedente)
 const NOVITA_EXTRA = [
   { since: 'v24', icon: 'back', title: 'Il tasto «indietro» funziona', html: 'Il tasto o il gesto <b>indietro</b> del telefono chiude la finestra aperta o torna al pannello precedente. I comandi dei pannelli sono nella <b>linguetta</b> sul bordo, e il nome della fermata resta su una riga.' },
+  { since: 'v25', icon: 'walk', title: 'A piedi lungo le strade', html: 'Nel percorso i tratti a piedi seguono calli, ponti e marciapiedi, fino a 30 minuti di cammino, e ne vedi la lunghezza. Il calcolo lo fa il tuo telefono: la posizione non esce dal dispositivo.' },
+  { since: 'v25', icon: 'db', title: 'Più veloce ad aprirsi', html: 'Fermate, linee e strade restano salvate sul telefono e si riscaricano solo quando ACTV pubblica orari nuovi.' },
   { since: 'v24', icon: 'route', title: 'Percorsi in qualsiasi giorno', html: 'Il pianificatore usa gli orari del giorno che scegli (gli stessi di <b>Programmato</b>) e, mentre lo usi, sulla mappa restano solo i mezzi del tuo percorso.' }
 ];
 const NOVITA_INTRO = { tag: 'Novità', icon: 'info', title: 'Cosa c\'è di nuovo', html: 'L\'app è stata aggiornata: ti mostro in breve le novità.', start: 'Vediamo' };

@@ -1,5 +1,5 @@
 # PROVE DELL'INTERFACCIA (Playwright + Chromium). Richiede il server già avviato con il feed simulato:
-#   NODE_PATH=<shim> PORT=3111 node -r ./tests/fakefeed.js server.js      poi:   python3 tests/ui/run.py http://localhost:3111 <cartella-screenshot>
+#   NODE_PATH=<shim> AVVISI_ARCHIVIO=0 DATI_CDN=0 TRUST_PROXY=1 PORT=3111 node -r ./tests/fakefeed.js server.js      poi:   python3 tests/ui/run.py http://localhost:3111 <cartella-screenshot>
 #   (avviare il server con TRUST_PROXY=1)
 # Leaflet è sostituito da tests/ui/leaflet-stub.js (solo per le prove). Esce con codice 1 se un controllo fallisce.
 import sys, json, pathlib
@@ -9,7 +9,7 @@ OUT = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else '/tmp/ui'); OUT.mkdir(p
 STUB = (pathlib.Path(__file__).parent / 'leaflet-stub.js').read_text()
 SIZES = [('phone', 390, 844), ('phone-small', 360, 640), ('landscape', 844, 390), ('tablet', 768, 1024), ('desktop', 1440, 900), ('huge', 2560, 1440)]
 fails = []
-GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v24', mappa:true, pannello:true}))}catch(e){}"   # guida già vista: le prove non la incontrano (ha una prova sua)
+GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v25', mappa:true, pannello:true}))}catch(e){}"   # guida già vista: le prove non la incontrano (ha una prova sua)
 def check(ok, msg):
     print(('  ok   ' if ok else '  FAIL ') + msg)
     if not ok: fails.append(msg)
@@ -44,6 +44,9 @@ with sync_playwright() as p:
         dock = rect(page, '#bottom-bar'); check(dock['h'] <= 130, f"dock compatto in tempo reale ({dock['h']:.0f}px)")
         di = rect(page, '.dock-in'); check(di['w'] <= 761, f"dock-in largo al massimo 760 ({di['w']:.0f}px)")
         page.screenshot(path=str(OUT / f'{name}-0-home.png'))
+        # --- v25: fermate, linee e tracciati salvati sul dispositivo (qui dal server: prova con DATI_CDN=0), seconda apertura senza riscaricarli
+        nf = page.evaluate("caches.open('tpl-fissi-1').then(c=>c.keys()).then(k=>k.filter(r=>r.url.includes('/__fissi/')).length)")
+        check(nf >= 4, f'dati fissi salvati sul dispositivo ({nf} file)')
 
         # --- corsa: apertura da un mezzo
         # un mezzo associato a una corsa (non grigio «idle» né «?»): quelli staccati non hanno la linea del tempo
