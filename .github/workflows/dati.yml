@@ -1,0 +1,105 @@
+name: Dati per i telefoni (CDN)
+
+# Pubblica sul ramo «dati» i file che i telefoni scaricano dal CDN invece che dal server (vedi fissi.js e README, «Dati sul telefono e CDN»):
+#   · fermate, linee e tracciati di ogni versione dei GTFS in archivio (dopo ogni aggiornamento dei GTFS);
+#   · rete pedonale di OpenStreetMap in mattonelle, per i percorsi a piedi calcolati sul telefono (ogni lunedì, o a richiesta).
+# Il ramo «dati» contiene SOLO questi file: il codice dell'app resta su main. Prima i file (commit A), poi indice.json con il numero di A:
+# gli indirizzi del CDN usano A, quindi non cambiano mai e i telefoni li tengono in cache per sempre.
+on:
+  workflow_run:
+    workflows: ['Aggiorna GTFS ACTV']
+    types: [completed]
+  push:
+    branches: [main]
+    paths: ['fissi.js', 'gtfs.js', 'scripts/genera-dati.js', 'scripts/pedoni-core.js', '.github/workflows/dati.yml', 'data/gtfs/**']
+  schedule:
+    - cron: '23 2 * * 1'      # lunedì notte: rete pedonale aggiornata da OpenStreetMap
+  workflow_dispatch:
+    inputs:
+      pedoni:
+        description: 'Rigenera anche la rete pedonale da OpenStreetMap (1 = sì)'
+        required: false
+        default: '0'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dati
+  cancel-in-progress: false
+
+jobs:
+  dati:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installa le dipendenze
+        run: npm ci || npm install --no-audit --no-fund
+
+      - name: Ramo dati (o nuovo, se non c'è ancora)
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          URL="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads "$URL" dati >/dev/null; then
+            git clone --quiet --single-branch --branch dati "$URL" out
+          else
+            mkdir out && cd out && git init --quiet -b dati && git remote add origin "$URL"
+          fi
+
+      - name: Fermate, linee e tracciati di ogni versione dei GTFS
+        run: node scripts/genera-dati.js fissi out
+
+      - name: Serve la rete pedonale?
+        id: ped
+        run: |
+          if [ ! -f out/pedoni/ultimo.json ] || [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.pedoni }}" = "1" ] \
+             || [ "${{ contains(github.event.head_commit.message, '[pedoni]') }}" = "true" ]; then echo "go=1" >> "$GITHUB_OUTPUT"; else echo "go=0" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Rete pedonale da OpenStreetMap (Geofabrik, Italia nord-est)
+        if: steps.ped.outputs.go == '1'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+          curl -fsSL --retry 3 -o ne.osm.pbf https://download.geofabrik.de/europe/italy/nord-est-latest.osm.pbf
+          # zona servita con margine (fermate 45,02-45,68 N, 11,85-12,48 E, più 3 mattonelle)
+          osmium extract -b 11.75,44.95,12.60,45.75 ne.osm.pbf -o zona.osm.pbf --overwrite
+          osmium tags-filter zona.osm.pbf w/highway=footway,pedestrian,path,steps,living_street,residential,service,unclassified,tertiary,secondary,primary,track,cycleway,corridor,platform,road,tertiary_link,secondary_link,primary_link -o rete.osm.pbf --overwrite
+          osmium cat rete.osm.pbf -f opl,add_metadata=false -o rete.opl --overwrite
+          export OSM_DATA="$(osmium fileinfo -g header.option.osmosis_replication_timestamp ne.osm.pbf || true)"
+          node --max-old-space-size=6000 scripts/genera-dati.js pedoni rete.opl out
+          rm -f ne.osm.pbf zona.osm.pbf rete.osm.pbf rete.opl
+
+      - name: Pubblica sul ramo dati
+        run: |
+          cd out
+          [ -f LEGGIMI.md ] || cat > LEGGIMI.md <<'EOF'
+          # Ramo «dati» di TPL Venezia
+
+          File generati in automatico dal workflow `.github/workflows/dati.yml` (non modificarli a mano).
+          I telefoni li scaricano dal CDN (jsDelivr) per non pesare sul server; il server ne controlla l'impronta (vedi `fissi.js` sul ramo main).
+
+          - `fissi/` fermate, linee e tracciati derivati dai GTFS statici ACTV (open data).
+          - `pedoni/` rete pedonale in mattonelle derivata da OpenStreetMap: © OpenStreetMap contributors, disponibile con licenza
+            Open Database License (ODbL) 1.0, https://www.openstreetmap.org/copyright — i dati derivati restano sotto la stessa licenza.
+          EOF
+          git config user.name "Bot dati per i telefoni"
+          git config user.email "bot@actions.github.io"
+          git add -A
+          if git diff --cached --quiet; then echo "Nessuna novità"; exit 0; fi
+          git commit --quiet -m "Dati per i telefoni ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+          A=$(git rev-parse HEAD)
+          cd .. && node scripts/genera-dati.js indice out "$A" && cd out
+          git add indice.json
+          git commit --quiet -m "Indice: dati nel commit ${A:0:10}"
+          git push --quiet origin dati
+          echo "Pubblicato: dati nel commit $A"
