@@ -430,7 +430,8 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
   poi il server (`/api/fisso`), poi i vecchi indirizzi. `/api/stops` e `/api/routes` ora rispondono «non cambiato» (ETag) a chi li ha già.
 - **Percorsi a piedi lungo le strade**, calcolati sul telefono sulla rete pedonale di OpenStreetMap (mattonelle dal CDN, caricate solo dove
   servono): distanze vere verso le fermate vicine e per «tutto a piedi», fino a 30 minuti a passo svelto; tratti a piedi disegnati lungo calli e
-  ponti, con la lunghezza; scheda «A piedi» da toccare per vederlo sulla mappa. Il server non fa nessun calcolo in più.
+  ponti, con la lunghezza, a pallini con un alone (colori diversi per mappa chiara e scura: la mappa disegna su canvas, quindi i colori
+  sono in `percorso.js`, `draw()`, e si ridisegna al cambio di tema); scheda «A piedi» da toccare per vederlo sulla mappa. Il server non fa nessun calcolo in più.
 - Workflow **`dati.yml`** e ramo **`dati`**; `fissi.js`, `scripts/genera-dati.js`, `scripts/pedoni-core.js`; `public/js/fissi.js`, `pedoni.js`, `camminata.js`.
 - Sicurezza: la CSP ammette jsDelivr e raw.githubusercontent.com **solo per scaricare dati** (`connect-src`), mai script; ogni file è controllato
   con l'impronta SHA-256 data dal server prima dell'uso. Informativa privacy aggiornata (jsDelivr e GitHub come fonti dei file).

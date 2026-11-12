@@ -99,6 +99,8 @@ function opzQs() {
 
 export function init(ctx) {
   X = ctx; restore();
+  // cambio di tema chiaro/scuro: i tratti a piedi sulla mappa si ridisegnano con i colori giusti
+  new MutationObserver(() => { if (X.isOpen() && (S.res || S.det)) draw(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   X.chips.addEventListener('click', onClick); X.plist.addEventListener('click', onClick);
   X.chips.addEventListener('input', e => { if (e.target.matches('.pp-q')) { S.q = e.target.value; renderSuggest(); } });
   X.chips.addEventListener('change', e => {
@@ -393,21 +395,28 @@ function draw() {
   X.layer.clearLayers();
   const r = S.res, o = S.det || r?.soluzioni?.[0], pts = [], myDraw = ++drawTok;
   const mark = (ep, end) => { if (!ep || ep.lat == null) return; L.circleMarker([ep.lat, ep.lon], { radius: 8, weight: 3, color: end ? '#b42318' : '#0b62c4', fillColor: '#fff', fillOpacity: 1, interactive: false }).addTo(X.layer); pts.push([ep.lat, ep.lon]); };
-  const dash = { color: '#475467', weight: 3, opacity: .85, dashArray: '2 7', lineCap: 'round', interactive: false };
-  // tratto a piedi: subito in linea retta, poi (appena calcolato sul telefono) lungo le strade; k = tappa nel dettaglio (per i metri)
+  // tratto a piedi: alone (chiaro sulla mappa chiara, scuro su quella scura) e pallini tondi sopra, come nelle app di mappe.
+  // La mappa disegna su canvas: i colori si scelgono qui secondo il tema (e al cambio di tema si ridisegna, vedi in fondo).
+  const dark = document.documentElement.dataset.theme === 'dark', WS = dark ? { halo: '#0b1520', ho: .85, dot: '#7cc0ff' } : { halo: '#ffffff', ho: .92, dot: '#0b62c4' };
+  const walkPath = (pts, pending) => [
+    L.polyline(pts, { color: WS.halo, weight: 10, opacity: WS.ho, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(X.layer),
+    L.polyline(pts, { color: WS.dot, weight: 6, opacity: pending ? .45 : 1, dashArray: '0.1 10', lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(X.layer)   // provvisorio (linea retta): più tenue
+  ];
+  // subito in linea retta (più tenue), poi (appena calcolato sul telefono) lungo le strade; k = tappa nel dettaglio (per i metri)
   const walkLine = (a, b, k) => {
-    const line = L.polyline([a, b], dash).addTo(X.layer);
-    if (mDist(a[0], a[1], b[0], b[1]) < 15) return;
+    const near = mDist(a[0], a[1], b[0], b[1]) < 15, line = walkPath([a, b], !near);
+    if (near) return;
     pathFor(a, b).then(w => {
-      if (!w || myDraw !== drawTok) return;
-      X.layer.removeLayer(line); L.polyline(w.pts, dash).addTo(X.layer);
+      if (!w || myDraw !== drawTok) { if (myDraw === drawTok) line[1].setStyle?.({ opacity: 1 }); return; }   // niente percorso: resta la linea retta, piena
+      for (const l of line) X.layer.removeLayer(l);
+      walkPath(w.pts);
       const st = k != null && X.plist.querySelector(`.pp-step.walk[data-wk="${k}"] small`);
       if (st && !st.dataset.m) { st.dataset.m = '1'; st.textContent += `${st.textContent ? ' · ' : ''}${kmTxt(w.m)}`; }
     });
   };
   if (walkShown()) {                                              // tutto a piedi
     const w = walkVal.get(walkKey());
-    L.polyline(w.pts, { ...dash, weight: 4 }).addTo(X.layer); pts.push(...w.pts);
+    walkPath(w.pts); pts.push(...w.pts);
   } else if (o) {
     let prev = S.from?.lat != null ? [S.from.lat, S.from.lon] : null;
     const walkTo = (p, k) => { if (prev && p) walkLine(prev, p, k); };
