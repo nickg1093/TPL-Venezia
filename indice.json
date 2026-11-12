@@ -1,0 +1,20 @@
+{
+ "formato": 1,
+ "commit": "24e27afce6e4341daf8ee34b5c803182fd874c0f",
+ "creato": "2026-11-12T20:15:22.501Z",
+ "fissi": [
+  "nav/189116ae5243",
+  "nav/38eed93361c1",
+  "nav/e280a17ca490",
+  "aut/13e238b453a5",
+  "aut/1e7d36b025b1",
+  "aut/8c81af2d223b",
+  "aut/f72e67310aa5"
+ ],
+ "pedoni": {
+  "v": "e180f63508c0613f",
+  "indice": "7a299e8637c258863ddabee3f45511dc0bf75b7e853a8b731dff0fffabcbba0e",
+  "lat": 0.01,
+  "lon": 0.014
+ }
+}
