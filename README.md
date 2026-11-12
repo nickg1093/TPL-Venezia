@@ -1,67 +1,416 @@
 # Venezia TPL live
 
-Mappa in tempo reale di autobus, tram e vaporetti ACTV (GTFS statico + GTFS-Realtime), con marea, installabile come app (PWA).
-Server Node.js senza database: gira su un hosting (es. piano gratuito di Render) **oppure sul tuo computer, senza nessun sito esterno** (vedi 1.0).
+Mappa in tempo reale di autobus, tram e vaporetti ACTV di Venezia, con pannelli delle fermate e delle corse, pianificatore di percorso,
+avvisi di servizio, avvisi di arrivo (notifiche), marea e preferiti. È una **PWA** (si installa come app) servita da un **server Node.js
+senza database**, che gira gratis su Render oppure su un computer di casa.
+
+Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v24**
 
 ---
 
-## 1. Operazioni da fare (in ordine)
+## Indice
 
-### 1.0 Uso in locale, senza hosting (computer di casa o dell'ufficio)
-L'app è un unico programma Node.js: il computer scarica da solo i dati ACTV (GTFS e realtime), la marea e gli avvisi, e serve la pagina ai dispositivi.
-1. Installa **Node.js 22 LTS** da https://nodejs.org (una volta sola).
-2. Scarica/estrai il progetto in una cartella (con la sottocartella `data/` se ce l'hai: contiene i GTFS già scaricati; senza, li scarica al primo avvio).
-3. Avvio con doppio clic: **Windows** `avvia-windows.bat` · **macOS** `avvia.command` · **Linux** `./avvia.sh`. Al primo avvio installa le librerie (serve internet), poi apre il browser su `http://localhost:3000`. Se l'app si ferma per un errore, lo script la riavvia dopo 5 s.
-4. Dagli altri dispositivi della **stessa rete** (telefono in Wi-Fi): la finestra dello script mostra l'indirizzo, es. `http://192.168.1.20:3000`. Il computer deve restare acceso e il firewall deve consentire Node.js sulle reti private (Windows lo chiede al primo avvio: «Consenti»).
-5. **HTTPS in rete di casa** (necessario sui telefoni per posizione GPS, notifiche e installazione come app, che i browser concedono solo su HTTPS o su `localhost`):
-   - installa mkcert (https://github.com/FiloSottile/mkcert), poi nella cartella del progetto: `mkcert -install` e `mkcert -cert-file certs/cert.pem -key-file certs/key.pem 192.168.1.20 localhost` (usa il tuo indirizzo);
-   - copia `.env.local.esempio` come `.env.local` e attiva `TLS_CERT=certs/cert.pem` e `TLS_KEY=certs/key.pem`;
-   - sul telefono installa il certificato radice di mkcert (`mkcert -CAROOT` mostra dove si trova) e apri `https://192.168.1.20:3000`.
-6. Impostazioni locali (porta, solo questo computer con `HOST=127.0.0.1`, chiavi delle notifiche): file `.env.local` (modello in `.env.local.esempio`, **mai** da pubblicare).
-7. Fuori casa l'app in locale non è raggiungibile (scelta voluta: niente esposizione su internet). Per usarla ovunque serve un hosting (1.1-1.3).
+1. [Come funziona, in breve](#1-come-funziona-in-breve)
+2. [Struttura del progetto: ogni file, cosa fa, come modificarlo](#2-struttura-del-progetto)
+3. [Le funzioni dell'app, una per una](#3-le-funzioni-dellapp)
+4. [Cosa resta salvato e dove (persistenza)](#4-cosa-resta-salvato-e-dove)
+5. [API del server](#5-api-del-server)
+6. [Configurazione: variabili d'ambiente](#6-configurazione)
+7. [GitHub: workflow, rami, segreti, impostazioni](#7-github)
+8. [Render: impostazioni del servizio](#8-render)
+9. [Prove e test: comandi da digitare](#9-prove-e-test)
+10. [Modifiche frequenti: ricette](#10-modifiche-frequenti)
+11. [Pubblicare una nuova versione e tornare indietro](#11-pubblicare-e-tornare-indietro)
+12. [Novità della v24](#12-novità-della-v24)
+- Appendici tecniche: [A. GTFS statici](#a-gtfs-statici-perché-non-si-sovrascrivono-più) · [B. Regole del motore tempo reale](#b-eccezioni-e-contromisure-del-codice-elenco-dettagliato) · [C. Sicurezza](#c-sicurezza-securityjs-serverjs)
 
-### 1.1 Prima installazione o dopo aver sostituito i file
-1. Copia tutti i file di questo progetto nel repository (la cartella `data/` esistente **resta com'è**: contiene i GTFS già scaricati).
-2. `npm install` — **obbligatorio**: Leaflet ora è una dipendenza npm (serve in locale da `/vendor/leaflet`, non più da unpkg) e `package-lock.json` va rigenerato. Fai commit anche di `package-lock.json`.
-3. `npm test` — deve passare tutto (145 test).
-4. `npm start`, apri `http://localhost:3000`.
+---
 
-### 1.2 Variabili d'ambiente su Render (Dashboard → Environment)
-| Variabile | Valore | Perché |
+## 1. Come funziona, in breve
+
+```
+ FONTI ESTERNE                         SERVER (Node.js, server.js)                        TELEFONO / BROWSER (public/)
+ ───────────────                       ─────────────────────────────                     ──────────────────────────────
+ GTFS statici ACTV (zip) ──► data/gtfs ─► gtfsstore.js sceglie la versione ─► gtfs.js ─┐
+ GTFS-Realtime ACTV (ogni 5 s) ─────────► live.js + tracker.js + turni.js + assign.js ──┼─► /api/* e flusso SSE ─► app.js (mappa,
+ RSS ACTV + Telegram ───────────────────► avvisi.js (+ archivio GitHub, + AI facoltativa)│                          pannelli, pianificatore,
+ Marea CPSM (dati.venezia.it) ──────────► tide.js                                       │                          preferiti, notifiche)
+ Rete pedonale OSM (pedonale-*.txt) ────► percorso.js (RAPTOR) ─────────────────────────┘                          service worker sw.js
+ Servizi Web Push (Google, Apple…) ◄──── watch.js + push.js (avvisi di arrivo)
+```
+
+- **Il server** legge i dati ACTV, li collega tra loro e risponde alle richieste. Non salva nulla su disco durante il funzionamento
+  (su Render il disco è temporaneo): tutto ciò che deve durare sta in **GitHub** (GTFS e archivio avvisi) o **sul telefono** (preferiti,
+  impostazioni, avvisi di arrivo attivi).
+- **La pagina** (`public/`) è un'app a pagina singola: niente framework, moduli JavaScript nativi, Leaflet per la mappa, nessuno script
+  di terze parti, CSP rigida.
+- **GitHub Actions** scarica le nuove versioni dei GTFS (ogni 6 ore), archivia gli avvisi (ogni 20 minuti) e tiene sveglio il server.
+
+---
+
+## 2. Struttura del progetto
+
+### 2.1 Server (cartella principale)
+
+| File | Cosa fa | Quando lo modifichi |
 |---|---|---|
-| `ADMIN_TOKEN` | stringa casuale ≥ 16 caratteri (es. `openssl rand -hex 24`) | abilita `POST /api/reload-gtfs`. Se manca, l'endpoint è **disattivato** |
-| `DIAG_TOKEN` | altra stringa casuale ≥ 16 caratteri | abilita `/api/audit`, `/api/gtfs`, `/api/tide?debug=1` (diagnostica). Se manca, sono **disattivati** |
-| `TRUST_PROXY` | `1` (Render lo imposta da solo se c'è `RENDER`) | numero di proxy fidati davanti al server: serve a leggere l'IP vero del visitatore per i limiti di frequenza. Se il server fosse esposto senza proxy: `0` |
-| `FORCE_HTTPS` | `1` (consigliato in produzione) | reindirizza HTTP→HTTPS e attiva HSTS |
-| `KEEPALIVE_URL` | `https://<tuo-servizio>.onrender.com/healthz` (opzionale) | il server si "autopinga"; di solito `RENDER_EXTERNAL_URL` basta |
-| `RT_POLL_MS` | opzionale, default 5000 (minimo 3000) | intervallo massimo di lettura dei feed realtime: il server segue il ritmo di pubblicazione ACTV senza scendere sotto 3 s |
-| `ACTV_CENTRALE` | opzionale | `0` spegne il confronto con la centrale ACTV (oraritemporeale.actv.it): il sito usa i soli dati del feed |
-| `ACTV_CENTRALE_RPM` | opzionale, default 60 | letture al minuto del controllo continuo con la centrale ACTV (0 = solo quando un utente apre un pannello) |
-| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | da `node scripts/vapid-keys.js` | chiavi delle notifiche di arrivo (vedi 5) |
-| `APP_CONTACT` | e-mail dedicata (es. una casella creata apposta) | mostrata nella pagina Informazioni come contatto del titolare per privacy e segnalazioni; consigliata
-| `PUSH_CONTACT` | `mailto:tuo@indirizzo` (facoltativo) | contatto per i servizi di notifica |
-| `PORT` | gestita da Render | |
+| `server.js` | Server web: instradamento delle richieste, tabella delle API (`API`), file statici in memoria, flusso SSE, avvio dei moduli. | nuova API, nuovo parametro, cambio di comportamento di un endpoint |
+| `env.js` | Legge `.env.local` (solo in locale) prima di tutto il resto. | mai, di solito |
+| `security.js` | Intestazioni di sicurezza (CSP, HSTS…), limiti di frequenza per IP, controllo dei token, validazione degli identificativi. | cambiare limiti (`LIMITS`) o la CSP |
+| `live.js` | **Motore tempo reale**: legge i feed GTFS-RT, collega mezzi e corse, mantiene lo stato di ogni corsa, sceglie i GTFS per data (`dataFor`). | regole dei mezzi, frequenza di lettura |
+| `tracker.js` | Stima dove si trova ogni corsa (fermata attuale, fase, arrivi previsti) fondendo GPS, previsioni e orario. | etichette «in arrivo/in fermata», stime |
+| `assign.js` | Decide a quale corsa appartiene un mezzo (si segue ACTV, con controlli). | casi di mezzi associati male |
+| `turni.js` | Mezzo molto in ritardo che di fatto fa la corsa successiva del suo turno. | regole dei turni |
+| `motion.js`, `geo.js` | Velocità dai rilevamenti GPS; distanze e geometria comuni. | raramente |
+| `schedule.js`, `calendar.js` | Orari programmati, passaggi alle fermate, calendario dei servizi (date di Venezia). | regole degli orari |
+| `gtfs.js`, `gtfsstore.js`, `csv.js`, `zip.js`, `ids.js` | Lettura dei GTFS (zip in memoria), archivio e scelta della versione, collegamento degli identificativi feed ↔ GTFS. | formati nuovi di ACTV |
+| `stopgroups.js`, `prossime.js`, `area.js` | Fermate equivalenti (stesso palo), fermate successive mostrate nei pannelli, area servita sulla mappa. | raramente |
+| `percorso.js` | **Pianificatore** (algoritmo RAPTOR): soluzioni con cambi e tratti a piedi, preferenze, alternative; usa gli orari della data scelta. | parametri del calcolo (oggetto `C`) |
+| `pedonale-laguna.txt`, `pedonale-terraferma.txt` | Distanze a piedi tra fermate sulla rete pedonale di OpenStreetMap (generate da `scripts/pedonale.js`). | dopo grandi cambi di fermate |
+| `avvisi.js` | Avvisi di servizio: legge RSS ACTV e Telegram, riconosce linee, fermate, date ed eventi (aggiornamenti, ripristini, annullamenti). | regole di riconoscimento |
+| `avvisi-archivio.js` | Legge l'archivio degli avvisi dal ramo `archivio-avvisi` di GitHub (sola lettura) e le interpretazioni AI. | raramente |
+| `avvisi-ai.js` | Interpretazione AI facoltativa degli avvisi (Cloudflare Workers AI): prompt, schema, validazione. | prompt o regole di validazione |
+| `watch.js`, `push.js` | Avvisi di arrivo: regole dei messaggi, ciclo di controllo, ripristino dopo un riavvio, invio Web Push cifrato (VAPID). | testi delle notifiche, tempi |
+| `tide.js` | Marea CPSM: livello, tendenza, estremi, storia. | soglie e testi della marea |
+| `flusso.js` | Flusso SSE dei mezzi: elenco completo all'apertura, poi solo le differenze, compresso. | raramente |
+| `feedaudit.js` | Diagnosi dei feed GTFS-RT (riservata). | mai |
+| `avvia-windows.bat`, `avvia.command`, `avvia.sh` | Avvio con doppio clic in locale (Windows, macOS, Linux). | mai |
 
-Usa i token così (mai nell'URL, mai nel browser): `curl -H "Authorization: Bearer $DIAG_TOKEN" https://…/api/gtfs`.
+### 2.2 Interfaccia (`public/`)
 
-### 1.3 GitHub
-- **Actions → «Aggiorna GTFS ACTV»**: ora *aggiunge* le versioni nuove in `data/gtfs/<nav|aut>/` e non sovrascrive nulla. Per il primo giro lancialo a mano (Run workflow). I permessi `contents: write` sono già nel file.
-- **Actions → «Keep-alive Render»**: controlla che l'URL dentro il file sia il tuo. GitHub può ritardare i cron di molti minuti: aggiungi anche un pinger esterno (UptimeRobot, intervallo 5 min, URL `/healthz`).
-- Dopo il commit Render ridistribuisce da solo.
-- **Actions → «Archivio avvisi ACTV»** (`archivio-avvisi.yml`): ogni 20 minuti salva le comunicazioni ACTV (RSS con il testo delle pagine e Telegram) nel ramo separato `archivio-avvisi`, cartella `avvisi/` (`indice.json` + `comunicazioni/AAAA-MM.jsonl`, solo testo, una riga per versione). Non scrive su `main`. La prima esecuzione crea il ramo e legge anche le pagine Telegram precedenti (circa 4 settimane: oltre, la pagina pubblica non permette di risalire). Per lanciarlo subito: Run workflow. Il server legge l'archivio in sola lettura da `raw.githubusercontent.com` all'avvio e ogni 15 minuti (variabile facoltativa `AVVISI_ARCHIVIO`: indirizzo della cartella `avvisi` del ramo, oppure `0` per non usarlo). Se l'archivio non è raggiungibile restano le fonti in diretta. Diagnosi: `/api/avvisi-eventi` (con `DIAG_TOKEN`).
-- **Interpretazione AI degli avvisi (facoltativa)**: nello stesso workflow, se esistono i secrets `CLOUDFLARE_ACCOUNT_ID` e `CLOUDFLARE_API_TOKEN`, le comunicazioni nuove o modificate vengono lette da Cloudflare Workers AI (piano gratuito, modello `@cf/meta/llama-3.3-70b-instruct-fp8-fast`) e il risultato JSON viene salvato a parte in `avvisi/ai/` del ramo `archivio-avvisi` (`scripts/interpreta-avvisi.js`, `avvisi-ai.js`). Il server non chiama mai il modello: legge i risultati pronti, li rivalida (dati citati nel testo, linee esistenti, certezza non bassa) e li usa solo per correggere il servizio delle linee, riconoscere effetti e date che le regole non trovano, scegliere tra più eventi collegabili o bloccare fusioni e ripristini non giustificati. Senza AI, con quota esaurita o con risultati scartati valgono le sole regole. Prove locali: `node scripts/interpreta-avvisi.js --casi` (risultati in `tmp/ai-test/`, credenziali in `.env.local`). Istruzioni complete nel file LEGGIMI della consegna.
+| File | Cosa fa |
+|---|---|
+| `index.html` | Struttura della pagina: mappa, controlli, schede (marea, avvisi, preferiti, informazioni), pannello con la linguetta dei comandi, barra in basso. Testi legali e privacy. |
+| `css/app.css` | Tutto lo stile. In testa le variabili (colori dei due temi, misure); in fondo la sezione **v24** (scala, linguetta, preferiti, pianificatore). |
+| `js/app.js` | App principale: mappa e mezzi in movimento, ricerca, pannelli fermata/zona/corsa, navigazione tra pannelli e tasto «indietro», mezzi «?», collegamento di tutti i moduli. |
+| `js/nav.js` | Tasto e gesto **«indietro»** del sistema: una voce di cronologia per ogni livello aperto. |
+| `js/percorso.js` | Pianificatore lato telefono: punti di partenza/arrivo, quando, opzioni, soluzioni, dettaglio, disegno sulla mappa. |
+| `js/fav.js` | Memoria dei preferiti (fermate e percorsi), copia di sicurezza (esporta/importa). |
+| `js/favs.js` | Pannello **Preferiti** (stella in basso a destra): schede Fermate/Percorsi, modifica, copia. |
+| `js/notify.js` | Avvisi di arrivo sul telefono: permessi, iscrizione push, elenco attivo, ripristino dopo un riavvio del server. |
+| `js/avvisi.js`, `js/tide.js`, `js/info.js` | Finestre Avvisi, Marea e Informazioni. |
+| `js/zones.js` | Zone di fermate (pali dello stesso luogo, es. Piazzale Roma A, B, C…). |
+| `js/locate.js` | Posizione GPS (solo su richiesta, resta sul telefono). |
+| `js/guida.js` | Guida interattiva della prima apertura e delle novità (`GUIDA_VER`, campo `since` dei passi). |
+| `js/pwa.js`, `sw.js`, `manifest.webmanifest` | Installazione come app, service worker (cache e notifiche), scorciatoie dall'icona. |
+| `js/theme-init.js` | Tema chiaro/scuro prima del primo disegno; altezza reale dello schermo e tastiera aperta. |
+| `js/util.js` | Funzioni comuni: testo sicuro (`esc`), icone (`icon`), mattonelle delle linee (`badge`), colori, etichette di stato, `api()`. |
+| `icons/sprite.svg` | **Tutte** le icone dell'interfaccia (`<symbol id="i-nome">`). Icone dell'app: i PNG nella stessa cartella. |
 
-### 1.4 Dopo ogni modifica ai file dell'interfaccia
-Se cambi icone, manifest o l'elenco `SHELL` di `public/sw.js`, incrementa `VERSION` in `public/sw.js` (ora `v23`). I file `/js` e `/css` si aggiornano da soli (rete prima).
+### 2.3 Altre cartelle
 
-### 1.5 Dove salvare simboli e immagini
-- **Simboli dell'interfaccia** (battello, bus, tram, lente, ecc.): *tutti* in `public/icons/sprite.svg`, un `<symbol id="i-nome">` ciascuno (24×24, tratto 1.75, `currentColor`). Nel codice si usano con `icon('nome')` (in `public/js/util.js`); in `index.html` con `<svg class="ic"><use href="/icons/sprite.svg#i-nome"/></svg>`. **Non usare emoji**: cambiano da sistema a sistema.
-- **Icone dell'app** (PWA/schermata Home): file PNG in `public/icons/` (`icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `apple-touch-icon.png`, `favicon-48.png`, `icon.svg`), già collegati in `manifest.webmanifest` e `index.html`.
-- **Mezzo che cambia icona** (es. nuovo tipo di mezzo): funzione `vehIconName` in `util.js`.
+| Cartella | Contenuto |
+|---|---|
+| `data/gtfs/<nav\|aut>/` | Archivio dei GTFS statici (`<inizio validità>_<hash>.zip`), aggiornato dal workflow. `data/actv_*.zip` sono versioni storiche ancora usate per le date vecchie: **non cancellarle**. |
+| `scripts/` | `update-gtfs.js` (scarica i GTFS), `archivia-avvisi.js` e `interpreta-avvisi.js` (workflow degli avvisi), `pedonale.js` (rete pedonale), `vapid-keys.js` (chiavi delle notifiche). |
+| `tests/` | Prove automatiche (`*.test.js`, `node --test`), feed simulato (`fakefeed.js`), prove dell'interfaccia (`ui/run.py`, Playwright). |
+| `.github/workflows/` | `update-gtfs.yml`, `archivio-avvisi.yml`, `keepalive.yml` (vedi [7](#7-github)). |
 
 ---
 
-## 2. GTFS statici: perché non si sovrascrivono più
+## 3. Le funzioni dell'app
+
+### 3.1 Mappa e mezzi
+- Simboli: **cerchi** = battelli, **mattonelle** = bus e tram, colori della linea. Bordo tratteggiato = posizione da orario; grigio = mezzo non associato a una corsa.
+- Il mezzo si muove lungo il tracciato tra due rilevamenti, senza mai superare l'ultimo punto ricevuto (nessuna posizione inventata).
+- **Mezzi senza linea («?»)**: mezzi che il feed ACTV non associa a nessuna linea. Sono **nascosti** di norma; il terzo pulsante del gruppo
+  servizi (icona «?») li mostra, **grigi e trasparenti**. La scelta resta sul telefono (`tpl.mezziSenzaLinea`). Codice: `isUnk`, `showUnk` in `app.js`.
+- Pulsanti a destra: battelli · bus/tram · mezzi «?» | ricerca · posizione · tema | avvisi · marea · installa. In basso a destra: **preferiti** (stella),
+  avvisi di arrivo attivi (campanella, solo se ce ne sono), informazioni («i»).
+- Il pulsante **«Percorso»** sta sopra i crediti della mappa all'apertura; quando i crediti si riducono (dopo 5 secondi o alla prima mossa) scende al bordo.
+
+### 3.2 Pannello fermata, zona e corsa
+- **Linguetta dei comandi**: preferito, condividi, percorso da qui, avviso di arrivo, segui il mezzo e chiudi stanno in una linguetta **fuori dal
+  pannello** (a destra su schermi larghi, sopra il bordo sul telefono). Il **nome** resta su **una riga**: se non entra scorre avanti e indietro.
+  La parte di mappa coperta dalla linguetta è esclusa quando l'app centra un mezzo o una fermata (`freeBox` in `app.js`).
+- Righe dei passaggi (tre righe): destinazione · **fermate successive** (scorrono di continuo verso sinistra se non entrano, `ticker`) ·
+  pontile/corsia, stato e mezzo (**avanti e indietro** se non entra, `marquee`). Con «riduci movimento» del sistema non scorre nulla.
+- Viste «Orario» e «Per linea», «Partiti da poco», campanella per l'avviso di arrivo su ogni passaggio, avvisi di servizio in cima.
+
+### 3.3 Navigazione e tasto «indietro»
+Ogni livello aperto (pannello, pannello precedente, pagine del pianificatore, avvisi, marea, preferiti, informazioni, ricerca, scelta sulla mappa)
+ha una voce nella cronologia del browser (`nav.js`). Il **tasto o gesto «indietro»** del telefono (e il tasto **Esc** sul computer) chiude il livello
+più in alto o torna al pannello precedente; con nulla aperto esce dall'app. L'ordine è in `backOne()`, il conteggio dei livelli in `levels()` (`app.js`).
+
+### 3.4 Pianificatore di percorso
+- **Quando**: interruttore *Adesso · Partenza · Arrivo*; con un orario scelto compaiono **giorno** e **ora**. Le date ammesse sono quelle coperte
+  dai GTFS in archivio (le stesse della modalità *Programmato*, `/api/dates`) e per ogni data si usano **gli orari di quella data**
+  (`plannerGtfs` in `server.js` → `live.dataFor`): stesso motore di caricamento della modalità Programmato.
+- **Opzioni** (salvate sul telefono): mezzi (battelli · autobus e tram), preferenza (equilibrata, più veloce, meno cambi, meno a piedi), cambi
+  (qualsiasi, al massimo 2, al massimo 1, solo diretti), camminata massima per tratto, passo, tempo per i cambi.
+- **Sul telefono**, mentre si scelgono partenza, arrivo e opzioni il pianificatore occupa **tutto lo schermo** (la tastiera non copre nulla e la barra in
+  basso si toglie); con le soluzioni torna un foglio in basso e la mappa mostra il percorso. «Scegli sulla mappa» lo toglie di mezzo.
+- **Mezzi sulla mappa**: con il pianificatore aperto si vedono **solo i mezzi delle corse della soluzione mostrata** (la prima dell'elenco o quella
+  aperta); per un orario futuro i mezzi compaiono quando le corse entrano in servizio. Chiudendo il pianificatore tornano tutti.
+- **Percorsi preferiti**: stella nella linguetta; nel pannello Preferiti (scheda Percorsi) si possono **rinominare** («Casa → Lavoro»), riordinare ed eliminare.
+- Tempo reale per le partenze di adesso, orari programmati per gli altri orari; «a piedi» sulla rete pedonale OSM.
+
+### 3.5 Preferiti
+Stella in basso a destra → pannello con schede **Fermate** e **Percorsi**. Un tocco apre; **Modifica** per riordinare, rinominare (percorsi) ed eliminare;
+**Salva una copia** scarica un file JSON; **Ripristina** lo rilegge e lo **unisce** a quelli presenti (cambio di telefono o di browser).
+
+### 3.6 Avvisi di arrivo (notifiche)
+Campanella su un passaggio o nel pannello della corsa → scelta del preavviso (2, 5, 10, 15 min). Notifica di sistema anche ad app chiusa (Web Push);
+dove non c'è Web Push (iPhone senza app installata) l'app aperta mostra i messaggi. Dopo un **riavvio o un aggiornamento del server** il telefono
+ripresenta da solo gli avvisi attivi (`/api/watch/restore`), all'apertura dell'app, al ritorno in primo piano e quando il flusso si ricollega.
+
+### 3.7 Avvisi di servizio, marea, modalità Programmato, guida, link
+- **Avvisi**: sito ACTV + Telegram, collegati a linee e fermate (bordo rosso sulla mappa, «!» nei pannelli); archivio storico nel ramo `archivio-avvisi`.
+- **Marea**: livello CPSM, tendenza, prossimi estremi, grafico con cursore.
+- **Programmato** (barra in basso): posizioni e orari di un altro giorno o di un'altra ora, con riproduzione accelerata.
+- **Guida**: alla prima apertura e, dopo un aggiornamento, solo le novità (`guida.js`, `GUIDA_VER = 'v24'`).
+- **Link condivisibili**: `?fermata=nav:5013`, `?zona=…`, `?corsa=nav:…`, `?da=…&a=…`; scorciatoie `?apri=percorso|vicine|preferiti`.
+
+### 3.8 Scala della grafica
+La dimensione di base del testo segue lo schermo: 16 px da circa 720 px di larghezza, in proporzione fino a 14 px sui telefoni stretti e in orizzontale;
+tutto ciò che è in `rem` (testi, righe, mattonelle) si adegua insieme, e chi ingrandisce il testo dalle impostazioni del telefono lo trova ingrandito.
+I bersagli di tocco restano tra 44 e 48 px. La regola è in testa alla sezione v24 di `app.css` (`html{font-size:clamp(...)}`).
+
+---
+
+## 4. Cosa resta salvato e dove
+
+| Dato | Dove | Dura | Note |
+|---|---|---|---|
+| Fermate e percorsi preferiti, nomi dei percorsi | telefono (`localStorage`: `tpl.favorites`, `tpl.percorsi`) | finché non si cancellano i dati del sito | `navigator.storage.persist()` chiesto all'avvio; copia di sicurezza dal pannello Preferiti |
+| Tema, vista dei passaggi, opzioni del pianificatore, mezzi «?», guida vista | telefono (`localStorage`) | come sopra | sopravvivono agli aggiornamenti dell'app |
+| Avvisi di arrivo attivi | telefono (`tpl.watches`) **e** memoria del server | al massimo 3 ore | dopo un riavvio del server il telefono li ripresenta (`watch.restore`) |
+| Chiavi delle notifiche (VAPID) | variabili d'ambiente su Render | sempre | senza, le iscrizioni non valgono più dopo un riavvio |
+| GTFS statici | repository GitHub (`data/gtfs/`) | sempre | aggiunti dal workflow, mai sovrascritti |
+| Archivio avvisi e interpretazioni AI | ramo GitHub `archivio-avvisi` | 6 mesi letti dal server | scritto solo dal workflow |
+| Stato tempo reale, cache | memoria del server | fino al riavvio | si ricostruisce in pochi secondi |
+
+**Perché niente database**: il piano gratuito di Render ha disco temporaneo e il Postgres gratuito scade dopo 30 giorni; tutto ciò che è
+personale resta sul dispositivo dell'utente (privacy) e ciò che è pubblico sta su GitHub.
+
+---
+
+## 5. API del server
+
+| Endpoint | Metodo | Cosa restituisce |
+|---|---|---|
+| `/api/vehicles?src=nav,aut` | GET | mezzi in tempo reale (risposta condivisa, ETag) |
+| `/api/stream?d=1&src=…` | GET (SSE) | flusso dei mezzi: elenco completo, poi differenze |
+| `/api/scheduled?src=…&secs=…&date=AAAAMMGG` | GET | posizioni da orario (modalità Programmato) |
+| `/api/stops`, `/api/routes`, `/api/shapes?id=…`, `/api/area` | GET | fermate, linee, tracciati, area servita |
+| `/api/stop?id=nav:5013`, `/api/zone?ids=…` | GET | passaggi di una fermata o di una zona (`&secs=&date=` per Programmato) |
+| `/api/trip?id=nav:<corsa>` | GET | dettaglio di una corsa |
+| `/api/percorso?da=…&a=…[&secs=&date=&arrivo=1&mezzi=nav,aut&pref=…&cambi=…&piedimax=…&passo=…&margine=…]` | GET | soluzioni del pianificatore |
+| `/api/percorso-simili?…&fam=…&rotte=…&arr=hh:mm` | GET | alternative di una soluzione |
+| `/api/dates` | GET | date coperte dai GTFS in archivio |
+| `/api/avvisi`, `/api/tide`, `/api/about`, `/api/push-key` | GET | avvisi, marea, versione e contatto, chiave pubblica VAPID |
+| `/api/watch`, `/api/watch/cancel`, `/api/watch/resub`, `/api/watch/restore` | POST | avvisi di arrivo: crea, annulla, nuova iscrizione, ripristino dopo un riavvio |
+| `/api/watch/poll?id=&token=` | GET | messaggi per i dispositivi senza Web Push |
+| `/api/audit`, `/api/gtfs`, `/api/avvisi-eventi`, `/api/whoami`, `/api/tide?debug=1` | GET, **DIAG_TOKEN** | diagnosi |
+| `/api/reload-gtfs` | POST, **ADMIN_TOKEN** | ricontrolla e ricarica i GTFS |
+| `/healthz` | GET | `ok` (controllo di salute di Render e keep-alive) |
+
+---
+
+## 6. Configurazione
+
+### 6.1 Variabili d'ambiente (Render → servizio → *Environment*; in locale: file `.env.local`)
+
+| Variabile | Obbligatoria | A cosa serve |
+|---|---|---|
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | **sì** per le notifiche | chiavi delle notifiche; si generano con `node scripts/vapid-keys.js`. Senza, cambiano a ogni riavvio e le iscrizioni si perdono |
+| `DIAG_TOKEN` | consigliata | abilita le API di diagnosi (stringa casuale di almeno 16 caratteri) |
+| `ADMIN_TOKEN` | consigliata | abilita `POST /api/reload-gtfs` |
+| `FORCE_HTTPS` | `1` in produzione | reindirizza a HTTPS e attiva HSTS |
+| `TRUST_PROXY` | `1` su Render | numero di proxy fidati: serve a leggere l'IP vero per i limiti di frequenza |
+| `APP_CONTACT` | consigliata | contatto mostrato nella pagina Informazioni (privacy e segnalazioni) |
+| `PUSH_CONTACT` | facoltativa | `mailto:…` per i servizi di notifica |
+| `RT_POLL_MS` | facoltativa | intervallo massimo di lettura dei feed (default 5000, minimo 3000) |
+| `AVVISI_ARCHIVIO` | facoltativa | indirizzo della cartella `avvisi` dell'archivio, oppure `0` per non usarlo |
+| `KEEPALIVE_URL` | facoltativa | su Render basta `RENDER_EXTERNAL_URL`, impostata da Render |
+| `PORT`, `HOST`, `TLS_CERT`, `TLS_KEY` | solo in locale | porta, indirizzo di ascolto, HTTPS in rete di casa |
+
+> **Non più usate dalla v24** (si possono cancellare da Render): `ACTV_CENTRALE`, `ACTV_CENTRALE_RPM` — il confronto con la centrale ACTV
+> era spento (`ACTV_CENTRALE=0`) ed è stato tolto dal codice.
+
+Come si usano i token (mai nell'indirizzo, mai nel browser), da **PowerShell**:
+```powershell
+$h = @{ Authorization = "Bearer IL_TUO_DIAG_TOKEN" }
+Invoke-RestMethod -Uri https://veneziatpl.onrender.com/api/gtfs -Headers $h | ConvertTo-Json -Depth 6
+```
+
+### 6.2 File `.env.local` (solo in locale, mai su GitHub)
+Copia `.env.local.esempio` come `.env.local` e togli il `#` davanti alle righe che servono. Lo legge `env.js` all'avvio; le credenziali
+Cloudflare servono solo alle prove locali dell'interpretazione AI.
+
+---
+
+## 7. GitHub
+
+### 7.1 Workflow (scheda *Actions*)
+| Workflow | Quando | Cosa fa |
+|---|---|---|
+| **Aggiorna GTFS ACTV** (`update-gtfs.yml`) | ogni 6 ore e a mano | scarica le versioni nuove dei GTFS in `data/gtfs/` senza sovrascrivere; commit su `main` solo se c'è qualcosa di nuovo |
+| **Archivio avvisi ACTV** (`archivio-avvisi.yml`) | ogni 20 minuti e a mano | salva RSS e Telegram nel ramo `archivio-avvisi`; se ci sono i segreti Cloudflare, interpreta con l'AI le comunicazioni nuove |
+| **Keep-alive Render** (`keepalive.yml`) | ogni 10 minuti | chiama `/healthz` perché il servizio gratuito non si addormenti (GitHub può ritardare: consigliato anche un pinger esterno, es. UptimeRobot ogni 5 min) |
+
+### 7.2 Rami
+- `main`: codice e GTFS. È il ramo che Render pubblica.
+- `archivio-avvisi`: solo dati degli avvisi (scritto dal workflow). **Non** unirlo a `main`.
+- `dependabot/npm_and_yarn/adm-zip-0.6.1`: **obsoleto** (adm-zip non è più una dipendenza dalla sostituzione con `zip.js`): chiudi la richiesta di
+  modifica e cancella il ramo (*Pull requests* → la richiesta di Dependabot → *Close*; poi *Delete branch*).
+
+### 7.3 Segreti (Settings → Secrets and variables → Actions)
+`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` (solo per l'interpretazione AI degli avvisi). Facoltativa la variabile `AI_MODELLO`.
+
+### 7.4 Impostazioni consigliate (verificate il 12/11/2026)
+| Dove | Ora | Consiglio | Perché |
+|---|---|---|---|
+| Settings → Actions → General → *Workflow permissions* | Read and write | **Read repository contents** | i workflow che scrivono (`update-gtfs`, `archivio-avvisi`) dichiarano già `contents: write`: tutto il resto resta in sola lettura (minimo privilegio) |
+| stessa pagina → *Allow GitHub Actions to create and approve pull requests* | attivo | **disattivato** | nessun workflow ne ha bisogno |
+| stessa pagina → *Actions permissions* | tutte le azioni | facoltativo: **solo azioni di GitHub** (`actions/checkout`, `actions/setup-node`) | riduce il rischio di azioni di terzi compromesse |
+| Security → *Secret scanning* | disattivato | **attivarlo** (gratis per i repository pubblici) | avvisa se per errore si carica una chiave o un token |
+| Security → *Security policy* | assente | aggiunto il file `SECURITY.md` | dice come segnalare una vulnerabilità |
+| Rulesets / branch protection su `main` | nessuna | facoltativo: impedire la cancellazione e il push forzato su `main` | protezione da errori; i commit dei workflow continuano a funzionare |
+| Visibilità | pubblico | resta pubblico | il server legge l'archivio avvisi da `raw.githubusercontent.com` senza credenziali; nel repository non ci sono segreti |
+
+### 7.5 File che non devono stare nel repository
+`.env.local`, `node_modules/`, `certs/`, `tmp/`, file `*.log` (già in `.gitignore`). Nella v24 sono stati tolti `data/alilaguna.zip` (non usato)
+e i moduli della centrale ACTV.
+
+---
+
+## 8. Render
+
+Impostazioni del servizio **VeneziaTPL** (verificate il 12/11/2026):
+
+| Impostazione | Valore | Giudizio |
+|---|---|---|
+| Piano | Free (512 MB di memoria) | ok per il traffico attuale; vedi nota sulla memoria |
+| Regione | Virginia (US East) | **consiglio Frankfurt (EU Central)**: utenti in Italia (circa 90-100 ms in meno a ogni richiesta) e dati in Europa. La regione non si cambia: bisogna creare un nuovo servizio (stesse impostazioni e variabili) e poi eliminare il vecchio; l'indirizzo `onrender.com` cambierebbe |
+| Branch | `main` | ok |
+| Build command | `npm ci` | ok (installa esattamente `package-lock.json`) |
+| Start command | `npm start` | ok |
+| Health check path | `/healthz` | ok |
+| Auto-Deploy | Off (deploy manuale) | ok, voluto: si pubblica quando si decide |
+| Variabili | `ADMIN_TOKEN`, `APP_CONTACT`, `DIAG_TOKEN`, `FORCE_HTTPS`, `TRUST_PROXY`, `VAPID_*` | ok; **cancellare** `ACTV_CENTRALE` e `ACTV_CENTRALE_RPM` (non più usate) |
+
+**Memoria**: il 9/11/2026 alle 00:21 Render ha riavviato il servizio per «memoria oltre 512 MB» (scheda *Events*). I picchi arrivano quando si
+caricano insieme gli orari in uso e quelli di un'altra data (modalità Programmato o pianificatore). La v24 riduce il consumo togliendo la centrale
+ACTV (pagine e indici in memoria) e limita gli indici del pianificatore a due. Se capita ancora: *Events* mostra l'ora; si può valutare un piano
+a pagamento con più memoria.
+
+**Manutenzione annunciata da Render**: 18 novembre 2026, 3:00 (ora italiana): possibile breve interruzione.
+
+---
+
+## 9. Prove e test
+
+Tutti i comandi sono per **PowerShell** di Windows, dalla cartella del progetto (es. `cd D:\Downloads\TPL-Venezia`). Serve **Node.js 22**
+(`node -v` deve dire `v22.x`).
+
+### 9.1 Installazione e prove automatiche
+```powershell
+npm ci                                   # installa le librerie esattamente come su Render (la prima volta e dopo un cambio di package-lock.json)
+npm test                                 # tutte le prove (atteso: «# fail 0»)
+node --test tests/percorso.test.js       # un solo file di prove
+node --test --test-name-pattern="v24"    # solo le prove il cui nome contiene «v24»
+```
+
+### 9.2 Avviare l'app sul computer
+```powershell
+npm start                                # poi apri http://localhost:3000
+```
+Oppure doppio clic su `avvia-windows.bat`. Per cambiare porta: `$env:PORT=3111; npm start`.
+
+### 9.3 App con dati simulati (senza internet per i feed ACTV)
+```powershell
+$env:PORT=3111; $env:TRUST_PROXY=1; $env:AVVISI_ARCHIVIO=0
+node -r ./tests/fakefeed.js server.js    # mezzi, avvisi e marea simulati: utile per provare l'interfaccia
+```
+Per richiudere: `Ctrl+C`. Per tornare alle impostazioni normali nella stessa finestra: `Remove-Item Env:PORT, Env:TRUST_PROXY, Env:AVVISI_ARCHIVIO`.
+
+### 9.4 Prove dell'interfaccia (6 dimensioni di schermo, con screenshot)
+Una volta sola: `pip install playwright` e `python -m playwright install chromium`. Poi, con l'app simulata avviata (9.3) in un'altra finestra:
+```powershell
+python tests/ui/run.py http://localhost:3111 C:\temp\ui     # atteso: «FALLITI: 0»; gli screenshot finiscono in C:\temp\ui
+```
+
+### 9.5 Provare le API dal computer (PowerShell) o dal browser
+```powershell
+Invoke-RestMethod https://veneziatpl.onrender.com/api/about
+Invoke-RestMethod "https://veneziatpl.onrender.com/api/dates"
+(Invoke-RestMethod "https://veneziatpl.onrender.com/api/vehicles?src=nav,aut").vehicles.Count
+Invoke-RestMethod "https://veneziatpl.onrender.com/api/stop?id=nav:5013" | Select-Object -ExpandProperty departures | Select-Object -First 5 line, headsign, sched, exp
+Invoke-RestMethod "https://veneziatpl.onrender.com/api/percorso?da=nav:5013~0&a=nav:5031~0&secs=36000&date=20261120"
+```
+Le stesse richieste GET si possono incollare nella barra del browser (es. `https://veneziatpl.onrender.com/api/dates`).
+
+### 9.6 Prove sul telefono
+- **Tasto indietro**: apri una fermata, poi una corsa: «indietro» torna alla fermata, di nuovo «indietro» chiude il pannello.
+- **Pianificatore**: tocca «Percorso», poi «Dove vuoi andare?»: il pannello occupa tutto lo schermo e la tastiera non copre il campo.
+- **Notifiche**: attiva un avviso; dopo un nuovo deploy riapri l'app: la campanella resta accesa e la notifica arriva.
+- **Preferiti**: stella in basso a destra → «Salva una copia» scarica il file; «Ripristina» lo rilegge.
+
+### 9.7 Interpretazione AI degli avvisi (facoltativa, in locale)
+```powershell
+node scripts/interpreta-avvisi.js --casi --senza-ai      # prepara i prompt senza usare la quota
+node scripts/interpreta-avvisi.js --casi --confronta     # confronta i due modelli (serve .env.local con le credenziali Cloudflare)
+```
+Risultati in `tmp\ai-test\`.
+
+---
+
+## 10. Modifiche frequenti
+
+| Voglio… | Dove | Come |
+|---|---|---|
+| aggiungere un'icona | `public/icons/sprite.svg` | nuovo `<symbol id="i-nome" viewBox="0 0 24 24">` con soli tracciati; nel codice `icon('nome')`; poi aumenta `VERSION` in `public/sw.js` |
+| cambiare un colore o una misura | `public/css/app.css` | variabili in testa (`:root` e tema scuro `[data-theme="dark"]`); le coppie testo/sfondo devono restare leggibili (contrasto ≥ 4,5:1) |
+| cambiare la dimensione generale dei testi | `app.css`, sezione v24 | regola `html{font-size:clamp(87.5%, …, 100%)}` |
+| cambiare un testo dell'interfaccia | `public/index.html` (testi fissi) o il modulo in `public/js/` | cerca il testo con *Cerca nei file* dell'editor |
+| aggiungere un passo alla guida | `public/js/guida.js` | aggiungi un oggetto a `GUIDA_MAPPA`/`GUIDA_PANNELLO` (o `NOVITA_EXTRA`) con `since` uguale alla nuova `GUIDA_VER` |
+| cambiare i limiti del pianificatore | `percorso.js`, oggetto `C` | es. `HORIZON_S` (ore di ricerca), `TRANSFER_MAX_S` (cambio a piedi), `PREF` (pesi delle preferenze) |
+| aggiungere un'opzione del pianificatore | `public/js/percorso.js` (`OPZ0`, `renderOpz`, `opzQs`) e `server.js` (`planParams`) e `percorso.js` (`normPref`) | |
+| un nuovo livello che si chiude con «indietro» | `public/js/app.js` | aggiungilo a `levels()` e a `backOne()` |
+| una nuova API | `server.js`, tabella `API` | `{ fn: u => … }`; parametri validati con `security.js`; per i POST aggiungi il percorso a `POSTS` |
+| una nuova variabile d'ambiente | il modulo che la usa + questo README (6.1) + `.env.local.esempio` | |
+| aggiornare la versione mostrata | `server.js` (`ABOUT_VERSION`), `public/sw.js` (`VERSION`), `public/js/guida.js` (`GUIDA_VER`) | |
+
+Dopo ogni modifica: `npm test`; se hai toccato l'interfaccia, anche le prove 9.4.
+
+---
+
+## 11. Pubblicare e tornare indietro
+
+1. Prove in locale: `npm test` (e 9.4 se cambia l'interfaccia).
+2. Carica le modifiche su `main` (GitHub Desktop: *Commit to main* → *Push origin*; oppure `git add -A; git commit -m "messaggio"; git push`).
+3. Render → servizio → **Manual Deploy → Deploy latest commit**. Dopo 1-2 minuti: *Events* deve dire «Deploy live».
+4. Controllo: apri l'app, `https://veneziatpl.onrender.com/api/about` deve mostrare la versione nuova.
+
+**Tornare alla versione precedente**: Render → *Events* → sul deploy precedente **Rollback** (immediato). Per annullare anche su GitHub:
+GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in commit*, poi *Push*.
+
+**Aggiornare la copia sul computer** (cartella collegata a GitHub): GitHub Desktop → *Fetch origin* → *Pull origin*, oppure `git pull`.
+
+---
+
+## 12. Novità della v24
+
+- **Centrale ACTV tolta** (era spenta con `ACTV_CENTRALE=0`): via `centrale*.js`, `/api/centrale` e le relative prove; il comportamento resta quello
+  con la centrale spenta. Meno memoria e meno codice.
+- **Tasto/gesto «indietro»** del sistema su tutti i livelli (`nav.js`).
+- **Pannello**: comandi nella **linguetta** esterna, nome su una riga con scorrimento; verificati gli scorrimenti delle righe (continuo per le
+  fermate successive, avanti e indietro per mezzo e stato).
+- **Scala** proporzionata allo schermo (testi da 14 a 16 px di base, misure omogenee).
+- **Mezzi «?»** nascosti di norma, pulsante per mostrarli in grigio.
+- **Preferiti**: pannello dedicato (stella), percorsi con nome, riordino, copia di sicurezza e ripristino.
+- **Persistenza**: gli avvisi di arrivo sopravvivono ai riavvii del server; memoria del browser «persistente».
+- **Pianificatore**: «Programmato» al posto di «Pianificato»; date e orari della data scelta con lo stesso motore della modalità Programmato;
+  mezzi *battelli / autobus e tram* (via il pulsante tram); cambi «al massimo 2»; controlli compatti; *Adesso · Partenza · Arrivo* con giorno e ora;
+  a tutto schermo sul telefono mentre si scrive (tastiera); solo i mezzi del percorso sulla mappa; nuovo tentativo automatico mentre si caricano
+  gli orari di un'altra data.
+- Pulsante **«Percorso»** che scende quando spariscono i crediti della mappa.
+- `SECURITY.md`; tolti `data/alilaguna.zip` e il riferimento ad adm-zip nei crediti.
+
+---
+
+## A. GTFS statici: perché non si sovrascrivono più
 
 Problema risolto: scaricare e sovrascrivere il GTFS può mettere in uso un file **non ancora valido oggi** (o scaduto), e allora corse, fermate e codici non combaciano col feed in tempo reale.
 
@@ -79,9 +428,9 @@ Una versione **futura** resta in archivio e si attiva da sola alla sua data (il 
 
 ---
 
-## 3. Eccezioni e contromisure del codice (elenco dettagliato)
+## B. Eccezioni e contromisure del codice (elenco dettagliato)
 
-### 3.1 Distanze dalle fermate (`tracker.js`, `geo.js`)
+### B.1 Distanze dalle fermate (`tracker.js`, `geo.js`)
 Distanze in metri con approssimazione piana (111 000 m/° lat, 78 000 m/° lon a 45° N): precisa a ~0,3 % su scala urbana.
 - **Zona di fermata**: da 40 m prima a 55 m dopo il palo (`ARR_BACK_M`, `PASS_M`). Oltre → "transitato".
 - **Capolinea di partenza**: il mezzo sosta fino a 300 m prima / 250 m dopo il pallino (`TERM_BACK_M`, `TERM_M`).
@@ -92,7 +441,7 @@ Distanze in metri con approssimazione piana (111 000 m/° lat, 78 000 m/° lon a
 - **Fermate equivalenti** (`stopgroups.js`): pali a ≤ 2 m con nomi compatibili sono la stessa fermata (stesse fermate duplicate nel GTFS). Griglia spaziale, niente confronto a coppie.
 - **Zone** (`public/js/zones.js`): pali con lo stesso nome entro 300 m formano una zona con lettere (A, B…; "pontili" per i battelli).
 
-### 3.2 Gestione del feed realtime (`live.js`)
+### B.2 Gestione del feed realtime (`live.js`)
 - **Coordinate fuori area** (fuori da lat 44,6–46,2 / lon 11,3–13,6, o 0,0): mezzo scartato ("fantasma").
 - **Rilevamento vecchio**: > 3 min → disegnato ma segnalato "dato non aggiornato" (marker attenuato); > 20 min → non disegnato.
 - **Timestamp nel futuro** oltre 1 min: orologio del feed sballato, si usa l'ora di arrivo.
@@ -106,31 +455,30 @@ Distanze in metri con approssimazione piana (111 000 m/° lat, 78 000 m/° lon a
 - **Corse con più mezzi** (rinforzi in colonna): fino a 3 per corsa (`CO_MAX`), ciascuno col proprio stato e proprio passaggio; la corsa resta in elenco finché non è passato l'ultimo.
 - **Nomi dei mezzi** (`util.js: vehName`): autobus `BUS n`, tram `TRAM n`, battelli `M/B` (1–99), `M/S` (100–300), `N/T` (navi traghetto riconosciute dal nome), altrimenti `M/N`.
 
-### 3.3 Etichette «in arrivo / in partenza / in fermata / tra N min» (`tracker.js`, `util.js: etaText`)
+### B.3 Etichette «in arrivo / in partenza / in fermata / tra N min» (`tracker.js`, `util.js: etaText`)
 Macchina a stati monotona (la fermata corrente non torna mai indietro, salvo reset dopo 15 min di silenzio):
 - `scheduled` lontano → `enroute` → **`approaching` "In arrivo"** (entro 150 m, oppure entro 350 m e < 75 s) → **`at` "In fermata"** (fermo nella zona) → **`departing` "In partenza"** (in marcia, o negli ultimi 30 s prima della partenza prevista) → **`departed` "Partito"**.
 - Altrimenti "tra N min" (si aggiorna ogni secondo nel browser; sotto 45 s diventa "In arrivo").
 - **Etichetta sempre neutra**: nel pannello fermata il testo sotto l'orario non prende più il colore di ritardo/anticipo (come nel pannello del mezzo). Il colore resta solo sull'orario.
 
-### 3.4 Mezzo ancora fermo in fermata (richiesta k)
+### B.4 Mezzo ancora fermo in fermata (richiesta k)
 Il feed toglie la fermata appena il mezzo arriva e indicherebbe già la successiva; il mezzo, però, è ancora lì.
 - **Fermata trattenuta**: se il mezzo è stato visto fermo in una fermata, né il feed né l'orologio possono farla "avanzare" finché non c'è una prova di partenza (GPS oltre la zona, marcia sostenuta).
 - **Senza GPS** la fermata si considera lasciata solo 20 s dopo la partenza prevista (orario + ritardo del feed, `HOLD_S`).
 - Risultato: la fermata resta "In fermata" nel suo pannello, e la successiva non è segnata come "in arrivo" finché il mezzo non è davvero partito.
 
-### 3.5 Partenze appena avvenute (richiesta l)
+### B.5 Partenze appena avvenute (richiesta l)
 - Nel pannello di una fermata restano per **2 minuti** (`DONE_MS`) le corse appena partite, con l'**orario reale di partenza** (rilevato da GPS/feed e registrato dal tracker), stessa formattazione delle altre ma **tutta in grigio**, etichetta "Partito", orario programmato barrato se c'è scostamento.
 - Si registrano solo partenze di corse **seguite dall'inizio** (flag `known`): una corsa vista per la prima volta a metà percorso non genera false righe "partito".
 - Le righe grigie si possono aprire come le altre.
 
-### 3.5b Un passaggio, una riga (v22.5, `live.js: chooseTU, dedupePassages`, `centrale-fonde.js`, `centrale-abbina.js`)
+### B.5b Un passaggio, una riga (`live.js: chooseTU, dedupePassages`)
 Caso reale (Guglie, 4.1, 3/11): le corse delle 13:49 «in ritardo di 140 min» e delle 14:29 «+101» erano il battello della 16:09 (M/S 225): ACTV pubblica previsioni anche per corse che nessun mezzo fa e vi trascina il ritardo fino al primo mezzo che passa. Contromisure, valide anche per i mezzi senza GPS (non tutte le corse sono tracciate: il confronto è con il passaggio, non con il mezzo):
 - la previsione di una corsa che cita un mezzo che il GPS mostra su **un'altra** corsa non vale per questa;
 - corsa con la sola previsione del feed (nessun mezzo) e almeno 10 min di ritardo, la cui previsione cade sul passaggio di una corsa successiva della stessa linea con le stesse fermate fino al capolinea (±3 min dal suo tempo se ha dati propri; da 3 min prima a 20 min dopo l'orario se è solo programmata) e il cui ritardo «copre» la distanza tra i due orari: è un doppione, la previsione si scarta. La corsa successiva resta (mezzo o previsione propria); se non ha dati prende quel tempo quando differisce dall'orario di oltre un minuto, altrimenti resta «Da orario». Due mezzi localizzati non si toccano mai;
-- oltre 40 min di ritardo senza una corsa su cui cadere: vale solo se la centrale ACTV, quando ha i dati di quella palina, elenca un passaggio in tempo reale della linea a quell'ora; se li ha e non lo elenca, si scarta;
-- pannello fermata: una riga con la sola previsione del feed e almeno 10 min di ritardo che la centrale non elenca (con i suoi dati per quella linea e quell'ora) si toglie, con la stessa prudenza delle partenze fasulle. Nell'abbinamento con la centrale una corsa con la sola previsione del feed vale come programmata: non «ruba» il passaggio alla corsa che lo fa davvero.
+- oltre 40 min di ritardo senza una corsa su cui cadere: la previsione resta (non c'è una fonte indipendente per smentirla: il confronto con la centrale ACTV è stato tolto nella v24).
 
-### 3.6 Orari e calendario (`schedule.js`, `calendar.js`)
+### B.6 Orari e calendario (`schedule.js`, `calendar.js`)
 - Data/ora **di Venezia** (Europe/Rome) per ogni confronto, indipendente dal fuso del server.
 - Corse oltre la mezzanotte (orari 24:xx del giorno di servizio precedente) gestite per entrambi i giorni.
 - Data fuori dal periodo coperto dai calendari: si usa solo il giorno della settimana e il pannello lo segnala ("approssimato").
@@ -138,7 +486,7 @@ Caso reale (Guglie, 4.1, 3/11): le corse delle 13:49 «in ritardo di 140 min» e
 
 ---
 
-## 4. Sicurezza (`security.js`, `server.js`)
+## C. Sicurezza (`security.js`, `server.js`)
 - **Intestazioni**: Content-Security-Policy rigida (`script-src 'self'`: **nessuno script in linea**; stili in linea ammessi solo per gli attributi generati dalla mappa), HSTS (con HTTPS), `nosniff`, `X-Frame-Options: DENY` + `frame-ancestors 'none'`, Referrer-Policy, Permissions-Policy (solo geolocalizzazione), COOP/CORP `same-origin`.
 - **Dipendenze ridotte al minimo** (v22.6): niente più `adm-zip` (8 vulnerabilità segnalate da Dependabot). I GTFS si leggono con `zip.js`, un lettore ZIP interno basato su zlib di Node: solo lettura in memoria (nessuna estrazione su disco), metodi stored/deflate, niente cifratura né ZIP64, tetto per file (256 MB) imposto a zlib senza credere alla dimensione dichiarata («zip bomb»), controllo di dimensione e CRC-32, al massimo 2000 voci; download dei GTFS al massimo 120 MB. Restano solo `leaflet` e `protobufjs`.
 - **Dati salvati nel browser** (v22.6): preferiti, percorsi salvati e avvisi di arrivo letti dalla memoria del browser vengono ricostruiti campo per campo (tipi, intervalli e lunghezze) e passano sempre da `esc()` prima di entrare nella pagina: un valore alterato non può diventare HTML.
@@ -156,85 +504,3 @@ Caso reale (Guglie, 4.1, 3/11): le corse delle 13:49 «in ritardo di 140 min» e
 
 ---
 
-## 5. Interfaccia: comportamento
-
-- **Pannelli** (fermata, zona, corsa): cliccando una riga si passa all'altro pannello (fermata → corsa, corsa → fermata) e in alto compare il **link blu «indietro»** con il nome del pannello precedente (fino a 20 livelli). Aprire un pannello dalla mappa riparte da zero.
-- **X**: chiude il pannello, deseleziona il mezzo e **toglie la shape del percorso** (due livelli separati: percorsi della ricerca e percorso della corsa).
-- **Segui** (pulsante accanto alla X, solo nel pannello della corsa, stesso stile degli altri pulsanti, `aria-pressed`): il mezzo viene tenuto al centro della **zona libera della mappa**, cioè il rettangolo non coperto da pannello, colonna controlli, scheda marea e ricerca, ricalcolato dalle misure reali (vale per ogni schermo e orientamento). Scorrimento morbido; trascinare la mappa a mano ferma l'inseguimento; passando a un altro pannello si spegne.
-- **Pianificato e GTFS per data**: il selettore di data ammette solo i giorni coperti dai GTFS in archivio (`/api/dates`: dal primo all'ultimo giorno dei calendari in `data/gtfs/aut|nav`). Per ogni data il server sceglie la versione con servizi in quel giorno (la più recente tra le valide). Quella in uso oggi è sempre in memoria; se la data richiede un'altra versione, questa si carica a richiesta (una sola alternativa per servizio, per la memoria di Render) e l'interfaccia mostra «Carico gli orari della data scelta…» riprovando da sola. Senza una versione che copra la data, la barra di stato lo dice. L'archivio si compatta da solo (`prune`): restano le versioni valide oggi, quelle future, la più recente scaduta e quelle scadute da meno di 60 giorni (massimo 6).
-- **Pianificato**: barra compatta (selettore + data/velocità, una riga con play · ora · cursore · ORA), contenuto largo al massimo 760 px e centrato, uguale su schermi grandi.
-- **Controlli a destra**, in tre blocchi: servizi · cerca, posizione, tema scuro · avvisi, marea (e «Installa» quando disponibile).
-- **Ricerca**: scrivendo un numero le linee passano prima delle fermate, divise in «Automobilistico e tram» (mattonelle) e «Navigazione» (cerchi). Scegliendo una linea la mappa mostra solo i suoi mezzi e il suo percorso (pillola «solo linea X» in alto a sinistra per tornare a tutto).
-- **Posizione (GPS)** (`public/js/locate.js`): parte solo da un tocco, chiede il permesso al sistema e ne rispetta il rifiuto (messaggio con cosa fare); tre stati del pulsante: spento → acceso (punto sulla mappa, una sola centratura) → segue → spento. Trascinare la mappa, aprire una fermata o seguire un mezzo termina «segue»: niente più rimbalzo tra la tua posizione e il mezzo. Sospesa a pagina nascosta.
-- **Attesa visibile**: ogni richiesta lenta (`api()` in `util.js`) accende una barra in alto (`#busybar`); gli avvisi brevi usano `#toast`.
-- **Fermate doppie**: la stessa fermata presente due volte (entro ~25 m, stesso nome) è unificata in ricerca e mappa; il pannello mostra le partenze di entrambi i codici (`mergeDuplicates` in `zones.js`). Corsie fisse in `FIXED` (Piazzale Roma A1…C da linee GTFS, PM a parte; Tronchetto Mercato A = 5075, B = 5210): dipendono dagli id del GTFS in uso.
-- **Acqua alta**: oltre 85 cm (attuale o prevista) la scheda marea mostra il link ai servizi di navigazione previsti. Gli avvisi che citano acqua alta con un livello (`+110 cm`) ricevono il piano ACTV per quel livello (linee e pontili, tabella `AA_RULES` in `avvisi.js`, trascritta dalla pagina ACTV: da verificare se la pagina cambia).
-- **Avvisi come nelle app di navigazione** (v12):
-  - *Linee*: riconosciute dopo «linea/linee/navetta/bus/autobus/tram/vaporetto…», anche in elenchi con spazi («linee 4.1 4.2») o dopo «linee interessate:»; i tram T1/T2 ovunque. Il servizio si decide da parola («bus 2» = automobilistico, «vaporetto 2» = navigazione), emoji (🚌 / ⛴), parole del testo e fermate citate; numero ambiguo senza indizi = nessuna linea. Mai numeri seguiti da unità («10 minuti»).
-  - *Dove compaiono*: in una fermata gli avvisi che la citano e quelli sulle linee che vi fermano (nel filtro scelto: a Piazzale Roma l'avviso della linea 80 compare solo nella corsia A7); triangolo accanto alla riga del passaggio; nel pannello del mezzo gli avvisi della sua linea e delle sue fermate. Sulla mappa il simbolo resta solo sulle fermate citate. Avvisi di rete (orari, più di 12 linee) restano solo nell'elenco.
-  - *Durate*: «dalle ore 8.30 di venerdì 30 ottobre … fino al termine» (dalle 8:30, fino a fine giornata, etichetta «fino al termine»), «fino alle 18 di domenica 1 novembre», oggi/domani, fasce senza data, «fino a nuova comunicazione» (aperto); Telegram senza date: 2 h per guasti/ritardi, 6 h altrimenti.
-  - *Fili*: un messaggio più recente sullo stesso argomento sostituisce il precedente («aggiornato», eredita il periodo); «ripristinato / servizio regolare / terminata» chiude i precedenti collegati e resta 1 ora come «Risolto»; un messaggio Telegram uguale a una notizia del sito si unisce. Gli avvisi programmati di più giorni si toccano solo con testo molto simile. Titoli Telegram senza hashtag/emoji; esclusi i messaggi di servizio («pinned a photo»).
-- **Marea**: triangolo cliccabile accanto alle maree (attuale o previste) oltre 85 cm: apre l'avviso di acqua alta (ufficiale o calcolato).
-- **Filtri delle fermate**: quadrati da 32 px (sopra il minimo di accessibilità di 24 px); invariati quelli piccoli nelle righe delle corse.
-- **Correzioni dal debug del 1° novembre 2026** (v21; 1h35 di feed ACTV e sito registrati insieme, 169 mezzi, ~4.000 passaggi reali):
-  - **Corsa del mezzo = quella ACTV** (`assign.js`): niente più corse "riconosciute" dal GPS (sbagliavano nei casi difficili: blocchi, code al capolinea, binari affiancati, perfino corse contromano; ACTV non pubblica i turni, `block_id` vuoto). Vale la previsione ACTV che indica lo stesso mezzo su un'altra corsa (2 rilevamenti). Unico distacco: mezzo fermo al capolinea di partenza da oltre 5 min, oltre 40 min dopo l'orario (resta sulla mappa in grigio, la corsa torna alle previsioni/orario).
-  - **Una previsione per mezzo** (`live.js: chooseTU`): ACTV pubblica una previsione per ogni mezzo anche sulla stessa corsa; si usa quella del mezzo titolare, mai quella di un mezzo staccato.
-  - **Linee circolari** (`tracker.js: projectTimed`): alla prima lettura si sceglie il punto del percorso coerente con l'orario (inizio giro, non fine).
-  - **Capolinea prima della partenza**: partenza all'orario, il ritardo ACTV "trascinato" dalla corsa precedente non conta.
-  - **Previsione ACTV incoerente** con la posizione (oltre 10 min per oltre 2 min, mezzo in marcia sul percorso): vale il ritardo misurato.
-  - **Anticipi** mostrati solo se confermati dalla posizione; **nessun recupero** del ritardo a valle (le previsioni lontane erano in media 1,5–2 min troppo ottimistiche).
-  - **Arrivo al capolinea**: fermo fino a 300 m prima dell'ultima fermata = corsa conclusa.
-- **v22 — turni dei mezzi e centrale ACTV** (debug del 1° novembre 2026: 4.422 passaggi confrontati con oraritemporeale.actv.it alla stessa palina e nello stesso minuto). Il feed GTFS-RT non pubblica i turni e non sposta il ritardo sulla corsa successiva: mezzi "in ritardo di 86-92 minuti" (T1, battello 4.2) perché associati a una corsa vecchia, corse "da orario" un minuto prima del mezzo che le fa davvero (doppioni), corse da orario 5-13 minuti prima del vero passaggio, partenze che a quell'ora non avvengono. Il GTFS statico resta il riferimento (nessuna fermata, corsa o nome nuovo); grafica invariata, nessuna indicazione della fonte.
-  - **Turno del mezzo** (`turni.js`, applicato da `live.js` a ogni lettura, prima dello stato delle corse: **mappa, pannello fermata e pannello del mezzo dicono la stessa cosa**). Un mezzo passa dalla corsa del feed A alla corsa B solo se: ha oltre 10 min di ritardo su A alla prossima fermata; B è della stessa linea e fa esattamente le stesse fermate fino al capolinea; B è in servizio e nessun altro mezzo la fa (né per posizione né per previsione ACTV); il mezzo passa da 2 min prima a 5 min dopo l'orario di B (fermo al capolinea: la prima corsa che parte entro 15 min); la centrale ACTV, se ha i dati, non dà B in tempo reale a un altro istante; stessa scelta per 2 rilevamenti GPS nuovi. Una volta scelta resta con un margine più largo (da 3 min prima a 8 min dopo). La corsa A resta senza mezzo e senza le previsioni che erano di quel mezzo. Diagnosi: `/api/audit` → `corseDelTurno`.
-  - **Centrale ACTV** (`centrale.js` e `centrale-*.js`): il server legge la pagina della **singola fermata** (mai i "terminal", che uniscono fermate distinte nel GTFS, es. Mestre Centro + 27 Ottobre) quando si apre un pannello (cache 25 s, attesa massima 1,5 s) e **in continuo** in sottofondo (60 letture/min, `ACTV_CENTRALE_RPM`): prima le fermate dei mezzi da controllare per il turno, poi a rotazione la prossima fermata di ogni mezzo in servizio. Massimo 240 letture/min in tutto, pausa di 5 minuti dopo 5 errori di fila. Ogni riga ACTV si aggancia a una corsa GTFS (linea, codice palina con le fermate equivalenti, orario; pontili dalla lettera nel nome GTFS): programmate per orario esatto; tempo reale con un abbinamento che rispetta l'ordine dei passaggi (prima ai nostri mezzi, poi alle corse senza mezzo, mai oltre 40 min di ritardo), con gli orari ACTV alle fermate successive che escludono direzioni e percorsi diversi. I tempi reali ACTV sono al minuto per difetto: si contano a metà minuto.
-  - **Correzioni** (solo corse **senza** nostro mezzo localizzato; quelle con il mezzo restano del tracciamento): in tempo reale per la centrale → prendono quel tempo (anche nel pannello della corsa, con gli orari alle fermate successive); programmate → restano da orario; **non elencate** dalla centrale, che vede quell'ora e quella linea a quella palina → partenza fasulla, la riga si toglie (non se un passaggio ACTV della stessa linea entro 10 min non si è agganciato a nessuna corsa); corsa lasciata da un mezzo per il suo turno → compare solo se la centrale ne elenca un passaggio (senza centrale no); sola previsione del feed (nessun mezzo localizzato) diversa dalla centrale in tempo reale → vale la centrale, mai tolta. Le righe ACTV senza corsa GTFS non si aggiungono.
-  - **Facoltativa**: se la centrale non risponde o cambia formato il sito funziona con i soli dati del feed (resta la regola del turno, senza il controllo della centrale). `ACTV_CENTRALE=0` la spegne. Diagnosi riservata `/api/centrale` (DIAG_TOKEN): letture, errori, righe abbinate, partenze tolte, tempi sostituiti e **confronto continuo** del tempo di ogni mezzo con il passaggio ACTV più vicino (entro 75 s / 3 min / oltre, con i casi).
-  - **Avvisi di arrivo attivi**: campanella con il numero sopra la «i», visibile solo quando ce n'è almeno uno; apre la lista (in Informazioni, dove restano).
-- **v22.1 — stesse diciture nel pannello fermata e nel pannello del mezzo** (debug del 2 novembre 2026: su 2.499 confronti stessa corsa/stessa fermata, 156 con «tempo reale» da una parte e «Da orario» dall'altra):
-  - «In orario / In ritardo di / In anticipo di» = corsa tracciata (feed o centrale ACTV); «Da orario» = non tracciata. Il pannello della corsa diceva «Non rilevato» (o «live»): ora «Da orario», e lo stato in testa è quello della prima fermata non ancora servita.
-  - Mezzo localizzato fermo al capolinea prima della partenza, senza previsione del feed: «In orario» in entrambi i pannelli (prima «Da orario» nelle righe e «In orario» in testa al pannello della corsa).
-  - Centrale ACTV: stesso calcolo nei due pannelli (`centrale-fonde.js: actvPlan`): l'orario ACTV di una corsa a una fermata viene dalla riga ACTV di quella palina o, se manca (es. Libertà 11380, pubblicata da ACTV come 1380), dagli orari ACTV delle altre fermate della corsa. Corrette anche le corse al capolinea «In orario» nel pannello fermata e «Da orario» in quello della corsa.
-  - Soppressioni: «Corsa soppressa» / «Fermata saltata» in entrambi i pannelli.
-- **Pianificato** (v21): il pannello della corsa usa data e ora scelte (fermate passate/da fare e avviso sul calendario).
-- **Avvisi** (v21): un messaggio Telegram pubblicato oltre 2 giorni dopo la notizia ACTV a cui rimanda non si unisce più a essa (ACTV aggiorna la stessa pagina: le date vecchie la facevano scartare); "fino al termine dei servizi di sabato 30 novembre" è riconosciuto come data di FINE.
-- **Marea** (v21): la curva prevista parte dall'ultimo valore osservato (niente "nessun dato" intorno all'ora attuale).
-- **Fermate mai superate per errore** (v16, `tracker.js`): senza GPS fresco la fermata corrente avanza con l'orario + l'ultimo ritardo stimato (non il solo orario) e mai oltre il punto raggiungibile dall'ultima posizione certa (15 m/s); con il GPS che torna, l'autocorrezione riporta indietro le fermate date per superate.
-- **Più utenti insieme**: una sola lettura dei feed per tutti; elenco mezzi calcolato una volta per stato e condiviso (ETag, risposta 304 senza dati a chi l'ha già); pannelli fermata/zona identici entro 1,5 s calcolati una volta; limiti per IP e per connessioni in tempo reale.
-- **Velocità**: il feed ACTV non trasmette la velocità; quella mostrata è **stimata** dalle posizioni ed è indicata come tale («≈ 25 km/h (stimata)»).
-- **Notifiche v15**: campanella su ogni passaggio del pannello fermata (avviso di QUELLA corsa a QUELLA fermata) e nel pannello della corsa; niente emoji: titolo «Linea 80 → Martellago», immagine = mattonella (bus/tram) o cerchio (battelli) della linea con i suoi colori, disegnata dal service worker; icona della barra di stato = simbolo stilizzato del servizio (stessi tracciati di `sprite.svg`). Con l'app in primo piano nessuna notifica di sistema: avviso dentro l'app. Push con `TTL` pari alla validità del messaggio e `Topic` per corsa (offline: arriva solo l'ultimo stato); `pushsubscriptionchange` rinnova l'iscrizione senza perdere gli avvisi.
-- **Avvisi: effetto e gravità** (modello GTFS-Realtime `effect`/`severity_level`): Sospeso (grave), Deviazione, Fermata spostata, Ritardi, Servizio ridotto, Sciopero, Acqua alta (attenzione), Servizio aggiuntivo/modificato, Risolto, avvisi di rete (informativi). Etichetta colorata su schede e righe; elenco ordinato per gravità; il triangolo su mappa, titoli e righe solo per grave/attenzione.
-- **Preferiti** (v14, `public/js/fav.js`): stella ☆ nel pannello di una fermata o zona; l'elenco compare aprendo la ricerca (campo vuoto). Salvati nella memoria del browser per questo sito (`localStorage`, formato versionato) con richiesta di memoria persistente: restano dopo aggiornamenti dell'app e riavvii; si perdono solo cancellando i dati del sito o cambiando indirizzo.
-- **Avviso di arrivo** (v14, `push.js`, `watch.js`, `public/js/notify.js`, `public/sw.js`): nella corsa aperta da una fermata, campanella 🔔 → «2 / 5 / 10 / 15 min prima». Notifiche di sistema (Web Push standard, cifrate RFC 8291 e firmate VAPID) anche ad app chiusa; pochi messaggi ponderati, tutti con lo stesso tag (si sostituiscono): conferma silenziosa, variazioni di ritardo ≥ 3 min (silenziose, max una ogni 4 min), preavviso con suono, «in arrivo ora», soppressione/fermata saltata; azione «Non avvisarmi più»; tocco = apre la corsa. Suoni, vibrazione e «non disturbare» seguono le impostazioni del telefono. Senza Web Push (iPhone senza app installata, navigazione privata) l'avviso funziona finché l'app resta aperta. Su iPhone: installare l'app (Condividi → Aggiungi alla schermata Home).
-  - Chiavi: `node scripts/vapid-keys.js` e copiare `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` nelle variabili d'ambiente (facoltativo `PUSH_CONTACT=mailto:…`). Senza, si usano chiavi temporanee: dopo un riavvio del server le iscrizioni vanno rifatte.
-  - Limiti: 6 avvisi per IP, 1000 in tutto, durata massima 3 ore; solo servizi di notifica noti (Google, Mozilla, Apple, Microsoft) in HTTPS.
-- **Avvisi finiti** (v14): chiusure anche isolate («ripristinato», «riaperta», «nebbia diradata», revoca/rinvio dello sciopero) = «Risolto» per 1 ora e chiusura dei precedenti collegati; avvisi ufficiali di acqua alta senza date chiusi quando la marea misurata torna sotto 85 cm senza nuovi picchi previsti; «fino alle 23.00» senza data = oggi a quell'ora.
-- **Acqua alta: tre fonti insieme** (v13): livello misurato, picco previsto (12 h) e avviso ufficiale; vale il più alto e il piano ACTV si applica a quel livello. Con un avviso ufficiale che indica il livello resta solo quello, completato con misura, previsione e piano; se l'avviso ufficiale parla di acqua alta senza livello, l'avviso calcolato compare come «confermato» con il link al messaggio.
-- **Avviso acqua alta automatico**: se ACTV/Telegram non pubblicano nulla, con marea misurata o prevista (prossime 12 h) oltre 85 cm compare un avviso «Calcolato dal livello di marea» con il piano ACTV per quel livello (stessa tabella `AA_RULES`). Se esiste già un avviso ufficiale con piano acqua alta, l'automatico non compare e quello ufficiale mostra il livello misurato come conferma.
-- **Prestazioni**: la lettura dei GTFS cede il passo ogni ~8 ms; `/api/stop` e `/api/zone` identiche entro 1,5 s condividono un solo calcolo.
-- **Fermate vicine**: con la posizione attiva, in alto a sinistra compare una pillola con la fermata più vicina entro 250 m e la distanza (con «+N» se sono di più; al tocco si apre la fermata o l'elenco). Se non ce ne sono, la pillola dice quanto dista la più vicina; se la posizione non arriva, mostra il motivo (permesso negato, segnale assente: secondo tentativo con precisione ridotta).
-- **Marea**: livello, tendenza, prossime alte/basse con pallino di colore (stesse soglie del dato corrente) e grafico da 6 ore prima a 18 ore dopo, con promemoria breve ai servizi di navigazione previsti quando la marea supera 85 cm con cursore (osservato / previsto). La parte futura è ricavata dagli estremi pubblicati da CPSM (interpolazione), quella passata dalla storia che il server accumula dal suo avvio.
-- **Avvisi di servizio** (`avvisi.js`, `public/js/avvisi.js`): raccolta automatica dalle notizie del sito ACTV (RSS + pagina) e dal canale Telegram pubblico, ogni 5-10 minuti. Per ogni avviso si ricavano validità (date in italiano), linee e fermate con regole generali: la linea deve seguire «linea/linee/navetta» ed esistere nel GTFS; numeri presenti in entrambi i servizi si risolvono dalle fermate citate e da ciò che le linee servono davvero (altrimenti si scartano); le fermate valgono solo se servite da quelle linee; nomi di una sola parola e strade («via Torino») non bastano da soli; scioperi e avvisi generali sugli orari non segnano fermate. Le fermate con avviso in corso hanno il simbolo (!) in mappa e nel pannello, con riga che apre l'avviso.
-- **Altezza all'avvio** (`theme-init.js`): l'altezza dell'app è la misura reale della finestra, riletta alcune volte nei primi secondi, così su Android i tasti di sistema non coprono la barra in basso.
-- **Pagina Informazioni** (v20, `public/js/info.js`): tasto «i» in basso a destra sopra la barra Tempo reale/Pianificato (sale con la barra; su smartphone si nasconde con un pannello aperto). Si apre a tutto schermo; si chiude con la X, Esc o il tasto «indietro» del telefono. Contiene: il progetto (sviluppato con l'ausilio dell'intelligenza artificiale; nessun riferimento al repository), note legali e condizioni d'uso, sintesi dell'informativa privacy (art. 13 GDPR), permessi, sicurezza, fonti e licenze, avvisi di arrivo attivi con «Disattiva». Il contatto del titolare viene da `APP_CONTACT` (nessun nome mostrato). L'attribuzione OpenStreetMap resta visibile 5 s all'avvio (o fino alla prima interazione), come chiedono le linee guida OSMF; i crediti completi sono nella pagina.
-- **Righe del pannello fermata** (v20, sostituite dalla v23 qui sotto): seconda riga «corsia · stato · mezzo» (es. «A4 · In ritardo di 1 min · BUS 4013»); stati «In ritardo di N min / In anticipo di N min / In orario / Da orario». Destinazione e seconda riga troppo lunghe scorrono avanti e indietro (fase legata all'orologio, non riparte a ogni aggiornamento); con «riduci movimento» attivo restano tagliate con i puntini. Icona della fonte (tempo reale / orario) in basso a sinistra del numero di linea, avvisi in alto a destra.
-- **Tracciamento** (v20, `tracker.js`): un mezzo fermo in anticipo vicino alla fermata non viene dato per partito (sosta anticipata); prima della partenza dal capolinea il GPS viene ignorato se il mezzo è lontano dal percorso, e il ritardo «0» non confermato dal feed non viene mostrato.
-- **Notifiche** (v20, `watch.js`): l'avviso «sta arrivando» richiede due conferme consecutive; se la corsa è soppressa o salta la fermata, la notifica indica la prossima corsa della stessa linea; messaggio dedicato se il mezzo smette di essere rilevato.
-- Installazione (PWA), tema chiaro/scuro (segue il sistema finché non scegli).
-- **Pannello fermata v23** (`prossime.js`, `public/js/app.js`):
-  - *Tre righe per passaggio*: 1) destinazione; 2) fermate successive; 3) «pontile/corsia · stato · mezzo» (stesso ordine delle versioni precedenti). L'orario previsto resta a destra; se cambia per ritardo o anticipo, quello programmato compare **sopra**, barrato. Destinazione e terza riga troppo lunghe scorrono avanti e indietro come prima.
-  - *Fermate successive* (calcolate dal server, `prossime.js`): nomi senza lettera del pontile o della corsia, doppioni di fila uniti; in fondo si tolgono le fermate con nome uguale o simile alla destinazione; fermate di fila con lo stesso inizio si raggruppano («San Marco: Manuzio · Cattaneo · Musatti»; un inizio generico come «Via» o «San» da solo non basta); al massimo 12 nomi, poi «…». Corse con le stesse fermate condividono un solo elenco nella risposta (`nexts`, e in ogni passaggio la chiave `nx`): 107 righe di una zona = circa 5 KB compressi. All'ultima fermata: «prossima fermata: capolinea».
-  - *Scorrimento continuo* della seconda riga, sempre nella stessa direzione e a velocità costante (38 px/s, solo animazione CSS); la fase segue l'orologio, quindi un aggiornamento non lo fa ripartire; le righe fuori schermo sono ferme (risparmio di batteria). Testo che entra: fermo. Con «riduci movimento» attivo: fermo e tagliato; l'elenco completo è nel pannello della corsa.
-  - *Sezioni*: «Partiti da poco» e «Prossime partenze». «Partiti da poco» si apre e si chiude con la freccia come i gruppi (chiusa all'inizio: solo il titolo con il numero delle corse; scelta ricordata sul telefono, `tpl.partiti`); aperta, una riga attenuata per corsa («partito N min fa»), per 3 minuti, al massimo 6.
-  - *Vista «Per linea»* (interruttore Orario / Per linea nell'intestazione della sezione, scelta ricordata sul telefono: `tpl.vista`): un gruppo per linea e destinazione con il primo passaggio e il numero dei successivi; un tocco apre il gruppo con tutti i passaggi (una riga ciascuno: stato e orario), un altro tocco lo chiude. Raggiungibile da tastiera (Invio/Spazio), `aria-expanded`.
-  - *Link condivisibili*: tasto Condividi nel pannello di una fermata, zona, corsa o percorso (condivisione del telefono, altrimenti il link si copia). Indirizzi: `/?fermata=ID`, `/?zona=CHIAVE`, `/?corsa=ID`, `/?da=…&a=…` (fermate `f:ID`, zone `z:CHIAVE`, punti `p:lat,lon` solo nell'area servita; **la posizione dell'utente non entra mai nel link**). I parametri vengono controllati (formato e lunghezza) e tolti dalla barra degli indirizzi dopo l'apertura; un link non valido o scaduto dà un messaggio, mai un errore.
-  - *Collegamenti rapidi dall'icona dell'app* (tenere premuta l'icona installata): Pianifica percorso, Fermate vicine, Preferiti (`manifest.webmanifest` → `shortcuts`, `/?apri=…`).
-- **Guida interattiva** (v23, `public/js/guida.js`): schermo oscurato con il punto spiegato in luce e una scheda breve accanto. Prima apertura: 9 passi sulla mappa (mezzi, ricerca, posizione, servizi, percorso, avvisi e marea, Tempo reale/Pianificato, Informazioni); prima fermata aperta: fino a 7 passi sul pannello (tre righe, orario, tracciato/da orario, partiti da poco, per linea, campanella, preferiti e condividi). Tocco ovunque = avanti; «Indietro»; X o Esc = chiudi; il tocco sul punto in luce non lo attiva; fuoco e tasti restano nella guida. Un passo senza il suo punto in quel momento si salta. Dopo un aggiornamento, chi l'ha già vista vede solo i passi nuovi (campo `since` di ogni passo, confrontato con la versione salvata in `localStorage` `tpl.guida`) con l'etichetta «Novità». Se l'app si apre da un link, la guida della mappa aspetta la volta successiva. «Rivedi la guida» nelle Informazioni.
-- **Risparmio di batteria e dati** (v23), senza cambiare ciò che si vede:
-  - *Flusso dei mezzi* (`flusso.js`, `/api/stream?d=1&src=…`): all'apertura l'elenco completo, poi nello stesso collegamento solo i campi cambiati di ogni mezzo (di solito posizione, ora e tratto da percorrere) e lo stato del feed; collegamento compresso con gzip svuotato a ogni messaggio (finestra di 8 KB, ~64 KB di memoria per collegamento). Le differenze si calcolano una volta per lettura del feed e per servizio. Un telefono che perde il collegamento si ricollega e riceve di nuovo l'elenco completo. Collegamento muto da 15 s: si riapre; se succede due volte di fila si passa al flusso non compresso (proxy che trattengono i dati compressi). Il vecchio collegamento («1»/«0») resta per le app non ancora aggiornate. La richiesta completa `/api/vehicles` resta come riserva (browser senza EventSource, flusso assente); la modalità Pianificato usa `/api/scheduled`.
-  - *Mappa*: si ridisegna al massimo una volta al secondo quando arrivano dati; i mezzi avanzano lungo il percorso con 2 fotogrammi al secondo da lontano fino a 10 da vicinissimo (30 mentre si segue un mezzo), solo quelli nella parte visibile.
-  - *Pannello aperto*: si ricarica quando il feed porta dati nuovi (al massimo ogni 8 s) e comunque ogni 20 s; i «tra N min» contano da soli ogni secondo.
-  - *Secondo piano*: collegamento chiuso, nessun timer verso il server; al ritorno aggiornamento immediato. Gli avvisi di arrivo non ne risentono (li manda il server, vedi Notifiche).
-  - *Mattonelle*: nessuna fuori dall'area servita, nessuna dei livelli intermedi durante il pizzico; simboli e Leaflet dalla cache del service worker (ricontrollati una volta).
-  - *Intestazioni*: le risposte dati (`/api`) portano solo le intestazioni di sicurezza che valgono per i dati (circa 600 byte in meno a risposta).
-  - Misure nel browser di prova con il feed simulato (aggiorna più spesso di quello vero, quindi caso peggiore): mappa aperta da circa 230 a circa 45 KB al minuto; con un pannello aperto da 260-340 a 75-90 KB al minuto; processore da 48-97% a 1,5-10% di un core; in secondo piano zero.
-- **Area servita** (v23, `area.js`, `/api/area`): contorno a 2,5 km da ogni fermata (griglia di 250 m, buchi interni riempiti, bordo semplificato e arrotondato), ricalcolato solo con GTFS nuovi (cache per versione, ETag). Fuori la mappa è oscurata, non ci si sposta oltre (`maxBounds`) e lo zoom si allontana al massimo fino a vedere tutta l'area; nessuna mattonella fuori dal riquadro.

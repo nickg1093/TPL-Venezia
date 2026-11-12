@@ -59,15 +59,16 @@ let nextOf = () => null;
 function init({ tripDetail, contact, next }) { vapid = push.loadVapid(); getTrip = tripDetail; if (next) nextOf = next; if (contact) subject = contact; if (!vapid.fromEnv) console.log('push: chiavi VAPID temporanee (imposta VAPID_PUBLIC_KEY e VAPID_PRIVATE_KEY per conservarle tra i riavvii)'); }
 const publicKey = () => (vapid ? push.b64u(vapid.pub) : null);
 
-function create({ sub, src, tid, stop, stopName, lead, ip, url, style }) {
+function create({ sub, src, tid, stop, stopName, lead, ip, url, style, restore = null }) {
   const now = Date.now();
   for (const [k, w] of W) if (now - w.created > LIFE_MS) W.delete(k);
   if (W.size >= MAX_TOTAL) { const e = new Error('troppi avvisi attivi, riprova più tardi'); e.code = 429; throw e; }
   if ([...W.values()].filter(w => w.ip === ip).length >= MAX_PER_IP) { const e = new Error('troppi avvisi attivi da questo dispositivo'); e.code = 429; throw e; }
   // stesso dispositivo, stessa corsa e fermata: si sostituisce
   for (const [k, w] of W) if (w.src === src && w.tid === tid && w.stop === stop && ((sub && w.sub?.endpoint === sub.endpoint) || (!sub && w.ip === ip && !w.sub))) W.delete(k);
-  const id = crypto.randomBytes(9).toString('base64url'), token = crypto.randomBytes(18).toString('base64url');
-  const w = { id, token, sub: sub || null, src, tid, stop, stopName, lead, ip, url, style: style || null, created: now, sent: {}, queue: [], k: null, lastDelay: null, lastAt: 0 };
+  const id = restore?.id || crypto.randomBytes(9).toString('base64url'), token = restore?.token || crypto.randomBytes(18).toString('base64url');
+  // ripristino dopo un riavvio del server: stessa identità e stessa scadenza; la conferma iniziale non si ripete
+  const w = { id, token, sub: sub || null, src, tid, stop, stopName, lead, ip, url, style: style || null, created: restore ? restore.created : now, sent: restore ? { conf: true } : {}, queue: [], k: null, lastDelay: null, lastAt: 0 };
   W.set(id, w); ensureLoop(); tick(w).catch(() => {});
   return { id, token, mode: sub ? 'push' : 'poll' };
 }
@@ -103,7 +104,20 @@ function ensureLoop() {
     if (!W.size) { clearInterval(timer); timer = null; }
   }, STEP_MS); timer.unref?.();
 }
+// RIPRISTINO (dopo un riavvio o un aggiornamento del server gli avvisi in memoria si perdono): il telefono conserva i suoi avvisi attivi e,
+// all'apertura dell'app o quando torna in primo piano, li ripresenta con la loro identità (id e token generati qui alla creazione).
+// -> 'attivo' (già presente) · 'ripristinato' · 'scaduto' (oltre le 3 ore) · 'diverso' (stesso id ma token diverso: non si tocca)
+const ID_RE = /^[A-Za-z0-9_-]{8,40}$/;
+function restore(item, now = Date.now()) {
+  if (!ID_RE.test(item.id) || !ID_RE.test(item.token)) return 'diverso';
+  const w = W.get(item.id);
+  if (w) return find(item.id, item.token) ? 'attivo' : 'diverso';
+  const created = Math.min(now, Math.max(0, Number(item.created) || now));
+  if (now - created > LIFE_MS) return 'scaduto';
+  create({ ...item, restore: { id: item.id, token: item.token, created } });
+  return 'ripristinato';
+}
 // il servizio di notifica ha rinnovato l'iscrizione del dispositivo (evento pushsubscriptionchange): gli avvisi attivi passano alla nuova
 function resubscribe(oldEndpoint, sub) { let n = 0; for (const w of W.values()) if (w.sub && w.sub.endpoint === oldEndpoint) { w.sub = sub; n++; } return n; }
 // lo stato di "poll" resta attivo finché la coda non è stata letta dopo la fine
-module.exports = { step, init, create, cancel, poll, publicKey, resubscribe, _W: W };
+module.exports = { step, init, create, cancel, poll, publicKey, resubscribe, restore, _W: W };

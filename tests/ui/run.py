@@ -9,7 +9,7 @@ OUT = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else '/tmp/ui'); OUT.mkdir(p
 STUB = (pathlib.Path(__file__).parent / 'leaflet-stub.js').read_text()
 SIZES = [('phone', 390, 844), ('phone-small', 360, 640), ('landscape', 844, 390), ('tablet', 768, 1024), ('desktop', 1440, 900), ('huge', 2560, 1440)]
 fails = []
-GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v23', mappa:true, pannello:true}))}catch(e){}"   # guida già vista: le prove non la incontrano (ha una prova sua)
+GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v24', mappa:true, pannello:true}))}catch(e){}"   # guida già vista: le prove non la incontrano (ha una prova sua)
 def check(ok, msg):
     print(('  ok   ' if ok else '  FAIL ') + msg)
     if not ok: fails.append(msg)
@@ -46,14 +46,18 @@ with sync_playwright() as p:
         page.screenshot(path=str(OUT / f'{name}-0-home.png'))
 
         # --- corsa: apertura da un mezzo
-        page.evaluate("document.querySelector('.bus-marker .bus').click()")
-        page.evaluate("document.querySelector('.leaflet-marker-icon.bus-marker').click()")
+        # un mezzo associato a una corsa (non grigio «idle» né «?»): quelli staccati non hanno la linea del tempo
+        page.evaluate("[...document.querySelectorAll('.leaflet-marker-icon.bus-marker')].find(m => !m.querySelector('.bus.idle, .bus.unk'))?.click()")
         page.wait_for_selector('#panel:not([hidden]) .tl', timeout=8000); page.wait_for_timeout(600)
         check(rect(page, '#pfollow') is not None, 'pulsante segui visibile nel pannello della corsa')
         check(page.query_selector('#follow') is None, 'vecchia pillola «insegui» assente')
         pf, pc = rect(page, '#pfollow'), rect(page, '#pclose')
         check(pf['w'] >= 44 and pf['h'] >= 44 and pc['w'] >= 44, 'pulsanti segui/X >= 44px')
-        check(abs(pf['t'] - pc['t']) < 2 and pf['r'] <= pc['l'] + 1, 'segui affiancato alla X')
+        check((abs(pf['t'] - pc['t']) < 2 and pf['r'] <= pc['l'] + 1) or (abs(pf['l'] - pc['l']) < 2 and pf['b'] <= pc['t'] + 1), 'segui accanto alla X (stessa linguetta)')
+        tab, pn = rect(page, '#ptab'), rect(page, '#panel')
+        check(tab and pn and (tab['l'] >= pn['r'] - 4 or tab['b'] <= pn['t'] + 4), 'linguetta dei comandi fuori dal pannello')
+        nm = page.evaluate("(()=>{const e=document.getElementById('pname');return e.scrollHeight<=e.clientHeight+2 && getComputedStyle(e).whiteSpace==='nowrap'})()")
+        check(nm, 'titolo del pannello su una riga')
         check(page.evaluate("[...window.__map._polys].filter(p => p.isPolygon).length") == 2 and page.evaluate("!!window.__map._maxB && window.__map._minZ >= 8"), 'area servita: contorno, oscuramento e limiti della mappa')
         n = page.evaluate("[...window.__map._polys].filter(p => !p.isPolygon).length"); check(n > 0, f'percorso della corsa disegnato ({n} linee)')
         page.screenshot(path=str(OUT / f'{name}-1-trip.png'))
@@ -265,7 +269,7 @@ with sync_playwright() as p:
     page.goto(BASE + f'/?da=f:{st[0][0]}&a=f:{st[5][0]}'); page.wait_for_selector('.pp-opt, .pp-walkonly, #plist p', timeout=20000)
     check(page.query_selector('.pp-fields') is not None, 'link ?da=&a= apre il pianificatore con i due punti')
     page.goto(BASE + '/?apri=preferiti'); page.wait_for_timeout(2500)
-    check(page.evaluate("document.getElementById('search-container').classList.contains('expanded')"), 'scorciatoia «Preferiti»: ricerca aperta con i preferiti')
+    check(page.evaluate("!document.getElementById('favs').hidden"), 'scorciatoia «Preferiti»: pannello dei preferiti aperto')
     page.goto(BASE + '/?apri=percorso'); page.wait_for_selector('.pp-q, .pp-fields', timeout=8000); check(True, 'scorciatoia «Pianifica percorso»')
     man = json.loads(page.request.get(BASE + '/manifest.webmanifest').text())
     check(len(man.get('shortcuts', [])) == 3 and all(page.request.get(BASE + x['icons'][0]['src']).ok for x in man['shortcuts']), 'manifest: 3 scorciatoie con icone')

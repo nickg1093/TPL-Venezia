@@ -806,3 +806,102 @@ strong.unc{color:var(--warn)}
 .ip-guide{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;margin:4px 0 12px;padding:0 16px;border:1px solid var(--line-strong);border-radius:var(--r-md);background:var(--surface);color:var(--fg);font:inherit;font-weight:750;cursor:pointer;text-align:left}
 .ip-guide .ic{width:20px;height:20px;color:var(--accent)}
 .ip-guide:hover{background:var(--accent-soft)}
+
+/* =====================================================================================================================
+   v24 — SCALA, LINGUETTA DEI COMANDI, MEZZI «?», PREFERITI, PIANIFICATORE
+   ===================================================================================================================== */
+/* SCALA: tutta la grafica in rem segue la dimensione del testo; sui telefoni stretti la base scende in proporzione (16 px da ~720 px in su,
+   14 px sotto ~400 px). Le percentuali partono dalla dimensione scelta nel telefono: chi ingrandisce il testo per leggere meglio lo trova ingrandito. */
+html{font-size:clamp(87.5%,calc(75% + .45vw),100%)}
+@media (max-height:520px){html{font-size:87.5%}}
+:root{--tap:clamp(44px,calc(2.6rem + 4px),48px)}
+
+/* LINGUETTA DEI COMANDI del pannello (preferito, condividi, percorso, avviso, segui, chiudi): fuori dal pannello, così il titolo ha tutta la
+   larghezza. Schermi larghi: sul bordo destro, in alto. Telefono: sopra il bordo superiore, a destra. Stesso colore, bordo e ombra del pannello. */
+.side-panel{overflow:visible}
+.side-panel>.ph{border-radius:var(--r-lg) var(--r-lg) 0 0}
+#plist{border-radius:0 0 var(--r-lg) var(--r-lg)}
+.ph-tab{position:absolute;z-index:2;display:flex;gap:2px;padding:4px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);
+  left:100%;top:12px;flex-direction:column;border-left:0;border-radius:0 18px 18px 0;margin-left:-1px}
+.ph-tab::before{content:"";position:absolute;left:-3px;top:0;bottom:0;width:4px;background:var(--surface)}   /* raccordo: niente bordo né ombra tra pannello e linguetta */
+.ph-tab .ibtn.sm{width:44px;height:44px}
+.side-panel{width:min(420px,calc(100% - 2*var(--tap) - 6*var(--gap) - var(--safe-l) - var(--safe-r)))}
+@media (min-width:768px){ body.has-panel:not(.panel-plan) .plan-fab{left:calc(var(--gap) + var(--safe-l) + min(420px,calc(100% - 200px)) + 62px)} }
+@media (max-width:640px){
+  .ph-tab{left:auto;right:14px;top:auto;bottom:100%;flex-direction:row;border:1px solid var(--line);border-bottom:0;border-radius:18px 18px 0 0;margin:0 0 -1px 0;box-shadow:0 -6px 16px rgba(11,21,32,.12)}
+  .ph-tab::before{left:0;right:0;top:auto;bottom:-3px;width:auto;height:4px}
+  .side-panel{width:auto}
+}
+/* titolo del pannello su UNA riga: se non entra scorre avanti e indietro (come le righe dei passaggi) */
+.ph-top{display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap;overflow:hidden;-webkit-line-clamp:unset}
+.ph-top>.ic{flex:none}
+.ph-tx{display:block;flex:0 1 auto;min-width:0;overflow:hidden;white-space:nowrap}
+.ph-top .warn-i{flex:none;margin-left:0}
+
+/* MEZZI SENZA LINEA («?»): se mostrati, grigi e trasparenti; il pulsante sta con battelli e bus */
+.bus.unk{filter:grayscale(1);opacity:.5;border-style:dotted}
+
+/* PULSANTE «PERCORSO»: sopra i crediti della mappa all'apertura, poi (crediti ridotti) scende al bordo */
+.plan-fab{transition:bottom .35s ease}
+body.attr-off .plan-fab{bottom:var(--gap)}
+
+/* PREFERITI: scheda in basso a destra, accanto alla stella */
+#favs{width:min(360px,calc(100% - var(--tap) - 4*var(--gap) - var(--safe-l) - var(--safe-r)));max-height:calc(100% - 2*var(--gap));overflow-y:auto;right:calc(var(--tap) + 3*var(--gap) + var(--safe-r) + 4px);top:var(--gap)}
+.fv-tabs{display:flex;gap:4px;margin:4px 16px 8px;padding:3px;border-radius:99px;background:var(--surface-2)}
+.fv-tabs button{flex:1;min-height:36px;border:0;border-radius:99px;background:transparent;color:var(--fg);font:inherit;font-size:var(--fs-sm);font-weight:700;cursor:pointer}
+.fv-tabs button[aria-selected="true"]{background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.18)}
+#favs-body{padding:0 8px 10px}
+.fv-list{list-style:none;margin:0;padding:0}
+.fv-list li{border-bottom:1px solid var(--line)}
+.fv-it{display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:6px 8px;border:0;border-radius:var(--r-sm);background:none;color:var(--fg);font:inherit;text-align:left;cursor:pointer}
+button.fv-it:hover{background:var(--accent-soft)}
+.fv-it>.ic{flex:none;color:var(--muted)}
+.fv-t{flex:1;min-width:0;display:flex;flex-direction:column;font-weight:700;overflow:hidden;text-overflow:ellipsis}
+.fv-t small{display:flex;align-items:center;gap:4px;font-weight:500;font-size:var(--fs-xs);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fv-t small .ic{width:14px;height:14px}
+.fv-go{margin-left:auto}
+.fv-ed{display:flex;flex-wrap:wrap;align-items:center}
+.fv-ed .fv-it{flex:1;min-width:0;cursor:default}
+.fv-acts{display:flex;flex:none}
+.fv-acts .ibtn.sm{width:38px;height:38px}
+.fv-acts .ibtn:disabled{opacity:.3;cursor:default}
+.fv-del{color:var(--late)}
+.fv-ren{display:flex;gap:6px;width:100%;padding:0 8px 8px}
+.fv-ren input{flex:1;min-width:0;min-height:40px;padding:0 12px;border-radius:99px;border:1.5px solid var(--accent);background:var(--surface);color:var(--fg);font:inherit}
+.fv-empty{display:flex;align-items:flex-start;gap:12px;margin:8px;color:var(--fg);font-weight:700}
+.fv-empty>.ic{flex:none;color:var(--muted)}
+.fv-empty span{display:flex;flex-direction:column;gap:2px}
+.fv-empty small{font-weight:500;color:var(--muted);font-size:var(--fs-xs)}
+.fv-foot{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px;margin-top:8px;padding-top:6px;border-top:1px solid var(--line)}
+.fv-foot .nlink{display:inline-flex;align-items:center;gap:5px;min-height:40px;font-size:var(--fs-sm)}
+.fv-bk{display:inline-flex;gap:2px}
+
+/* PIANIFICATORE — controlli più compatti: interruttore a tre voci per «quando», giorno e ora accanto, opzioni come pulsante */
+.pp-when{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.pp-segw{display:inline-flex;padding:2px;border-radius:99px;background:var(--surface-2);border:1px solid var(--line)}
+.pp-segw button{min-height:34px;padding:0 12px;border:0;border-radius:99px;background:transparent;color:var(--fg);font:inherit;font-size:var(--fs-sm);font-weight:700;cursor:pointer}
+.pp-segw button.on{background:var(--accent);color:var(--on-accent)}
+.pp-tw{display:inline-flex;gap:6px;flex-wrap:nowrap}
+.pp-date,.pp-time{min-height:36px;padding:0 8px;border-radius:99px;border:1.5px solid var(--line-strong);background:var(--surface);color:var(--fg);font:inherit;font-size:var(--fs-sm);font-weight:700}
+.pp-date{max-width:9.6rem}
+.pp-opzbtn{display:inline-flex;align-items:center;gap:5px;min-height:36px;margin-left:auto;padding:0 12px;border-radius:99px;border:1.5px solid var(--line-strong);background:transparent;color:var(--fg);font:inherit;font-size:var(--fs-sm);font-weight:700;cursor:pointer}
+.pp-opzbtn.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.pp-opzbtn:hover{background:var(--accent-soft)}
+.pp-f{min-height:44px}
+.pp-fields{gap:4px}
+.pp-rail{padding:19px 0}
+.pp-seg button.chip.all{min-height:40px;padding:0 12px}
+.pp-opz{gap:12px}
+@media (max-width:400px){ .pp-optx{display:none} .pp-segw button{padding:0 10px} }
+
+/* PIANIFICATORE SUL TELEFONO: a tutto schermo mentre si scelgono i punti e le opzioni (la tastiera non copre nulla); poi foglio in basso */
+@media (max-width:640px){
+  body.plan-full #panel.is-plan{top:0;bottom:0;max-height:none;height:auto;border-radius:0;border:0}
+  body.plan-full #panel.is-plan .ph{border-radius:0;padding-top:12px;padding-right:56px}
+  body.plan-full #panel.is-plan .ph::before{display:none}
+  body.plan-full #panel.is-plan .ph-tab{top:6px;right:4px;bottom:auto;border:0;box-shadow:none;border-radius:16px;background:transparent}
+  body.plan-full #panel.is-plan .ph-tab::before{display:none}
+  body.plan-full #panel.is-plan #plist{border-radius:0}
+}
+/* tastiera aperta: la barra in basso si toglie (resta tutto lo spazio per quello che si scrive) */
+html.kbd .dock{display:none}

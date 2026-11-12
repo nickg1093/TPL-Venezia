@@ -13,7 +13,7 @@
 // A piedi: le distanze tra fermate vengono dalla rete pedonale di OpenStreetMap, precalcolate in pedonale-laguna.txt (centro storico,
 // Giudecca, isole, Lido, Pellestrina, Chioggia: niente scorciatoie attraverso i canali) e pedonale-terraferma.txt (tutte le altre zone
 // servite: niente scorciatoie attraverso ferrovia, fiumi, tangenziali). Solo le poche fermate lontane da ogni strada usano la linea d'aria × 1,3.
-// Tempo reale: per le partenze di adesso si usano gli stessi tempi dei pannelli (mezzi localizzati, previsioni del feed, centrale ACTV);
+// Tempo reale: per le partenze di adesso si usano gli stessi tempi dei pannelli (mezzi localizzati e previsioni del feed);
 // per gli orari scelti, l'orario programmato. Le tratte proposte riportano poi, fermata per fermata, i dati del pannello fermata.
 const fs = require('fs');
 const path = require('path');
@@ -46,13 +46,16 @@ const C = {
 const INF = 1e9;
 const SRC = ['aut', 'nav'];
 
-let ctx = null;              // { G(i), state(i), live(i), serviceActive, actvPlan(i, tid, nowMs), rows(i, sid, tid, when), version() }
-const init = c => { ctx = c; IX = null; cache.clear(); };   // c.walkDir (facoltativo, per le prove): cartella dei file pedonale-*.txt
+let ctx = null;              // { G(i), state(i), live(i), serviceActive, rows(i, sid, tid, when) }
+const init = c => { ctx = c; IX = null; IXS.clear(); cache.clear(); };   // c.walkDir (facoltativo, per le prove): cartella dei file pedonale-*.txt
 
 // ---------------------------------------------------------------------------------------------------------------------
 // INDICE (una volta per versione dei GTFS)
 // ---------------------------------------------------------------------------------------------------------------------
 let IX = null;
+// Indici in memoria: quello degli orari in uso e, al massimo, uno per un'altra data (modalità «Programmato» o percorso in un altro giorno,
+// con la versione dei GTFS valida in quella data: stessa scelta di live.dataFor). Ogni indice pesa 1-2 MB.
+const IXS = new Map();
 // file delle distanze a piedi: riga 1 fermate (n=navigazione, a=automobilistico), riga 2 coppie «i.j.metri» in base 36,
 // riga 3 (facoltativa) fermate lontane da ogni strada della rete (indici in base 36): per quelle resta la linea d'aria
 function walkFile(name) {
@@ -66,9 +69,10 @@ function walkFile(name) {
 }
 const distM = (la1, lo1, la2, lo2) => Math.hypot((la1 - la2) * 111320, (lo1 - lo2) * 111320 * Math.cos(la1 * Math.PI / 180));
 
-function build() {
-  const Gs = SRC.map(i => ctx.G(i)), key = Gs.map(G => G?.meta?.hash || '').join('|');
+function build(Gs = SRC.map(i => ctx.G(i))) {
+  const key = Gs.map(G => G?.meta?.hash || '').join('|');
   if (IX && IX.key === key) return IX;
+  const hit = IXS.get(key); if (hit) return (IX = hit);
   const t0 = Date.now(), ids = [], gid = new Map(), lat = [], lon = [], srcOf = [];
   SRC.forEach((i, si) => { const G = Gs[si]; if (!G) return;
     for (const sid in G.stopIndex) { const L = G.stopLoc[sid]; const g = ids.length; gid.set(i + ':' + sid, g); ids.push(i + ':' + sid); lat.push(L ? L[0] : NaN); lon.push(L ? L[1] : NaN); srcOf.push(si); } });
@@ -125,7 +129,10 @@ function build() {
   for (const [k, s] of best) { const a = Math.floor(k / N), b = k % N; tr[a].push(b, s); tr[b].push(a, s); }
   const trS = new Int32Array(N + 1); for (let g = 0; g < N; g++) trS[g + 1] = trS[g] + tr[g].length;
   const trA = new Int32Array(trS[N]); for (let g = 0; g < N; g++) trA.set(tr[g], trS[g]);
-  IX = { key, Gs, ids, gid, lat: Float64Array.from(lat), lon: Float64Array.from(lon), srcOf: Uint8Array.from(srcOf), isLag, isNet, pats, spS: cnt, spP, spK, trS, trA, svc: new Map() };
+  IX = { key, Gs: [...Gs], ids, gid, lat: Float64Array.from(lat), lon: Float64Array.from(lon), srcOf: Uint8Array.from(srcOf), isLag, isNet, pats, spS: cnt, spP, spK, trS, trA, svc: new Map() };
+  const liveKey = SRC.map(i => ctx.G(i)?.meta?.hash || '').join('|');
+  IXS.set(key, IX);
+  for (const k of [...IXS.keys()]) if (IXS.size > 2 && k !== key && k !== liveKey) IXS.delete(k);   // al massimo 2 indici (memoria di Render)
   console.log(`percorsi: indice pronto in ${Date.now() - t0} ms (${N} fermate, ${pats.length} percorsi, ${trS[N] / 4} cambi a piedi)`);
   return IX;
 }
@@ -146,7 +153,6 @@ function liveFn(q, si, n) {
   // f(p, orario programmato) -> orario previsto (s), null = orario programmato, NaN = fermata già passata dal mezzo
   if (ps && ps.dayOff === 0 && ps.etaMs) f = p => (p < ps.cur ? NaN : Number.isFinite(ps.etaMs[p]) ? q.T + (ps.etaMs[p] - q.nowMs) / 1000 : null);
   else if (lv && lv.delays) f = (p, sched) => (lv.delays[p] != null ? sched + lv.delays[p] : null);
-  else { const P = ctx.actvPlan?.(i, tid, q.nowMs); if (P) f = p => (p >= P.k0 ? q.T + (Math.max(P.msAt(p), q.nowMs) - q.nowMs) / 1000 : null); }
   q.lc.set(key, f); return f;
 }
 // orario (s del giorno della ricerca) di partenza (dep) o arrivo dalla posizione p della corsa j del percorso P, nello strato L
@@ -413,11 +419,12 @@ const timeKey = (secs, nowMs) => (secs == null ? 'now' + Math.floor(nowMs / C.CA
 
 // da / a: [[ "src:sid", metri ]]; secs/date: orario scelto (null = adesso, tempo reale); piediM: distanza in linea d'aria tra i due punti (facoltativa)
 // entro: secs è l'orario entro cui ARRIVARE (soluzioni che partono il più tardi possibile); prefs: filtri (vedi normPref)
-function plan({ da, a, secs = null, date = null, piediM = null, entro = false, prefs = {} }) {
+// Gs (facoltativo): orari da usare [aut, nav] per la data scelta (server.js -> live.dataFor); assente = quelli in uso adesso
+function plan({ da, a, secs = null, date = null, piediM = null, entro = false, prefs = {}, Gs = null }) {
   if (!ctx) throw new Error('pianificatore non inizializzato');
-  build();
+  build(Gs || undefined);
   const nowMs = Date.now(), pr = normPref(prefs);
-  return cached(JSON.stringify(['p', da, a, timeKey(secs, nowMs), date, piediM, entro, prefKey(pr)]), nowMs, () => {
+  return cached(JSON.stringify(['p', IX.key, da, a, timeKey(secs, nowMs), date, piediM, entro, prefKey(pr)]), nowMs, () => {
     const r = search({ da, a, secs, date, piediM, entro, pr, nowMs });
     return present({ ...r, nowMs, pr });
   });
@@ -426,11 +433,11 @@ function plan({ da, a, secs = null, date = null, piediM = null, entro = false, p
 // ALTERNATIVE di una soluzione scelta (famiglia `fam`, linee `rotte`):
 //   stesso: lo stesso percorso ad altri orari · varianti: una linea sostituita · altre: nessuna delle sue linee
 // arr: arrivo della soluzione scelta («hh:mm»): le alternative non arrivano più di 30 minuti dopo (né, con «arrivo entro», oltre l'orario)
-function simili({ da, a, secs = null, date = null, piediM = null, entro = false, prefs = {}, fam, rotte = [], arr = null }) {
+function simili({ da, a, secs = null, date = null, piediM = null, entro = false, prefs = {}, fam, rotte = [], arr = null, Gs = null }) {
   if (!ctx) throw new Error('pianificatore non inizializzato');
-  build();
+  build(Gs || undefined);
   const nowMs = Date.now(), base = normPref(prefs), rs = [...new Set(rotte)].slice(0, 4);
-  return cached(JSON.stringify(['s', da, a, timeKey(secs, nowMs), date, entro, prefKey(base), fam, rs, arr]), nowMs, () => {
+  return cached(JSON.stringify(['s', IX.key, da, a, timeKey(secs, nowMs), date, entro, prefKey(base), fam, rs, arr]), nowMs, () => {
     // stesso percorso: solo quelle linee, da mezz'ora prima (orario scelto) o da adesso, per le partenze successive
     const live = secs == null, T0 = live ? null : entro ? secs - 2 * 3600 : secs - 1800;
     const same = search({ da, a, secs: live ? null : T0, date, entro: false, pr: { ...base, solo: new Set(rs), escludi: null }, nowMs, runsMax: 9, discover: false });

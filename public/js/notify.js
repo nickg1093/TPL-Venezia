@@ -14,13 +14,35 @@ function clean(w) {
   if (!w || typeof w !== 'object') return null;
   const lead = Number(w.lead), until = Number(w.until);
   if (typeof w.id !== 'string' || !w.id || !Number.isInteger(lead) || lead < 1 || lead > 60 || !Number.isFinite(until)) return null;
+  const st = w.style, hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
+  const style = st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
   return { id: str(w.id, 80), token: str(w.token, 200), mode: w.mode === 'poll' ? 'poll' : 'push', trip: str(w.trip, 120), stop: str(w.stop, 80),
-    stopName: str(w.stopName, 120), lead, line: str(w.line, 20), headsign: str(w.headsign, 120), until };
+    stopName: str(w.stopName, 120), lead, line: str(w.line, 20), headsign: str(w.headsign, 120), until, style };
 }
 function load() { try { const d = JSON.parse(localStorage.getItem(KEY) || '[]'); return Array.isArray(d) ? d.map(clean).filter(w => w && w.until > Date.now()).slice(0, 50) : []; } catch { return []; } }
 function save() { list = list.filter(w => w.until > Date.now()); try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* solo in memoria */ } onChange(); }
 // onFront(msg): messaggio arrivato con l'app in primo piano (lo mostra l'app, non il sistema)
-export const init = (fn, front) => { onChange = fn || onChange; onFront = front || onFront; startPolling(); };
+export const init = (fn, front) => {
+  onChange = fn || onChange; onFront = front || onFront; startPolling();
+  // avvisi attivi ripresentati al server (che dopo un riavvio o un aggiornamento li avrebbe persi): all'apertura, al ritorno in primo piano,
+  // al ritorno della rete e quando il flusso dei mezzi si ricollega (app.js)
+  setTimeout(() => restoreAll(true), 2500);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) restoreAll(); });
+  addEventListener('online', () => restoreAll(true));
+};
+// -> nulla; gli avvisi che il server dichiara scaduti o non più validi (corsa non più negli orari) si tolgono anche qui
+let lastRestore = 0;
+export async function restoreAll(force = false) {
+  const ws = all(); if (!ws.length) return;
+  if (!force && Date.now() - lastRestore < 60000) return; lastRestore = Date.now();
+  let sub = null;
+  try { const reg = await ready(); sub = reg.pushManager ? await reg.pushManager.getSubscription() : null; } catch { sub = null; }
+  const items = ws.filter(w => w.mode === 'poll' || sub).slice(0, 6).map(w => ({ id: w.id, token: w.token, trip: w.trip, stop: w.stop, stopName: w.stopName, lead: w.lead, style: w.style || null,
+    created: w.until - LIFE, sub: w.mode === 'push' && sub ? sub.toJSON() : null }));
+  if (!items.length) return;
+  const r = await post('/api/watch/restore', { items }).catch(() => null);
+  for (const [id, st] of Object.entries(r?.stato || {})) if (st === 'scaduto' || st === 'non valido') ended(id);
+}
 export const all = () => list.filter(w => w.until > Date.now()).slice();
 export const find = (trip, stop) => list.find(w => w.trip === trip && w.stop === stop && w.until > Date.now()) || null;
 export const supported = () => 'Notification' in window && 'serviceWorker' in navigator;
@@ -55,7 +77,7 @@ export async function start({ trip, stop, stopName, lead, line, headsign, style 
   } catch { sub = null; }                                                    // niente Web Push: si usa l'app aperta
   const old = find(trip, stop); if (old) await stopWatch(old, true);
   const r = await post('/api/watch', { sub: sub ? sub.toJSON() : null, trip, stop, stopName, lead, style });
-  list.push({ id: r.id, token: r.token, mode: r.mode, trip, stop, stopName, lead, line, headsign, until: Date.now() + LIFE }); save(); startPolling();
+  list.push({ id: r.id, token: r.token, mode: r.mode, trip, stop, stopName, lead, line, headsign, until: Date.now() + LIFE, style: style || null }); save(); startPolling();
   return { ok: true, mode: r.mode, note: r.mode === 'poll' ? 'Questo dispositivo non riceve notifiche ad app chiusa: ti avviso finché l\'app resta aperta.' : null };
 }
 export async function stopWatch(w, quiet = false) {

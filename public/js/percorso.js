@@ -2,17 +2,23 @@
 // Il calcolo lo fa il server (/api/percorso). La posizione dell'utente NON esce dal telefono: si inviano solo le fermate vicine al punto
 // scelto, con la distanza in linea d'aria calcolata qui. Ogni tratta in mezzo usa gli stessi orari, simboli e diciture del pannello fermata,
 // e si apre nel pannello del mezzo (con «indietro» al percorso).
-import { esc, icon, badge, colorInfo, lum, delayInfo, etaText, api, srcIcon, vehName } from './util.js';
+import { esc, icon, badge, colorInfo, lum, delayInfo, etaText, api, srcIcon, vehName, localDate } from './util.js';
 import { zones, zoneOf, norm, snorm, groups, aliasOf } from './zones.js';
 import * as Fav from './fav.js';
 
 const NEAR_M = 1500, NEAR_N = 14, REFRESH_MS = 60000, KEY = 'tpl.percorso', KEY_OPZ = 'tpl.percorso.opz';
 let X = null;                      // contesto dato da app.js (mappa, pannello, fermate, posizione…)
 // det: soluzione mostrata nel dettaglio (dell'elenco o un'alternativa); alts: alternative caricate per il dettaglio; opz: filtri; showOpz: pagina dei filtri
-const OPZ0 = { mezzi: ['nav', 'bus', 'tram'], pref: 'equilibrata', cambi: '4', piedimax: '', passo: 'normale', margine: 'normale' };
-const S = { from: null, to: null, when: 'now', time: '', day: 0, res: null, err: null, sel: -1, det: null, alts: null, edit: null, q: '', picking: null, loading: false, asked: 0,
+// mezzi: battelli (nav) e autobus/tram (aut, come i pulsanti della mappa)
+const OPZ0 = { mezzi: ['nav', 'aut'], pref: 'equilibrata', cambi: '4', piedimax: '', passo: 'normale', margine: 'normale' };
+// when: 'now' (parti adesso, tempo reale) · 'at' (parti alle) · 'by' (arriva entro); date: giorno scelto (AAAA-MM-GG), entro le date dei GTFS in archivio
+const S = { from: null, to: null, when: 'now', time: '', date: '', res: null, err: null, sel: -1, det: null, alts: null, edit: null, q: '', picking: null, loading: false, asked: 0,
   opz: { ...OPZ0 }, showOpz: false, opzDirty: false };
-let timer = null, token = 0;
+let timer = null, token = 0, retry = null, range = { min: '', max: '' };
+// date con orari disponibili: le stesse della modalità «Programmato» (/api/dates, versioni dei GTFS in archivio)
+api('/api/dates').then(d => { const iso = y => (y ? `${y.slice(0, 4)}-${y.slice(4, 6)}-${y.slice(6, 8)}` : ''); range = { min: iso(d.min), max: iso(d.max) }; }).catch(() => {});
+const today = () => localDate();
+const clampDate = v => { const t = today(); let d = v || t; if (d < t) d = t; if (range.min && d < range.min) d = range.min; if (range.max && d > range.max) d = range.max; return d; };
 
 // ---- punti: { kind: 'me'|'point'|'stop'|'zone', label, lat, lon, id?, key?, src? } ----
 const mDist = (a, b, c, d) => Math.hypot((a - c) * 111320, (b - d) * 111320 * Math.cos(a * Math.PI / 180));
@@ -38,6 +44,8 @@ const save = () => { try { const k = ep => (ep && (ep.kind === 'stop' || ep.kind
 function restore() {
   try { const d = JSON.parse(localStorage.getItem(KEY) || 'null'); if (d?.v === 1) { S.from = d.from || null; S.to = d.to || null; } } catch { /* niente */ }
   try { const o = JSON.parse(localStorage.getItem(KEY_OPZ) || 'null'); if (o && typeof o === 'object') for (const k in OPZ0) if (o[k] != null && typeof o[k] === typeof OPZ0[k]) S.opz[k] = o[k]; } catch { /* niente */ }
+  // versioni precedenti: battelli, bus e tram separati (il tram era già compreso nei bus)
+  if (Array.isArray(S.opz.mezzi)) S.opz.mezzi = [...new Set(S.opz.mezzi.map(m => (m === 'bus' || m === 'tram' ? 'aut' : m)).filter(m => m === 'nav' || m === 'aut'))];
   if (!Array.isArray(S.opz.mezzi) || !S.opz.mezzi.length) S.opz.mezzi = [...OPZ0.mezzi];
 }
 const saveOpz = () => { try { localStorage.setItem(KEY_OPZ, JSON.stringify(S.opz)); } catch { /* facoltativo */ } };
@@ -45,7 +53,7 @@ const saveOpz = () => { try { localStorage.setItem(KEY_OPZ, JSON.stringify(S.opz
 const opzCount = () => Object.keys(OPZ0).filter(k => String(S.opz[k]) !== String(OPZ0[k])).length;
 function opzQs() {
   const o = S.opz; let q = '';
-  if (o.mezzi.length < 3) q += '&mezzi=' + o.mezzi.join(',');
+  if (o.mezzi.length < 2) q += '&mezzi=' + o.mezzi.join(',');
   if (o.pref !== 'equilibrata') q += '&pref=' + o.pref;
   if (o.cambi !== '4') q += '&cambi=' + o.cambi;
   if (o.piedimax) q += '&piedimax=' + o.piedimax;
@@ -59,12 +67,28 @@ export function init(ctx) {
   X.chips.addEventListener('click', onClick); X.plist.addEventListener('click', onClick);
   X.chips.addEventListener('input', e => { if (e.target.matches('.pp-q')) { S.q = e.target.value; renderSuggest(); } });
   X.chips.addEventListener('change', e => {
-    if (e.target.matches('.pp-time')) { S.time = e.target.value; run(); }
-    if (e.target.matches('.pp-day')) { S.day = +e.target.value; run(); }
+    if (e.target.matches('.pp-time') && e.target.value) { S.time = e.target.value; run(); }
+    if (e.target.matches('.pp-date')) { S.date = clampDate(e.target.value); e.target.value = S.date; run(); }
   });
   X.chips.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('.pp-q')) { const f = X.plist.querySelector('.pp-sug'); if (f) f.click(); } if (e.key === 'Escape' && S.edit) { e.stopPropagation(); S.edit = null; render(); } });
 }
 export const isPicking = () => !!S.picking;
+// livelli interni del pianificatore per il tasto «indietro» (nav.js): ricerca di un punto, opzioni, dettaglio di una soluzione
+export const depth = () => (S.edit ? 1 : 0) + (S.showOpz ? 1 : 0) + (S.det ? 1 : 0);
+export function back() {
+  if (S.edit) { S.edit = null; S.q = ''; render(); draw(); return true; }
+  if (S.showOpz) { const d = S.opzDirty; S.showOpz = false; S.opzDirty = false; renderForm(); if (d) run(); else renderBody(); return true; }
+  if (S.det) { S.sel = -1; S.det = null; renderBody(); draw(); return true; }
+  return false;
+}
+// a tutto schermo sul telefono finché non ci sono soluzioni da guardare sulla mappa
+export const wantsFull = () => !!(S.edit || S.showOpz || !S.from || !S.to || (!S.res && !S.err));
+// corse della soluzione disegnata sulla mappa («src:corsa»): i soli mezzi da mostrare mentre il pianificatore è aperto
+export function tripsShown() {
+  const o = S.det || S.res?.soluzioni?.[0]; const out = new Set();
+  for (const t of o?.tratte || []) if (t.tipo === 'mezzo' && t.tripId) out.add(`${t.src}:${t.tripId}`);
+  return out;
+}
 // percorso preferito (stella nell'intestazione del pannello): c'è un percorso completo? è già salvato?
 export const canSave = () => !!(S.from && S.to);
 // link condivisibile: codice di un punto (fermata f:, zona z:, punto della mappa p:); «la mia posizione» non si condivide mai
@@ -87,7 +111,7 @@ export function show(opts = {}) {
   render();
   if (S.from && S.to && !S.res) run(); else draw();
 }
-export function clear() { clearInterval(timer); timer = null; S.picking = null; X.layer.clearLayers(); X.setPick(false); }
+export function clear() { clearInterval(timer); timer = null; clearTimeout(retry); S.picking = null; X.layer.clearLayers(); X.setPick(false); }
 export function refresh() { if (S.res && S.when === 'now' && !S.edit) run(true); }
 // posizione arrivata (dopo la richiesta da «La mia posizione»)
 export function onPosition(ll) {
@@ -114,8 +138,8 @@ function baseQs() {
   let qs = `da=${encodeURIComponent(da.join(','))}&a=${encodeURIComponent(a.join(','))}`;
   if (S.from.lat != null && S.to.lat != null) qs += `&piedi=${Math.round(mDist(S.from.lat, S.from.lon, S.to.lat, S.to.lon))}`;
   if (S.when !== 'now' && S.time) {
-    const [h, m] = S.time.split(':').map(Number), d = new Date(); d.setDate(d.getDate() + S.day);
-    qs += `&secs=${h * 3600 + m * 60}&date=${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    const [h, m] = S.time.split(':').map(Number);
+    qs += `&secs=${h * 3600 + m * 60}&date=${clampDate(S.date).replace(/-/g, '')}`;
     if (S.when === 'by') qs += '&arrivo=1';
   }
   return qs + opzQs();
@@ -125,7 +149,7 @@ async function run(quiet) {
   if (!da || !a) { S.res = null; render(); return; }
   if (!da.length || !a.length) { S.res = null; S.err = `Nessuna fermata entro 1,5 km dal punto di ${!da.length ? 'partenza' : 'arrivo'}.`; renderBody(); return; }
   const qs = '/api/percorso?' + baseQs();
-  const my = ++token; S.loading = !quiet; S.err = null; if (!quiet) { S.sel = -1; S.det = null; S.alts = null; renderBody(); }
+  const my = ++token; clearTimeout(retry); S.loading = !quiet; S.err = null; if (!quiet) { S.sel = -1; S.det = null; S.alts = null; renderBody(); }
   try {
     const r = await api(qs);
     if (my !== token) return;
@@ -133,7 +157,11 @@ async function run(quiet) {
     S.res = r; S.loading = false;
     if (S.sel >= r.soluzioni.length) { S.sel = -1; S.det = null; }
     else if (S.sel >= 0) { const f = S.det?.famiglia, k = r.soluzioni.findIndex(o => o.famiglia === f); if (k >= 0) { S.sel = k; S.det = r.soluzioni[k]; } }   // stesso percorso, orari aggiornati
-  } catch (e) { if (my !== token) return; S.loading = false; if (!quiet || !S.res) { S.res = null; S.err = e.loading ? 'Orari in caricamento: riprovo tra poco.' : 'Ricerca non riuscita: ' + e.message; } }
+  } catch (e) {
+    if (my !== token) return; S.loading = false;
+    if (e.loading || e.busy) { S.loading = true; retry = setTimeout(() => { if (X.isOpen() && my === token) run(quiet); }, 2500); renderBody(); return; }   // orari di un'altra data in caricamento: si riprova da soli
+    if (!quiet || !S.res) { S.res = null; S.err = 'Ricerca non riuscita: ' + e.message; }
+  }
   renderBody(); draw();
   clearInterval(timer); timer = S.when === 'now' && S.res ? setInterval(() => { if (X.isOpen() && !S.edit && !document.hidden) run(true); }, REFRESH_MS) : null;
 }
@@ -155,7 +183,7 @@ async function loadAlts(o) {
 // ---------------------------------------------------------------------------------------------------------------------
 // INTERFACCIA
 // ---------------------------------------------------------------------------------------------------------------------
-function render() { renderForm(); if (S.edit) renderSuggest(); else renderBody(); X.favChanged?.(); }
+function render() { renderForm(); if (S.edit) renderSuggest(); else renderBody(); X.favChanged?.(); X.changed?.(); }
 function fieldHtml(f) {
   const ep = S[f], lab = f === 'from' ? 'Da' : 'A';
   const val = ep ? `${ep.kind === 'me' ? icon('locate', 'sm') : ep.kind === 'point' ? icon('pin', 'sm') : srcIcon(ep.src, 'sm')}<span>${esc(epName(ep))}</span>`
@@ -170,15 +198,19 @@ function renderForm() {
     return;
   }
   const at = S.when !== 'now', by = S.when === 'by';
-  if (at && !S.time) { const d = new Date(Date.now() + (by ? 60 : 10) * 60000); S.time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
+  if (at && !S.time) { const d = new Date(Date.now() + (by ? 60 : 10) * 60000); d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5); S.time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
+  if (at) S.date = clampDate(S.date);
+  // QUANDO: interruttore a tre voci (come nelle app di mappe e trasporti): Adesso · Partenza · Arrivo; con un orario scelto, giorno e ora
+  // compaiono accanto. Le date ammesse sono quelle con gli orari in archivio (le stesse della modalità «Programmato»).
+  const seg = [['now', 'Adesso'], ['at', 'Partenza'], ['by', 'Arrivo']].map(([w, t]) => `<button type="button" data-w="${w}" aria-pressed="${S.when === w}" class="${S.when === w ? 'on' : ''}">${t}</button>`).join('');
+  const t = today(), dateLab = !S.date || S.date === t ? 'oggi' : null;
   X.chips.innerHTML = `<div class="pp"><div class="pp-ends"><div class="pp-rail" aria-hidden="true"><span class="pp-o"></span><span class="pp-l"></span><span class="pp-d"></span></div>`
     + `<div class="pp-fields">${fieldHtml('from')}${fieldHtml('to')}</div>`
     + `<button type="button" class="ibtn sm pp-swap" aria-label="Inverti partenza e arrivo" title="Inverti">${icon('swap')}</button></div>`
-    + `<div class="chips pp-when"><button type="button" class="chip all${at ? '' : ' on'}" data-w="now" aria-pressed="${!at}">Parti adesso</button>`
-    + `<button type="button" class="chip all${S.when === 'at' ? ' on' : ''}" data-w="at" aria-pressed="${S.when === 'at'}">Parti alle</button>`
-    + `<button type="button" class="chip all${by ? ' on' : ''}" data-w="by" aria-pressed="${by}">Arrivo entro le</button>`
-    + (at ? `<span class="pp-tw"><input class="pp-time" type="time" value="${esc(S.time)}" aria-label="${by ? 'Orario di arrivo' : 'Orario di partenza'}"><select class="pp-day" aria-label="Giorno"><option value="0"${S.day ? '' : ' selected'}>oggi</option><option value="1"${S.day ? ' selected' : ''}>domani</option></select></span>` : '')
-    + `<button type="button" class="chip all pp-opzbtn${S.showOpz ? ' on' : ''}" aria-expanded="${S.showOpz}" aria-label="Opzioni del percorso${opzCount() ? ` (${opzCount()} attive)` : ''}">${icon('sliders', 'sm')}Opzioni${opzCount() ? `<span class="pp-cnt">${opzCount()}</span>` : ''}</button>`
+    + `<div class="pp-when"><span class="pp-segw" role="group" aria-label="Quando">${seg}</span>`
+    + (at ? `<span class="pp-tw"><input class="pp-date" type="date" value="${esc(S.date)}" min="${esc(clampDate(t))}"${range.max ? ` max="${esc(range.max)}"` : ''} aria-label="Giorno${dateLab ? ' (oggi)' : ''}">`
+      + `<input class="pp-time" type="time" value="${esc(S.time)}" step="300" aria-label="${by ? 'Arrivo entro le' : 'Partenza alle'}"></span>` : '')
+    + `<button type="button" class="pp-opzbtn${S.showOpz ? ' on' : ''}" aria-expanded="${S.showOpz}" aria-label="Opzioni del percorso${opzCount() ? ` (${opzCount()} attive)` : ''}" title="Opzioni">${icon('sliders', 'sm')}<span class="pp-optx">Opzioni</span>${opzCount() ? `<span class="pp-cnt">${opzCount()}</span>` : ''}</button>`
     + '</div></div>';
 }
 function renderSuggest() {
@@ -256,13 +288,13 @@ function renderBody() {
 // pagina delle opzioni: mezzi, preferenza, cambi, camminata, passo, margine
 function renderOpz() {
   const o = S.opz, seg = (k, vals) => `<div class="chips pp-seg" role="group">${vals.map(([v, t]) => `<button type="button" class="chip all${String(o[k]) === v ? ' on' : ''}" data-o="${k}" data-v="${v}" aria-pressed="${String(o[k]) === v}">${t}</button>`).join('')}</div>`;
-  const mz = [['nav', 'ship', 'Battelli'], ['bus', 'bus', 'Autobus'], ['tram', 'tram', 'Tram']];
+  const mz = [['nav', 'ship', 'Battelli'], ['aut', 'bus', 'Autobus e tram']];
   X.plist.innerHTML = `<button type="button" class="linkback pp-oback">${icon('back', 'sm')}<span>Soluzioni</span></button>`
     + '<div class="pp-opz">'
     + `<div class="pp-og"><b>Mezzi</b><div class="chips pp-seg" role="group">${mz.map(([v, ic, t]) => `<button type="button" class="chip all${o.mezzi.includes(v) ? ' on' : ''}" data-m="${v}" aria-pressed="${o.mezzi.includes(v)}">${icon(ic, 'sm')}${t}</button>`).join('')}</div></div>`
     + `<div class="pp-og"><b>Preferisci</b>${seg('pref', [['equilibrata', 'Equilibrata'], ['veloce', 'Più veloce'], ['cambi', 'Meno cambi'], ['piedi', 'Meno a piedi']])}`
     + `<small class="muted">${{ equilibrata: 'Il giusto peso a tempo, cambi e strada a piedi: un cambio vale circa 5 minuti di viaggio.', veloce: 'Conta soprattutto l\'ora di arrivo: un cambio vale poco più di un minuto.', cambi: 'Meglio aspettare il mezzo diretto: un cambio vale circa 15 minuti.', piedi: 'Ogni minuto a piedi pesa come tre minuti di viaggio.' }[o.pref]}</small></div>`
-    + `<div class="pp-og"><b>Cambi</b>${seg('cambi', [['4', 'Qualsiasi'], ['1', 'Al massimo 1'], ['0', 'Solo diretti']])}</div>`
+    + `<div class="pp-og"><b>Cambi</b>${seg('cambi', [['4', 'Qualsiasi'], ['2', 'Al massimo 2'], ['1', 'Al massimo 1'], ['0', 'Solo diretti']])}</div>`
     + `<div class="pp-og"><b>A piedi, per ogni tratto</b>${seg('piedimax', [['', 'Senza limite'], ['5', '5 min'], ['10', '10 min'], ['15', '15 min'], ['20', '20 min']])}</div>`
     + `<div class="pp-og"><b>Il tuo passo</b>${seg('passo', [['lento', 'Tranquillo'], ['normale', 'Normale'], ['veloce', 'Svelto']])}`
     + `<small class="muted">${{ lento: 'Circa 3,5 km/h: con bagagli, bambini o chi cammina piano.', normale: 'Circa 4,5 km/h a Venezia (ponti e folla) e 4,8 km/h in terraferma.', veloce: 'Circa 5,6 km/h a Venezia e 6 km/h in terraferma: chi conosce le calli.' }[o.passo]}</small></div>`
@@ -333,6 +365,7 @@ function draw() {
     if (S.to?.lat != null && prev && mDist(prev[0], prev[1], S.to.lat, S.to.lon) > 25 && o.tratte[o.tratte.length - 1].tipo === 'mezzo') walkTo([S.to.lat, S.to.lon]);
   }
   mark(S.from, false); mark(S.to, true);
+  X.changed?.();                                                  // impaginazione (foglio o tutto schermo) e mezzi sulla mappa: solo quelli di questa soluzione
   if (pts.length) X.fit(pts);
 }
 
@@ -380,7 +413,7 @@ function onClick(e) {
       S.time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; render(); run(); return;
     }
     const last = r.soluzioni.reduce((m, o) => (o.parti > m ? o.parti : m), r.soluzioni[0].parti), [h, m] = last.split(':').map(Number), d = new Date(); d.setHours(h, m + 1, 0, 0);
-    S.when = 'at'; S.day = 0; S.time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; render(); run(); return;
+    if (S.when === 'now') S.date = today(); S.when = 'at'; S.time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; render(); run(); return;
   }
   const ride = t.closest('.pp-ride');
   if (ride) { const leg = S.det?.tratte[+ride.dataset.leg]; if (leg) X.openTrip(leg); }

@@ -11,6 +11,8 @@ import * as Notify from './notify.js';
 import * as Info from './info.js';
 import * as Plan from './percorso.js';
 import * as Guida from './guida.js';
+import * as Nav from './nav.js';
+import * as Favs from './favs.js';
 
 const POLL_MS = 2000, MIN_STOP_ZOOM = 14;
 onBusy(b => { $('busybar').hidden = !b; document.body.classList.toggle('busy', b); });   // barra di caricamento per le richieste lente
@@ -46,7 +48,7 @@ const navStack = [];
 dateEl.value = localDate();
 range.value = nowSecs();
 const keyOf = () => [...active].join(',');
-// Date selezionabili in "Pianificato": solo quelle coperte dai GTFS in archivio (il server le legge da data/gtfs/<servizio>/)
+// Date selezionabili in «Programmato»: solo quelle coperte dai GTFS in archivio (il server le legge da data/gtfs/<servizio>/)
 const ymdToIso = y => `${y.slice(0, 4)}-${y.slice(4, 6)}-${y.slice(6, 8)}`;
 api('/api/dates').then(d => {
   if (d.min) dateEl.min = ymdToIso(d.min);
@@ -92,7 +94,7 @@ function applyArea(a) {
 }
 fetch('/api/area', { cache: 'no-cache' }).then(r => r.ok ? r.json() : null).then(a => { try { applyArea(a); } catch { /* area facoltativa: la mappa funziona anche senza */ } }).catch(() => {});
 const lineLayer = L.layerGroup().addTo(map), tripLayer = L.layerGroup().addTo(map), stopLayer = L.layerGroup().addTo(map), planLayer = L.layerGroup().addTo(map);
-new ResizeObserver(() => map.invalidateSize({ animate: false })).observe($('wrap'));   // il dock cambia altezza (es. in modalità Pianificato): la mappa si adegua
+new ResizeObserver(() => map.invalidateSize({ animate: false })).observe($('wrap'));   // il dock cambia altezza (es. in modalità Programmato): la mappa si adegua
 
 // Linea sulla mappa con contorno: resta leggibile anche se il colore è chiaro (es. bianco della linea 1) e in entrambi i temi
 function drawLine(pts, k, layer, op) {
@@ -111,7 +113,7 @@ const PAD = 14, MIN_FREE = 150;
 function freeBox() {
   const m = $('map').getBoundingClientRect();
   let box = { l: 0, t: 0, r: m.width, b: m.height };
-  const els = [panel, $('tide'), $('avvisi'), $('controls'), searchContainer, $('topleft')].filter(el => el && !el.hidden && el.offsetParent !== null && !(el === searchContainer && !el.classList.contains('expanded')));
+  const els = [panel, $('ptab'), $('tide'), $('avvisi'), $('favs'), $('controls'), searchContainer, $('topleft')].filter(el => el && !el.hidden && el.offsetParent !== null && !(el === searchContainer && !el.classList.contains('expanded')));
   const rects = els.map(el => {
     let r = el.getBoundingClientRect();
     if (el.id === 'controls') {   // la colonna è trasparente tra un gruppo e l'altro: conta il riquadro dei soli gruppi
@@ -148,7 +150,7 @@ let keepInView = null;                // () => LatLng | null
 new ResizeObserver(() => { if (keepInView && !panel.hidden) { const ll = keepInView(); if (ll) ensureVisible(ll); } }).observe(panel);
 
 // ---------------------------------------------------------------------------------------------------------------------
-// OROLOGIO E MODALITÀ "PIANIFICATO"
+// OROLOGIO E MODALITÀ «PROGRAMMATO»
 // ---------------------------------------------------------------------------------------------------------------------
 function updateClock() {
   if (mode !== 'live') return;
@@ -181,7 +183,15 @@ dateEl.onchange = () => {
 // ---------------------------------------------------------------------------------------------------------------------
 // MEZZI SULLA MAPPA
 // ---------------------------------------------------------------------------------------------------------------------
-const busHtml = v => badge(v.line, v.color, v.src, `${mode === 'sched' || v.sim ? ' sched' : ''}${v.old ? ' old' : ''}${v.idle ? ' idle' : ''}${v.id === selVeh ? ' sel' : ''}`);
+const isUnk = v => v.line === '?';                                     // mezzo che il feed non associa a nessuna linea
+const busHtml = v => badge(v.line, v.color, v.src, `${mode === 'sched' || v.sim ? ' sched' : ''}${v.old ? ' old' : ''}${v.idle ? ' idle' : ''}${isUnk(v) ? ' unk' : ''}${v.id === selVeh ? ' sel' : ''}`);
+// MEZZI SENZA LINEA («?»): nascosti di norma (ingombrano e confondono); con il pulsante accanto a battelli e bus si mostrano, grigi e trasparenti.
+// La scelta resta sul telefono.
+const UNK_KEY = 'tpl.mezziSenzaLinea';
+let showUnk = (() => { try { return localStorage.getItem(UNK_KEY) === '1'; } catch { return false; } })();
+{ const t = $('unk-toggle'); t.checked = showUnk; t.addEventListener('change', () => { showUnk = t.checked; try { localStorage.setItem(UNK_KEY, showUnk ? '1' : '0'); } catch { /* facoltativo */ } render(); showStatus(lastMeta, mode, true); }); }
+// PIANIFICATORE APERTO: sulla mappa solo i mezzi delle corse della soluzione mostrata (percorso.js: tripsShown); gli altri tornano alla chiusura
+const planFilter = () => (current?.t === 'plan' && !panel.hidden ? Plan.tripsShown() : null);
 const tip = v => `${vehIcon(v.src, v.label, 'sm', v.line)} <b>${esc(v.line)}</b>${v.headsign ? ' ' + icon('next', 'sm') + ' ' + esc(v.headsign) : ''}${v.label ? ' · ' + esc(vehName(v.src, v.label)) : ''}${v.idle ? (v.idle.why === 'corsa conclusa' ? ' · corsa conclusa' : v.idle.why === 'posizione bloccata' ? ' · posizione non aggiornata' : ' · non associato a una corsa') : v.old ? ' · dato non aggiornato' : ''}`;
 
 // MOVIMENTO (fedele ai dati ricevuti)
@@ -197,11 +207,12 @@ const mDist = (aLat, aLon, bLat, bLon) => Math.hypot((aLat - bLat) * 111000, (aL
 const polyLen = p => { let L = 0; for (let i = 1; i < p.length; i++) L += mDist(p[i - 1][0], p[i - 1][1], p[i][0], p[i][1]); return L; };
 
 function render() {
-  const keep = new Set(), now = performance.now();
+  const keep = new Set(), now = performance.now(), pf = planFilter();
   for (let i = 0; i < vehicles.length; i++) {
     const v = vehicles[i];
     if (!active.has(v.src) || !Number.isFinite(v.lat) || !Number.isFinite(v.lon)) continue;
     if (lineFilter && (v.src !== lineFilter.src || String(v.line) !== lineFilter.name)) continue;
+    if (pf ? !pf.has(`${v.src}:${v.tripId}`) : (isUnk(v) && !showUnk && v.id !== selVeh)) continue;
     keep.add(v.id);
     const html = busHtml(v);
     let e = markers.get(v.id);
@@ -273,7 +284,7 @@ function frame(t) {
 requestAnimationFrame(frame);
 
 // Mezzi: in tempo reale arrivano dal flusso (solo le differenze, vedi più sotto); la richiesta completa resta per la modalità
-// Pianificato e come riserva se il flusso non è disponibile.
+// Programmato e come riserva se il flusso non è disponibile.
 async function load() {
   const m = mode, key = keyOf();
   if (m === 'live' && streamLive()) { vehicles = [...fleet.values()]; render(); return; }
@@ -287,18 +298,19 @@ async function load() {
   } catch (e) { if (m === mode && !e.busy) { statusEl.className = 'err'; statusEl.textContent = 'Errore: ' + e.message; } }
 }
 // stato in alto a sinistra (numero di mezzi, ora dei dati, avvisi sul feed); d = risposta completa o stato inviato dal flusso
-let lastStatus = '';
-function showStatus(d, m = mode) {
+let lastStatus = '', lastMeta = {};
+function showStatus(d, m = mode, force = false) {
+  lastMeta = d; if (force) lastStatus = '';
   if (d.version !== undefined && d.version !== staticVer) { staticVer = d.version; loadStatics(); }
   lastUpdate = d.updated || Date.now();
   const wait = [...active].filter(s => d.ready && !d.ready[s]);
-  const counts = [...active].map(s => `<span class="cnt">${srcIcon(s, 'sm')}${vehicles.filter(v => v.src === s).length}</span>`).join('');
+  const counts = [...active].map(s => `<span class="cnt">${srcIcon(s, 'sm')}${vehicles.filter(v => v.src === s && (showUnk || !isUnk(v))).length}</span>`).join('');
   const notes = [];
   if (m === 'live' && d.sim?.length) notes.push('dati in tempo reale non disponibili: posizioni da orario');
   if (m === 'live' && d.stale?.length) notes.push('il feed ACTV non si aggiorna da diversi minuti');
   if (wait.length) notes.push(`in caricamento: ${wait.join(', ')}`);
   if (d.error) notes.push(d.error);
-  const html = `${counts}<span>${m === 'sched' ? 'pianificato' : 'mezzi'} · ${new Date(d.updated).toLocaleTimeString('it-IT')}</span>${notes.map(n => `<span class="note">${esc(n)}</span>`).join('')}`;
+  const html = `${counts}<span>${m === 'sched' ? 'programmato' : 'mezzi'} · ${new Date(d.updated || Date.now()).toLocaleTimeString('it-IT')}</span>${notes.map(n => `<span class="note">${esc(n)}</span>`).join('')}`;
   if (html === lastStatus && statusEl.className === (notes.length ? 'warn' : '')) return;   // nulla di nuovo: nessun ridisegno
   lastStatus = html; statusEl.className = notes.length ? 'warn' : ''; statusEl.innerHTML = html;
 }
@@ -371,7 +383,7 @@ function collapseSearch() { searchContainer.classList.remove('expanded'); search
 function clearSearchState(force = false) { if (lineFilter && !force) return; setLineFilter(null); filterEl.value = ''; $('search-clear').hidden = true; resultsEl.classList.remove('active'); resultsEl.innerHTML = ''; clearRoutes(); }
 function setSearch(on) {
   searchContainer.classList.toggle('expanded', on); searchToggleBtn.setAttribute('aria-expanded', String(on));
-  if (on) { Tide.close(); Avvisi.close(); Info.close(); filterEl.focus(); if (!filterEl.value) showFavs(); } else clearSearchState(true);
+  if (on) { Tide.close(); Avvisi.close(); Info.close(); Favs.close(); filterEl.focus(); if (!filterEl.value) showFavs(); } else clearSearchState(true);
 }
 searchToggleBtn.onclick = e => { e.stopPropagation(); setSearch(!searchOpen()); };
 document.addEventListener('click', e => { if (searchOpen() && !searchContainer.contains(e.target) && !searchToggleBtn.contains(e.target)) collapseSearch(); });
@@ -408,7 +420,7 @@ resultsEl.addEventListener('click', e => {
   if (!it || !it.dataset.type) return;
   if (it.dataset.type === 'near') { collapseSearch(); const n = nearList[+it.dataset.k]; if (n) openNear(n); return; }
   if (it.dataset.type === 'fav') { collapseSearch(); openFav(it.dataset.k); return; }
-  if (it.dataset.type === 'saved') { collapseSearch(); const r = Fav.routeByKey(it.dataset.k); if (r) { Tide.close(); Avvisi.close(); Info.close(); openFromMap({ t: 'plan', opts: { from: { ...r.from }, to: { ...r.to } } }); } return; }
+  if (it.dataset.type === 'saved') { openSavedRoute(it.dataset.k); return; }
   filterEl.value = it.dataset.name; resultsEl.classList.remove('active');
   collapseSearch();
   if (it.dataset.type === 'zone') { const z = zones.get(it.dataset.key); if (z) { openFromMap({ t: 'zone', key: z.key, pick: '*' }); focusOn(L.latLng(z.center), 16); } }
@@ -416,7 +428,7 @@ resultsEl.addEventListener('click', e => {
   else setLineFilter({ src: it.dataset.src, name: it.dataset.name, ids: it.dataset.ids.split('\u0001') });
 });
 // un tocco sulla mappa vuota chiude i percorsi della ricerca (se nessun pannello è aperto) e le finestre troppo grandi
-map.on('click', e => { if (Plan.isPicking()) { Plan.pick(e.latlng); return; } if (!current && !searchOpen()) clearSearchState(); if (narrow()) { Tide.close(); Avvisi.close(); Info.close(); } });
+map.on('click', e => { if (Plan.isPicking()) { Plan.pick(e.latlng); return; } if (!current && !searchOpen()) clearSearchState(); if (narrow()) { Tide.close(); Avvisi.close(); Info.close(); Favs.close(); } });
 
 // ---------------------------------------------------------------------------------------------------------------------
 // NAVIGAZIONE TRA PANNELLI
@@ -448,7 +460,7 @@ function openFromPanel(e) {
   if (current) { navStack.push(current.t === 'trip' ? { ...current, follow } : current); if (navStack.length > NAV_MAX) navStack.shift(); }
   show(e);
 }
-function goBack() { const e = navStack.pop(); if (e) show(e); }
+function goBack() { const e = navStack.pop(); if (e) show(e); else Nav.sync(); }
 pback.onclick = e => { e.preventDefault(); goBack(); };
 
 function show(e) {
@@ -456,7 +468,7 @@ function show(e) {
   tripLayer.clearLayers(); setFollow(false); locator.release();          // aprire un pannello ferma l'inseguimento della mia posizione
   if (e.t !== 'trip') { selVeh = null; render(); }
   if (e.t !== 'plan') planLayer.clearLayers();
-  current = e; panel.hidden = false; document.body.classList.add('has-panel'); if (narrow()) { Tide.close(); Avvisi.close(); Info.close(); }
+  current = e; panel.hidden = false; document.body.classList.add('has-panel'); if (narrow()) { Tide.close(); Avvisi.close(); Info.close(); Favs.close(); }
   chipsArea.innerHTML = ''; pstatus.textContent = ''; psub.textContent = ''; pbadge.innerHTML = '';
   pfollow.hidden = e.t !== 'trip';
   pfav.hidden = e.t === 'trip' || (e.t === 'plan' && !Plan.canSave()); pnotify.hidden = !(e.t === 'trip' && e.stop); notifyPick = false; rowPick = null;
@@ -465,7 +477,7 @@ function show(e) {
   updateBack(); updateFav(); updateBell();
   if (e.t === 'plan') { keepInView = null; Plan.show(e.opts || {}); e.opts = null; }
   else if (e.t === 'trip') showTrip(e); else showStopPanel(e);
-  drawStops();
+  drawStops(); planLayout(); render(); Nav.sync();
 }
 function closePanel() {
   const hadTrip = current?.t === 'trip' || navStack.some(x => x.t === 'trip');
@@ -474,8 +486,11 @@ function closePanel() {
   if (selVeh) { selVeh = null; render(); }
   panel.hidden = true; document.body.classList.remove('has-panel'); chipsArea.innerHTML = '';
   if (hadTrip && !searchOpen()) clearSearchState();        // il percorso mostrato per la corsa sparisce; i percorsi di una ricerca ancora aperta restano
-  drawStops();
+  drawStops(); planLayout(); render(); Nav.sync();
 }
+// PIANIFICATORE SUL TELEFONO: mentre si scelgono partenza, arrivo e opzioni il pannello occupa tutto lo schermo (la tastiera non copre più
+// nulla e la mappa non serve); con le soluzioni torna un foglio in basso e la mappa mostra il percorso. «Scegli sulla mappa» lo toglie di mezzo.
+function planLayout() { document.body.classList.toggle('plan-full', current?.t === 'plan' && !panel.hidden && Plan.wantsFull()); }
 $('pclose').onclick = closePanel;
 
 const refreshPanel = () => { if (!current || current.t === 'plan') return; if (current.t === 'trip') loadTrip(); else loadDepartures(); };   // il percorso si aggiorna da sé (ogni minuto)
@@ -501,12 +516,15 @@ function stopLines(e) {
   return [...seen.values()];
 }
 const stopAlerts = e => { const ls = stopLines(e); return { list: [...Avvisi.forStops(stopIds(e)), ...Avvisi.forLines(ls)].filter((a, i, l) => l.findIndex(b => b.id === a.id) === i), keys: new Set(ls.map(l => Avvisi.keyOf(l.s, l.n))) }; };
-const stopTitle = (e, z = e.t === 'zone' ? zones.get(e.key) : null) => `${srcIcon(z ? z.src : e.src)}<span>${esc(z ? z.name : e.name)}${Avvisi.anyAlarm(stopAlerts(e).list) ? `<span class="warn-i" title="Avviso in corso">${icon('warn', 'sm')}</span>` : ''}</span>`;
+// titolo del pannello: SEMPRE su una riga; se il nome non entra scorre avanti e indietro (come le righe dei passaggi)
+const titleHtml = (lead, text, extra = '') => `${lead}<span class="ph-tx"><span class="mq">${esc(text)}</span></span>${extra}`;
+function setTitle(html) { if (pname.innerHTML !== html) { pname.innerHTML = html; requestAnimationFrame(() => marquee(pname)); } }
+const stopTitle = (e, z = e.t === 'zone' ? zones.get(e.key) : null) => titleHtml(srcIcon(z ? z.src : e.src), z ? z.name : e.name, Avvisi.anyAlarm(stopAlerts(e).list) ? `<span class="warn-i" title="Avviso in corso">${icon('warn', 'sm')}</span>` : '');
 function showStopPanel(e) {
   const z = e.t === 'zone' ? zones.get(e.key) : null;
   if (e.t === 'zone' && !z) { plist.innerHTML = '<p class="muted pad">Zona non più disponibile.</p>'; return; }
   if (z) z.pick = e.pick || '*';
-  pname.innerHTML = stopTitle(e, z);
+  setTitle(stopTitle(e, z));
   plist.innerHTML = '<p class="muted pad">Caricamento…</p>';
   const ll = z ? L.latLng(z.center) : (() => { const s = stops.find(x => x[0] === e.id); return s ? L.latLng(s[2], s[3]) : null; })();
   keepInView = ll ? () => ll : null;
@@ -665,6 +683,7 @@ const styleOf = (line, color, src) => { const k = colorInfo(color, line); return
 function marquee(root) {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   for (const el of root.querySelectorAll('.mq')) {
+    el.classList.remove('run');
     const box = el.parentElement, over = box.scrollWidth - box.clientWidth;      // lo span è in linea: si misura il contenitore
     if (over <= 2) continue;
     const t = Math.max(3, over / 28 + 1.5);                                   // secondi per un passaggio (circa 28 px/s, con pause agli estremi)
@@ -686,7 +705,7 @@ function renderDepartures() {
     + z.letters.map(l => `<button class="chip sq${z.pick === l ? ' on' : ''}" data-p="${esc(l)}" aria-pressed="${z.pick === l}" aria-label="${unitOf(z)[0]} ${esc(l)}">${esc(l)}</button>`).join('') + '</div>' : '';
   { const ch = chipsArea.querySelector('.chips'); if (ch) { ch.scrollLeft = keepX; const on = ch.querySelector('.chip.on'); if (on) { const r = on.getBoundingClientRect(), cr = ch.getBoundingClientRect(); if (r.left < cr.left || r.right > cr.right) ch.scrollLeft += r.left - cr.left - cr.width / 2 + r.width / 2; } } }
   const al = stopAlerts(current);                                                           // avvisi in corso su queste fermate e sulle loro linee: (!) nel titolo e righe cliccabili
-  pname.innerHTML = stopTitle(current, z);
+  setTitle(stopTitle(current, z));
   requestAnimationFrame(() => { marquee(plist); ticker(plist); });
   // chi usa la tastiera non perde il punto in cui era (titolo «Partiti da poco», gruppo, interruttore della vista) a ogni aggiornamento
   const fa = document.activeElement, fsel = fa && plist.contains(fa) ? (fa.matches('[data-past]') ? '[data-past]' : fa.dataset.g ? `.grp[data-g="${CSS.escape(fa.dataset.g)}"]` : fa.dataset.view ? `[data-view="${CSS.escape(fa.dataset.view)}"]` : null) : null;
@@ -743,7 +762,7 @@ function showTrip(e) {
   const v = vehicles.find(x => x.id === e.v.id) || e.v;       // dati più freschi se il mezzo è ancora in elenco
   e.v = vehSnap(v); selVeh = v.id; render(); drawStops();
   pbadge.innerHTML = badge(v.line, v.color, v.src);
-  pname.innerHTML = `${icon('next', 'sm')}<span>${v.headsign ? esc(v.headsign) : 'Linea ' + esc(v.line)}</span>`;
+  setTitle(titleHtml(icon('next', 'sm'), v.headsign || 'Linea ' + v.line));
   psub.textContent = 'Caricamento dettagli…';
   pfollow.disabled = !v.id;
   keepInView = () => { const m = selVeh && markers.get(selVeh); return m ? m.m.getLatLng() : null; };
@@ -839,7 +858,7 @@ function renderTrip(first) {
   else if (d.live && uncOf(d)) status = `<span class="unc" title="${esc(uncOf(d).long)}. Ultimo ritardo noto: ${esc(delayInfo(d.delayNow).long)}.">${esc(uncOf(d).txt)}</span>`;
   else if (d.live) status = `<span class="${delayInfo(d.delayNow).cls}" title="${esc(delayInfo(d.delayNow).long)}">${esc(delayInfo(d.delayNow).txt)}</span>`
     + (stillOf(d) ? ` <span class="unc">· ${esc(stillOf(d))}</span>` : '');
-  pname.innerHTML = `${icon('next', 'sm')}<span>${d.trip.headsign ? esc(d.trip.headsign) : 'Linea ' + esc(d.trip.line)}</span>`;
+  setTitle(titleHtml(icon('next', 'sm'), d.trip.headsign || 'Linea ' + d.trip.line));
   const o = d.stops[0], seg = segRange(d);
   psub.innerHTML = (seg ? `il tuo tratto: ${esc(d.stops[seg[0]].name)} → ${esc(d.stops[seg[1]].name)}` : o ? `da ${esc(o.name)}${o.sched ? ', ' + esc(o.sched) : ''}` : '') + (d.note ? `<br>${esc(d.note)}` : '');
   // corsa verificata (assign.js): il mezzo trasmetteva un'altra corsa; lo si dice, in modo trasparente
@@ -977,7 +996,7 @@ document.querySelectorAll('input[name=src]').forEach(el => el.addEventListener('
 // cambiato nei mezzi (posizioni, corse…) e lo stato del feed. Niente richieste ripetute dell'elenco intero.
 //   · mappa: si ridisegna al massimo una volta al secondo;
 //   · pannello aperto: si ricarica quando il feed porta dati nuovi (al massimo ogni 8 s) e comunque ogni 20 s; i «tra N min» contano da soli;
-//   · app in secondo piano o modalità Pianificato: il collegamento si chiude (niente radio accesa per nulla) e si riapre al ritorno;
+//   · app in secondo piano o modalità Programmato: il collegamento si chiude (niente radio accesa per nulla) e si riapre al ritorno;
 //   · collegamento muto da 15 s: si riapre; se succede di continuo (proxy che trattiene i dati compressi) si passa al flusso non compresso;
 //   · browser senza EventSource: richiesta completa ogni 5 s, solo con l'app in primo piano.
 const fleet = new Map();                                               // id -> mezzo, come lo ha il server per i servizi scelti
@@ -1016,6 +1035,7 @@ function onStream(e) {
       if (mode === 'live') { vehicles = [...fleet.values()]; render(); if (msg.m) showStatus(msg.m, 'live'); }
     }, Math.max(0, 1000 - (Date.now() - lastRender)));
   } else if (msg.m && mode === 'live') showStatus(msg.m, 'live');
+  if (msg.t === 'f') Notify.restoreAll();                              // flusso ricollegato (anche dopo un riavvio del server): avvisi attivi ripresentati
   onPush(msg.t === 'd' || msg.t === 'f');
 }
 function onPush(changed) {
@@ -1058,10 +1078,10 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', e => {  
 });
 // dal pannello della marea (triangolo accanto a una marea oltre le soglie del piano ACTV) all'avviso di acqua alta
 window.addEventListener('tpl:water-alert', () => { Tide.close(); const id = Avvisi.waterAlertId(); Avvisi.openAlert(id); });
-const hideAttr = Info.init(() => { Tide.close(); Avvisi.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
+const hideAttr = Info.init(() => { Tide.close(); Avvisi.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
 map.on('movestart', hideAttr); map.on('zoomstart', hideAttr); map.on('click', hideAttr);
-Tide.init(() => { Avvisi.close(); Info.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
-Avvisi.init(() => { Tide.close(); Info.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); }, () => { drawStops(); if (current && current.t !== 'trip') renderDepartures(); else if (current?.t === 'trip' && lastTrip) renderTrip(false); });   // quando arrivano avvisi nuovi si aggiornano mappa e pannello fermata
+Tide.init(() => { Avvisi.close(); Info.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
+Avvisi.init(() => { Tide.close(); Info.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); }, () => { drawStops(); if (current && current.t !== 'trip') renderDepartures(); else if (current?.t === 'trip' && lastTrip) renderTrip(false); });   // quando arrivano avvisi nuovi si aggiornano mappa e pannello fermata
 Pwa.init();
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1084,21 +1104,27 @@ pfav.onclick = () => {
   if (!current || current.t === 'trip') return;
   if (current.t === 'plan') {
     const r = Plan.toggleSaved(); if (r === undefined) return; updateFav();
-    toast(r === null ? 'Impossibile salvare: la memoria del browser non è disponibile (navigazione privata?).' : r ? 'Percorso salvato: lo trovi nel pianificatore e nei preferiti della ricerca.' : 'Percorso tolto dai preferiti.', 3500);
+    toast(r === null ? 'Impossibile salvare: la memoria del browser non è disponibile (navigazione privata?).' : r ? 'Percorso salvato: lo trovi nella stella in basso a destra (scheda Percorsi), dove puoi anche dargli un nome.' : 'Percorso tolto dai preferiti.', 4500);
+    Favs.refresh();
     return;
   }
   const r = Fav.toggle(favEntry(current), favName(current), favSrc(current)); updateFav();
-  toast(r === null ? 'Impossibile salvare: la memoria del browser non è disponibile (navigazione privata?).' : r ? 'Aggiunta ai preferiti: la trovi aprendo la ricerca.' : 'Tolta dai preferiti.', 3500);
+  toast(r === null ? 'Impossibile salvare: la memoria del browser non è disponibile (navigazione privata?).' : r ? 'Aggiunta ai preferiti: la trovi nella stella in basso a destra e aprendo la ricerca.' : 'Tolta dai preferiti.', 3500);
+  Favs.refresh();
 };
 function showFavs() {
   const l = Fav.all(), rs = Fav.allRoutes();
   resultsEl.innerHTML = (rs.length ? '<div class="search-category">Percorsi salvati</div>' + rs.slice(0, 8).map(r =>
-    `<div class="search-item" role="option" tabindex="0" data-type="saved" data-k="${esc(r.k)}">${icon('route', 'sm fav-ic')}<span>${esc(r.from.label)} ${icon('next', 'sm')} ${esc(r.to.label)}</span></div>`).join('') : '')
+    `<div class="search-item" role="option" tabindex="0" data-type="saved" data-k="${esc(r.k)}">${icon('route', 'sm fav-ic')}<span>${esc(Fav.routeTitle(r))}</span></div>`).join('') : '')
     + '<div class="search-category">Preferiti</div>' + (l.length ? l.map(f =>
     `<div class="search-item" role="option" tabindex="0" data-type="fav" data-k="${esc(f.k)}">${icon('star', 'sm fav-ic')}${srcIcon(f.src)} <span>${esc(f.name)}</span></div>`).join('')
     : `<div class="search-item muted"><span>Nessuna fermata preferita: tocca la stella nel pannello di una fermata per salvarla qui${rs.length ? '' : ' (e quella del pianificatore per salvare un percorso)'}.</span></div>`);
   resultsEl.classList.add('active');
 }
+// PANNELLO PREFERITI (stella in basso a destra): fermate e percorsi, con modifica e copia di sicurezza (favs.js)
+const openSavedRoute = k => { const r = Fav.routeByKey(k); if (r) { collapseSearch(); Tide.close(); Avvisi.close(); Info.close(); openFromMap({ t: 'plan', opts: { from: { ...r.from }, to: { ...r.to } } }); } };
+Favs.init(() => { Tide.close(); Avvisi.close(); Info.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); },
+  { openStop: k => openFav(k), openRoute: openSavedRoute, toast, changed: () => { updateFav(); if (searchOpen() && !filterEl.value) showFavs(); } });
 function openFav(k) {
   if (k.startsWith('zone:')) { const z = zones.get(k.slice(5)); if (z) { openFromMap({ t: 'zone', key: z.key, pick: '*' }); focusOn(L.latLng(z.center), 16); return; } }
   else { const id = k.slice(5), s = stopById.get(aliasOf.get(id) || id); if (s) { openFromMap(entryForStop(s[0], s[1], s[4])); focusOn(L.latLng(+s[2], +s[3]), 16); return; } }
@@ -1173,7 +1199,7 @@ function openFromUrl(href) {
   const k = t.indexOf(':'), src = t.slice(0, k), tripId = t.slice(k + 1); if (!src || !tripId) return;
   const v = vehicles.find(c => c.src === src && c.tripId === tripId && !c.co) || { id: null, src, tripId, routeId: null, line: '', headsign: '', color: null };
   openFromMap({ t: 'trip', v: vehSnap(v), follow: !!v.id, stop: st, stopName: stopLabel(st) });
-  try { history.replaceState(null, '', '/'); } catch { /* ignora */ }
+  Nav.replaceUrl('/');
 }
 navigator.serviceWorker?.addEventListener('message', ev => {
   if (ev.data?.type === 'tpl-open') openFromUrl(ev.data.url);
@@ -1182,15 +1208,31 @@ navigator.serviceWorker?.addEventListener('message', ev => {
 });
 if (new URLSearchParams(location.search).has('trip')) setTimeout(() => openFromUrl(location.href), 1200);   // dopo il primo caricamento dei mezzi
 
+// INDIETRO: tasto Esc, tasto o gesto «indietro» del telefono (nav.js). Chiude il livello più in alto: scelta sul mappa, informazioni,
+// preferiti, avvisi, marea, ricerca, pagine del pianificatore, pannello precedente (fermata ↔ corsa), infine il pannello.
+const closeCard = (isOpen, close, id, btnId) => { if (!isOpen()) return false; const inside = $(id).contains(document.activeElement); close(); if (inside) $(btnId).focus(); return true; };
+function backOne() {
+  if (Guida.active()) return;
+  if (Plan.isPicking()) { Plan.pick(null); setPlanPick(false); return; }
+  if (closeCard(Info.isOpen, Info.close, 'info', 'info-btn') || closeCard(Favs.isOpen, Favs.close, 'favs', 'favs-btn')
+    || closeCard(Avvisi.isOpen, Avvisi.close, 'avvisi', 'avvisi-btn') || closeCard(Tide.isOpen, Tide.close, 'tide', 'tide-btn')) return;
+  if (searchOpen()) { setSearch(false); searchToggleBtn.focus(); return; }
+  if (panel.hidden) return;
+  if (current?.t === 'plan' && Plan.back()) return;
+  if (navStack.length) goBack(); else closePanel();
+}
+const levels = () => (Plan.isPicking() ? 1 : 0) + [Info.isOpen(), Favs.isOpen(), Avvisi.isOpen(), Tide.isOpen(), searchOpen()].filter(Boolean).length
+  + (panel.hidden ? 0 : 1 + navStack.length + (current?.t === 'plan' ? Plan.depth() : 0));
+Nav.init({ levels, back: backOne });
+{ // ogni livello che si apre o si chiude (anche da un modulo: marea, avvisi, informazioni, preferiti) aggiorna la cronologia
+  const mo = new MutationObserver(() => Nav.sync());
+  for (const id of ['panel', 'tide', 'avvisi', 'info', 'favs']) mo.observe($(id), { attributes: true, attributeFilter: ['hidden'] });
+  mo.observe(searchContainer, { attributes: true, attributeFilter: ['class'] });
+  mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+}
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {   // chiude la finestra più "in alto": marea, poi ricerca, poi pannello
-    if (Info.isOpen()) { const inside = $('info').contains(document.activeElement); Info.close(); if (inside) $('info-btn').focus(); }
-    else if (Avvisi.isOpen()) { const inside = $('avvisi').contains(document.activeElement); Avvisi.close(); if (inside) $('avvisi-btn').focus(); }
-    else if (Tide.isOpen()) { const inside = $('tide').contains(document.activeElement); Tide.close(); if (inside) $('tide-btn').focus(); }
-    else if (Plan.isPicking()) { Plan.pick(null); setPlanPick(false); }
-    else if (searchOpen()) { setSearch(false); searchToggleBtn.focus(); }
-    else if (!panel.hidden) closePanel();
-  } else if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.dep.go,.grp,.st,.search-item')) { e.preventDefault(); e.target.click(); }   // righe cliccabili anche da tastiera
+  if (e.key === 'Escape') backOne();
+  else if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('.dep.go,.grp,.st,.search-item')) { e.preventDefault(); e.target.click(); }   // righe cliccabili anche da tastiera
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1212,7 +1254,8 @@ function fitFree(pts) {
 Plan.init({
   chips: chipsArea, plist, pbadge, pname, psub, pstatus, layer: planLayer, drawLine, stopById, stopLabel,
   allStops: () => stops, me: () => meLL, isOpen: () => current?.t === 'plan' && !panel.hidden,
-  locate: () => { if (!meLL) locator.start(); }, setPick: (on, msg) => setPlanPick(on, msg), fit: fitFree, favChanged: () => updateFav(),
+  locate: () => { if (!meLL) locator.start(); }, setPick: (on, msg) => setPlanPick(on, msg), fit: fitFree, favChanged: () => { updateFav(); Favs.refresh(); },
+  changed: () => { planLayout(); render(); Nav.sync(); },                // pagine del pianificatore, soluzione mostrata: livelli, mezzi e impaginazione
   openTrip: t => {
     const v = vehicles.find(c => c.src === t.src && c.tripId === t.tripId && (!t.veh || c.key === t.veh) && !c.co)
       || { id: null, src: t.src, tripId: t.tripId, routeId: null, line: t.line, label: t.vehicle, headsign: t.headsign, color: t.color };
@@ -1220,7 +1263,7 @@ Plan.init({
   }
 });
 function openPlan() {
-  collapseSearch(); Tide.close(); Avvisi.close(); Info.close();
+  collapseSearch(); Tide.close(); Avvisi.close(); Info.close(); Favs.close();
   // dal pannello di una fermata: si parte da lì
   const from = current && (current.t === 'stop' || current.t === 'zone') ? (current.t === 'zone' ? { kind: 'zone', key: current.key, label: zones.get(current.key)?.name, src: zones.get(current.key)?.src, lat: zones.get(current.key)?.center[0], lon: zones.get(current.key)?.center[1] }
     : { kind: 'stop', id: current.id, label: current.name, src: current.src, lat: +(stopById.get(current.id)?.[2] ?? NaN), lon: +(stopById.get(current.id)?.[3] ?? NaN) }) : null;
@@ -1260,7 +1303,7 @@ let linkDone = false;
 function openLink() {
   if (linkDone) return; linkDone = true;
   const P = new URLSearchParams(location.search), get = k => { const v = P.get(k); return v && v.length <= 200 ? v : null; };
-  const clean = () => { try { history.replaceState(null, '', location.pathname); } catch { /* facoltativo */ } };
+  const clean = () => Nav.replaceUrl(location.pathname);
   const keys = ['fermata', 'zona', 'corsa', 'da', 'a', 'apri']; if (!keys.some(k => P.has(k))) return;
   clean();
   const fermata = get('fermata'), zona = get('zona'), corsa = get('corsa'), apri = get('apri');
@@ -1282,7 +1325,7 @@ function openLink() {
     return;
   }
   if (apri === 'percorso') openPlan();
-  else if (apri === 'preferiti') setSearch(true);
+  else if (apri === 'preferiti') Favs.open();
   else if (apri === 'vicine') { nearOnFix = true; locator.start(); }
 }
 // corsa da un link: la si chiede al server (linea, destinazione) e si apre come dal pannello di una fermata; il mezzo si segue se c'è
@@ -1311,3 +1354,5 @@ let nearOnFix = false;                                                  // scorc
 // ---------------------------------------------------------------------------------------------------------------------
 $('tl-time').textContent = fmtSecs(+range.value); syncPlay(); setFollow(false); drawStops(); updateClock(); load();
 
+// PERSISTENZA: con preferiti o avvisi salvati si chiede al browser di non cancellare da solo la memoria del sito quando lo spazio scarseggia
+if (Fav.all().length || Fav.allRoutes().length || Notify.all().length) { try { navigator.storage?.persist?.(); } catch { /* facoltativo */ } }

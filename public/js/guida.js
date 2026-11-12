@@ -7,7 +7,7 @@
 // Memoria sul telefono (localStorage «tpl.guida»): versione della guida vista e quali parti; nessun dato esce dal telefono.
 import { esc, icon } from './util.js';
 
-export const GUIDA_VER = 'v23';
+export const GUIDA_VER = 'v24';
 const KEY = 'tpl.guida';
 
 // Nei testi: html scritto qui (fisso), mai dati che arrivano da fuori.
@@ -38,7 +38,9 @@ const GUIDA_MAPPA = [
   { since: 'v23', el: q('#controls .group'), icon: 'ship', title: 'Battelli e bus', html: 'Mostra o nascondi la navigazione e i bus/tram, anche separatamente.' },
   { since: 'v23', el: q('#plan-btn'), icon: 'route', title: 'Pianifica un percorso', html: 'Dimmi da dove a dove: ti propongo le soluzioni migliori, con cambi e tratti a piedi. Puoi <b>salvare</b> i percorsi che fai spesso.' },
   { since: 'v23', el: () => document.getElementById('avvisi-btn')?.closest('.group'), icon: 'warn', title: 'Avvisi e marea', html: 'Scioperi, deviazioni e fermate sospese; il livello della <b>marea</b> e i servizi in caso di acqua alta.' },
-  { since: 'v23', el: q('#bottom-bar .seg'), icon: 'clock', title: 'Tempo reale o Pianificato', html: '<b>Tempo reale</b>: dove sono i mezzi adesso. <b>Pianificato</b>: gli orari di un altro giorno o di un\'altra ora.' },
+  { since: 'v24', el: q('#unk-btn'), round: true, icon: 'unknown', title: 'Mezzi senza linea', html: 'I mezzi che il feed ACTV non associa a nessuna linea (simbolo <b>?</b>) sono nascosti: con questo tasto li mostri, in grigio.' },
+  { since: 'v24', el: q('#favs-btn'), round: true, icon: 'star', title: 'I tuoi preferiti', html: 'Fermate e percorsi salvati, a portata di tocco. Puoi riordinarli, dare un nome ai percorsi e salvarne una <b>copia</b>.' },
+  { since: 'v23', el: q('#bottom-bar .seg'), icon: 'clock', title: 'Tempo reale o Programmato', html: '<b>Tempo reale</b>: dove sono i mezzi adesso. <b>Programmato</b>: gli orari di un altro giorno o di un\'altra ora.' },
   { since: 'v23', el: q('#info-btn'), round: true, icon: 'info', title: 'La guida è sempre qui', html: 'Nelle <b>Informazioni</b> puoi rivedere questa guida quando vuoi.', end: 'Fine' },
 ];
 const GUIDA_PANNELLO = [
@@ -51,7 +53,10 @@ const GUIDA_PANNELLO = [
   { since: 'v23', el: both('pshare', 'pfav'), round: true, icon: 'star', title: 'Salva e condividi', html: 'La <b>stella</b> salva la fermata tra i preferiti; con l\'altro tasto mandi il <b>link</b> a chi vuoi.', end: 'Ho capito' },
 ];
 // novità senza un punto nell'app (solo a chi aveva già visto la guida di una versione precedente)
-const NOVITA_EXTRA = [];
+const NOVITA_EXTRA = [
+  { since: 'v24', icon: 'back', title: 'Il tasto «indietro» funziona', html: 'Il tasto o il gesto <b>indietro</b> del telefono chiude la finestra aperta o torna al pannello precedente. I comandi dei pannelli sono nella <b>linguetta</b> sul bordo, e il nome della fermata resta su una riga.' },
+  { since: 'v24', icon: 'route', title: 'Percorsi in qualsiasi giorno', html: 'Il pianificatore usa gli orari del giorno che scegli (gli stessi di <b>Programmato</b>) e, mentre lo usi, sulla mappa restano solo i mezzi del tuo percorso.' }
+];
 const NOVITA_INTRO = { tag: 'Novità', icon: 'info', title: 'Cosa c\'è di nuovo', html: 'L\'app è stata aggiornata: ti mostro in breve le novità.', start: 'Vediamo' };
 
 // ---------------------------------------------------------------------------------------------------------------------

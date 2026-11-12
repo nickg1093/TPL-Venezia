@@ -60,26 +60,5 @@ global.fetch = async (url, opts) => {
     if (/t\.me\/s\//.test(u)) return new Response(`<div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="muoversivenezia/1"><div class="tgme_widget_message_text">Solo su Telegram: ritardi diffusi sulla rete.</div><time datetime="${new Date().toISOString()}"></time></div></div>`, { status: 200 });
     return new Response('no', { status: 404 });
   }
-  // CENTRALE ACTV (oraritemporeale.actv.it) simulata: per ogni fermata, le prossime partenze costruite dai nostri dati con differenze tipiche
-  // del debug del 1/11: ritardo spostato su alcune corse da orario, un tempo GPS diverso di 3 minuti, una corsa nostra non elencata, una partenza
-  // della sola centrale (linea inesistente nel GTFS). FAKE_CENTRALE=0 la spegne (centrale non raggiungibile).
-  const oc = /oraritemporeale\.actv\.it\/(aut|nav)\/backend\/(page\/stops|passages\/([^/?]+))/.exec(u);
-  if (oc) {
-    if (process.env.FAKE_CENTRALE === '0') throw new Error('rete');
-    const src = oc[1], G = live.D[src], suf = src === 'aut' ? 'web-aut' : 'nav-web';
-    if (oc[2] === 'page/stops') return Response.json(Object.keys(G.stopIndex || {}).map(c => ({ name: `${c}-${suf}`, description: `${G.stops[c]} [${c}]`, lines: [] })));
-    const code = decodeURIComponent(oc[3]).split('-')[0], now = Date.now(), b = require('../calendar').romeParts(now);
-    const rows = schedule.departures(G, live.S[src].live, code, b.secs, b.ymd, live.S[src].state).filter(x => !x.arrival && !x.done && x.expSec > -30).slice(0, 16);
-    const fmt = ms => { const m = Math.floor((ms - now) / 60000); if (m <= 0) return 'departure'; if (m < 60) return `${m}'`; const p = require('../calendar').romeParts(ms).secs; return `${String(Math.floor(p / 3600)).padStart(2, '0')}:${String(Math.floor(p % 3600 / 60)).padStart(2, '0')}`; };
-    const out = []; let nLive = 0, nSched = 0;
-    for (const x of rows) {
-      const line = `${x.line}_${src === 'aut' ? 'UM' : 'UN'}`;
-      if (x.veh) { nLive++; if (nLive === 2) continue; const ms = now + x.expSec * 1000 + (nLive === 3 ? 180e3 : 0); out.push({ line, destination: String(x.headsign || '').toUpperCase(), time: fmt(ms), stop: null, real: true, timingPoints: [], vehicle: null }); continue; }
-      nSched++; const late = nSched % 3 === 1, ms = now + x.schedSec * 1000 + (late ? 240e3 : 0);
-      out.push({ line, destination: String(x.headsign || '').toUpperCase(), time: fmt(ms), stop: null, real: late, timingPoints: [], vehicle: null });
-    }
-    out.splice(1, 0, { line: 'N9_UM', destination: 'BIS PROVA', time: fmt(now + 7 * 60e3), stop: null, real: true, timingPoints: [], vehicle: null });
-    return Response.json(out);
-  }
   return real(url, opts);
 };

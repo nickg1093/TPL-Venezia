@@ -6,8 +6,6 @@ import * as Notify from './notify.js';
 const btn = $('info-btn'), card = $('info'), list = $('info-watches'), wbtn = $('watch-btn'), wcount = $('watch-count');
 let before = () => {};
 export const isOpen = () => !card.hidden;
-// pagina a tutto schermo: il tasto «indietro» del telefono la chiude (voce nella cronologia)
-let pushed = false;
 // avvisi di arrivo attivi su questo dispositivo, con la possibilità di disattivarli
 // campanella sopra la «i»: visibile solo con almeno un avviso attivo, con il numero; apre la lista (qui sotto, in cima alla pagina)
 export function updateWatchButton() {
@@ -32,11 +30,10 @@ export function open() {
   before(); card.hidden = false; btn.setAttribute('aria-expanded', 'true'); renderWatches();
   card.style.setProperty('--fp-h', card.querySelector('.fp-h').offsetHeight + 'px');   // l'indice resta agganciato sotto l'intestazione
   card.scrollTop = 0; card.focus({ preventScroll: true });
-  try { history.pushState({ info: 1 }, '', '#informazioni'); pushed = true; } catch { pushed = false; }
 }
-export function close(fromHistory = false) {
+// il tasto «indietro» del telefono la chiude come gli altri livelli (nav.js)
+export function close() {
   if (card.hidden) return; card.hidden = true; btn.setAttribute('aria-expanded', 'false');
-  if (pushed && !fromHistory) { pushed = false; try { history.back(); } catch { /* ignora */ } } else pushed = false;
 }
 export function init(beforeOpen) {
   before = beforeOpen || before;
@@ -50,8 +47,7 @@ export function init(beforeOpen) {
   };
   updateWatchButton();
   $('info-close').onclick = () => { close(); btn.focus(); };
-  window.addEventListener('popstate', () => { if (!card.hidden) close(true); });
-  // indice della pagina: scorrimento alla sezione senza toccare l'indirizzo (la voce #informazioni serve al tasto «indietro»)
+  // indice della pagina: scorrimento alla sezione senza toccare l'indirizzo
   card.querySelector('.ip-toc').addEventListener('click', e => {
     const b = e.target.closest('[data-go]'); if (!b) return;
     const t = $(b.dataset.go); if (!t) return;
@@ -84,7 +80,7 @@ export function init(beforeOpen) {
     $('info-version').textContent = `Versione ${d?.version || ''}`;
   }).catch(() => {});
   // attribuzione della mappa: visibile all'apertura, poi si riduce dopo 5 s o alla prima interazione (crediti completi qui)
-  const at = $('osm-attr'), hide = () => at.classList.add('off');
+  const at = $('osm-attr'), hide = () => { at.classList.add('off'); document.body.classList.add('attr-off'); };   // il pulsante «Percorso» scende al posto dei crediti
   setTimeout(hide, 5000);
   return hide;
 }

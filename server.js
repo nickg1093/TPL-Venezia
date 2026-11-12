@@ -14,7 +14,6 @@ const watch = require('./watch');
 const sec = require('./security');
 const { equivalentStops } = require('./stopgroups');
 const { audit } = require('./feedaudit');
-const centrale = require('./centrale');
 const percorso = require('./percorso');
 const prossime = require('./prossime');
 const flusso = require('./flusso');
@@ -48,15 +47,10 @@ const fullId = (u, key) => { const r = sec.vFullId(q(u, key), IDS); if (!r) thro
 // Ordine di passaggio: per orario PREVISTO (con ritardo/anticipo reale), poi per orario programmato.
 const byExpected = (a, b) => (a.expSec - b.expSec) || (a.schedIn - b.schedIn);
 const labelsOf = i => new Map(S[i].vehicles.filter(x => x.tripId && x.label).map(x => [x.tripId, x.label]));
-// CENTRALE ACTV (centrale.js): confronto continuo con i nostri dati, correzione delle corse senza mezzo e controllo dei turni (turni.js).
-// Facoltativa: ACTV_CENTRALE=0 la spegne e il sito usa i soli dati del feed.
-centrale.init({ G: i => D[i], state: i => S[i]?.state, vacated: i => S[i]?.vacated, serviceActive: schedule.serviceActive, version: () => live.version() });
-live.setTurnoCheck(centrale.checkTurno);
-live.setPassCheck(centrale.checkPass);
 // PIANIFICA PERCORSO (percorso.js): usa gli orari in memoria e, per le partenze di adesso, gli stessi dati in tempo reale dei pannelli.
 // La riga del pannello fermata (rows) dà a ogni tratta proposta lo stesso orario e la stessa dicitura che si vedono aprendo la fermata.
 const LIVE_U = new URL('http://localhost/');
-percorso.init({ G: i => D[i], state: i => S[i]?.state, live: i => S[i]?.live, serviceActive: schedule.serviceActive, actvPlan: centrale.actvPlan,
+percorso.init({ G: i => D[i], state: i => S[i]?.state, live: i => S[i]?.live, serviceActive: schedule.serviceActive,
   rows: (i, sid) => { try { return departuresFor([[i, sid]], LIVE_U).out; } catch { return []; } } });
 // linee "src:route_id,…" (solo linee esistenti)
 function routesParam(u, key, max) {
@@ -77,12 +71,21 @@ function planParams(u) {
   if (!ready.aut && !ready.nav) throw fail(409, 'Orari in caricamento, riprova tra qualche secondo');
   const entro = q(u, 'arrivo') === '1'; if (entro && !t) throw sec.bad('arrivo entro: manca l\'orario');
   const one = (key, ok) => { const v = q(u, key); if (v == null || v === '') return undefined; if (!ok.includes(v)) throw sec.bad(`parametro ${key} non valido`); return v; };
-  const mz = q(u, 'mezzi'), mezzi = mz ? new Set(mz.split(',')) : null;
+  // mezzi: nav (battelli) e aut (autobus e tram); bus e tram separati restano accettati per i link e le app non aggiornate
+  const mz = q(u, 'mezzi'), mezzi = mz ? new Set(mz.split(',').flatMap(x => (x === 'aut' ? ['bus', 'tram'] : [x]))) : null;
   if (mezzi && (![...mezzi].every(x => ['nav', 'bus', 'tram'].includes(x)) || !mezzi.size)) throw sec.bad('parametro mezzi non valido');
   const cambi = one('cambi', ['0', '1', '2', '3', '4']), pmax = one('piedimax', ['5', '10', '15', '20', '30']);
   const prefs = { mezzi, cambi: cambi == null ? undefined : +cambi, piediMax: pmax == null ? undefined : +pmax, passo: one('passo', ['lento', 'normale', 'veloce']),
     margine: one('margine', ['normale', 'largo']), pref: one('pref', ['equilibrata', 'veloce', 'cambi', 'piedi']), escludi: new Set(routesParam(u, 'escludi', 8)) };
-  return { da, a, secs: t ? t.secs : null, date: t ? t.date : null, piediM, entro, prefs };
+  return { da, a, secs: t ? t.secs : null, date: t ? t.date : null, piediM, entro, prefs, Gs: t ? plannerGtfs(t.date) : null };
+}
+// orari per il pianificatore in un'altra data: la stessa versione dei GTFS usata dalla modalità «Programmato» (live.dataFor),
+// in ordine [aut, nav] come in percorso.js. null = orari in uso adesso.
+function plannerGtfs(date) {
+  if (!date || date === require('./calendar').romeYmd()) return null;
+  const Gs = ['aut', 'nav'].map(i => { const r = gtfsFor(i, date); return r.none ? null : r.G; });
+  if (!Gs[0] && !Gs[1]) throw fail(404, NO_GTFS);
+  return Gs;
 }
 // "src:id~metri,src:id~metri" (fermate vicine al punto scelto, con la distanza in linea d'aria calcolata dal telefono)
 function stopsParam(u, key) {
@@ -144,7 +147,6 @@ function departuresFor(fulls, u) {
         mine.push({ ...d, src: i, stop: full, vehicle: d.vehLabel || lab.get(d.tripId) || null, isRequest });
       }
     }
-    if (liveMode && own) mine = centrale.mergeStop(i, sid, mine);                // tempi della centrale ACTV (se disponibili)
     for (const d of mine) Object.defineProperty(d, '_G', { value: G, enumerable: false });   // versione del GTFS (fermate successive), non va nella risposta
     out.push(...mine);
     note = live.noteOf(G, date) || note; liveUpdated = Math.max(liveUpdated, S[i].updated);
@@ -163,13 +165,24 @@ function readJson(req, max = 4096) {
     req.on('error', ko);
   });
 }
+// parametri di un avviso di arrivo (creazione e ripristino), controllati: corsa e fermata esistenti, preavviso 1-30 min, iscrizione valida
+function watchArgs(b, req) {
+  const t = sec.vFullId(b?.trip, IDS), st = sec.vFullId(b?.stop, IDS), lead = Math.round(+b?.lead);
+  if (!t || !st || t[0] !== st[0] || !(lead >= 1 && lead <= 30)) throw sec.bad('parametri non validi');
+  const G = D[t[0]], seq = G.stopTimes.get(t[1]);
+  if (!seq || !seq.s.includes(st[1])) throw fail(404, 'corsa o fermata sconosciuta');
+  if (b.sub != null && !require('./push').validSub(b.sub)) throw sec.bad('iscrizione alle notifiche non valida');
+  const url = `/?trip=${encodeURIComponent(b.trip)}&stop=${encodeURIComponent(b.stop)}`;
+  return { sub: b.sub ? { endpoint: b.sub.endpoint, keys: { p256dh: b.sub.keys.p256dh, auth: b.sub.keys.auth } } : null, src: t[0], tid: t[1], stop: b.stop,
+    style: validStyle(b.style), stopName: typeof b.stopName === 'string' && b.stopName.trim() && b.stopName.length <= 80 ? b.stopName.replace(/[\u0000-\u001f<>]/g, '').trim() : (G.stopBaseNames?.get(st[1]) || G.stops[st[1]] || st[1]), lead, ip: sec.clientIp(req), url };
+}
 // aspetto della mattonella/cerchio della linea per l'immagine della notifica: solo colori #RRGGBB e due forme
 const validStyle = st => {
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
-const ABOUT_VERSION = 'v23';
-const POSTS = new Set(['/api/reload-gtfs', '/api/watch', '/api/watch/cancel', '/api/watch/resub']);
+const ABOUT_VERSION = 'v24';
+const POSTS = new Set(['/api/reload-gtfs', '/api/watch', '/api/watch/cancel', '/api/watch/resub', '/api/watch/restore']);
 
 // ---- ROUTE API ----  auth: 'diag' | 'admin' | undefined;  method: 'POST' solo per azioni che modificano lo stato
 const API = new Map(Object.entries({
@@ -215,7 +228,6 @@ const API = new Map(Object.entries({
   '/api/stop': { cache: true, fn: async u => {
     const [i, sid] = fullId(u, 'id'), G = D[i];
     if (!has(G.stopIndex, sid)) throw fail(404, 'fermata sconosciuta');
-    if (mode(u) === 'live') await centrale.prepareStops([[i, sid]]);
     const { out, note, liveUpdated } = departuresFor([[i, sid]], u);
     const departures = out.slice(0, 120), nexts = prossime.attach(departures);
     return { stop: { id: `${i}:${sid}`, name: G.stopBaseNames?.get(sid) || G.stops[sid] || sid, src: i }, liveUpdated, note, departures, nexts };
@@ -224,7 +236,6 @@ const API = new Map(Object.entries({
     const list = (q(u, 'ids') || '').split(',').slice(0, 24).map(f => sec.vFullId(f, IDS));
     if (!list.length || list.some(x => !x)) throw sec.bad('parametro ids non valido');
     if (list.some(([i, sid]) => !has(D[i].stopIndex, sid))) throw fail(404, 'zona sconosciuta');
-    if (mode(u) === 'live') await centrale.prepareStops(list);
     const { out, note, liveUpdated } = departuresFor(list, u);
     const departures = out.slice(0, 300), nexts = prossime.attach(departures);
     return { liveUpdated, note, departures, nexts };
@@ -233,16 +244,16 @@ const API = new Map(Object.entries({
   // informazioni sul servizio per la pagina «i»: versione e, se impostato, contatto del titolare (variabile APP_CONTACT; nessun nome)
   '/api/about': { fn: () => ({ version: ABOUT_VERSION, contact: (process.env.APP_CONTACT || '').slice(0, 160) || null }) },
   '/api/push-key': { fn: () => ({ key: watch.publicKey() }) },
-  '/api/watch': { method: 'POST', limit: 'watch', fn: async (u, req) => {
-    const b = await readJson(req);
-    const t = sec.vFullId(b.trip, IDS), st = sec.vFullId(b.stop, IDS), lead = Math.round(+b.lead);
-    if (!t || !st || t[0] !== st[0] || !(lead >= 1 && lead <= 30)) throw sec.bad('parametri non validi');
-    const G = D[t[0]], seq = G.stopTimes.get(t[1]);
-    if (!seq || !seq.s.includes(st[1])) throw fail(404, 'corsa o fermata sconosciuta');
-    if (b.sub != null && !require('./push').validSub(b.sub)) throw sec.bad('iscrizione alle notifiche non valida');
-    const url = `/?trip=${encodeURIComponent(b.trip)}&stop=${encodeURIComponent(b.stop)}`;
-    return watch.create({ sub: b.sub ? { endpoint: b.sub.endpoint, keys: { p256dh: b.sub.keys.p256dh, auth: b.sub.keys.auth } } : null, src: t[0], tid: t[1], stop: b.stop,
-      style: validStyle(b.style), stopName: typeof b.stopName === 'string' && b.stopName.trim() && b.stopName.length <= 80 ? b.stopName.replace(/[\u0000-\u001f<>]/g, '').trim() : (G.stopBaseNames?.get(st[1]) || G.stops[st[1]] || st[1]), lead, ip: sec.clientIp(req), url });
+  '/api/watch': { method: 'POST', limit: 'watch', fn: async (u, req) => watch.create(watchArgs(await readJson(req), req)) },
+  // avvisi attivi sul telefono ripresentati dopo un riavvio del server (al massimo 6 per volta): vedi watch.restore
+  '/api/watch/restore': { method: 'POST', limit: 'watch', fn: async (u, req) => {
+    const b = await readJson(req, 8192), out = {};
+    for (const it of Array.isArray(b.items) ? b.items.slice(0, 6) : []) {
+      const id = String(it?.id || '').slice(0, 40);
+      try { out[id] = watch.restore({ ...watchArgs(it, req), id: it.id, token: it.token, created: it.created }); }
+      catch (e) { out[id] = e.code === 404 ? 'scaduto' : e.code === 429 ? 'limite' : 'non valido'; }
+    }
+    return { stato: out };
   } },
   '/api/watch/resub': { method: 'POST', limit: 'watch', fn: async (u, req) => {
     const b = await readJson(req), P = require('./push');
@@ -257,8 +268,7 @@ const API = new Map(Object.entries({
     const sched = q(u, 'mode') === 'sched', G = sched ? (gtfsFor(i, timeParams(u).date).G || D[i]) : D[i];
     if (!G.stopTimes.has(tid)) throw fail(404, 'corsa sconosciuta');
     if (sched) return live.tripDetail(i, tid, false, veh || null, G, timeParams(u));
-    await centrale.prepareTrip(i, tid);                                   // solo corse senza nostro mezzo (le altre: tracciamento)
-    return centrale.mergeTrip(i, tid, live.tripDetail(i, tid, true, veh || null, G, null));
+    return live.tripDetail(i, tid, true, veh || null, G, null);
   } },
   // pianifica percorso: da/a = fermate candidate (vedi stopsParam); secs/date = partenza scelta (assenti = adesso, in tempo reale)
   '/api/percorso': { fn: u => percorso.plan(planParams(u)) },
@@ -296,8 +306,6 @@ const API = new Map(Object.entries({
   '/api/gtfs': { auth: 'diag', fn: () => live.gtfsStatus() },
   // MODELLO DEGLI EVENTI DEGLI AVVISI (riservato, DIAG_TOKEN): archivio delle comunicazioni, eventi passati, in corso e futuri con cronologia
   '/api/avvisi-eventi': { auth: 'diag', fn: () => avvisi.eventiDiag() },
-  // CENTRALE ACTV (riservata, DIAG_TOKEN): letture, errori, righe abbinate alle corse GTFS e tempi sostituiti o confermati
-  '/api/centrale': { auth: 'diag', fn: () => centrale.status() },
   // quale IP vede il server per chi chiama (serve a scegliere TRUST_PROXY): intestazione X-Forwarded-For grezza e IP usato per i limiti
   '/api/whoami': { auth: 'diag', fn: (u, req) => ({ xForwardedFor: req.headers['x-forwarded-for'] || null, remote: req.socket.remoteAddress, ipUsato: sec.clientIp(req), trustProxy: process.env.TRUST_PROXY ?? null }) },
   // RICARICA GTFS (riservata, ADMIN_TOKEN, solo POST): controlla il sito ACTV, archivia le versioni nuove e rivaluta quale usare
@@ -517,7 +525,7 @@ function nextSameLine(i, tid, stopFull) {
   }
   return best == null ? null : schedule.hhmm(best);
 }
-watch.init({ tripDetail: (i, tid) => centrale.mergeTrip(i, tid, live.tripDetail(i, tid, true)), contact: process.env.PUSH_CONTACT, next: nextSameLine });
+watch.init({ tripDetail: (i, tid) => live.tripDetail(i, tid, true), contact: process.env.PUSH_CONTACT, next: nextSameLine });
 avvisi.start();
 tide.start();   // raccolta periodica del livello di marea: costruisce la storia da cui si ricava la tendenza
 

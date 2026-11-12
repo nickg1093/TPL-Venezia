@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <!-- Niente maximum-scale/user-scalable=no: bloccare lo zoom della pagina viola l'accessibilità (WCAG 1.4.4). La mappa gestisce da sé i propri gesti. -->
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Venezia TPL live</title>
 <meta name="description" content="Autobus, tram e vaporetti di Venezia in tempo reale, con livello e tendenza della marea.">
 <meta name="color-scheme" content="light dark">
@@ -28,7 +28,7 @@
   <div id="map" role="application" aria-label="Mappa dei mezzi pubblici in tempo reale" tabindex="0"></div>
   <!-- INFORMAZIONI: bottone separato dagli strumenti, in basso a destra sulla mappa (sempre sopra la barra in basso, qualunque sia la sua altezza).
        Sopra, solo quando ce ne sono, la campanella degli avvisi di arrivo attivi (con il numero): apre la loro lista. -->
-  <div id="info-fab" class="group"><button id="watch-btn" class="ibtn" type="button" hidden aria-controls="info" title="Avvisi di arrivo attivi"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-bell"/></svg><span class="cntb" id="watch-count" aria-hidden="true"></span></button><button id="info-btn" class="ibtn" type="button" aria-label="Informazioni, note legali e crediti" aria-expanded="false" aria-controls="info" title="Informazioni"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-about"/></svg></button></div>
+  <div id="info-fab" class="group"><button id="favs-btn" class="ibtn" type="button" aria-expanded="false" aria-controls="favs" title="Preferiti"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-star"/></svg></button><button id="watch-btn" class="ibtn" type="button" hidden aria-controls="info" title="Avvisi di arrivo attivi"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-bell"/></svg><span class="cntb" id="watch-count" aria-hidden="true"></span></button><button id="info-btn" class="ibtn" type="button" aria-label="Informazioni, note legali e crediti" aria-expanded="false" aria-controls="info" title="Informazioni"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-about"/></svg></button></div>
   <!-- PIANIFICA PERCORSO: pulsante principale in basso a sinistra (sul telefono si nasconde con un pannello aperto: dal pannello di una
        fermata si usa «Percorso da qui» accanto alla stella) -->
   <button id="plan-btn" class="plan-fab" type="button" aria-expanded="false" aria-controls="panel" title="Pianifica percorso"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-route"/></svg><span>Percorso</span></button>
@@ -53,6 +53,8 @@
     <div class="group" role="group" aria-label="Servizi da mostrare">
       <label class="ibtn" title="Vaporetti"><input type="checkbox" name="src" value="nav" checked><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-ship"/></svg><span class="sr-only">Vaporetti</span></label>
       <label class="ibtn" title="Autobus e tram"><input type="checkbox" name="src" value="aut" checked><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-bus"/></svg><span class="sr-only">Autobus e tram</span></label>
+      <!-- mezzi che il feed non associa a nessuna linea (simbolo «?»): nascosti di norma; se mostrati, grigi e trasparenti -->
+      <label class="ibtn" id="unk-btn" title="Mezzi senza linea («?»)"><input type="checkbox" id="unk-toggle"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-unknown"/></svg><span class="sr-only">Mostra i mezzi senza linea</span></label>
     </div>
     <div class="group">
       <button id="search-toggle-btn" class="ibtn" type="button" aria-label="Cerca fermata o linea" aria-expanded="false" aria-controls="search-container" title="Cerca"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-search"/></svg></button>
@@ -79,6 +81,14 @@
   </section>
 
 
+  <!-- FINESTRA PREFERITI: fermate e percorsi salvati (solo su questo dispositivo), con modifica, copia di sicurezza e ripristino -->
+  <section id="favs" class="card" role="dialog" aria-modal="false" aria-labelledby="favs-title" tabindex="-1" hidden>
+    <header class="card-h"><h2 id="favs-title">Preferiti</h2><button id="favs-close" class="ibtn sm" type="button" aria-label="Chiudi preferiti"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-close"/></svg></button></header>
+    <div class="fv-tabs" role="tablist" aria-label="Tipo di preferiti"><button type="button" role="tab" id="fv-tab-stops" data-tab="stops" aria-selected="true">Fermate</button><button type="button" role="tab" id="fv-tab-routes" data-tab="routes" aria-selected="false">Percorsi</button></div>
+    <div id="favs-body" role="tabpanel" aria-live="polite"></div>
+    <input id="favs-file" type="file" accept="application/json,.json" hidden>
+  </section>
+
   <!-- FINESTRA INFORMAZIONI: come leggere i dati, note legali, privacy e permessi, fonti e crediti -->
   <section id="info" class="fullpage" role="dialog" aria-modal="true" aria-labelledby="info-title" tabindex="-1" hidden>
     <header class="fp-h"><h2 id="info-title">Informazioni</h2><button id="info-close" class="ibtn sm" type="button" aria-label="Chiudi informazioni"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-close"/></svg></button></header>
@@ -90,7 +100,7 @@
       <div class="ip-notice" role="note"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-warn"/></svg><p><b>Servizio indipendente e non ufficiale.</b> Orari e dati in tempo reale sono pubblicati da ACTV come dati aperti e vengono elaborati da questa app per stimare posizioni e arrivi. Le informazioni sono quindi <b>indicative e possono contenere errori</b>: fanno fede le comunicazioni ufficiali di ACTV.</p></div>
       <ul class="ip-facts">
         <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-db"/></svg><b>Dati aperti</b><span>pubblicati da ACTV, Comune di Venezia e OpenStreetMap</span></li>
-        <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-phone"/></svg><b>Dati sul dispositivo</b><span>preferiti e impostazioni restano sul tuo telefono</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-phone"/></svg><b>Dati sul dispositivo</b><span>preferiti e impostazioni restano sul tuo telefono (con copia di sicurezza)</span></li>
         <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-shield"/></svg><b>Nessun tracciamento</b><span>niente cookie, pubblicità o statistiche</span></li>
         <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-user"/></svg><b>Nessun account</b><span>nessuna registrazione richiesta</span></li>
       </ul>
@@ -126,7 +136,7 @@
         <p>Il servizio tratta <b>il minimo indispensabile</b> per funzionare: non richiede registrazione, non usa cookie, non fa profilazione e non contiene pubblicità né strumenti di statistica.</p>
         <ul class="ip-checks ip-priv">
           <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-db"/></svg><span><b>Dati di navigazione</b> (indirizzo IP e dati tecnici della richiesta): servono a erogare il servizio e a proteggerlo dagli abusi, per legittimo interesse (art. 6, par. 1, lett. f GDPR). L'app li tiene solo in memoria per circa 60 secondi; il fornitore di hosting, Render Services, Inc. (USA, aderente all'EU-U.S. Data Privacy Framework), può conservare registri tecnici secondo la propria <a href="https://render.com/privacy" target="_blank" rel="noopener noreferrer">informativa</a>.</span></li>
-          <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-bell"/></svg><span><b>Avvisi di arrivo</b>, solo se li attivi: l'iscrizione anonima creata dal browser, con corsa e fermata scelte, serve a inviarti l'avviso richiesto (art. 6, par. 1, lett. b GDPR). Resta solo in memoria fino all'arrivo e al massimo per 3 ore. Il messaggio passa, cifrato, per il servizio di notifica del tuo browser.</span></li>
+          <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-bell"/></svg><span><b>Avvisi di arrivo</b>, solo se li attivi: l'iscrizione anonima creata dal browser, con corsa e fermata scelte, serve a inviarti l'avviso richiesto (art. 6, par. 1, lett. b GDPR). Resta in memoria sul server fino all'arrivo e al massimo per 3 ore; se il server si riavvia, il tuo dispositivo la ripresenta finché l'avviso è attivo. Il messaggio passa, cifrato, per il servizio di notifica del tuo browser.</span></li>
           <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-locate"/></svg><span><b>Posizione</b>, solo se tocchi il pulsante o scegli «La mia posizione» nel percorso: è usata <b>solo sul tuo dispositivo</b> e non viene inviata al server. Per pianificare un percorso il telefono invia soltanto i codici delle fermate vicine e la loro distanza, mai le coordinate.</span></li>
           <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-phone"/></svg><span><b>Memoria del dispositivo</b>: preferiti, tema e avvisi attivi restano nel browser. Sono strumenti tecnici che non richiedono consenso (art. 122 Codice privacy; <a href="https://www.garanteprivacy.it/home/docweb/-/docweb-display/docweb/9677876" target="_blank" rel="noopener noreferrer">Linee guida del Garante</a> del 10 giugno 2021).</span></li>
           <li><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-pin"/></svg><span><b>Mappa</b>: le immagini sono scaricate dal tuo browser dai server della OpenStreetMap Foundation, titolare autonomo (<a href="https://osmfoundation.org/wiki/Privacy_Policy" target="_blank" rel="noopener noreferrer">informativa</a>).</span></li>
@@ -164,18 +174,26 @@
         <ul class="ip-sw">
           <li><a href="https://leafletjs.com/" target="_blank" rel="noopener noreferrer">Leaflet</a><span>BSD-2-Clause</span></li>
           <li><a href="https://github.com/protobufjs/protobuf.js" target="_blank" rel="noopener noreferrer">protobuf.js</a><span>BSD-3-Clause</span></li>
-          <li><a href="https://github.com/cthackers/adm-zip" target="_blank" rel="noopener noreferrer">adm-zip</a><span>MIT</span></li>
         </ul>
         <p class="muted">Icone e grafica realizzate per questa app.</p>
       </section>
       <footer class="ip-foot">
         <p id="info-contact-row" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-mail"/></svg><span>Contatti e segnalazioni: <span id="info-contact"></span></span></p>
-        <p>Ultimo aggiornamento di questa pagina: 2 novembre 2026</p>
+        <p>Ultimo aggiornamento di questa pagina: 12 novembre 2026</p>
       </footer>
     </div>
   </section>
   <!-- PANNELLO DETTAGLI (fermata / zona / corsa) -->
   <aside id="panel" class="card side-panel" hidden aria-label="Dettagli">
+    <!-- LINGUETTA DEI COMANDI: fuori dal pannello (a destra su schermi larghi, sopra il bordo sul telefono), così il nome resta su una riga -->
+    <div class="ph-tab" id="ptab" role="toolbar" aria-label="Comandi del pannello">
+      <button id="pplan" class="ibtn sm" type="button" aria-label="Percorso da questa fermata" title="Percorso da qui" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-route"/></svg></button>
+      <button id="pshare" class="ibtn sm" type="button" aria-label="Condividi il link" title="Condividi" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-share"/></svg></button>
+      <button id="pfav" class="ibtn sm" type="button" aria-pressed="false" aria-label="Aggiungi ai preferiti" title="Aggiungi ai preferiti" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-star"/></svg></button>
+      <button id="pnotify" class="ibtn sm" type="button" aria-pressed="false" aria-label="Avvisami dell'arrivo" title="Avvisami dell'arrivo" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-bell"/></svg></button>
+      <button id="pfollow" class="ibtn sm" type="button" aria-pressed="false" aria-label="Segui il mezzo" title="Segui il mezzo" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-follow"/></svg></button>
+      <button id="pclose" class="ibtn sm" type="button" aria-label="Chiudi dettagli" title="Chiudi"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-close"/></svg></button>
+    </div>
     <div class="ph">
       <button id="pback" class="linkback" type="button" hidden></button>
       <div class="ph-main">
@@ -183,16 +201,6 @@
           <div class="ph-badge-area" id="pbadge"></div>
           <div class="ph-top" id="pname"></div>
           <div class="ph-sub muted" id="psub"></div>
-        </div>
-        <div class="ph-actions">
-          <!-- «Segui il mezzo»: visibile solo nel pannello di una corsa, accanto alla X, con lo stesso aspetto degli altri pulsanti -->
-          <!-- preferito (pannello fermata) e avviso di arrivo (pannello corsa aperta da una fermata) -->
-          <button id="pplan" class="ibtn sm" type="button" aria-label="Percorso da questa fermata" title="Percorso da qui" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-route"/></svg></button>
-          <button id="pshare" class="ibtn sm" type="button" aria-label="Condividi il link" title="Condividi" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-share"/></svg></button>
-          <button id="pfav" class="ibtn sm" type="button" aria-pressed="false" aria-label="Aggiungi ai preferiti" title="Aggiungi ai preferiti" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-star"/></svg></button>
-          <button id="pnotify" class="ibtn sm" type="button" aria-pressed="false" aria-label="Avvisami dell'arrivo" title="Avvisami dell'arrivo" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-bell"/></svg></button>
-          <button id="pfollow" class="ibtn sm" type="button" aria-pressed="false" aria-label="Segui il mezzo" title="Segui il mezzo" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-follow"/></svg></button>
-          <button id="pclose" class="ibtn sm" type="button" aria-label="Chiudi dettagli" title="Chiudi"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-close"/></svg></button>
         </div>
       </div>
       <!-- stato della corsa (ritardo · mezzo · velocità): riga intera sotto l'intestazione, anche sotto i pulsanti -->
@@ -219,7 +227,7 @@
     <div class="dock-row">
       <div class="seg" role="radiogroup" aria-label="Modalità">
         <label><input type="radio" name="mode" value="live" checked><span class="live-indicator" aria-hidden="true"></span>Tempo reale</label>
-        <label><input type="radio" name="mode" value="sched">Pianificato</label>
+        <label><input type="radio" name="mode" value="sched">Programmato</label>
       </div>
       <div id="clock-section">
         <div class="time-display" id="clock-time">00:00:<small>00</small></div>

@@ -28,7 +28,7 @@ function makeG(lines, stopsM) {
 const aut = makeG([{ route: 'A10', name: '10', stops: ['M0', 'M1', 'M2'], start: 8 * 3600, every: 600, hop: 300, n: 30 }], { M0: 0, M1: 1500, M2: 3000 });
 const nav = makeG([{ route: 'N1', name: '1', stops: ['P0', 'P1', 'P2'], start: 8 * 3600, every: 1200, hop: 600, n: 15 },
   { route: 'N2', name: '2', stops: ['P2', 'P1', 'P0'], start: 8 * 3600 + 300, every: 1200, hop: 600, n: 15 }], { P0: 3200, P1: 5000, P2: 7000 });
-percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [] });
+percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
 
 test('una corsa: partenza, arrivo, nessun cambio', () => {
   const r = percorso.plan({ da: [['aut:M0', 0]], a: [['aut:M2', 0]], secs: 8 * 3600 + 120, date: '20261102' });
@@ -64,10 +64,10 @@ test('partenza da un punto: fermata più vicina a piedi (linea d\'aria × 1,3), 
 
 test('dopo mezzanotte: corse del giorno di servizio precedente (orari 24:xx)', () => {
   const late = makeG([{ route: 'N', name: 'N', stops: ['M0', 'M2'], start: 24 * 3600 + 1800, every: 3600, hop: 900, n: 2 }], { M0: 0, M2: 3000 });
-  percorso.init({ G: i => (i === 'aut' ? late : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [] });
+  percorso.init({ G: i => (i === 'aut' ? late : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
   const r = percorso.plan({ da: [['aut:M0', 0]], a: [['aut:M2', 0]], secs: 1200, date: '20261103' });
   assert.equal(r.soluzioni[0].parti, '00:30'); assert.equal(r.soluzioni[0].arrivi, '00:45');
-  percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [] });
+  percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
 });
 
 test('in laguna niente scorciatoie: fermate non collegate dalla rete pedonale non si raggiungono a piedi', () => {
@@ -76,7 +76,7 @@ test('in laguna niente scorciatoie: fermate non collegate dalla rete pedonale no
   const { walkTo } = percorso._t;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pedonale-'));
   const G = makeG([{ route: 'X', name: 'X', stops: ['5042', '5043'], start: 8 * 3600, every: 600, hop: 300, n: 2 }], { 5042: 0, 5043: 195 });
-  const ctx = { G: i => (i === 'nav' ? G : aut), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [], walkDir: dir };
+  const ctx = { G: i => (i === 'nav' ? G : aut), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [], walkDir: dir };
   try {
     // nessun cammino tra le due rive nel file: dal punto si raggiunge solo il pontile della propria riva
     fs.writeFileSync(path.join(dir, 'pedonale-laguna.txt'), '# prova\nn5042,n5043\n\n');
@@ -92,7 +92,7 @@ test('in laguna niente scorciatoie: fermate non collegate dalla rete pedonale no
     assert.ok(s > 15 * 60, 'a piedi lungo il giro: ' + s + ' s');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
-    percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [] });
+    percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
   }
 });
 
@@ -103,17 +103,17 @@ test('tempo reale: un ritardo del mezzo sposta la coincidenza', () => {
   const A = makeG([{ route: 'A10', name: '10', stops: ['M0', 'M1', 'M2'], start: 8 * 3600 + shift, every: 600, hop: 300, n: 3 }], { M0: 0, M1: 1500, M2: 3000 });
   const N = makeG([{ route: 'N1', name: '1', stops: ['P0', 'P1', 'P2'], start: 8 * 3600 + shift, every: 1200, hop: 600, n: 4 }], { P0: 3200, P1: 5000, P2: 7000 });
   const live = { A10_0: { delays: [720, 720, 720], cancelled: false, skipped: new Set(), firstJ: 0 } };
-  percorso.init({ G: i => (i === 'aut' ? A : N), state: () => ({}), live: i => (i === 'aut' ? live : {}), serviceActive: () => true, actvPlan: () => null, rows: () => [] });
+  percorso.init({ G: i => (i === 'aut' ? A : N), state: () => ({}), live: i => (i === 'aut' ? live : {}), serviceActive: () => true, rows: () => [] });
   const r = percorso.plan({ da: [['aut:M0', 0]], a: [['nav:P2', 0]], date: cal.romeYmd(now) });
   assert.ok(r.soluzioni.length, 'soluzioni trovate');
   for (const o of r.soluzioni) { const b = o.tratte.filter(t => t.tipo === 'mezzo'); if (b[0].tripId === 'A10_0') assert.notEqual(b[1]?.tripId, 'N1_1', 'con 12 minuti di ritardo il battello delle 08:20 non si prende'); }
-  const nolive = (() => { percorso.init({ G: i => (i === 'aut' ? A : N), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [] }); return percorso.plan({ da: [['aut:M0', 0]], a: [['nav:P2', 1] /* chiave di cache diversa */], date: cal.romeYmd(now) }); })();
+  const nolive = (() => { percorso.init({ G: i => (i === 'aut' ? A : N), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] }); return percorso.plan({ da: [['aut:M0', 0]], a: [['nav:P2', 1] /* chiave di cache diversa */], date: cal.romeYmd(now) }); })();
   assert.ok(nolive.soluzioni.some(o => o.tratte.filter(t => t.tipo === 'mezzo').map(t => t.tripId).join() === 'A10_0,N1_1'), 'senza ritardo la coincidenza delle 08:20 c\'è');
-  percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [] });
+  percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
 });
 
 test('arrivo entro le: partenze il più tardi possibile, nessun arrivo oltre l\'orario', () => {
-  percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [] });
+  percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
   // bus ogni 10 min, 10 min di viaggio M0 → M2: per arrivare entro le 09:05 l'ultima corsa utile parte alle 08:50 (arrivo 09:00)
   const r = percorso.plan({ da: [['aut:M0', 0]], a: [['aut:M2', 0]], secs: 9 * 3600 + 300, date: '20261102', entro: true });
   assert.equal(r.entro, '09:05');
@@ -136,7 +136,7 @@ test('ogni tratta indica le posizioni di salita e discesa nella corsa', () => {
 test('terraferma: con la rete pedonale (pedonale-terraferma.txt) i cambi seguono le strade, non la linea d\'aria', () => {
   const os = require('os'), fs = require('fs'), path = require('path');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pedonale-'));
-  const ctx = { G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [], walkDir: dir };
+  const ctx = { G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [], walkDir: dir };
   try {
     // M2 e P0 sono a 200 m in linea d'aria, ma a piedi (es. sottopasso della ferrovia) ce ne vogliono 650: 8-9 minuti, si perde il battello delle 08:20
     fs.writeFileSync(path.join(dir, 'pedonale-terraferma.txt'), '# prova\naM0,aM1,aM2,nP0,nP1,nP2\n2.3.i2\n');
@@ -154,7 +154,7 @@ test('terraferma: con la rete pedonale (pedonale-terraferma.txt) i cambi seguono
     assert.equal(percorso.plan({ da: [['aut:M0', 0]], a: [['nav:P2', 0]], secs: 8 * 3600, date: '20261102' }).soluzioni[0].arrivi, '08:40');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
-    percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [] });
+    percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
   }
 });
 
@@ -183,13 +183,13 @@ test('niente cambi inutili: una linea che arriva 30 s prima non vale un cambio',
   for (const k in idx) G.stopIndex[k] = Int32Array.from(idx[k]);
   const empty = { routes: {}, trips: {}, stops: {}, stopLoc: {}, stopTimes: new Map(), stopIndex: {}, tripIds: [], shapePts: {}, meta: { hash: 'vuoto' } };
   try {
-    percorso.init({ G: i => (i === 'aut' ? G : empty), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [] });
+    percorso.init({ G: i => (i === 'aut' ? G : empty), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
     for (const pref of ['equilibrata', 'veloce']) {
       const r = percorso.plan({ da: [['aut:S0', 0]], a: [['aut:S2', 0]], secs: 8 * 3600 - 60, date: '20261102', prefs: { pref } });
       assert.equal(r.soluzioni.length, 1, pref); assert.equal(r.soluzioni[0].cambi, 0, pref); assert.equal(r.soluzioni[0].arrivi, '08:10');
     }
   } finally {
-    percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [] });
+    percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
   }
 });
 
@@ -209,13 +209,30 @@ test('tutto a piedi: anche passando per altre fermate della rete pedonale (coper
   try {
     // M0-M1 e M1-M2 collegate a piedi (600 m ciascuna), M0-M2 no: a piedi si va comunque, passando da M1 (1200 m)
     fs.writeFileSync(path.join(dir, 'pedonale-terraferma.txt'), '# prova\naM0,aM1,aM2,nP0,nP1,nP2\n0.1.go 1.2.go\n');
-    percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [], walkDir: dir });
+    percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [], walkDir: dir });
     const r = percorso.plan({ da: [['aut:M0', 0]], a: [['aut:M2', 0]], secs: 8 * 3600, date: '20261102' });
     assert.equal(r.piedi, Math.round(1200 / percorso.C.V_MAIN / 60));
     const v = percorso.plan({ da: [['aut:M0', 0]], a: [['aut:M2', 0]], secs: 8 * 3600, date: '20261102', prefs: { passo: 'veloce' } });
     assert.ok(v.piedi < r.piedi, 'passo svelto: meno minuti');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
-    percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, actvPlan: () => null, rows: () => [] });
+    percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
   }
+});
+
+test('v24: orari di un\'altra data (Gs) usati al posto di quelli in uso, con indice separato', () => {
+  percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
+  // altra versione dei GTFS: la linea 10 parte alle 09:00 invece che alle 08:00
+  const aut2 = makeG([{ route: 'A10', name: '10', stops: ['M0', 'M1', 'M2'], start: 9 * 3600, every: 600, hop: 300, n: 30 }], { M0: 0, M1: 1500, M2: 3000 });
+  const q = { da: [['aut:M0', 0]], a: [['aut:M2', 0]], secs: 8 * 3600 + 120, date: '20261120' };
+  assert.equal(percorso.plan(q).soluzioni[0].parti, '08:10', 'orari in uso');
+  assert.equal(percorso.plan({ ...q, Gs: [aut2, nav] }).soluzioni[0].parti, '09:00', 'orari della data scelta');
+  assert.equal(percorso.plan(q).soluzioni[0].parti, '08:10', 'l\'indice degli orari in uso resta valido');
+});
+
+test('v24: mezzi «aut» = autobus e tram (filtro del pianificatore)', () => {
+  percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
+  const q = { da: [['aut:M0', 0]], a: [['aut:M2', 0]], secs: 8 * 3600 + 120, date: '20261102' };
+  assert.equal(percorso.plan({ ...q, prefs: { mezzi: new Set(['bus', 'tram']) } }).soluzioni.length > 0, true);
+  assert.equal(percorso.plan({ ...q, prefs: { mezzi: new Set(['nav']) } }).soluzioni.filter(o => o.tratte.some(t => t.tipo === 'mezzo')).length, 0);
 });

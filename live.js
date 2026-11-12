@@ -312,7 +312,7 @@ function verifyTrips(i, tuOfVeh) {
 // TURNO DEL MEZZO (vedi turni.js): mezzo molto in ritardo sulla corsa del feed che di fatto fa la corsa successiva. Si applica qui, una volta
 // per lettura e prima dello stato delle corse, perché mappa, pannello fermata e pannello del mezzo dicano la stessa cosa.
 // Ritorna Map(corsa lasciata -> mezzo): quelle corse restano senza mezzo e senza le previsioni che erano del mezzo.
-let turnoCheck = null;                                  // controllo con la centrale ACTV (server.js -> centrale.checkTurno), facoltativo
+let turnoCheck = null;                                  // controllo esterno facoltativo dei turni (non collegato dalla v24: era la centrale ACTV)
 const setTurnoCheck = f => { turnoCheck = f; };
 const activeNow = (G, tid, st) => { const t = G.trips[tid], ymd = cal.romeYmd(); return !!t && schedule.serviceActive(G, t.service, tripNow(st) >= 86400 ? cal.addDays(ymd, -1) : ymd); };
 function applyTurni(i, vehOfTu, now) {
@@ -367,10 +367,10 @@ function chooseTU(i, cand, idle, vacated, now) {
 //      e il ritardo di X «copre» la distanza tra i due orari, X è un doppione di Y: la previsione di X si scarta. Y resta com'è (mezzo
 //      localizzato o previsione propria); se non ha dati prende il tempo di X quando differisce dal suo orario di oltre un minuto (è un dato del
 //      feed), altrimenti resta «Da orario». Due mezzi localizzati non si toccano mai (X non ne ha per definizione);
-//   b) senza Y e con oltre 40 minuti di ritardo: vale solo se la centrale ACTV, quando ha i dati di quella palina, elenca un passaggio in
-//      tempo reale della linea a quell'ora; se li ha e non lo elenca, la previsione si scarta. Senza dati della centrale resta.
+//   b) senza Y e con oltre 40 minuti di ritardo: resta, salvo che un controllo esterno facoltativo (passCheck) la smentisca. Dalla v24 nessun
+//      controllo è collegato (era la centrale ACTV, spenta), quindi resta.
 const DEDUP = { MIN_DELAY_S: 600, NEAR_S: 180, LATE_S: 20 * 60, BIG_DELAY_S: 40 * 60 };
-let passCheck = null;                                   // centrale ACTV (server.js -> centrale.checkPass), facoltativo
+let passCheck = null;                                   // controllo esterno facoltativo dei passaggi (non collegato dalla v24: era la centrale ACTV)
 const setPassCheck = f => { passCheck = f; };
 function dedupePassages(i, now) {
   const G = D[i], s8 = S[i], prev = s8.state || {}, busy = new Set();

@@ -11,14 +11,23 @@
 
 // Altezza dell'app = altezza REALE dell'area visibile (window.innerHeight). Su Android, all'apertura, 100vh/100dvh possono includere lo spazio dei tasti di sistema
 // e coprire il dock in basso finché non cambia qualcosa (tocco, rotazione): qui si legge la misura vera subito e la si riverifica poco dopo l'avvio.
+// TASTIERA APERTA (campo di testo attivo e area visibile ridotta di oltre 120 px): l'app si adatta all'area sopra la tastiera (anche su iPhone,
+// dove la tastiera copre la pagina invece di ridurla) e la classe «kbd» nasconde la barra in basso, che servirebbe a poco.
 (function () {
-  var r = document.documentElement, last = 0;
+  var r = document.documentElement, last = 0, full = 0;
+  function typing() { var a = document.activeElement; return !!a && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && /^(text|search|email|url|tel|number)$/.test(a.type || 'text'))); }
   function fit(notify) {
-    var h = Math.round(window.innerHeight);
+    var vv = window.visualViewport, ih = Math.round(window.innerHeight), h = ih;
+    if (!typing()) full = Math.max(ih, vv ? Math.round(vv.height) : 0);
+    if (typing() && vv) h = Math.min(ih, Math.round(vv.height));
+    var kbd = typing() && full - h > 120;
+    r.classList.toggle('kbd', kbd);
     if (!h || h === last) return;
     last = h; r.style.setProperty('--app-h', h + 'px');
     if (notify) window.dispatchEvent(new Event('resize'));   // la mappa (Leaflet) ricalcola le sue dimensioni
   }
+  document.addEventListener('focusin', function () { setTimeout(function () { fit(true); }, 250); });
+  document.addEventListener('focusout', function () { setTimeout(function () { fit(true); }, 250); });
   fit(false);
   window.addEventListener('resize', function () { fit(false); });
   window.addEventListener('orientationchange', function () { setTimeout(function () { fit(true); }, 150); });
