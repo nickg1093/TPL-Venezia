@@ -66,4 +66,18 @@ function connection(res, { gzip }) {
 }
 const event = obj => `data: ${JSON.stringify(obj)}\n\n`;
 
-module.exports = { makeDiffer, apply, connection, event };
+// senza il tratto di linea (flusso con p=0): oggetti nuovi senza «path»; nelle differenze «path» e la sua rimozione si tolgono,
+// e le voci rimaste vuote (solo id) si scartano
+const noPath = v => { if (!v || v.path === undefined) return v; const { path, ...o } = v; return o; };
+function strip(set, on) {
+  if (!on) return set;
+  const out = [];
+  for (const d of set) {
+    let o = d.path !== undefined ? noPath(d) : d;
+    if (o.x) { const x = o.x.filter(k => k !== 'path'); if (x.length !== o.x.length) { o = { ...o }; if (x.length) o.x = x; else delete o.x; } }
+    if (Object.keys(o).length > 1) out.push(o);
+  }
+  return out;
+}
+
+module.exports = { makeDiffer, apply, connection, event, noPath, strip };

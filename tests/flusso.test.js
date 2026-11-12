@@ -53,3 +53,11 @@ test('cliente lento: oltre il limite il collegamento si chiude (si ricollegherà
   const conn = F.connection(res, { gzip: false });
   assert.equal(conn.send('x'), false); assert.ok(ended); assert.equal(conn.open, false);
 });
+
+test('v26: flusso senza tratto di linea (p=0): niente «path», voci rimaste vuote scartate', () => {
+  const flusso = require('../flusso');
+  const set = [{ id: 'a', lat: 1, path: [[0, 0], [1, 1]] }, { id: 'b', x: ['path'] }, { id: 'c', x: ['path', 'old'] }, { id: 'd', n: 1, lat: 2, path: [[0, 0]] }];
+  assert.deepStrictEqual(flusso.strip(set, true), [{ id: 'a', lat: 1 }, { id: 'c', x: ['old'] }, { id: 'd', n: 1, lat: 2 }]);
+  assert.strictEqual(flusso.strip(set, false), set);
+  assert.deepStrictEqual(flusso.noPath({ id: 'z', path: [] }), { id: 'z' });
+});

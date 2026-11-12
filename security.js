@@ -2,7 +2,8 @@
 // Riferimenti: OWASP ASVS / Secure Headers Project / OWASP API Security Top 10.
 //   - intestazioni di sicurezza (CSP rigida senza script inline, HSTS, nosniff, anti-clickjacking, politiche di referrer e permessi)
 //   - HTTPS obbligatorio dietro proxy (reindirizzamento 308) se FORCE_HTTPS=1
-//   - limitazione di frequenza per IP e per classe di richiesta (anti abuso/DoS applicativo); tetto alle connessioni SSE
+//   - limitazione di frequenza per IP e per classe di richiesta (anti abuso/DoS applicativo); tetto alle connessioni SSE e alle aperture
+//   - blocco temporaneo progressivo di chi sfora di continuo; tetto alle richieste contemporanee per IP; budget di CPU del pianificatore
 //   - endpoint amministrativi/diagnostici chiusi da token (confronto a tempo costante); se il token non è impostato l'endpoint è DISATTIVATO
 //   - validazione rigorosa di ogni parametro in ingresso (lista di caratteri ammessi, lunghezze e intervalli)
 const crypto = require('crypto');
@@ -65,7 +66,8 @@ function httpsRedirect(req, res, pathname) {
 }
 
 // ---- limitazione di frequenza (finestra di 60 s per IP e classe) ----
-const LIMITS = { api: 1200, heavy: 300, static: 900, admin: 6, watch: 20 };   // watch: attivazione/annullamento degli avvisi di arrivo   // un utente con pannello aperto fa ~30 richieste/min; il margine copre più schede o dispositivi dietro lo stesso IP
+// plan: calcoli del pianificatore (CPU): un utente ne fa ~5-15 al minuto (aggiornamento ogni 60 s, alternative, modifiche); sse: aperture del flusso
+const LIMITS = { api: 1200, heavy: 300, plan: 90, sse: 30, static: 900, admin: 6, watch: 20 };   // watch: attivazione/annullamento degli avvisi di arrivo   // un utente con pannello aperto fa ~30 richieste/min; il margine copre più schede o dispositivi dietro lo stesso IP
 const hits = new Map();         // "classe|ip" -> { n, reset }
 const MAX_TRACKED = 50000;      // oltre questo numero di IP distinti la tabella si svuota (memoria limitata anche sotto attacco)
 function limit(req, cls) {
@@ -73,12 +75,52 @@ function limit(req, cls) {
   let h = hits.get(key);
   if (!h || now >= h.reset) { if (hits.size >= MAX_TRACKED) hits.clear(); hits.set(key, h = { n: 0, reset: now + 60000 }); }
   h.n++;
-  return h.n <= (LIMITS[cls] ?? LIMITS.api) ? 0 : Math.max(1, Math.ceil((h.reset - now) / 1000));   // 0 = ok; altrimenti secondi da attendere
+  const max = LIMITS[cls] ?? LIMITS.api;
+  if (h.n <= max) return 0;
+  if (h.n === max + 1) strike(clientIp(req), now);                       // primo sforamento della finestra: conta per il blocco progressivo
+  return Math.max(1, Math.ceil((h.reset - now) / 1000));                // secondi da attendere
 }
+
+// ---- blocco temporaneo progressivo ----
+// Chi supera i limiti 3 volte in 10 minuti (o sbaglia 3 volte il token degli endpoint riservati) resta bloccato per 1, 5, 15, poi 60 minuti;
+// il livello torna a zero dopo un'ora senza sforamenti. Gli utenti normali non arrivano mai al primo sforamento (limiti ampi).
+// In memoria e per poco tempo: si tiene solo l'IP con i contatori, niente altro.
+const STRIKES_N = 3, STRIKES_MS = 10 * 60e3, BLOCK_S = [60, 300, 900, 3600], FORGET_MS = 3600e3;
+const abuse = new Map();                                                 // ip -> { t: [istanti degli sforamenti], level, until, last }
+function strike(ip, now = Date.now()) {
+  let a = abuse.get(ip);
+  if (!a) { if (abuse.size >= MAX_TRACKED) abuse.clear(); abuse.set(ip, a = { t: [], level: 0, until: 0, last: 0 }); }
+  if (now - a.last > FORGET_MS) a.level = 0;
+  a.last = now; a.t = a.t.filter(x => now - x < STRIKES_MS); a.t.push(now);
+  if (a.t.length >= STRIKES_N) { a.until = now + BLOCK_S[Math.min(a.level, BLOCK_S.length - 1)] * 1000; a.level++; a.t = []; }
+}
+// secondi di blocco rimasti (0 = libero)
+function blocked(req, now = Date.now()) { const a = abuse.get(clientIp(req)); return a && a.until > now ? Math.ceil((a.until - now) / 1000) : 0; }
+const authFailed = req => strike(clientIp(req));
+setInterval(() => { const now = Date.now(); for (const [k, a] of abuse) if (a.until <= now && now - a.last > FORGET_MS) abuse.delete(k); }, 5 * 60e3).unref();
+
+// ---- richieste contemporanee per IP (il flusso SSE ha un tetto suo) ----
+const INFLIGHT_PER_IP = 24, inflight = new Map();
+function enter(req) {
+  const ip = clientIp(req), n = inflight.get(ip) || 0;
+  if (n >= INFLIGHT_PER_IP) return null;
+  inflight.set(ip, n + 1);
+  let done = false;
+  return () => { if (done) return; done = true; const m = (inflight.get(ip) || 1) - 1; m ? inflight.set(ip, m) : inflight.delete(ip); };
+}
+
+// ---- budget di CPU del pianificatore (globale) ----
+// Un calcolo nuovo costa decine di millisecondi (centinaia sulla CPU ridotta del piano gratuito). Se negli ultimi 10 secondi i calcoli hanno
+// occupato più di metà del tempo, i nuovi si rimandano di qualche secondo (503 + Retry-After: l'app riprova da sola): il server resta
+// reattivo per tutti gli altri (mezzi, fermate) anche se uno script chiede migliaia di percorsi.
+const CPU_WIN_MS = 10000, CPU_MAX_MS = 5000, cpuLog = [];
+function cpuBusy(now = Date.now()) { while (cpuLog.length && now - cpuLog[0][0] > CPU_WIN_MS) cpuLog.shift(); let s = 0; for (const [, d] of cpuLog) s += d; return s > CPU_MAX_MS; }
+function cpuSpent(ms, now = Date.now()) { if (ms >= 2) { cpuLog.push([now, ms]); if (cpuLog.length > 5000) cpuLog.shift(); } }
 setInterval(() => { const now = Date.now(); for (const [k, h] of hits) if (now >= h.reset) hits.delete(k); }, 60000).unref();
 // classe di una richiesta: le chiamate costose (zone, corse, orari) hanno un limite più stretto
-const HEAVY = new Set(['/api/zone', '/api/trip', '/api/stop', '/api/scheduled', '/api/audit', '/api/gtfs', '/api/percorso', '/api/percorso-simili']);
-const classOf = pathname => (pathname.startsWith('/api/') ? (HEAVY.has(pathname) ? 'heavy' : 'api') : 'static');
+const HEAVY = new Set(['/api/zone', '/api/trip', '/api/stop', '/api/scheduled', '/api/audit', '/api/gtfs']);
+const PLAN = new Set(['/api/percorso', '/api/percorso-simili']);
+const classOf = pathname => (pathname.startsWith('/api/') ? (PLAN.has(pathname) ? 'plan' : pathname === '/api/stream' ? 'sse' : HEAVY.has(pathname) ? 'heavy' : 'api') : 'static');
 
 // ---- connessioni SSE (flusso a spinta) ----
 const SSE_PER_IP = 10, SSE_TOTAL = 400, sseByIp = new Map(); let sseTotal = 0;
@@ -120,4 +162,4 @@ const vDate = s => {
 };
 const bad = (msg = 'richiesta non valida') => Object.assign(new Error(msg), { code: 400 });
 
-module.exports = { API_HEADERS, clientIp, isHttps, securityHeaders, httpsRedirect, limit, LIMITS, classOf, sseAcquire, tokenOk, vId, vFullId, vVeh, vSecs, vDate, bad, CSP };
+module.exports = { API_HEADERS, clientIp, isHttps, securityHeaders, httpsRedirect, limit, LIMITS, classOf, sseAcquire, blocked, authFailed, enter, cpuBusy, cpuSpent, INFLIGHT_PER_IP, tokenOk, vId, vFullId, vVeh, vSecs, vDate, bad, CSP };

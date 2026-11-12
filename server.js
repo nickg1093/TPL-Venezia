@@ -19,6 +19,7 @@ const prossime = require('./prossime');
 const flusso = require('./flusso');
 const area = require('./area');
 const fissi = require('./fissi');
+const metriche = require('./metriche');
 const { D, S, IDS, ready } = live;
 
 const PORT = +process.env.PORT || 3000;
@@ -184,10 +185,10 @@ const validStyle = st => {
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
-const ABOUT_VERSION = 'v25';
+const ABOUT_VERSION = 'v26';
 // DATI FISSI sul telefono e dal CDN (fissi.js): file per versione dei GTFS con impronta, indice del ramo «dati» letto da GitHub.
 // DATI_REPO: repository del ramo dati (predefinito: quello da cui Render ha preso il codice); DATI_CDN=0 spegne il CDN (tutto dal server).
-const DATI_REPO = /^[\w.-]+\/[\w.-]+$/.test(process.env.DATI_REPO || '') ? process.env.DATI_REPO : (process.env.RENDER_GIT_REPO_SLUG || 'nickg1093/TPL-Venezia');
+const DATI_REPO = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/.test(process.env.DATI_REPO || '') ? process.env.DATI_REPO : (process.env.RENDER_GIT_REPO_SLUG || 'nickg1093/TPL-Venezia');
 const fissiStore = fissi.store(gtfs.toLL), datiRemote = fissi.remote({ repo: DATI_REPO, enabled: process.env.DATI_CDN !== '0' });
 function fissiManifest() {
   const idx = datiRemote.get(), src = [];
@@ -304,9 +305,9 @@ const API = new Map(Object.entries({
     return live.tripDetail(i, tid, true, veh || null, G, null);
   } },
   // pianifica percorso: da/a = fermate candidate (vedi stopsParam); secs/date = partenza scelta (assenti = adesso, in tempo reale)
-  '/api/percorso': { fn: u => percorso.plan(planParams(u)) },
+  '/api/percorso': { cpu: true, fn: u => percorso.plan(planParams(u)) },
   // alternative di una soluzione scelta: stesso percorso ad altri orari, varianti con una linea diversa, altre linee
-  '/api/percorso-simili': { fn: u => {
+  '/api/percorso-simili': { cpu: true, fn: u => {
     const p = planParams(u), fam = q(u, 'fam') || '';
     if (!fam || fam.length > 600) throw sec.bad('parametro fam non valido');
     const arr = q(u, 'arr'); if (arr != null && !/^\d{2}:\d{2}$/.test(arr)) throw sec.bad('parametro arr non valido');
@@ -340,6 +341,8 @@ const API = new Map(Object.entries({
     tripUpdates: S[i].raw.tripUpdates ? audit(S[i].raw.tripUpdates.buf) : null
   }])) },
   '/api/gtfs': { auth: 'diag', fn: () => live.gtfsStatus() },
+  // MISURE AGGREGATE (riservate, DIAG_TOKEN): richieste e byte per endpoint, durate, codici, flusso, CPU e memoria; si azzerano al riavvio (metriche.js)
+  '/api/metriche': { auth: 'diag', fn: () => metriche.snapshot() },
   // MODELLO DEGLI EVENTI DEGLI AVVISI (riservato, DIAG_TOKEN): archivio delle comunicazioni, eventi passati, in corso e futuri con cronologia
   '/api/avvisi-eventi': { auth: 'diag', fn: () => avvisi.eventiDiag() },
   // quale IP vede il server per chi chiama (serve a scegliere TRUST_PROXY): intestazione X-Forwarded-For grezza e IP usato per i limiti
@@ -408,7 +411,7 @@ live.events.on('push', changed => {
   for (const f of flussi) {
     let msg = byKey.get(f.key);
     if (msg === undefined) {
-      const set = f.src.flatMap(i => delta[i].set), del = f.src.flatMap(i => delta[i].del), meta = vehMeta(f.src);
+      const set = flusso.strip(f.src.flatMap(i => delta[i].set), f.np), del = f.src.flatMap(i => delta[i].del), meta = vehMeta(f.src);
       msg = flusso.event(set.length || del.length ? { t: 'd', ...(set.length ? { s: set } : {}), ...(del.length ? { d: del } : {}), m: meta } : { t: 'm', m: meta });
       byKey.set(f.key, msg);
     }
@@ -423,20 +426,30 @@ setInterval(() => {                                                       // evi
 // ---- GESTORE RICHIESTE ----
 async function onRequest(req, res) {
   let u;
+  const mt = metriche.begin(res);
   if ((req.url || '').length > 2048) return text(res, 414, 'Indirizzo troppo lungo');
   try { u = new URL(req.url, 'http://localhost'); } catch { return text(res, 400, 'Richiesta non valida'); }
   sec.securityHeaders(req, res);
   const p = u.pathname;
   if (sec.httpsRedirect(req, res, p)) return;
-  if (p === '/healthz') return text(res, 200, 'ok');
+  if (p === '/healthz') { mt.name('/healthz'); return text(res, 200, 'ok'); }
+  mt.name(API.has(p) || p === '/api/stream' ? p : p.startsWith('/api/') ? 'altro' : statics.has(p === '/' ? '/index.html' : p) ? (p === '/' || p === '/index.html' ? 'pagina' : 'file') : p.includes('.') ? 'altro' : 'pagina');
   if (req.method !== 'GET' && req.method !== 'HEAD' && !(req.method === 'POST' && POSTS.has(p))) return text(res, 405, 'Metodo non consentito', { Allow: 'GET, HEAD' });
 
-  const wait = sec.limit(req, sec.classOf(p));
+  // Blocco progressivo di chi sfora di continuo: SOLO sulle richieste costose (pianificatore, fermate, corse, orari, endpoint riservati).
+  // Avvisi di arrivo, flusso dei mezzi, file dell'app e dati leggeri restano sempre serviti: molti utenti possono condividere lo stesso IP
+  // (rete mobile, wifi pubblico) e uno script sulla stessa rete non deve far perdere a nessuno le notifiche o la mappa.
+  const cls = sec.classOf(p), costly = cls === 'plan' || cls === 'heavy' || !!API.get(p)?.auth;
+  const blk = costly ? sec.blocked(req) : 0;
+  if (blk) { metriche.count('bloccati'); return text(res, 429, 'Troppe richieste', { 'Retry-After': String(blk) }); }
+  const wait = sec.limit(req, cls);
   if (wait) return text(res, 429, 'Troppe richieste', { 'Retry-After': String(wait) });
 
   if (p === '/api/stream') {
-    const release = sec.sseAcquire(req);
-    if (!release) return text(res, 429, 'Troppe connessioni', { 'Retry-After': '30' });
+    const release0 = sec.sseAcquire(req);
+    if (!release0) { metriche._M.sse.rifiutati++; return text(res, 429, 'Troppe connessioni', { 'Retry-After': '30' }); }
+    const ip = sec.clientIp(req); metriche.sseOpen(ip);
+    const release = () => { release0(); metriche.sseClose(ip); };
     const head = { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' };
     if (q(u, 'd') !== '1') {                                               // vecchio tipo
       res.writeHead(200, head); res.write('retry: 2000\n\n'); sse.add(res);
@@ -445,25 +458,34 @@ async function onRequest(req, res) {
     }
     const gzip = q(u, 'z') !== '0' && /\bgzip\b/.test(req.headers['accept-encoding'] || '');
     res.writeHead(200, gzip ? { ...head, 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' } : head);
-    const src = wanted(u), f = { conn: flusso.connection(res, { gzip }), src, key: src.join(',') };
+    // p=0: senza il tratto di linea dei mezzi (v.path): a zoom basso non si vede (meno di 3 px) e vale circa un terzo dei byte del flusso
+    const src = wanted(u), np = q(u, 'p') === '0', f = { conn: flusso.connection(res, { gzip }), src, np, key: src.join(',') + (np ? '|p0' : '') };
     f.conn.send('retry: 3000\n\n');
-    f.conn.send(flusso.event({ t: 'f', v: src.flatMap(i => differ[i].all()), m: vehMeta(src) }));
+    f.conn.send(flusso.event({ t: 'f', v: src.flatMap(i => differ[i].all()).map(v => (np ? flusso.noPath(v) : v)), m: vehMeta(src) }));
     flussi.add(f);
     req.on('close', () => { flussi.delete(f); f.conn.close(); release(); });
     return;
   }
 
+  const leave = p.startsWith('/api/watch') ? () => {} : sec.enter(req);   // richieste contemporanee dallo stesso IP (avvisi di arrivo esclusi)
+  if (!leave) return text(res, 429, 'Troppe richieste contemporanee', { 'Retry-After': '2' });
+  res.once('close', leave);
   const api = API.get(p);
   if (api) {
     if ((api.method || 'GET') !== req.method && !(req.method === 'HEAD' && !api.method)) return text(res, 405, 'Metodo non consentito', { Allow: api.method || 'GET, HEAD' });
     if (api.limit) { const w = sec.limit(req, api.limit); if (w) return text(res, 429, 'Troppe richieste', { 'Retry-After': String(w) }); }
     if (api.auth) {
       if (sec.limit(req, 'admin')) return text(res, 429, 'Troppi tentativi', { 'Retry-After': '60' });
-      if (!sec.tokenOk(req, api.auth === 'admin' ? ADMIN_TOKEN : DIAG_TOKEN)) return text(res, 401, 'Non autorizzato', { 'WWW-Authenticate': 'Bearer' });
+      if (!sec.tokenOk(req, api.auth === 'admin' ? ADMIN_TOKEN : DIAG_TOKEN)) { sec.authFailed(req); return text(res, 401, 'Non autorizzato', { 'WWW-Authenticate': 'Bearer' }); }
     }
     try {
       u._req = req;
       if (api.raw) return api.raw(u, req, res);
+      if (api.cpu) {                                                       // pianificatore: budget di CPU globale (security.js)
+        if (sec.cpuBusy()) { metriche.count('rinviati'); return send(req, res, { error: 'Server occupato, riprovo tra pochi secondi', busy: true }, 503, { 'Retry-After': '3' }); }
+        const t0 = performance.now();
+        try { return send(req, res, await api.fn(u, req)); } finally { sec.cpuSpent(performance.now() - t0); }
+      }
       // risposte di /api/stop e /api/zone: stessa richiesta (stessa fermata/zona, stessa ora) nello stesso secondo e mezzo = un solo calcolo, anche con molti utenti
       if (api.shared) {
         const ck = p + '?' + (q(u, 'src') || ''), k = api.shared(u), hit = sharedCache.get(ck);
@@ -564,7 +586,7 @@ function nextSameLine(i, tid, stopFull) {
 }
 watch.init({ tripDetail: (i, tid) => live.tripDetail(i, tid, true), contact: process.env.PUSH_CONTACT, next: nextSameLine });
 avvisi.start();
-tide.start();   // raccolta periodica del livello di marea: costruisce la storia da cui si ricava la tendenza
+tide.start({ archivio: process.env.MAREA_ARCHIVIO === '0' ? null : { repo: DATI_REPO } });   // raccolta periodica del livello di marea; storia recuperata dall'archivio GitHub dopo un riavvio
 
 // KEEP-ALIVE Render (piano gratuito): si addormenta dopo 15 min senza richieste in ingresso.
 // Il server si auto-contatta dall'esterno (URL pubblico) ogni 10 min finché è sveglio; per svegliarlo da spento serve un pinger esterno su /healthz (vedi README).

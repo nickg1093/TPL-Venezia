@@ -114,7 +114,7 @@ export const isOpen = () => !card.hidden;
 export function open(beforeOpen) {
   if (beforeOpen) beforeOpen();
   card.hidden = false; btn.setAttribute('aria-expanded', 'true'); render(); position(); card.focus({ preventScroll: true });
-  load(); clearInterval(timer); timer = setInterval(load, 60000);
+  load(); clearInterval(timer); timer = setInterval(() => { if (!document.hidden) load(); }, 60000);   // app in secondo piano: nessuna richiesta
 }
 export function close() { if (card.hidden) return; card.hidden = true; btn.setAttribute('aria-expanded', 'false'); clearInterval(timer); }
 export function init(beforeOpen) {
@@ -123,4 +123,5 @@ export function init(beforeOpen) {
   $('tide-close').onclick = () => { close(); btn.focus(); };
   window.addEventListener('resize', () => { if (!card.hidden) { render(); position(); } });
   load(); setInterval(() => { if (!document.hidden && card.hidden) load(); }, 300000);   // aggiorna anche il punto colorato sul pulsante
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !card.hidden) load(); });   // di nuovo visibile con la finestra aperta: dato fresco subito
 }

@@ -905,6 +905,10 @@ button.fv-it:hover{background:var(--accent-soft)}
 }
 /* tastiera aperta: la barra in basso si toglie (resta tutto lo spazio per quello che si scrive) */
 html.kbd .dock{display:none}
+/* v26: con la tastiera aperta anche gli altri elementi ancorati in basso (pulsante Percorso, crediti della mappa) si tolgono invece di salire
+   sopra la tastiera e coprire i risultati; i risultati della ricerca stanno nell'area visibile e scorrono. Chiusa la tastiera torna tutto com'era. */
+html.kbd .plan-fab,html.kbd #osm-attr{display:none!important}
+html.kbd #search-results{max-height:calc(var(--app-h, 100dvh) - 90px - var(--safe-t, 0px))}
 
 /* ---- v25: percorsi a piedi lungo le strade ---- */
 /* «tutto a piedi» si può toccare per vederlo sulla mappa */
@@ -912,3 +916,24 @@ button.pp-walkonly{width:calc(100% - 4px);border:1.5px solid transparent;font:in
 button.pp-walkonly:hover{border-color:var(--line)}
 button.pp-walkonly.on{border-color:var(--accent);background:var(--accent-soft, var(--surface-2))}
 button.pp-walkonly:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---- v26: PANNELLO E LINGUETTA COME UN PEZZO SOLO ----
+   Il contorno del pannello prosegue nella linguetta senza interruzioni: stesso bordo superiore (schermi larghi) o destro (telefono), angolo
+   arrotondato SOLO all'esterno della linguetta, curva concava dove linguetta e pannello si incontrano, nessuna ombra della linguetta sopra il
+   pannello (clip-path: l'ombra resta solo verso la mappa). La curva: due sfondi radiali (linea del bordo sopra, colore del pannello sotto). */
+:root{--tab-r:14px}
+.ph-tab{top:-1px;border-radius:0 var(--r-lg) var(--r-lg) 0;clip-path:inset(-48px -48px -48px 0)}
+.ph-tab::after{content:"";position:absolute;left:0;top:100%;width:var(--tab-r);height:var(--tab-r);pointer-events:none;
+  background:radial-gradient(circle at 100% 100%,transparent calc(var(--tab-r) - 1px),var(--line) calc(var(--tab-r) - 1px),var(--line) var(--tab-r),transparent calc(var(--tab-r) + .5px)),
+             radial-gradient(circle at 100% 100%,transparent calc(var(--tab-r) - 1px),var(--surface) calc(var(--tab-r) - .5px))}
+.side-panel{border-top-right-radius:0}
+.side-panel>.ph{border-top-right-radius:0}
+@media (max-width:640px){
+  .ph-tab{right:-1px;top:auto;clip-path:inset(-48px -48px 0 -48px);border-radius:var(--r-lg) var(--r-lg) 0 0}
+  .ph-tab::after{left:auto;right:100%;top:auto;bottom:0;
+    background:radial-gradient(circle at 0 0,transparent calc(var(--tab-r) - 1px),var(--line) calc(var(--tab-r) - 1px),var(--line) var(--tab-r),transparent calc(var(--tab-r) + .5px)),
+               radial-gradient(circle at 0 0,transparent calc(var(--tab-r) - 1px),var(--surface) calc(var(--tab-r) - .5px))}
+  .ph-tab::before{bottom:-4px;height:5px}
+  body.plan-full #panel.is-plan .ph-tab{clip-path:none}
+  body.plan-full #panel.is-plan .ph-tab::after{display:none}
+}

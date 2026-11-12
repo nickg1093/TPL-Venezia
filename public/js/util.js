@@ -97,7 +97,7 @@ export async function api(url, { cache = 'no-store' } = {}) {
   try {
     const r = await fetch(url, { cache });
     if (r.status === 409) { const e = new Error('carico gli orari della data scelta…'); e.loading = true; throw e; }
-    if (r.status === 429) { const e = new Error('server occupato, riprovo'); e.busy = true; throw e; }
+    if (r.status === 429 || r.status === 503) { const e = new Error('server occupato, riprovo'); e.busy = true; throw e; }
     let d; try { d = await r.json(); } catch { throw new Error(`risposta non valida (HTTP ${r.status})`); }
     return d;
   } finally { busyDelta(-1); }

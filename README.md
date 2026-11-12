@@ -4,7 +4,7 @@ Mappa in tempo reale di autobus, tram e vaporetti ACTV di Venezia, con pannelli 
 avvisi di servizio, avvisi di arrivo (notifiche), marea e preferiti. È una **PWA** (si installa come app) servita da un **server Node.js
 senza database**, che gira gratis su Render oppure su un computer di casa.
 
-Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v25**
+Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v26** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md)
 
 ---
 
@@ -21,7 +21,7 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 9. [Prove e test: comandi da digitare](#9-prove-e-test)
 10. [Modifiche frequenti: ricette](#10-modifiche-frequenti)
 11. [Pubblicare una nuova versione e tornare indietro](#11-pubblicare-e-tornare-indietro)
-12. [Novità della v25](#12-novità-della-v25) · [Novità della v24](#novità-della-v24)
+12. [Novità della v26](#12-novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
 - Appendici tecniche: [A. GTFS statici](#a-gtfs-statici-perché-non-si-sovrascrivono-più) · [B. Regole del motore tempo reale](#b-eccezioni-e-contromisure-del-codice-elenco-dettagliato) · [C. Sicurezza](#c-sicurezza-securityjs-serverjs) · [D. Dati sul telefono e CDN](#d-dati-sul-telefono-e-cdn-ramo-dati)
 
 ---
@@ -210,6 +210,7 @@ personale resta sul dispositivo dell'utente (privacy) e ciò che è pubblico sta
 | `/api/vehicles?src=nav,aut` | GET | mezzi in tempo reale (risposta condivisa, ETag) |
 | `/api/stream?d=1&src=…` | GET (SSE) | flusso dei mezzi: elenco completo, poi differenze |
 | `/api/scheduled?src=…&secs=…&date=AAAAMMGG` | GET | posizioni da orario (modalità Programmato) |
+| `/api/metriche` | GET | **riservato (DIAG_TOKEN)**: misure aggregate dall'ultimo avvio (richieste e kB per endpoint, durata media/P95, codici, flusso, CPU, memoria) |
 | `/api/fissi` | GET | indice dei dati fissi: impronte SHA-256 dei file della versione in uso, indirizzi del CDN, rete pedonale (ETag) |
 | `/api/fisso?src=nav&f=stops\|routes\|shapes&h=<impronta>` | GET | un file dei dati fissi (se l'impronta è quella in uso; in cache per sempre) |
 | `/api/stops`, `/api/routes`, `/api/shapes?id=…`, `/api/area` | GET | fermate, linee, tracciati, area servita (per le app non aggiornate e come riserva; stops e routes con ETag) |
@@ -244,6 +245,7 @@ personale resta sul dispositivo dell'utente (privacy) e ciò che è pubblico sta
 | `AVVISI_ARCHIVIO` | facoltativa | indirizzo della cartella `avvisi` dell'archivio, oppure `0` per non usarlo |
 | `DATI_CDN` | facoltativa | `0` = niente CDN: dati fissi solo dal server e niente percorsi a piedi lungo le strade (prove) |
 | `DATI_REPO` | facoltativa | repository del ramo `dati` (`utente/nome`); predefinito quello da cui Render prende il codice |
+| `MAREA_ARCHIVIO` | facoltativa | `0` = all'avvio non si recupera la storia della marea dal ramo `archivio-marea` (prove) |
 | `KEEPALIVE_URL` | facoltativa | su Render basta `RENDER_EXTERNAL_URL`, impostata da Render |
 | `PORT`, `HOST`, `TLS_CERT`, `TLS_KEY` | solo in locale | porta, indirizzo di ascolto, HTTPS in rete di casa |
 
@@ -270,11 +272,13 @@ Cloudflare servono solo alle prove locali dell'interpretazione AI.
 | **Aggiorna GTFS ACTV** (`update-gtfs.yml`) | ogni 6 ore e a mano | scarica le versioni nuove dei GTFS in `data/gtfs/` senza sovrascrivere; commit su `main` solo se c'è qualcosa di nuovo |
 | **Archivio avvisi ACTV** (`archivio-avvisi.yml`) | ogni 20 minuti e a mano | salva RSS e Telegram nel ramo `archivio-avvisi`; se ci sono i segreti Cloudflare, interpreta con l'AI le comunicazioni nuove |
 | **Dati per i telefoni (CDN)** (`dati.yml`) | dopo ogni aggiornamento dei GTFS, ogni lunedì (rete pedonale) e a mano | scrive nel ramo `dati` fermate, linee e tracciati di ogni versione dei GTFS e, il lunedì, la rete pedonale da OpenStreetMap (Geofabrik + osmium, 2-3 minuti). A mano: *Run workflow*, con `pedoni = 1` per rifare subito la rete |
+| **Archivio marea** (`archivio-marea.yml`) | ogni 15 minuti (3 letture a 5 minuti) | scrive nel ramo `archivio-marea` i livelli di marea (un file al giorno, 30 giorni); il server li rilegge all'avvio |
 | **Keep-alive Render** (`keepalive.yml`) | ogni 10 minuti | chiama `/healthz` perché il servizio gratuito non si addormenti (GitHub può ritardare: consigliato anche un pinger esterno, es. UptimeRobot ogni 5 min) |
 
 ### 7.2 Rami
 - `main`: codice e GTFS. È il ramo che Render pubblica.
 - `archivio-avvisi`: solo dati degli avvisi (scritto dal workflow). **Non** unirlo a `main`.
+- `archivio-marea`: solo letture della marea (scritto dal workflow `archivio-marea.yml`). **Non** unirlo a `main`.
 - `dati`: solo file per i telefoni (scritto dal workflow `dati.yml`, letto dal CDN). **Non** unirlo a `main` e non modificarlo a mano.
 - `dependabot/npm_and_yarn/adm-zip-0.6.1`: **obsoleto** (adm-zip non è più una dipendenza dalla sostituzione con `zip.js`): chiudi la richiesta di
   modifica e cancella il ramo (*Pull requests* → la richiesta di Dependabot → *Close*; poi *Delete branch*).
@@ -422,7 +426,28 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ---
 
-## 12. Novità della v25
+## 12. Novità della v26
+
+Analisi misurata sul servizio pubblicato: il **flusso dei mezzi** è la voce principale di banda (~17 kB/min compressi per app aperta), di cui
+un terzo è il tratto di linea dei mezzi (`path`); il **pianificatore** è la voce principale di CPU (~50 ms per calcolo nuovo, molto di più su Render).
+- **Flusso**: `path` solo a zoom ≥ 14 e mai con «risparmio dati» (`&p=0`, −34 % di byte); `path` legato al rilevamento GPS, non più tolto e
+  rimesso a ogni lettura del feed (un messaggio e un ridisegno in meno a ciclo); riconnessioni con attesa crescente (5 → 60 s).
+- **Sicurezza e carico** (`security.js`): classi `plan` (90/min) e `sse` (30 aperture/min); blocco progressivo 1 → 5 → 15 → 60 minuti dopo 3
+  sforamenti in 10 minuti o 3 token sbagliati, **solo** sulle richieste costose (avvisi di arrivo, flusso e file dell'app restano sempre serviti);
+  massimo 24 richieste contemporanee per IP (avvisi di arrivo esclusi); budget di CPU del pianificatore (503 + Retry-After, l'app riprova da sola).
+- **Misure aggregate** (`metriche.js`, `/api/metriche` con DIAG_TOKEN): solo in memoria, azzerate al riavvio.
+- **Marea persistente**: workflow `archivio-marea.yml` → ramo `archivio-marea` (`marea/AAAA-MM-GG.jsonl`, 30 giorni, senza doppioni, valori
+  mancanti segnati); all'avvio il server recupera le ultime 6 ore (`marea-archivio.js`): grafico e tendenza subito disponibili dopo un deploy.
+- **Pagina nascosta**: fermi anche orologio, «tra N min», finestra marea aperta e riproduzione del Programmato; «riduci movimento»: i mezzi
+  saltano alla nuova posizione invece di scorrere (meno CPU).
+- **Interfaccia**: pannello e linguetta come un pezzo solo (bordo a filo, angolo arrotondato all'esterno, curva concava, ombra solo verso la
+  mappa); ricerca vuota senza preferiti; con la tastiera aperta Percorso e crediti non salgono più sopra la tastiera e i risultati scorrono
+  nell'area visibile; inquadratura del percorso con tutti i tratti (anche a piedi), che si ricentra solo quando cambi soluzione o punti.
+- **Criteri permanenti** per ogni aggiornamento: [CRITERI.md](CRITERI.md).
+- Prove: `tests/marea-archivio.test.js`, nuovi casi in `security.test.js` e `flusso.test.js`; in `tests/ui/run.py` linguetta, ricerca, tastiera,
+  flusso a zoom basso, pagina nascosta e ripresa.
+
+### Novità della v25
 
 - **Dati fissi sul telefono**: fermate, linee e tracciati non si riscaricano più a ogni apertura (prima ~36 KB ogni volta solo per le fermate):
   restano salvati e si aggiornano solo con una nuova versione dei GTFS, scaricati dal **CDN jsDelivr** (ramo `dati`) invece che dal server.

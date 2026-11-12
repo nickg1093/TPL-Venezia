@@ -38,3 +38,34 @@ test('risposte dati (/api): intestazioni essenziali, nessun contenuto eseguibile
   const page = {}; sec.securityHeaders({ url: '/', headers: {}, socket: {} }, { setHeader: (k, v) => { page[k] = v; } });
   assert.match(page['Content-Security-Policy'], /script-src 'self'/, 'le pagine tengono la CSP completa');
 });
+
+// ---- v26: blocco progressivo, richieste contemporanee, budget di CPU, classi ----
+test('v26: classi dedicate per pianificatore e flusso', () => {
+  assert.strictEqual(sec.classOf('/api/percorso'), 'plan');
+  assert.strictEqual(sec.classOf('/api/percorso-simili'), 'plan');
+  assert.strictEqual(sec.classOf('/api/stream'), 'sse');
+  assert.strictEqual(sec.classOf('/api/stop'), 'heavy');
+  assert.strictEqual(sec.classOf('/api/watch/poll'), 'api');
+});
+test('v26: tre errori di token di fila = blocco temporaneo, poi più lungo', () => {
+  const req = { headers: {}, socket: { remoteAddress: '203.0.113.77' } }, now = Date.now();
+  assert.strictEqual(sec.blocked(req, now), 0);
+  sec.authFailed(req); sec.authFailed(req); assert.strictEqual(sec.blocked(req, now), 0);
+  sec.authFailed(req); const b1 = sec.blocked(req, Date.now()); assert.ok(b1 > 50 && b1 <= 60, String(b1));
+  for (let k = 0; k < 3; k++) sec.authFailed(req);
+  assert.ok(sec.blocked(req, Date.now()) > 250, 'secondo blocco: 5 minuti');
+  assert.strictEqual(sec.blocked({ headers: {}, socket: { remoteAddress: '203.0.113.78' } }), 0, 'gli altri IP non sono toccati');
+});
+test('v26: tetto alle richieste contemporanee per IP, liberato alla fine', () => {
+  const req = { headers: {}, socket: { remoteAddress: '198.51.100.9' } }, out = [];
+  for (let k = 0; k < sec.INFLIGHT_PER_IP; k++) out.push(sec.enter(req));
+  assert.ok(out.every(Boolean)); assert.strictEqual(sec.enter(req), null);
+  out[0](); out[0](); assert.ok(sec.enter(req), 'liberata una sola volta, poi di nuovo ammessa');
+});
+test('v26: budget di CPU del pianificatore', () => {
+  const t = Date.now() + 1e6;                                                       // finestra futura, isolata dalle altre prove
+  assert.strictEqual(sec.cpuBusy(t), false);
+  for (let k = 0; k < 60; k++) sec.cpuSpent(100, t);
+  assert.strictEqual(sec.cpuBusy(t), true);
+  assert.strictEqual(sec.cpuBusy(t + 11000), false, 'dopo 10 secondi si riparte');
+});

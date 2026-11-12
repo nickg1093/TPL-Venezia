@@ -99,6 +99,7 @@ function opzQs() {
 
 export function init(ctx) {
   X = ctx; restore();
+  X.map?.on('dragstart zoomstart', userMove);                            // mappa spostata o ingrandita a mano (non dall'inquadratura automatica)
   // cambio di tema chiaro/scuro: i tratti a piedi sulla mappa si ridisegnano con i colori giusti
   new MutationObserver(() => { if (X.isOpen() && (S.res || S.det)) draw(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   X.chips.addEventListener('click', onClick); X.plist.addEventListener('click', onClick);
@@ -148,7 +149,7 @@ export function show(opts = {}) {
   render();
   if (S.from && S.to && !S.res) run(); else draw();
 }
-export function clear() { clearInterval(timer); timer = null; clearTimeout(retry); S.picking = null; X.layer.clearLayers(); X.setPick(false); }
+export function clear() { viewKey = solKey = ''; clearInterval(timer); timer = null; clearTimeout(retry); S.picking = null; X.layer.clearLayers(); X.setPick(false); }
 export function refresh() { if (S.res && S.when === 'now' && !S.edit) run(true); }
 // posizione arrivata (dopo la richiesta da «La mia posizione»)
 export function onPosition(ll) {
@@ -390,7 +391,13 @@ function renderAlts() {
 // ---------------------------------------------------------------------------------------------------------------------
 // MAPPA: tratte colorate come le linee, tratti a piedi tratteggiati, partenza e arrivo
 // ---------------------------------------------------------------------------------------------------------------------
-let drawTok = 0;
+// INQUADRATURA del percorso mostrato (partenza, arrivo, fermate, cambi, tratti a piedi), nella parte di mappa non coperta da pannelli e
+// controlli (X.fit). Si ricentra quando cambia QUELLO CHE SI GUARDA (punti, soluzione scelta, «tutto a piedi»); gli aggiornamenti
+// automatici (ogni minuto) ricentrano solo se nel frattempo non hai spostato o ingrandito la mappa a mano.
+let drawTok = 0, viewKey = '', solKey = '', userMoved = false, fitting = false;
+const solId = o => (o ? o.tratte.map(t => t.tipo === 'mezzo' ? `${t.tripId || t.line}@${t.da?.id}` : 'p').join('>') : '');
+function userMove() { if (!fitting) userMoved = true; }
+function fitTo(pts) { if (!pts.length) return; fitting = true; X.fit(pts); setTimeout(() => { fitting = false; }, 700); }
 function draw() {
   X.layer.clearLayers();
   const r = S.res, o = S.det || r?.soluzioni?.[0], pts = [], myDraw = ++drawTok;
@@ -410,6 +417,8 @@ function draw() {
       if (!w || myDraw !== drawTok) { if (myDraw === drawTok) line[1].setStyle?.({ opacity: 1 }); return; }   // niente percorso: resta la linea retta, piena
       for (const l of line) X.layer.removeLayer(l);
       walkPath(w.pts);
+      // il tratto lungo le strade esce dall'inquadratura: si riallarga (solo se non hai spostato la mappa)
+      if (!userMoved && X.map && !w.pts.every(p => X.map.getBounds().contains(p))) { pts.push(...w.pts); fitTo(pts); }
       const st = k != null && X.plist.querySelector(`.pp-step.walk[data-wk="${k}"] small`);
       if (st && !st.dataset.m) { st.dataset.m = '1'; st.textContent += `${st.textContent ? ' · ' : ''}${kmTxt(w.m)}`; }
     });
@@ -419,7 +428,7 @@ function draw() {
     walkPath(w.pts); pts.push(...w.pts);
   } else if (o) {
     let prev = S.from?.lat != null ? [S.from.lat, S.from.lon] : null;
-    const walkTo = (p, k) => { if (prev && p) walkLine(prev, p, k); };
+    const walkTo = (p, k) => { if (prev && p) { walkLine(prev, p, k); pts.push(prev, p); } };
     o.tratte.forEach((t, k) => {
       if (t.tipo === 'piedi') { const p = t.a?.lat != null ? [t.a.lat, t.a.lon] : t.estremo === 'arrivo' && S.to?.lat != null ? [S.to.lat, S.to.lon] : null; if (t.da?.lat != null) prev = [t.da.lat, t.da.lon]; walkTo(p, k); if (p) prev = p; return; }
       const start = t.da.lat != null ? [t.da.lat, t.da.lon] : null; if (prev && start && mDist(prev[0], prev[1], start[0], start[1]) > 25) walkTo(start);
@@ -433,7 +442,9 @@ function draw() {
   }
   mark(S.from, false); mark(S.to, true);
   X.changed?.();                                                  // impaginazione (foglio o tutto schermo) e mezzi sulla mappa: solo quelli di questa soluzione
-  if (pts.length) X.fit(pts);
+  const vk = `${S.from ? ptKey(S.from) : ''}|${S.to ? ptKey(S.to) : ''}|${walkShown()}|${S.det ? solId(S.det) : ''}`, sk = solId(o);
+  if (vk !== viewKey) { viewKey = vk; solKey = sk; userMoved = false; fitTo(pts); }        // scelta tua: si inquadra sempre
+  else if (sk !== solKey) { solKey = sk; if (!userMoved) fitTo(pts); }                      // cambiata da un aggiornamento: solo se non hai mosso la mappa
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

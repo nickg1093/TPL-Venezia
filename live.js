@@ -429,11 +429,12 @@ function snapToRoute(i, G, trip, veh, ss) {
   if (ss.sVeh == null || ss.lateral > SNAP_MAX_M) { S[i].snap.delete(veh.key); return; }
   const sh = tracker.shapeInfo(G, trip.shape), prev = S[i].snap.get(veh.key), here = tracker.pointAt(sh, ss.sVeh);
   veh.lat = +here[0].toFixed(5); veh.lon = +here[1].toFixed(5);
-  if (prev && prev.shape === trip.shape && prev.ts !== veh.ts) {
-    const d = ss.sVeh - prev.s;
-    if (d > 0.5 && d < 4000) veh.path = tracker.slice(sh, prev.s, ss.sVeh);
-  }
-  if (!prev || prev.ts !== veh.ts) S[i].snap.set(veh.key, { s: ss.sVeh, shape: trip.shape, ts: veh.ts });
+  // il tratto vale per QUEL rilevamento: finché non ne arriva uno nuovo resta uguale (prima spariva alla lettura successiva del feed:
+  // un messaggio in più nel flusso e un ridisegno sul telefono a ogni ciclo, per nulla)
+  if (prev && prev.ts === veh.ts) { if (prev.path) veh.path = prev.path; return; }
+  let p = null;
+  if (prev && prev.shape === trip.shape) { const d = ss.sVeh - prev.s; if (d > 0.5 && d < 4000) p = veh.path = tracker.slice(sh, prev.s, ss.sVeh); }
+  S[i].snap.set(veh.key, { s: ss.sVeh, shape: trip.shape, ts: veh.ts, ...(p ? { path: p } : {}) });
 }
 
 // MEZZI MULTIPLI SULLA STESSA CORSA. Possono essere legittimi (rinforzi, due mezzi uno dietro l'altro) oppure un errore di assegnazione

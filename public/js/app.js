@@ -154,14 +154,14 @@ new ResizeObserver(() => { if (keepInView && !panel.hidden) { const ll = keepInV
 // OROLOGIO E MODALITÀ «PROGRAMMATO»
 // ---------------------------------------------------------------------------------------------------------------------
 function updateClock() {
-  if (mode !== 'live') return;
+  if (mode !== 'live' || document.hidden) return;                    // pagina nascosta: niente lavoro (si aggiorna al ritorno)
   const n = new Date();
   $('clock-time').innerHTML = `${p2(n.getHours())}:${p2(n.getMinutes())}:<small>${p2(n.getSeconds())}</small>`;
   const s = Math.floor((Date.now() - lastUpdate) / 1000);
   $('updated-ago').textContent = s <= 2 ? '· ora' : `· ${s}s fa`;
 }
 setInterval(updateClock, 1000);
-setInterval(tickEta, 1000);
+setInterval(() => { if (!document.hidden) tickEta(); }, 1000);   // «tra N min»: solo con la pagina visibile
 
 const syncPlay = () => { $('tl-play').innerHTML = icon(isPlaying ? 'pause' : 'play'); $('tl-play').setAttribute('aria-label', isPlaying ? 'Pausa' : 'Avvia'); };
 const stopPlay = () => { isPlaying = false; clearInterval(playTimer); syncPlay(); };
@@ -171,7 +171,7 @@ function applyTime(secs, force) {
 }
 $('tl-play').onclick = () => {
   isPlaying = !isPlaying; syncPlay(); clearInterval(playTimer);
-  if (isPlaying) playTimer = setInterval(() => { const v = +range.value + +$('tl-speed').value; applyTime(v > 86400 ? 0 : v); }, 1000);
+  if (isPlaying) playTimer = setInterval(() => { if (document.hidden) return; const v = +range.value + +$('tl-speed').value; applyTime(v > 86400 ? 0 : v); }, 1000);   // in pausa con la pagina nascosta
 };
 $('tl-now').onclick = () => { stopPlay(); dateEl.value = localDate(); applyTime(nowSecs(), true); };
 range.oninput = () => applyTime(+range.value);
@@ -202,6 +202,7 @@ const tip = v => `${vehIcon(v.src, v.label, 'sm', v.line)} <b>${esc(v.line)}</b>
 // costante e calibrata perché arrivi quando è atteso il rilevamento successivo; senza tracciato, va in linea retta fra i due punti.
 // Il ritardo visivo è circa un intervallo di aggiornamento del feed: è il prezzo per non mostrare posizioni false.
 const markers = new Map();
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const SNAP_M = 300;        // distanza oltre la quale il marker salta direttamente (cambio corsa, riconnessione)
 const MAX_MPS = 30;        // limite di velocità visiva (108 km/h): evita scatti se si accumula ritardo
 const mDist = (aLat, aLon, bLat, bLon) => Math.hypot((aLat - bLat) * 111000, (aLon - bLon) * 78000);
@@ -229,7 +230,7 @@ function render() {
     const newTip = tip(v);
     if (e.tipContent !== newTip) { e.m.setTooltipContent(newTip); e.tipContent = newTip; }
 
-    if (mode !== 'live') { e.lat = v.lat; e.lon = v.lon; e.poly = [[v.lat, v.lon]]; e.m.setLatLng([v.lat, v.lon]); continue; }   // orario: posizione diretta
+    if (mode !== 'live' || reduceMotion.matches) { e.lat = v.lat; e.lon = v.lon; e.poly = [[v.lat, v.lon]]; e.m.setLatLng([v.lat, v.lon]); continue; }   // orario, o «riduci movimento»: posizione diretta (anche meno CPU)
 
     // nuovo rilevamento? (si confronta col punto finale del percorso già in coda)
     const end = e.poly[e.poly.length - 1];
@@ -387,7 +388,7 @@ function collapseSearch() { searchContainer.classList.remove('expanded'); search
 function clearSearchState(force = false) { if (lineFilter && !force) return; setLineFilter(null); filterEl.value = ''; $('search-clear').hidden = true; resultsEl.classList.remove('active'); resultsEl.innerHTML = ''; clearRoutes(); }
 function setSearch(on) {
   searchContainer.classList.toggle('expanded', on); searchToggleBtn.setAttribute('aria-expanded', String(on));
-  if (on) { Tide.close(); Avvisi.close(); Info.close(); Favs.close(); filterEl.focus(); if (!filterEl.value) showFavs(); } else clearSearchState(true);
+  if (on) { Tide.close(); Avvisi.close(); Info.close(); Favs.close(); filterEl.focus(); if (!filterEl.value) emptySearch(); } else clearSearchState(true);
 }
 searchToggleBtn.onclick = e => { e.stopPropagation(); setSearch(!searchOpen()); };
 document.addEventListener('click', e => { if (searchOpen() && !searchContainer.contains(e.target) && !searchToggleBtn.contains(e.target)) collapseSearch(); });
@@ -397,7 +398,7 @@ const zoneItem = z => `<div class="search-item" role="option" tabindex="0" data-
 filterEl.addEventListener('input', () => {
   $('search-clear').hidden = !filterEl.value;
   const q = filterEl.value.trim().toLowerCase().slice(0, 80), qn = norm(q);
-  if (!q) { setLineFilter(null); clearRoutes(); showFavs(); return; }
+  if (!q) { setLineFilter(null); clearRoutes(); emptySearch(); return; }
   const mzAll = [...zones.values()].filter(z => active.has(z.src) && z.norm.includes(qn)), mz = mzAll.slice(0, 8);
   const ms = stops.filter(s => active.has(s[4]) && snorm.get(s[0])?.includes(qn) && !mzAll.includes(zoneOf.get(s[0]))).slice(0, 8);
   const byLine = new Map();                                        // una voce per linea e servizio (le varianti con lo stesso numero si uniscono)
@@ -1007,9 +1008,16 @@ const fleet = new Map();                                               // id -> 
 let es = null, esUrl = '', esPlain = false, lastMsgAt = 0, mutes = 0, renderTimer = null, lastRender = 0;
 let lastPushAt = 0, lastPanelAt = 0;
 const streamLive = () => !!es && es.readyState !== 2;
+// TRATTO DI LINEA DEI MEZZI (v.path): serve solo a zoom ≥ 14, dove il movimento lungo la linea si vede; sotto (e con «risparmio dati»
+// attivo) il flusso arriva senza (&p=0), circa un terzo di byte in meno. Cambio deciso 1,5 s dopo la fine dello zoom (niente riaperture a raffica).
+const wantPath = () => !navigator.connection?.saveData && map.getZoom() >= 14;
+let pathOn = wantPath(), pathT = null;
+map.on('zoomend', () => { clearTimeout(pathT); pathT = setTimeout(() => { const w = wantPath(); if (w !== pathOn) { pathOn = w; streamSync(); } }, 1500); });
+// collegamento rifiutato o caduto più volte di fila: si riprova dopo 5, 10, 20, 40, 60 s (mai a raffica contro un server occupato)
+let esFails = 0, esNext = 0;
 function streamSync() {
   const url = mode === 'live' && !document.hidden && typeof EventSource !== 'undefined'
-    ? `/api/stream?d=1&src=${encodeURIComponent(keyOf())}${esPlain ? '&z=0' : ''}` : '';
+    ? `/api/stream?d=1&src=${encodeURIComponent(keyOf())}${esPlain ? '&z=0' : ''}${pathOn ? '' : '&p=0'}` : '';
   if (url && url === esUrl && streamLive()) return;
   if (es) { es.close(); es = null; }
   esUrl = url; if (!url) return;
@@ -1029,7 +1037,7 @@ function applyFleet(msg) {
   return true;
 }
 function onStream(e) {
-  lastMsgAt = Date.now(); mutes = 0;
+  lastMsgAt = Date.now(); mutes = 0; esFails = 0;
   let msg; try { msg = JSON.parse(e.data); } catch { return; }
   if (!msg || typeof msg !== 'object') return;
   const changed = mode === 'live' && applyFleet(msg);
@@ -1059,8 +1067,10 @@ setInterval(() => {                                                    // contro
   if (document.hidden || mode !== 'live') return;
   if (es && (es.readyState === 2 || Date.now() - lastMsgAt > 15000)) {
     if (es.readyState !== 2 && ++mutes >= 2) esPlain = true;           // muto più volte di fila: flusso senza compressione
-    es.close(); es = null; esUrl = ''; streamSync();
+    es.close(); es = null; esUrl = '';
+    esFails++; esNext = Date.now() + Math.min(60000, 5000 * 2 ** Math.max(0, esFails - 2));   // i primi due tentativi subito
   }
+  if (!es && Date.now() >= esNext) streamSync();
   if (!streamLive()) load();                                           // nessun flusso: richiesta completa
 }, 5000);
 
@@ -1113,22 +1123,15 @@ pfav.onclick = () => {
     return;
   }
   const r = Fav.toggle(favEntry(current), favName(current), favSrc(current)); updateFav();
-  toast(r === null ? 'Impossibile salvare: la memoria del browser non è disponibile (navigazione privata?).' : r ? 'Aggiunta ai preferiti: la trovi nella stella in basso a destra e aprendo la ricerca.' : 'Tolta dai preferiti.', 3500);
+  toast(r === null ? 'Impossibile salvare: la memoria del browser non è disponibile (navigazione privata?).' : r ? 'Aggiunta ai preferiti: la trovi nella stella in basso a destra.' : 'Tolta dai preferiti.', 3500);
   Favs.refresh();
 };
-function showFavs() {
-  const l = Fav.all(), rs = Fav.allRoutes();
-  resultsEl.innerHTML = (rs.length ? '<div class="search-category">Percorsi salvati</div>' + rs.slice(0, 8).map(r =>
-    `<div class="search-item" role="option" tabindex="0" data-type="saved" data-k="${esc(r.k)}">${icon('route', 'sm fav-ic')}<span>${esc(Fav.routeTitle(r))}</span></div>`).join('') : '')
-    + '<div class="search-category">Preferiti</div>' + (l.length ? l.map(f =>
-    `<div class="search-item" role="option" tabindex="0" data-type="fav" data-k="${esc(f.k)}">${icon('star', 'sm fav-ic')}${srcIcon(f.src)} <span>${esc(f.name)}</span></div>`).join('')
-    : `<div class="search-item muted"><span>Nessuna fermata preferita: tocca la stella nel pannello di una fermata per salvarla qui${rs.length ? '' : ' (e quella del pianificatore per salvare un percorso)'}.</span></div>`);
-  resultsEl.classList.add('active');
-}
+// ricerca vuota: solo il campo (i preferiti stanno nel loro pannello, stella in basso a destra: qui sarebbero un elenco in più da scorrere)
+function emptySearch() { resultsEl.innerHTML = ''; resultsEl.classList.remove('active'); }
 // PANNELLO PREFERITI (stella in basso a destra): fermate e percorsi, con modifica e copia di sicurezza (favs.js)
 const openSavedRoute = k => { const r = Fav.routeByKey(k); if (r) { collapseSearch(); Tide.close(); Avvisi.close(); Info.close(); openFromMap({ t: 'plan', opts: { from: { ...r.from }, to: { ...r.to } } }); } };
 Favs.init(() => { Tide.close(); Avvisi.close(); Info.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); },
-  { openStop: k => openFav(k), openRoute: openSavedRoute, toast, changed: () => { updateFav(); if (searchOpen() && !filterEl.value) showFavs(); } });
+  { openStop: k => openFav(k), openRoute: openSavedRoute, toast, changed: () => { updateFav(); } });
 function openFav(k) {
   if (k.startsWith('zone:')) { const z = zones.get(k.slice(5)); if (z) { openFromMap({ t: 'zone', key: z.key, pick: '*' }); focusOn(L.latLng(z.center), 16); return; } }
   else { const id = k.slice(5), s = stopById.get(aliasOf.get(id) || id); if (s) { openFromMap(entryForStop(s[0], s[1], s[4])); focusOn(L.latLng(+s[2], +s[3]), 16); return; } }
@@ -1258,7 +1261,7 @@ function fitFree(pts) {
 Plan.init({
   chips: chipsArea, plist, pbadge, pname, psub, pstatus, layer: planLayer, drawLine, stopById, stopLabel,
   allStops: () => stops, me: () => meLL, isOpen: () => current?.t === 'plan' && !panel.hidden,
-  locate: () => { if (!meLL) locator.start(); }, setPick: (on, msg) => setPlanPick(on, msg), fit: fitFree, favChanged: () => { updateFav(); Favs.refresh(); },
+  map, locate: () => { if (!meLL) locator.start(); }, setPick: (on, msg) => setPlanPick(on, msg), fit: fitFree, favChanged: () => { updateFav(); Favs.refresh(); },
   changed: () => { planLayout(); render(); Nav.sync(); },                // pagine del pianificatore, soluzione mostrata: livelli, mezzi e impaginazione
   openTrip: t => {
     const v = vehicles.find(c => c.src === t.src && c.tripId === t.tripId && (!t.veh || c.key === t.veh) && !c.co)

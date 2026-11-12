@@ -1,5 +1,5 @@
 # PROVE DELL'INTERFACCIA (Playwright + Chromium). Richiede il server già avviato con il feed simulato:
-#   NODE_PATH=<shim> AVVISI_ARCHIVIO=0 DATI_CDN=0 TRUST_PROXY=1 PORT=3111 node -r ./tests/fakefeed.js server.js      poi:   python3 tests/ui/run.py http://localhost:3111 <cartella-screenshot>
+#   NODE_PATH=<shim> AVVISI_ARCHIVIO=0 DATI_CDN=0 MAREA_ARCHIVIO=0 TRUST_PROXY=1 PORT=3111 node -r ./tests/fakefeed.js server.js      poi:   python3 tests/ui/run.py http://localhost:3111 <cartella-screenshot>
 #   (avviare il server con TRUST_PROXY=1)
 # Leaflet è sostituito da tests/ui/leaflet-stub.js (solo per le prove). Esce con codice 1 se un controllo fallisce.
 import sys, json, pathlib
@@ -9,7 +9,9 @@ OUT = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else '/tmp/ui'); OUT.mkdir(p
 STUB = (pathlib.Path(__file__).parent / 'leaflet-stub.js').read_text()
 SIZES = [('phone', 390, 844), ('phone-small', 360, 640), ('landscape', 844, 390), ('tablet', 768, 1024), ('desktop', 1440, 900), ('huge', 2560, 1440)]
 fails = []
-GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v25', mappa:true, pannello:true}))}catch(e){}"   # guida già vista: le prove non la incontrano (ha una prova sua)
+ES_LOG = "try{const E=window.EventSource;if(E)window.EventSource=class extends E{constructor(u,o){super(u,o);(window.__es||(window.__es=[])).push(String(u));}}}catch(e){}"   # indirizzi dei flussi aperti (un flusso aperto non compare tra le richieste concluse)
+FAV_ONE = "try{if(!localStorage.getItem('tpl.favorites'))localStorage.setItem('tpl.favorites', JSON.stringify({v:1,items:[{k:'nav:5032',name:'Fermata preferita di prova',src:'nav',at:1}]}))}catch(e){}"   # un preferito: la ricerca non deve mostrarlo
+GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v26', mappa:true, pannello:true}))}catch(e){}"   # guida già vista: le prove non la incontrano (ha una prova sua)
 def check(ok, msg):
     print(('  ok   ' if ok else '  FAIL ') + msg)
     if not ok: fails.append(msg)
@@ -22,7 +24,7 @@ with sync_playwright() as p:
     for name, w, h in SIZES:
         print(f'== {name} {w}x{h}')
         ctx = br.new_context(viewport={'width': w, 'height': h}, has_touch=name.startswith('phone'), device_scale_factor=1, permissions=['geolocation'], geolocation={'latitude': 45.4375, 'longitude': 12.3358}, extra_http_headers={'X-Forwarded-For': f'10.9.{w % 250}.{h % 250}'})   # IP diverso per schermo: i limiti di frequenza non falsano la prova (server con TRUST_PROXY=1)
-        ctx.add_init_script(GUIDE_OFF); page = ctx.new_page(); errs = []
+        ctx.add_init_script(GUIDE_OFF); ctx.add_init_script(FAV_ONE); ctx.add_init_script(ES_LOG); page = ctx.new_page(); errs = []
         page.on('pageerror', lambda e: errs.append(str(e)))
         page.on('console', lambda m: errs.append(m.text) if m.type == 'error' and 'tile' not in m.text else None)
         page.route('**/vendor/leaflet/leaflet.js', lambda r: r.fulfill(body=STUB, content_type='application/javascript'))
@@ -56,6 +58,15 @@ with sync_playwright() as p:
         check(page.query_selector('#follow') is None, 'vecchia pillola «insegui» assente')
         pf, pc = rect(page, '#pfollow'), rect(page, '#pclose')
         check(pf['w'] >= 44 and pf['h'] >= 44 and pc['w'] >= 44, 'pulsanti segui/X >= 44px')
+        # --- v26: pannello e linguetta come un pezzo solo: bordo superiore (largo) o destro (telefono) allineato, angolo del pannello squadrato
+        tb, pn = rect(page, '#ptab'), rect(page, '#panel')
+        narrow = w <= 640
+        al = abs(tb['r'] - pn['r']) <= 1.5 and pn['t'] - 1 <= tb['b'] <= pn['t'] + 3 if narrow else abs(tb['t'] - pn['t']) <= 1.5 and tb['l'] <= pn['r'] + 1.5
+        check(al, f"linguetta a filo del pannello ({'destra' if narrow else 'in alto'}): linguetta {tb} pannello {pn}")
+        rr = page.evaluate("getComputedStyle(document.getElementById('panel')).borderTopRightRadius")
+        check(rr in ('0px', '0'), f'angolo del pannello verso la linguetta squadrato ({rr})')
+        cp = page.evaluate("getComputedStyle(document.getElementById('ptab')).clipPath"); check(cp.startswith('inset'), "ombra della linguetta solo verso la mappa (clip-path)")
+        cv = page.evaluate("getComputedStyle(document.getElementById('ptab'),'::after').backgroundImage"); check('radial-gradient' in cv, 'curva concava tra linguetta e pannello')
         check((abs(pf['t'] - pc['t']) < 2 and pf['r'] <= pc['l'] + 1) or (abs(pf['l'] - pc['l']) < 2 and pf['b'] <= pc['t'] + 1), 'segui accanto alla X (stessa linguetta)')
         tab, pn = rect(page, '#ptab'), rect(page, '#panel')
         check(tab and pn and (tab['l'] >= pn['r'] - 4 or tab['b'] <= pn['t'] + 4), 'linguetta dei comandi fuori dal pannello')
@@ -215,6 +226,35 @@ with sync_playwright() as p:
             page.click('#avvisi-close')
             if rect(page, '#panel'): page.click('#pclose')   # su schermi stretti l'avviso sostituisce il pannello
 
+        # --- v26: ricerca vuota senza preferiti (solo il campo); i preferiti restano nel loro pannello
+        page.click('#search-toggle-btn'); page.wait_for_timeout(300)
+        check(page.evaluate("!document.getElementById('search-results').classList.contains('active') && !document.querySelector('#search-results [data-type=fav], #search-results [data-type=saved]')"), 'ricerca aperta: nessun preferito, solo il campo')
+        page.fill('#filter', 'xyz'); page.fill('#filter', ''); page.wait_for_timeout(200)
+        check(page.evaluate("!document.querySelector('#search-results [data-type=fav]')"), 'ricerca svuotata: ancora nessun preferito')
+        # --- v26: tastiera aperta (area visibile ridotta mentre si scrive): Percorso e crediti non salgono, risultati entro l'area visibile
+        if w <= 900:
+            fab0 = rect(page, '.plan-fab'); kh = int(h * 0.42)
+            page.fill('#filter', 'S'); page.set_viewport_size({'width': w, 'height': h - kh}); page.wait_for_timeout(900)
+            kb = page.evaluate("document.documentElement.classList.contains('kbd')")
+            sr = rect(page, '#search-results'); fab = rect(page, '.plan-fab'); dk = rect(page, '#bottom-bar')
+            check(kb and fab is None and dk is None, f'tastiera aperta: pulsante Percorso e barra in basso tolti (kbd={kb})')
+            check(sr is None or sr['b'] <= h - kh + 1, f"risultati entro l'area sopra la tastiera ({sr and sr['b']:.0f} <= {h - kh})")
+            page.set_viewport_size({'width': w, 'height': h}); page.evaluate("document.activeElement.blur()"); page.wait_for_timeout(900)
+            fab1 = rect(page, '.plan-fab')
+            check(fab0 is None or (fab1 and abs(fab1['t'] - fab0['t']) <= 1), 'tastiera chiusa: Percorso torna al suo posto')
+        page.evaluate("document.getElementById('search-clear').click()"); page.evaluate("document.body.click()"); page.wait_for_timeout(200)
+        if page.evaluate("document.getElementById('search-container').classList.contains('expanded')"): page.click('#search-toggle-btn')
+        # --- v26: flusso dei mezzi senza tratto di linea a zoom basso (p=0), chiuso con la pagina nascosta e riaperto al ritorno
+        su = page.evaluate("(window.__es||[]).slice(-1)[0] || ''")
+        check('p=0' in su, f'flusso a zoom iniziale senza tratto di linea: {su[-40:]}')
+        ne0 = page.evaluate("(window.__es||[]).length")
+        page.evaluate("Object.defineProperty(document,'hidden',{configurable:true,get:()=>true}); Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>'hidden'}); document.dispatchEvent(new Event('visibilitychange'))")
+        n0 = page.evaluate("performance.getEntriesByType('resource').length"); page.wait_for_timeout(6000)
+        nr = page.evaluate(f"performance.getEntriesByType('resource').slice({n0}).map(e=>e.name).filter(u=>u.includes('/api/'))")
+        check(not nr, f'pagina nascosta: nessuna richiesta in 6 s ({nr[:3]})')
+        page.evaluate("delete document.hidden; delete document.visibilityState; document.dispatchEvent(new Event('visibilitychange'))"); page.wait_for_timeout(1500)
+        ne = page.evaluate("(window.__es||[]).length")
+        check(ne > ne0, f'pagina di nuovo visibile: flusso riaperto subito ({ne} aperture)')
         # --- ricerca per linea: divisa per servizio, filtro mezzi
         page.click('#search-toggle-btn'); page.fill('#filter', '1'); page.wait_for_selector('#search-results .search-item[data-type=route]', timeout=5000)
         cats = page.evaluate("[...document.querySelectorAll('#search-results .search-category')].map(e=>e.textContent)")

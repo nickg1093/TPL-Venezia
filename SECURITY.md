@@ -24,3 +24,7 @@ Dati scaricati da fuori dal sito (v25): fermate, linee, tracciati e rete pedonal
 (ramo `dati` di questo repository). Sono **solo dati** (JSON, mai script: `script-src 'self'`) e il telefono li usa solo se l'impronta SHA-256
 coincide con quella pubblicata dal server (`/api/fissi`). Una segnalazione su questa catena (ramo `dati`, workflow `dati.yml`, verifica delle
 impronte in `public/js/fissi.js`) rientra nell'ambito.
+
+Contromisure contro l'abuso automatico (v26): limiti per IP ed endpoint, blocco progressivo sulle richieste costose, tetto alle richieste
+contemporanee e ai flussi, budget di CPU del pianificatore. Nessuna difesa si basa su user-agent, Referer o JavaScript del client (falsificabili).
+Criteri seguiti a ogni aggiornamento: [CRITERI.md](CRITERI.md).
