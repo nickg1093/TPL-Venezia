@@ -4,7 +4,7 @@ Mappa in tempo reale di autobus, tram e vaporetti ACTV di Venezia, con pannelli 
 avvisi di servizio, avvisi di arrivo (notifiche), marea e preferiti. È una **PWA** (si installa come app) servita da un **server Node.js
 senza database**, che gira gratis su Render oppure su un computer di casa.
 
-Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v26** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md)
+Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v27** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md)
 
 ---
 
@@ -21,7 +21,7 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 9. [Prove e test: comandi da digitare](#9-prove-e-test)
 10. [Modifiche frequenti: ricette](#10-modifiche-frequenti)
 11. [Pubblicare una nuova versione e tornare indietro](#11-pubblicare-e-tornare-indietro)
-12. [Novità della v26](#12-novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
+12. [Novità della v27](#12-novità-della-v27) · [v26](#novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
 - Appendici tecniche: [A. GTFS statici](#a-gtfs-statici-perché-non-si-sovrascrivono-più) · [B. Regole del motore tempo reale](#b-eccezioni-e-contromisure-del-codice-elenco-dettagliato) · [C. Sicurezza](#c-sicurezza-securityjs-serverjs) · [D. Dati sul telefono e CDN](#d-dati-sul-telefono-e-cdn-ramo-dati)
 
 ---
@@ -72,6 +72,7 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 | `schedule.js`, `calendar.js` | Orari programmati, passaggi alle fermate, calendario dei servizi (date di Venezia). | regole degli orari |
 | `gtfs.js`, `gtfsstore.js`, `csv.js`, `zip.js`, `ids.js` | Lettura dei GTFS (zip in memoria), archivio e scelta della versione, collegamento degli identificativi feed ↔ GTFS. | formati nuovi di ACTV |
 | `stopgroups.js`, `prossime.js`, `area.js` | Fermate equivalenti (stesso palo), fermate successive mostrate nei pannelli, area servita sulla mappa. | raramente |
+| `mose.js` | **Stato del MOSE**: legge la tabella «Bocche di porto · Barriere · Stato» della pagina «Operatività M.O.S.E.» dell'Autorità per la Laguna di Venezia, la traduce in semafori, cache 4-10 min | se la pagina cambia struttura: `parse()` e `tests/mose.test.js` |
 | `fissi.js` | **Dati fissi per i telefoni**: file di fermate, linee e tracciati per versione dei GTFS con impronta SHA-256 (`/api/fissi`, `/api/fisso`), lettura dell'indice del ramo `dati`. Usato anche dal workflow, così i byte coincidono. | formato dei file (cambiare anche `FORMATO`) |
 | `percorso.js` | **Pianificatore** (algoritmo RAPTOR): soluzioni con cambi e tratti a piedi, preferenze, alternative; usa gli orari della data scelta. | parametri del calcolo (oggetto `C`) |
 | `pedonale-laguna.txt`, `pedonale-terraferma.txt` | Distanze a piedi tra fermate sulla rete pedonale di OpenStreetMap (generate da `scripts/pedonale.js`). | dopo grandi cambi di fermate |
@@ -211,6 +212,7 @@ personale resta sul dispositivo dell'utente (privacy) e ciò che è pubblico sta
 | `/api/stream?d=1&src=…` | GET (SSE) | flusso dei mezzi: elenco completo, poi differenze |
 | `/api/scheduled?src=…&secs=…&date=AAAAMMGG` | GET | posizioni da orario (modalità Programmato) |
 | `/api/metriche` | GET | **riservato (DIAG_TOKEN)**: misure aggregate dall'ultimo avvio (richieste e kB per endpoint, durata media/P95, codici, flusso, CPU, memoria) |
+| `/api/mose` | GET | stato delle barriere del MOSE (Autorità per la Laguna di Venezia), con fonte e ora; letto al massimo ogni 4-10 minuti |
 | `/api/fissi` | GET | indice dei dati fissi: impronte SHA-256 dei file della versione in uso, indirizzi del CDN, rete pedonale (ETag) |
 | `/api/fisso?src=nav&f=stops\|routes\|shapes&h=<impronta>` | GET | un file dei dati fissi (se l'impronta è quella in uso; in cache per sempre) |
 | `/api/stops`, `/api/routes`, `/api/shapes?id=…`, `/api/area` | GET | fermate, linee, tracciati, area servita (per le app non aggiornate e come riserva; stops e routes con ETag) |
@@ -426,7 +428,26 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ---
 
-## 12. Novità della v26
+## 12. Novità della v27
+
+- **MOSE nella marea** (`mose.js`, `/api/mose`): un semaforo per barriera (Treporti, San Nicolò, Malamocco, Chioggia): verde in recesso, giallo
+  programmato, giallo lampeggiante in movimento, rosso sollevata (senza lampeggio con «riduci movimento»); titolo chiaro quando il MOSE è attivo;
+  orario del sollevamento programmato (se pubblicato) e soglia di 110 cm nel grafico; anello colorato sul pulsante della marea. Fonte citata
+  con collegamento. La pagina dell'Autorità si legge solo a finestra aperta o con marea prevista oltre 90 cm.
+- **Grafico della marea**: niente cursore sotto; si trascina sul grafico (dito o mouse) o si usano le frecce (±5 min), Pagina su/giù (±1 h), Inizio/Fine.
+- **Pianificatore**: preferenze come le app di trasporto (Migliore, Meno cambi, Meno a piedi; tolti «Più veloce» e il tetto ai cambi); un cambio
+  vale 8 minuti nella Migliore e 20 in Meno cambi; con «Arrivo» niente proposte che arrivano oltre 20 minuti prima (o 15 oltre la più vicina);
+  inquadratura nella zona libera anche quando è piccola e di nuovo quando il foglio cambia altezza; × per togliere partenza o arrivo.
+- **Interfaccia**: colonna unica dei pulsanti a destra (preferiti e informazioni compresi) che scorre col dito e con la rotella quando lo spazio
+  manca (tastiera, Programmato, schermi bassi); niente pulsanti +/− dello zoom; solo la mappa si ingrandisce (pizzico, doppio tocco e Ctrl
+  bloccati sul resto; la dimensione del testo del sistema vale ancora); × per cancellare il testo nei campi; tolti «ora / Ns fa» accanto
+  all'orologio e l'ora nel titolo del pannello fermata.
+- **Temi**: i controlli nativi (calendario, orologio, menu, barre di scorrimento) seguono il tema del sito e non quello del sistema (icone di
+  data e ora invisibili in chiaro con il telefono in scuro); «Opzioni» attivo leggibile anche sotto il puntatore; numerini rossi leggibili in scuro;
+  etichetta «Ritardi» più scura in chiaro; simboli centrati sulla riga di testo.
+- Prove: `tests/mose.test.js`, nuovi casi del pianificatore; in `tests/ui/run.py` colonna che scorre, zoom, × nei campi, MOSE, grafico con la tastiera.
+
+### Novità della v26
 
 Analisi misurata sul servizio pubblicato: il **flusso dei mezzi** è la voce principale di banda (~17 kB/min compressi per app aperta), di cui
 un terzo è il tratto di linea dei mezzi (`path`); il **pianificatore** è la voce principale di CPU (~50 ms per calcolo nuovo, molto di più su Render).

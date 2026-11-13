@@ -17,6 +17,10 @@
   --tag-fg:#6b4200;--tag-bg:#fff1c2;--pt-bg:#facc15;--pt-fg:#1a1200;
   --shadow:0 8px 28px rgba(11,21,32,.16),0 1px 3px rgba(11,21,32,.12);
 }
+/* controlli nativi del browser (calendario, orologio, menu, barre di scorrimento, selettori) con il TEMA DEL SITO, non con quello del
+   sistema: con il telefono in modalità scura e il sito in chiaro le icone di data e ora erano bianche su campo bianco */
+:root{color-scheme:light}
+:root[data-theme="dark"]{color-scheme:dark}
 :root[data-theme="dark"]{
   --bg:#0a1019;--surface:#121a28;--surface-2:#1a2436;--glass:rgba(18,26,40,.94);
   --fg:#eef3f9;--muted:#a8b5c7;--line:rgba(238,243,249,.16);--line-strong:rgba(238,243,249,.4);
@@ -34,7 +38,7 @@ body{display:flex;flex-direction:column;height:100dvh;height:var(--app-h,100dvh)
   font:400 var(--fs-md)/1.4 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;-webkit-text-size-adjust:100%;font-synthesis:none}
 .sr-only{position:absolute!important;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 :where(a,button,input,select,summary,[tabindex]):focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:inherit}
-svg.ic{width:24px;height:24px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+svg.ic{width:24px;height:24px;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;vertical-align:middle}   /* in mezzo al testo: centrato sulla riga, non appoggiato sulla linea di base (nei contenitori flex non conta) */
 svg.ic.sm{width:18px;height:18px}
 .muted{color:var(--muted);font-size:var(--fs-xs)}
 .late{color:var(--late)}.ok,.early{color:var(--ok)}
@@ -44,6 +48,7 @@ svg.ic.sm{width:18px;height:18px}
 #map{position:absolute;inset:0;background:var(--bg);outline-offset:-3px}
 :root[data-theme="dark"] .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.9) saturate(.8)}
 .leaflet-container{font:inherit}
+.leaflet-tooltip svg.ic{vertical-align:-4px}
 .leaflet-tooltip{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:var(--r-sm);box-shadow:var(--shadow);font-size:var(--fs-sm);font-weight:600;padding:6px 10px}
 .leaflet-tooltip-top:before{border-top-color:var(--surface)}
 .leaflet-bar{border:0!important;border-radius:var(--r-md)!important;box-shadow:var(--shadow)!important;overflow:hidden}
@@ -68,8 +73,14 @@ svg.ic.sm{width:18px;height:18px}
 #status .note{font-weight:700}
 
 /* ---------- COLONNA CONTROLLI A DESTRA ---------- */
-#controls{position:absolute;z-index:1000;top:calc(var(--gap) + var(--safe-t));right:calc(var(--gap) + var(--safe-r));display:flex;flex-direction:column;gap:var(--gap);
-  max-height:calc(100% - 2*var(--gap) - var(--safe-t) + 24px);overflow-y:auto;scrollbar-width:none;padding:12px;margin:-12px;pointer-events:none}   /* il padding lascia spazio alle ombre (corte); i clic passano alla mappa tranne che sui gruppi */
+#controls{position:absolute;z-index:1000;top:calc(var(--gap) + var(--safe-t));bottom:var(--gap);right:calc(var(--gap) + var(--safe-r));display:flex;flex-direction:column;gap:var(--gap);
+  overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;scrollbar-width:none;padding:12px;margin:-12px;pointer-events:none}
+#controls>.group{flex:none}   /* i gruppi non si schiacciano mai: se lo spazio non basta la colonna scorre (dito e rotella) */
+/* Chrome/Safari non fanno scorrere col dito un contenitore con pointer-events:none: quando la colonna trabocca (classe messa da app.js)
+   diventa toccabile; allora è piena di pulsanti e la mappa sotto quella striscia non serve. Altrimenti i tocchi tra i gruppi vanno alla mappa. */
+#controls.scrolls{pointer-events:auto}
+#controls.more{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent)}   /* altri pulsanti sotto: bordo sfumato */
+#controls>#info-fab{margin-top:auto}   /* preferiti/informazioni in fondo alla colonna quando c'è spazio */   /* il padding lascia spazio alle ombre (corte); i clic passano alla mappa tranne che sui gruppi */
 #controls::-webkit-scrollbar{display:none}
 .group{pointer-events:auto;display:flex;flex-direction:column;gap:4px;padding:4px;border-radius:28px;background:var(--glass);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid var(--line);box-shadow:0 3px 12px rgba(11,21,32,.2),0 1px 2px rgba(11,21,32,.14)}
 .ibtn{position:relative;width:var(--tap);height:var(--tap);flex:none;display:inline-grid;place-items:center;padding:0;border:0;border-radius:50%;background:transparent;color:var(--fg);cursor:pointer;
@@ -298,7 +309,6 @@ body.sched-mode #timeline-controls{display:flex;align-items:center;gap:8px 10px}
 /* telefoni stretti: il selettore di modalità e l'orologio restano sulla stessa riga */
 @media (max-width:400px){
   .seg label{padding:0 12px;gap:6px}
-  #updated-ago{display:none}
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
@@ -315,7 +325,7 @@ body.sched-mode #timeline-controls{display:flex;align-items:center;gap:8px 10px}
 .av-top{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:var(--fs-xs)}
 .av-src{padding:2px 8px;border-radius:6px;font-weight:800;color:var(--tag-fg);background:var(--tag-bg);border:1px solid var(--tag-fg)}
 .av-when{color:var(--muted);font-weight:600}
-.av-stops{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0 8px}.av-stop{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;background:var(--pt-bg);color:var(--pt-fg);font-size:var(--fs-xs);font-weight:700}
+.av-stops{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0 8px}.av-stops>.muted{display:inline-flex;align-items:center;gap:4px}.av-stop{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:999px;background:var(--pt-bg);color:var(--pt-fg);font-size:var(--fs-xs);font-weight:700}
 .av-lines{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0 8px}
 .av-links{display:flex;gap:16px;flex-wrap:wrap;margin-top:6px}
 .av-links a{display:inline-flex;align-items:center;min-height:44px;color:var(--accent);font-weight:700;text-decoration:underline;text-underline-offset:3px}
@@ -487,16 +497,14 @@ button.chip.all{min-height:30px}
 .dep.gone .bsrc{color:var(--muted)}
 
 /* bottone Informazioni: stesso stile degli altri, da solo in basso a destra della mappa (sopra la barra in basso di qualunque altezza) */
-#watch-btn .cntb{top:-2px;right:-4px;background:var(--accent)}   /* avvisi di arrivo attivi: numero sulla campanella sopra la «i» */
+#watch-btn .cntb{top:-2px;right:-4px;background:var(--accent);color:var(--on-accent)}   /* avvisi di arrivo attivi: numero sulla campanella sopra la «i» */
 /* pulsante «Percorso»: in basso a sinistra, sopra l'attribuzione della mappa; azione principale (colore d'accento) */
 .plan-fab{position:absolute;z-index:1000;left:calc(var(--gap) + var(--safe-l));bottom:calc(var(--gap) + 26px);display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 18px 0 14px;border:0;border-radius:99px;background:var(--accent);color:var(--on-accent);font:inherit;font-size:var(--fs-md);font-weight:800;box-shadow:0 3px 12px rgba(11,21,32,.28),0 1px 2px rgba(11,21,32,.16);cursor:pointer}
 .plan-fab:hover{filter:brightness(1.08)}
 .plan-fab .ic{width:22px;height:22px;stroke-width:2.2}
 body.has-panel .plan-fab{display:none}
 @media (min-width:768px){ body.has-panel:not(.panel-plan) .plan-fab{display:inline-flex;left:calc(var(--gap) + var(--safe-l) + min(420px,calc(100% - 200px)) + var(--gap))} }
-#info-fab{position:absolute;z-index:1000;right:calc(var(--gap) + var(--safe-r));bottom:calc(var(--gap) + var(--zoom-off, 0px))}   /* con i comandi dello zoom (mouse): sopra di essi */
-body.has-panel #info-fab{display:none}
-@media (min-width:768px){ body.has-panel #info-fab{display:flex} }
+
 /* pagina Informazioni a tutto schermo (copre mappa e barra): testo lungo, impaginato come una pagina, leggibile */
 #info.fullpage{position:fixed;inset:0;z-index:3000;overflow-y:auto;background:var(--bg);color:var(--fg);overscroll-behavior:contain}
 #info .fp-h{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:760px;margin:0 auto;padding:calc(10px + var(--safe-t)) 16px 10px;background:var(--bg);border-bottom:1px solid var(--line)}
@@ -886,7 +894,7 @@ button.fv-it:hover{background:var(--accent-soft)}
 .pp-date{max-width:9.6rem}
 .pp-opzbtn{display:inline-flex;align-items:center;gap:5px;min-height:36px;margin-left:auto;padding:0 12px;border-radius:99px;border:1.5px solid var(--line-strong);background:transparent;color:var(--fg);font:inherit;font-size:var(--fs-sm);font-weight:700;cursor:pointer}
 .pp-opzbtn.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
-.pp-opzbtn:hover{background:var(--accent-soft)}
+.pp-opzbtn:not(.on):hover{background:var(--accent-soft)}   /* attivo: resta pieno anche sotto il puntatore (o dopo il tocco, sul telefono) */
 .pp-f{min-height:44px}
 .pp-fields{gap:4px}
 .pp-rail{padding:19px 0}
@@ -937,3 +945,56 @@ button.pp-walkonly:focus-visible{outline:2px solid var(--accent);outline-offset:
   body.plan-full #panel.is-plan .ph-tab{clip-path:none}
   body.plan-full #panel.is-plan .ph-tab::after{display:none}
 }
+/* v27: solo la mappa si ingrandisce (pizzico e doppio tocco disattivati sul resto dell'interfaccia; vedi theme-init.js) */
+html,body{touch-action:pan-x pan-y}
+/* numerini rossi nel tema scuro: il rosso è chiaro, il numero va scuro (bianco era illeggibile, contrasto 2,2) */
+:root[data-theme="dark"] .cntb{color:#2a0703}
+:root[data-theme="dark"] #watch-btn .cntb{color:var(--on-accent)}
+:root:not([data-theme="dark"]) .av-eff[data-sev="warning"]{color:color-mix(in srgb,var(--warn) 72%,#000)}   /* «Ritardi» leggibile sullo sfondo chiaro (contrasto > 4,5) */
+/* × per cancellare il testo dei campi (vedi app.js, .xwrap) e per togliere un punto scelto nel pianificatore (.pp-fx) */
+.xwrap{position:relative;display:flex;flex:1;min-width:0;align-items:center}
+.xwrap>input{flex:1;min-width:0;padding-right:46px!important}
+.xwrap>.xbtn{position:absolute;right:3px;top:50%;transform:translateY(-50%);width:42px;height:42px;color:var(--muted)}
+.xwrap>.xbtn:hover{color:var(--fg)}
+.xwrap>input[type=search]::-webkit-search-cancel-button{display:none}
+.pp-fw{position:relative;display:flex;align-items:center}
+.pp-fw>.pp-f{padding-right:46px}
+.pp-fw>.pp-fx{position:absolute;right:3px;top:50%;transform:translateY(-50%);width:40px;height:40px;color:var(--muted)}
+.pp-fw>.pp-fx:hover{color:var(--fg)}
+.fv-ren .xwrap{flex:1}
+
+/* ---- v27: MOSE nel pannello della marea (semafori per barriera; soglia e sollevamento programmato nel grafico) ---- */
+.tide-chart svg{outline:none}
+.tide-chart svg:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+.tide-chart svg .msl{stroke:var(--late);stroke-width:1.5;stroke-dasharray:3 4;opacity:.85}
+.tide-chart svg .msv{stroke:var(--late);stroke-width:2;opacity:.8}
+.tide-chart svg text.mst{fill:var(--late);font-size:12px;font-weight:800}
+.mose{margin-top:14px;padding:12px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface-2)}
+.mose[data-sem="rosso"]{border-color:color-mix(in srgb,var(--late) 55%,transparent);background:color-mix(in srgb,var(--late) 10%,var(--surface))}
+.mose[data-sem="lampeggia"],.mose[data-sem="giallo"]{border-color:color-mix(in srgb,#e0a800 60%,transparent);background:color-mix(in srgb,#e0a800 10%,var(--surface))}
+.mose-h{display:flex;align-items:center;gap:10px;margin:0 0 8px;font-size:var(--fs-md);font-weight:800;line-height:1.3}
+.mose-ev{display:flex;align-items:center;gap:6px;margin:0 0 8px;font-weight:700}
+.mose-ev .ic{flex:none}
+.mose-b{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:8px}
+.mose-b>li>b{display:block;margin-bottom:4px;font-size:var(--fs-xs);font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.mose-b ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.mose-b ul li{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:8px;align-items:center;min-height:40px}
+.mose-b ul li .sema{grid-row:1/3}
+.mb-n{font-weight:800;line-height:1.2}
+.mb-s{font-size:var(--fs-xs);color:var(--muted);font-weight:700;line-height:1.2}
+.mose .tide-foot{margin-top:10px}
+/* semaforo: tre luci in colonna, accesa solo quella dello stato (le altre spente ma visibili) */
+.sema{flex:none;display:inline-flex;flex-direction:column;gap:2px;padding:3px;border-radius:7px;background:#1b2330;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+.sema i{display:block;width:9px;height:9px;border-radius:50%;background:#3a4352}
+.sema[data-sem="rosso"] .r{background:#ff3b30;box-shadow:0 0 6px #ff3b30}
+.sema[data-sem="giallo"] .y,.sema[data-sem="lampeggia"] .y{background:#ffcc00;box-shadow:0 0 6px #ffcc00}
+.sema[data-sem="verde"] .g{background:#34c759;box-shadow:0 0 6px #34c759}
+.sema[data-sem="lampeggia"] .y{animation:sema-blink 1s steps(2,jump-none) infinite}
+@keyframes sema-blink{50%{background:#3a4352;box-shadow:none}}
+@media (prefers-reduced-motion:reduce){.sema[data-sem="lampeggia"] .y{animation:none}}   /* «in movimento» resta scritto accanto */
+/* MOSE attivo o in movimento: anello colorato sul pulsante della marea */
+#tide-btn[data-mose]::after{content:"";position:absolute;inset:3px;border-radius:50%;border:2.5px solid #ffcc00;pointer-events:none}
+#tide-btn[data-mose="rosso"]::after{border-color:#ff3b30}
+#tide-btn[data-mose="lampeggia"]::after{animation:sema-ring 1s steps(2,jump-none) infinite}
+@keyframes sema-ring{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){#tide-btn[data-mose]::after{animation:none}}

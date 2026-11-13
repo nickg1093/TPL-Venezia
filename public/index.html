@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <!-- Niente maximum-scale/user-scalable=no: bloccare lo zoom della pagina viola l'accessibilità (WCAG 1.4.4). La mappa gestisce da sé i propri gesti. -->
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Venezia TPL live</title>
 <meta name="description" content="Autobus, tram e vaporetti di Venezia in tempo reale, con livello e tendenza della marea.">
 <meta name="color-scheme" content="light dark">
@@ -26,9 +26,6 @@
 <div id="wrap">
   <div id="busybar" class="busybar" role="progressbar" aria-label="Caricamento in corso" aria-busy="true" hidden><span></span></div>
   <div id="map" role="application" aria-label="Mappa dei mezzi pubblici in tempo reale" tabindex="0"></div>
-  <!-- INFORMAZIONI: bottone separato dagli strumenti, in basso a destra sulla mappa (sempre sopra la barra in basso, qualunque sia la sua altezza).
-       Sopra, solo quando ce ne sono, la campanella degli avvisi di arrivo attivi (con il numero): apre la loro lista. -->
-  <div id="info-fab" class="group"><button id="favs-btn" class="ibtn" type="button" aria-expanded="false" aria-controls="favs" title="Preferiti"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-star"/></svg></button><button id="watch-btn" class="ibtn" type="button" hidden aria-controls="info" title="Avvisi di arrivo attivi"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-bell"/></svg><span class="cntb" id="watch-count" aria-hidden="true"></span></button><button id="info-btn" class="ibtn" type="button" aria-label="Informazioni, note legali e crediti" aria-expanded="false" aria-controls="info" title="Informazioni"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-about"/></svg></button></div>
   <!-- PIANIFICA PERCORSO: pulsante principale in basso a sinistra (sul telefono si nasconde con un pannello aperto: dal pannello di una
        fermata si usa «Percorso da qui» accanto alla stella) -->
   <button id="plan-btn" class="plan-fab" type="button" aria-expanded="false" aria-controls="panel" title="Pianifica percorso"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-route"/></svg><span>Percorso</span></button>
@@ -66,6 +63,9 @@
       <button id="tide-btn" class="ibtn" type="button" aria-label="Marea a Venezia" aria-expanded="false" aria-controls="tide" title="Marea"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-tide"/></svg><span class="dotc" aria-hidden="true"></span></button>
       <button id="install-btn" class="ibtn" type="button" aria-label="Installa l'app" title="Installa l'app" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-download"/></svg></button>
     </div>
+    <!-- preferiti, avvisi di arrivo attivi, informazioni: ultimo gruppo della colonna, in fondo quando c'è spazio; quando lo spazio manca
+         (tastiera, riga del Programmato aperta, schermo basso) la colonna intera scorre, con dito e rotella, senza schiacciare i pulsanti -->
+    <div id="info-fab" class="group"><button id="favs-btn" class="ibtn" type="button" aria-expanded="false" aria-controls="favs" title="Preferiti"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-star"/></svg></button><button id="watch-btn" class="ibtn" type="button" hidden aria-controls="info" title="Avvisi di arrivo attivi"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-bell"/></svg><span class="cntb" id="watch-count" aria-hidden="true"></span></button><button id="info-btn" class="ibtn" type="button" aria-label="Informazioni, note legali e crediti" aria-expanded="false" aria-controls="info" title="Informazioni"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-about"/></svg></button></div>
   </nav>
 
   <!-- FINESTRA MAREA (si apre dal pulsante onde) -->
@@ -233,7 +233,6 @@
       </div>
       <div id="clock-section">
         <div class="time-display" id="clock-time">00:00:<small>00</small></div>
-        <span class="muted" id="updated-ago">· ora</span>
       </div>
       <div id="sched-opts">
         <input id="tl-date" type="date" aria-label="Data">

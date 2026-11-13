@@ -7,7 +7,7 @@
 // Memoria sul telefono (localStorage «tpl.guida»): versione della guida vista e quali parti; nessun dato esce dal telefono.
 import { esc, icon } from './util.js';
 
-export const GUIDA_VER = 'v26';
+export const GUIDA_VER = 'v27';
 const KEY = 'tpl.guida';
 
 // Nei testi: html scritto qui (fisso), mai dati che arrivano da fuori.
@@ -55,6 +55,8 @@ const GUIDA_PANNELLO = [
 // novità senza un punto nell'app (solo a chi aveva già visto la guida di una versione precedente)
 const NOVITA_EXTRA = [
   { since: 'v24', icon: 'back', title: 'Il tasto «indietro» funziona', html: 'Il tasto o il gesto <b>indietro</b> del telefono chiude la finestra aperta o torna al pannello precedente. I comandi dei pannelli sono nella <b>linguetta</b> sul bordo, e il nome della fermata resta su una riga.' },
+  { since: 'v27', icon: 'tide', title: 'MOSE nella marea', html: 'Nel pannello della marea vedi lo stato delle barriere del MOSE alle bocche di porto, con un semaforo per ognuna: verde a riposo, giallo programmato, giallo lampeggiante in movimento, rosso sollevata. Fonte: Autorità per la Laguna di Venezia.' },
+  { since: 'v27', icon: 'route', title: 'Percorsi più semplici', html: 'Le preferenze sono tre, come nelle app di trasporto: Migliore, Meno cambi, Meno a piedi. Niente più cambi per guadagnare pochi minuti; con «Arrivo» le proposte arrivano vicino all\'orario scelto.' },
   { since: 'v26', icon: 'route', title: 'Percorso sempre in vista', html: 'Scegliendo una soluzione la mappa inquadra tutto il tragitto, tratti a piedi compresi, nella parte libera dello schermo; se sposti la mappa, gli aggiornamenti non la ricentrano più.' },
   { since: 'v26', icon: 'tide', title: 'Marea senza buchi', html: 'Il grafico della marea mostra le ultime ore anche subito dopo un aggiornamento del servizio.' },
   { since: 'v25', icon: 'walk', title: 'A piedi lungo le strade', html: 'Nel percorso i tratti a piedi seguono calli, ponti e marciapiedi, fino a 30 minuti di cammino, e ne vedi la lunghezza. Il calcolo lo fa il tuo telefono: la posizione non esce dal dispositivo.' },

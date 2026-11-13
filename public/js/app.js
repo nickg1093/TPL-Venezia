@@ -69,11 +69,27 @@ const schedQS = () => mode === 'sched' ? `&secs=${encodeURIComponent(range.value
 //   lineLayer = percorsi scelti dalla ricerca · tripLayer = percorso e fermate della corsa selezionata · stopLayer = pali delle fermate
 // ---------------------------------------------------------------------------------------------------------------------
 const map = L.map('map', { preferCanvas: true, zoomControl: false, attributionControl: false }).setView([45.437, 12.335], 12);
-if (matchMedia('(pointer: fine)').matches) {                                   // su touch si usa il pizzico
-  const zc = L.control.zoom({ position: 'bottomright', zoomInTitle: 'Ingrandisci', zoomOutTitle: 'Riduci' }).addTo(map);
-  // il tasto «i» sta nello stesso angolo: va sopra i comandi dello zoom, non sopra di essi
-  const zh = () => { const el = zc.getContainer?.(); if (el?.offsetHeight) document.documentElement.style.setProperty('--zoom-off', el.offsetHeight + 12 + 'px'); };
-  zh(); requestAnimationFrame(zh); addEventListener('resize', zh);
+// niente pulsanti +/− dello zoom: rotella, doppio clic, tastiera (+/−) e pizzico
+// × PER CANCELLARE IL TESTO in ogni campo (pianificatore, nome dei percorsi preferiti…): <span class="xwrap"><input>…<button data-x>.
+// Il pulsante compare quando c'è testo; toccato svuota il campo, avvisa chi ascolta («input») e lascia il cursore nel campo.
+// (La ricerca di fermate e linee ha il suo, #search-clear.)
+{
+  const sync = w => { const i = w.querySelector('input'), b = w.querySelector('[data-x]'); if (i && b) b.hidden = !i.value; };
+  document.addEventListener('input', e => { const w = e.target.closest?.('.xwrap'); if (w) sync(w); });
+  document.addEventListener('click', e => {
+    const b = e.target.closest?.('[data-x]'); if (!b) return;
+    const w = b.closest('.xwrap'), i = w?.querySelector('input'); if (!i) return;
+    e.preventDefault(); e.stopPropagation();
+    i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); i.focus(); sync(w);
+  }, true);
+}
+// colonna dei pulsanti a destra: se non ci sta (tastiera, riga del Programmato, schermo basso) scorre; vedi #controls.scrolls in app.css
+{
+  const col = document.getElementById('controls');
+  const chk = () => { const o = col.scrollHeight > col.clientHeight + 1; col.classList.toggle('scrolls', o); col.classList.toggle('more', o && col.scrollTop + col.clientHeight < col.scrollHeight - 2); };
+  col.addEventListener('scroll', chk, { passive: true });
+  new ResizeObserver(chk).observe(col); new MutationObserver(chk).observe(col, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+  addEventListener('resize', chk);
 }
 // l'attribuzione di OpenStreetMap è nel dock in basso (#credits): sempre visibile e mai coperta da pannelli o finestre
 // updateWhenZooming: false = durante il pizzico non si scaricano le mattonelle dei livelli intermedi (meno dati, stessa immagine finale)
@@ -111,7 +127,7 @@ function drawLine(pts, k, layer, op) {
 // degli elementi a schermo, quindi vale per qualsiasi dimensione, orientamento o lingua (testi più lunghi = pannelli più alti).
 // ---------------------------------------------------------------------------------------------------------------------
 const PAD = 14, MIN_FREE = 150;
-function freeBox() {
+function freeBox(min = MIN_FREE) {
   const m = $('map').getBoundingClientRect();
   let box = { l: 0, t: 0, r: m.width, b: m.height };
   const els = [panel, $('ptab'), $('tide'), $('avvisi'), $('favs'), $('controls'), searchContainer, $('topleft')].filter(el => el && !el.hidden && el.offsetParent !== null && !(el === searchContainer && !el.classList.contains('expanded')));
@@ -127,7 +143,7 @@ function freeBox() {
     if (o.r <= box.l || o.l >= box.r || o.b <= box.t || o.t >= box.b) continue;                 // non interseca la zona libera
     // quattro modi di scansare l'elemento (tagliare un lato della zona libera): si sceglie quello che lascia più superficie
     const opts = [{ ...box, l: Math.max(box.l, o.r + PAD) }, { ...box, r: Math.min(box.r, o.l - PAD) }, { ...box, t: Math.max(box.t, o.b + PAD) }, { ...box, b: Math.min(box.b, o.t - PAD) }]
-      .filter(x => x.r - x.l >= MIN_FREE && x.b - x.t >= MIN_FREE);
+      .filter(x => x.r - x.l >= min && x.b - x.t >= min);
     if (!opts.length) continue;                                                                   // non scansabile senza ridurre troppo la zona: lo si ignora
     box = opts.sort((a, b) => (b.r - b.l) * (b.b - b.t) - (a.r - a.l) * (a.b - a.t))[0];
   }
@@ -148,7 +164,11 @@ function ensureVisible(ll) {
 }
 // i pannelli cambiano altezza quando arrivano i dati: se c'è qualcosa da tenere in vista lo si ricentra
 let keepInView = null;                // () => LatLng | null
-new ResizeObserver(() => { if (keepInView && !panel.hidden) { const ll = keepInView(); if (ll) ensureVisible(ll); } }).observe(panel);
+let refitT = null;
+new ResizeObserver(() => {
+  if (keepInView && !panel.hidden) { const ll = keepInView(); if (ll) ensureVisible(ll); }
+  clearTimeout(refitT); refitT = setTimeout(() => Plan.refit?.(), 160);   // il foglio del pianificatore ha cambiato altezza: si reinquadra il percorso
+}).observe(panel);
 
 // ---------------------------------------------------------------------------------------------------------------------
 // OROLOGIO E MODALITÀ «PROGRAMMATO»
@@ -157,8 +177,6 @@ function updateClock() {
   if (mode !== 'live' || document.hidden) return;                    // pagina nascosta: niente lavoro (si aggiorna al ritorno)
   const n = new Date();
   $('clock-time').innerHTML = `${p2(n.getHours())}:${p2(n.getMinutes())}:<small>${p2(n.getSeconds())}</small>`;
-  const s = Math.floor((Date.now() - lastUpdate) / 1000);
-  $('updated-ago').textContent = s <= 2 ? '· ora' : `· ${s}s fa`;
 }
 setInterval(updateClock, 1000);
 setInterval(() => { if (!document.hidden) tickEta(); }, 1000);   // «tra N min»: solo con la pagina visibile
@@ -699,7 +717,7 @@ function marquee(root) {
 function renderDepartures() {
   if (!lastDeps || !current || current.t === 'trip') return;
   const live = mode === 'live', z = current.t === 'zone' ? zones.get(current.key) : null;
-  psub.textContent = (z ? `${z.letters.length} ${unitOf(z)[1]} · ` : '') + (live ? (lastDeps.liveUpdated ? `Live · ${new Date(lastDeps.liveUpdated).toLocaleTimeString('it-IT')}` : 'Live · in attesa dei dati') : 'Orario') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
+  psub.textContent = (z ? `${z.letters.length} ${unitOf(z)[1]} · ` : '') + (live ? (lastDeps.liveUpdated ? 'Live' : 'Live · in attesa dei dati') : 'Orario') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
   const rows = lastDeps.departures.map(x => ({ ...x, tIn: live ? x.expIn : x.schedIn, tSec: live ? x.expSec : x.schedIn * 60 }))
     .filter(x => !x.arrival && x.tSec >= -200 && x.tIn <= 120 && active.has(x.src) && (live || !x.done))   // partiti: al massimo da 3 minuti
     .filter(x => !z || z.pick === '*' || z.letterOf.get(x.stop) === z.pick)
@@ -1253,10 +1271,12 @@ function setPlanPick(on, msg) {
   else { $('toast').hidden = true; $('toast').onclick = () => { $('toast').hidden = true; }; }
 }
 // inquadra i punti nella parte di mappa non coperta da pannelli e controlli
+// Inquadra i punti nella zona libera. Per un percorso conta vederlo tutto: anche se lo spazio sopra il foglio del pannello è poco
+// (telefono piccolo, soluzioni aperte) si usa quello (min 64 px) invece di ignorare il pannello e finire sotto di esso.
 function fitFree(pts) {
   if (!pts.length) return;
-  const box = freeBox(), size = map.getSize(), b = L.latLngBounds(pts);
-  map.fitBounds(b, { paddingTopLeft: L.point(box.l + 24, box.t + 24), paddingBottomRight: L.point(size.x - box.r + 24, size.y - box.b + 24), maxZoom: 17, animate: true });
+  const box = freeBox(64), size = map.getSize(), b = L.latLngBounds(pts), pad = Math.max(10, Math.min(28, box.w / 10, box.h / 8));
+  map.fitBounds(b, { paddingTopLeft: L.point(box.l + pad, box.t + pad), paddingBottomRight: L.point(size.x - box.r + pad, size.y - box.b + pad), maxZoom: 17, animate: true });
 }
 Plan.init({
   chips: chipsArea, plist, pbadge, pname, psub, pstatus, layer: planLayer, drawLine, stopById, stopLabel,

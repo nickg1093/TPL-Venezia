@@ -248,3 +248,18 @@ test('v25: distanze misurate dal telefono lungo le strade («~r»): usate così 
   const w = percorso.plan({ da: [['aut:M1', 300, 1]], a: [['aut:M2', 200, 1]], secs: 8 * 3600, date: '20261102', piediM: 1200, piediReale: true });
   assert.equal(w.piedi, Math.round(1200 / 1.33 / 60));
 });
+
+test('v27: «arrivo entro» senza proposte che fanno arrivare troppo presto; altri orari conservati', () => {
+  percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
+  const D = 9 * 3600 + 300, r = percorso.plan({ da: [['aut:M0', 0]], a: [['aut:M2', 0]], secs: D, date: '20261102', entro: true });
+  const toS = hm => { const [h, m] = hm.split(':').map(Number); return h * 3600 + m * 60; };
+  const slack = Math.min(...r.soluzioni.map(o => D - toS(o.arrivi)));
+  for (const o of r.soluzioni) assert.ok(D - toS(o.arrivi) <= Math.max(percorso.C.BY_EARLY_S, slack + 900), `${o.parti} → ${o.arrivi} arriva troppo presto`);
+  assert.ok(r.soluzioni[0].poi.length >= 1, 'gli orari precedenti restano tra gli altri orari');
+});
+
+test('v27: preferenze come le app di trasporto: un cambio vale 8 minuti (Migliore) e 20 (Meno cambi)', () => {
+  assert.strictEqual(percorso.C.PREF.equilibrata.TP, 480);
+  assert.strictEqual(percorso.C.PREF.cambi.TP, 1200);
+  assert.ok(percorso.C.PREF.piedi.WW > percorso.C.PREF.equilibrata.WW);
+});

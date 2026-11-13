@@ -82,6 +82,9 @@ function restore() {
   // versioni precedenti: battelli, bus e tram separati (il tram era già compreso nei bus)
   if (Array.isArray(S.opz.mezzi)) S.opz.mezzi = [...new Set(S.opz.mezzi.map(m => (m === 'bus' || m === 'tram' ? 'aut' : m)).filter(m => m === 'nav' || m === 'aut'))];
   if (!Array.isArray(S.opz.mezzi) || !S.opz.mezzi.length) S.opz.mezzi = [...OPZ0.mezzi];
+  // v27: preferenze come nelle app di trasporto (Migliore, Meno cambi, Meno a piedi); «Più veloce» e il tetto ai cambi non ci sono più
+  if (S.opz.pref === 'veloce') S.opz.pref = 'equilibrata';
+  S.opz.cambi = OPZ0.cambi;
 }
 const saveOpz = () => { try { localStorage.setItem(KEY_OPZ, JSON.stringify(S.opz)); } catch { /* facoltativo */ } };
 // filtri diversi da quelli normali: numero (per il pulsante) e parametri della richiesta
@@ -149,7 +152,7 @@ export function show(opts = {}) {
   render();
   if (S.from && S.to && !S.res) run(); else draw();
 }
-export function clear() { viewKey = solKey = ''; clearInterval(timer); timer = null; clearTimeout(retry); S.picking = null; X.layer.clearLayers(); X.setPick(false); }
+export function clear() { viewKey = solKey = ''; lastPts = []; clearInterval(timer); timer = null; clearTimeout(retry); S.picking = null; X.layer.clearLayers(); X.setPick(false); }
 export function refresh() { if (S.res && S.when === 'now' && !S.edit) run(true); }
 // posizione arrivata (dopo la richiesta da «La mia posizione»)
 export function onPosition(ll) {
@@ -230,12 +233,15 @@ function fieldHtml(f) {
   const ep = S[f], lab = f === 'from' ? 'Da' : 'A';
   const val = ep ? `${ep.kind === 'me' ? icon('locate', 'sm') : ep.kind === 'point' ? icon('pin', 'sm') : srcIcon(ep.src, 'sm')}<span>${esc(epName(ep))}</span>`
     : `<span class="pp-ph">${f === 'from' ? 'Punto di partenza' : 'Dove vuoi andare?'}</span>`;
-  return `<button type="button" class="pp-f" data-f="${f}" aria-label="${lab}: ${esc(ep ? epName(ep) : 'da scegliere')}"><small>${lab}</small><span class="pp-v">${val}</span></button>`;
+  // × per togliere il punto scelto (accanto al campo, non dentro: un pulsante non può contenerne un altro)
+  return `<div class="pp-fw"><button type="button" class="pp-f" data-f="${f}" aria-label="${lab}: ${esc(ep ? epName(ep) : 'da scegliere')}"><small>${lab}</small><span class="pp-v">${val}</span></button>`
+    + (ep ? `<button type="button" class="ibtn sm pp-fx" data-clr="${f}" aria-label="Cancella ${f === 'from' ? 'la partenza' : "l'arrivo"}" title="Cancella">${icon('close', 'sm')}</button>` : '') + '</div>';
 }
 function renderForm() {
   if (S.edit) {
     X.chips.innerHTML = `<div class="pp pp-editing"><div class="pp-qwrap"><button type="button" class="ibtn sm pp-qback" aria-label="Annulla">${icon('back')}</button>`
-      + `<input class="pp-q" type="search" enterkeyhint="search" autocomplete="off" maxlength="80" placeholder="${S.edit === 'from' ? 'Partenza: fermata o luogo' : 'Arrivo: fermata o luogo'}" aria-label="${S.edit === 'from' ? 'Cerca il punto di partenza' : 'Cerca il punto di arrivo'}" value="${esc(S.q)}"></div></div>`;
+      + `<span class="xwrap"><input class="pp-q" type="search" enterkeyhint="search" autocomplete="off" maxlength="80" placeholder="${S.edit === 'from' ? 'Partenza: fermata o luogo' : 'Arrivo: fermata o luogo'}" aria-label="${S.edit === 'from' ? 'Cerca il punto di partenza' : 'Cerca il punto di arrivo'}" value="${esc(S.q)}">`
+      + `<button type="button" class="ibtn sm xbtn" data-x aria-label="Cancella il testo"${S.q ? '' : ' hidden'}>${icon('close', 'sm')}</button></span></div></div>`;
     const inp = X.chips.querySelector('.pp-q'); if (inp && document.activeElement !== inp) setTimeout(() => inp.focus(), 30);
     return;
   }
@@ -307,7 +313,7 @@ function optCard(o, attr, live, compact = false) {
 const kmTxt = m => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`);
 // «tutto a piedi» disegnato sulla mappa: scelto toccando la scheda, o da solo se nessun mezzo conviene
 const walkShown = () => !S.det && !!walkVal.get(walkKey()) && S.res?.piedi != null && (S.walkShow || !S.res.soluzioni.length);
-const PREF_TXT = { equilibrata: 'Equilibrata', veloce: 'Più veloce', cambi: 'Meno cambi', piedi: 'Meno a piedi' };
+const PREF_TXT = { equilibrata: 'Migliore', veloce: 'Migliore', cambi: 'Meno cambi', piedi: 'Meno a piedi' };
 function renderBody() {
   if (S.edit) return;
   if (S.showOpz) return renderOpz();
@@ -328,7 +334,7 @@ function renderBody() {
   }
   X.plist.innerHTML = head + walkOnly + `<div class="pp-list">${r.soluzioni.map((o, k) => optCard(o, `data-k="${k}"`, live)).join('')}</div>`
     + `<button type="button" class="nlink pp-later">${icon('clock', 'sm')}${r.entro ? 'Soluzioni precedenti' : 'Soluzioni più tardi'}</button>`
-    + `<p class="pp-note muted">Una proposta per percorso, ordinate per «${esc(PREF_TXT[S.opz.pref] || 'Equilibrata')}»: nel dettaglio trovi gli altri orari e le alternative. Tempi a piedi sulla rete pedonale di OpenStreetMap; fanno fede gli orari ACTV.</p>`;
+    + `<p class="pp-note muted">Una proposta per percorso, ordinate per «${esc(PREF_TXT[S.opz.pref] || 'Migliore')}»: nel dettaglio trovi gli altri orari e le alternative. Tempi a piedi sulla rete pedonale di OpenStreetMap; fanno fede gli orari ACTV.</p>`;
 }
 // pagina delle opzioni: mezzi, preferenza, cambi, camminata, passo, margine
 function renderOpz() {
@@ -337,9 +343,8 @@ function renderOpz() {
   X.plist.innerHTML = `<button type="button" class="linkback pp-oback">${icon('back', 'sm')}<span>Soluzioni</span></button>`
     + '<div class="pp-opz">'
     + `<div class="pp-og"><b>Mezzi</b><div class="chips pp-seg" role="group">${mz.map(([v, ic, t]) => `<button type="button" class="chip all${o.mezzi.includes(v) ? ' on' : ''}" data-m="${v}" aria-pressed="${o.mezzi.includes(v)}">${icon(ic, 'sm')}${t}</button>`).join('')}</div></div>`
-    + `<div class="pp-og"><b>Preferisci</b>${seg('pref', [['equilibrata', 'Equilibrata'], ['veloce', 'Più veloce'], ['cambi', 'Meno cambi'], ['piedi', 'Meno a piedi']])}`
-    + `<small class="muted">${{ equilibrata: 'Il giusto peso a tempo, cambi e strada a piedi: un cambio vale circa 5 minuti di viaggio.', veloce: 'Conta soprattutto l\'ora di arrivo: un cambio vale poco più di un minuto.', cambi: 'Meglio aspettare il mezzo diretto: un cambio vale circa 15 minuti.', piedi: 'Ogni minuto a piedi pesa come tre minuti di viaggio.' }[o.pref]}</small></div>`
-    + `<div class="pp-og"><b>Cambi</b>${seg('cambi', [['4', 'Qualsiasi'], ['2', 'Al massimo 2'], ['1', 'Al massimo 1'], ['0', 'Solo diretti']])}</div>`
+    + `<div class="pp-og"><b>Preferisci</b>${seg('pref', [['equilibrata', 'Migliore'], ['cambi', 'Meno cambi'], ['piedi', 'Meno a piedi']])}`
+    + `<small class="muted">${{ equilibrata: 'Il percorso più comodo: un cambio si propone solo se fa risparmiare almeno 8 minuti.', cambi: 'Meglio aspettare il mezzo diretto: un cambio si propone solo se fa risparmiare almeno 20 minuti.', piedi: 'Ogni minuto a piedi pesa come tre minuti di viaggio.' }[o.pref] || ''}</small></div>`
     + `<div class="pp-og"><b>A piedi, per ogni tratto</b>${seg('piedimax', [['', 'Senza limite'], ['5', '5 min'], ['10', '10 min'], ['15', '15 min'], ['20', '20 min']])}</div>`
     + `<div class="pp-og"><b>Il tuo passo</b>${seg('passo', [['lento', 'Tranquillo'], ['normale', 'Normale'], ['veloce', 'Svelto']])}`
     + `<small class="muted">${{ lento: 'Circa 3,5 km/h: con bagagli, bambini o chi cammina piano.', normale: 'Circa 4,5 km/h a Venezia (ponti e folla) e 4,8 km/h in terraferma.', veloce: 'Circa 5,6 km/h a Venezia e 6 km/h in terraferma: chi conosce le calli.' }[o.passo]}</small></div>`
@@ -397,7 +402,11 @@ function renderAlts() {
 let drawTok = 0, viewKey = '', solKey = '', userMoved = false, fitting = false;
 const solId = o => (o ? o.tratte.map(t => t.tipo === 'mezzo' ? `${t.tripId || t.line}@${t.da?.id}` : 'p').join('>') : '');
 function userMove() { if (!fitting) userMoved = true; }
-function fitTo(pts) { if (!pts.length) return; fitting = true; X.fit(pts); setTimeout(() => { fitting = false; }, 700); }
+let lastPts = [];
+// dopo l'impaginazione (due fotogrammi): il pannello ha già l'altezza definitiva quando si calcola la zona libera
+function fitTo(pts) { if (!pts.length) return; lastPts = pts; fitting = true; requestAnimationFrame(() => requestAnimationFrame(() => { X.fit(lastPts); setTimeout(() => { fitting = false; }, 700); })); }
+// il pannello ha cambiato altezza (soluzioni arrivate, dettaglio aperto): stessa inquadratura, se non hai spostato la mappa a mano
+export function refit() { if (lastPts.length && !userMoved && X?.isOpen()) fitTo(lastPts); }
 function draw() {
   X.layer.clearLayers();
   const r = S.res, o = S.det || r?.soluzioni?.[0], pts = [], myDraw = ++drawTok;
@@ -457,6 +466,8 @@ function onClick(e) {
   const fld = t.closest('.pp-f'); if (fld) { S.edit = fld.dataset.f; S.q = ''; render(); return; }
   if (t.closest('.pp-qback')) { S.edit = null; S.q = ''; render(); draw(); return; }
   if (t.closest('.pp-swap')) { [S.from, S.to] = [S.to, S.from]; save(); render(); run(); return; }
+  const clr = t.closest('[data-clr]');
+  if (clr) { S[clr.dataset.clr] = null; S.res = null; S.det = null; S.sel = -1; S.alts = null; S.err = null; save(); render(); X.layer.clearLayers(); return; }
   const w = t.closest('[data-w]'); if (w) { S.when = w.dataset.w; S.showOpz = false; render(); run(); return; }
   const sg = t.closest('.pp-sug');
   if (sg) {

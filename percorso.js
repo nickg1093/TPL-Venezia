@@ -26,8 +26,12 @@ const C = {
   V_LAG: 1.25, V_MAIN: 1.33, // passo «normale» (m/s): 4,5 km/h in laguna (ponti, scale, folla), 4,8 in terraferma (come le app di mappe)
   PASSO: { lento: 1.3, normale: 1, veloce: 0.8 },   // tempi a piedi × fattore: tranquillo ≈ 3,5-3,7 km/h, veloce ≈ 5,6-6 km/h
   MARGINE_LARGO_S: 180,      // «margine largo» per i cambi (bagagli, passeggini): +3 minuti
-  // costo generalizzato (minuti «percepiti»): ogni cambio pesa come TP secondi di viaggio, ogni secondo a piedi come WW secondi
-  PREF: { equilibrata: { TP: 300, WW: 1.5 }, veloce: { TP: 90, WW: 1.1 }, cambi: { TP: 900, WW: 1.5 }, piedi: { TP: 300, WW: 3 } },
+  // costo generalizzato (minuti «percepiti»): ogni cambio pesa come TP secondi di viaggio, ogni secondo a piedi come WW secondi.
+  // Come le app di trasporto (Google Maps, Moovit): «Migliore» (equilibrata), «Meno cambi», «Meno a piedi». v27: un cambio vale 8 minuti
+  // nella migliore (scendere, aspettare al pontile o alla fermata, rischio di perdere la coincidenza): niente più cambi per guadagnare
+  // 3-4 minuti; «meno cambi» 20 minuti. «veloce» resta solo per i link e le impostazioni salvate prima della v27.
+  PREF: { equilibrata: { TP: 480, WW: 1.5 }, veloce: { TP: 120, WW: 1.1 }, cambi: { TP: 1200, WW: 1.5 }, piedi: { TP: 480, WW: 3 } },
+  BY_EARLY_S: 20 * 60,       // «arrivo entro»: si propone chi arriva al massimo 20 min prima dell'orario (o 15 min oltre la più vicina, se nessuna ci sta)
   BETTER_S: 30,              // una soluzione ne rende inutile un'altra se è migliore di almeno 30 s di costo (e non chiede di partire prima)
   DETOUR: 1.3,               // linea d'aria -> percorso a piedi (terraferma, accesso alla prima fermata)
   MAIN_M: 450,               // fermate fuori dalla rete pedonale: cambi a piedi fino a 450 m in linea d'aria
@@ -550,6 +554,9 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
   // (per chi non vuole camminare), non con cambi o con metà strada comunque a piedi
   const wo = walkOnly != null && walkOnly < INF ? walkOnly : null;
   const worse = o => wo != null && D == null && o._arr > T + wo && (o.cambi > 0 || o.piedi * 60 >= wo / 2);
+  // «arrivo entro»: niente soluzioni che fanno arrivare troppo presto se ce ne sono di più vicine all'orario (come le app di trasporto)
+  const slack0 = D == null || !out.length ? 0 : Math.min(...out.map(o => D - o._arr));
+  const early = o => D != null && D - o._arr > Math.max(C.BY_EARLY_S, slack0 + 15 * 60);
   const keep = out.filter(o => !out.some(b => useless(b, o)) && !worse(o));
   // 2) famiglie (stesse linee, stesse fermate di salita e discesa): se ne propone una per tipo, la migliore, con gli altri orari della stessa
   const fams = new Map();
@@ -561,7 +568,9 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
     r.poi = others.slice(0, 3).map(o => ({ parti: o.parti, arrivi: o.arrivi })); reps.push(r);
   }
   reps.sort((x, y) => x._score - y._score || x._leave - y._leave);
-  const pick = reps.slice(0, C.OPTIONS);
+  // le proposte che fanno arrivare troppo presto si tolgono (restano tra gli «altri orari» di quelle tenute); mai tutte
+  const near = reps.filter(o => !early(o));
+  const pick = (near.length ? near : reps).slice(0, C.OPTIONS);
   // 3) etichette: la consigliata (costo più basso con la preferenza scelta), poi chi arriva prima / parte più tardi, meno cambi, meno a piedi
   if (pick.length > 1) {
     const top = pick[0], by = f => pick.reduce((m, o) => (f(o) < f(m) ? o : m), pick[0]);

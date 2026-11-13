@@ -20,6 +20,7 @@ const flusso = require('./flusso');
 const area = require('./area');
 const fissi = require('./fissi');
 const metriche = require('./metriche');
+const mose = require('./mose');
 const { D, S, IDS, ready } = live;
 
 const PORT = +process.env.PORT || 3000;
@@ -128,8 +129,13 @@ function areaFor() {
 // marea con cache breve: più utenti = una sola richiesta al portale
 let tideCache = { t: 0, v: null };
 async function getTideCached(debug) {
-  if (!debug && tideCache.v && Date.now() - tideCache.t < 30000) return tideCache.v;
-  const v = await tide.getTide({ debug }); if (!debug) tideCache = { t: Date.now(), v }; return v;
+  if (!debug && tideCache.v && Date.now() - tideCache.t < 30000) return { ...tideCache.v, mose: mose.brief() };
+  const v = await tide.getTide({ debug }); if (!debug) tideCache = { t: Date.now(), v };
+  // MOSE in sottofondo SOLO se serve: marea prevista sopra i 90 cm nelle prossime 24 ore (il sollevamento si decide con previsioni
+  // oltre 110 cm) o barriere non a riposo all'ultima lettura. Altrimenti la pagina dell'Autorità si legge solo aprendo la marea.
+  const hi = Math.max(-999, ...(v?.next || []).filter(n => n.type === 'max' && n.ts < Date.now() + 24 * 3600e3).map(n => n.cm));
+  if (hi >= 90 || (mose.brief() && mose.brief().stato !== 'recesso')) mose.refresh().catch(() => {});
+  return { ...v, mose: mose.brief() };
 }
 
 // Elenco passaggi di una fermata (o di più fermate = zona), con i mezzi equivalenti e senza doppioni
@@ -185,7 +191,7 @@ const validStyle = st => {
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
-const ABOUT_VERSION = 'v26';
+const ABOUT_VERSION = 'v27';
 // DATI FISSI sul telefono e dal CDN (fissi.js): file per versione dei GTFS con impronta, indice del ramo «dati» letto da GitHub.
 // DATI_REPO: repository del ramo dati (predefinito: quello da cui Render ha preso il codice); DATI_CDN=0 spegne il CDN (tutto dal server).
 const DATI_REPO = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/.test(process.env.DATI_REPO || '') ? process.env.DATI_REPO : (process.env.RENDER_GIT_REPO_SLUG || 'nickg1093/TPL-Venezia');
@@ -331,6 +337,8 @@ const API = new Map(Object.entries({
   '/api/tide': { fn: u => getTideCached(q(u, 'debug') === '1' && sec.tokenOk(u._req, DIAG_TOKEN)) },
   // AVVISI DI INFOMOBILITÀ (sito ACTV + canale Telegram), con linee e fermate collegate; aggiornati in automatico (avvisi.js)
   '/api/avvisi': { fn: () => avvisi.getAvvisi() },
+  // STATO DEL MOSE (barriere alle bocche di porto) dall'Autorità per la Laguna di Venezia, con fonte e ora di lettura (mose.js)
+  '/api/mose': { fn: async () => { await mose.refresh(); return mose.snapshot() || { error: 'Stato del MOSE non disponibile in questo momento' }; } },
   // DIAGNOSI (riservata, DIAG_TOKEN): analisi dei feed realtime, collegamento col GTFS statico, versioni GTFS in archivio e scelta
   '/api/audit': { auth: 'diag', fn: u => Object.fromEntries(wanted(u).map(i => [i, {
     intervalloLetturaMs: live.REFRESH_MS, periodoPubblicazioneStimatoMs: S[i].pubMs ? Math.round(S[i].pubMs) : null,

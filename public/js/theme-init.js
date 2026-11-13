@@ -35,3 +35,17 @@
   if (window.visualViewport) window.visualViewport.addEventListener('resize', function () { fit(true); });
   [100, 300, 700, 1500, 3000].forEach(function (ms) { setTimeout(function () { fit(true); }, ms); });   // la barra di sistema si assesta pochi istanti dopo l'apertura
 })();
+
+// SOLO LA MAPPA SI INGRANDISCE: l'interfaccia (pannelli, pulsanti, testi) non si zooma con il pizzico, il doppio tocco o Ctrl+rotella/+/−.
+// Sulla mappa pizzico, rotella e doppio tocco/clic restano e ingrandiscono la mappa (li gestisce Leaflet). La dimensione del testo
+// scelta nelle impostazioni del telefono o del browser continua a valere (l'interfaccia è in rem).
+// Telefono: viewport con user-scalable=no (Android) + touch-action: pan-x pan-y (CSS: niente pizzico né doppio tocco sulla pagina; la mappa
+// ha il suo touch-action) + gesture* di Safari, che ignora user-scalable. Tocchi rapidi sui pulsanti: mai bloccati.
+(function () {
+  ['gesturestart', 'gesturechange'].forEach(function (n) { document.addEventListener(n, function (e) { e.preventDefault(); }, { passive: false }); });
+  // Ctrl+rotella (anche il pizzico del touchpad): fuori dalla mappa non fa nulla; sulla mappa ingrandisce la mappa e non la pagina
+  window.addEventListener('wheel', function (e) { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+  window.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && /^(\+|=|-|_|0|Add|Subtract)$/.test(e.key)) e.preventDefault();
+  });
+})();
