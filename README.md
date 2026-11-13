@@ -430,14 +430,20 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ## 12. Novità della v27
 
-- **MOSE nella marea** (`mose.js`, `/api/mose`): un semaforo per barriera (Treporti, San Nicolò, Malamocco, Chioggia): verde in recesso, giallo
-  programmato, giallo lampeggiante in movimento, rosso sollevata (senza lampeggio con «riduci movimento»); titolo chiaro quando il MOSE è attivo;
+- **MOSE nella marea** (`mose.js`, `/api/mose`): un semaforo generale sempre visibile con il titolo («MOSE attivo: 1 barriera sollevata su 4»,
+  «2 barriere sollevate su 4», «tutte le barriere sollevate»: singolare e plurale concordati); «Barriere» apre e chiude i quattro semafori specifici
+  (Treporti, San Nicolò, Malamocco, Chioggia) con un riepilogo («2 sollevate, 1 in movimento, 1 in recesso»): verde in recesso, giallo con
+  sollevamento programmato, giallo lampeggiante in movimento, rosso sollevata (senza lampeggio con «riduci movimento»);
   orario del sollevamento programmato (se pubblicato) e soglia di 110 cm nel grafico; anello colorato sul pulsante della marea. Fonte citata
   con collegamento. La pagina dell'Autorità si legge solo a finestra aperta o con marea prevista oltre 90 cm.
 - **Grafico della marea**: niente cursore sotto; si trascina sul grafico (dito o mouse) o si usano le frecce (±5 min), Pagina su/giù (±1 h), Inizio/Fine.
 - **Pianificatore**: preferenze come le app di trasporto (Migliore, Meno cambi, Meno a piedi; tolti «Più veloce» e il tetto ai cambi); un cambio
   vale 8 minuti nella Migliore e 20 in Meno cambi; con «Arrivo» niente proposte che arrivano oltre 20 minuti prima (o 15 oltre la più vicina);
   inquadratura nella zona libera anche quando è piccola e di nuovo quando il foglio cambia altezza; × per togliere partenza o arrivo.
+- **Pianificatore a livelli** (modulo → lista → dettaglio): scelti partenza e arrivo il modulo si riduce a una riga di riepilogo (punti, orario,
+  opzioni) con «Modifica» per riaprirlo e «Riduci» per richiuderlo; toccando una soluzione il pannello si abbassa ancora (sul telefono foglio
+  basso, con un pulsante per alzarlo); «Tutte le soluzioni», «Modifica» e il tasto indietro risalgono un livello alla volta. Tutto il percorso
+  (mezzi, tratti a piedi, partenza e arrivo) resta nella parte libera della mappa: verificato su telefono, telefono piccolo, orizzontale e desktop.
 - **Interfaccia**: colonna unica dei pulsanti a destra (preferiti e informazioni compresi) che scorre col dito e con la rotella quando lo spazio
   manca (tastiera, Programmato, schermi bassi); niente pulsanti +/− dello zoom; solo la mappa si ingrandisce (pizzico, doppio tocco e Ctrl
   bloccati sul resto; la dimensione del testo del sistema vale ancora); × per cancellare il testo nei campi; tolti «ora / Ns fa» accanto
@@ -445,7 +451,7 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 - **Temi**: i controlli nativi (calendario, orologio, menu, barre di scorrimento) seguono il tema del sito e non quello del sistema (icone di
   data e ora invisibili in chiaro con il telefono in scuro); «Opzioni» attivo leggibile anche sotto il puntatore; numerini rossi leggibili in scuro;
   etichetta «Ritardi» più scura in chiaro; simboli centrati sulla riga di testo.
-- Prove: `tests/mose.test.js`, nuovi casi del pianificatore; in `tests/ui/run.py` colonna che scorre, zoom, × nei campi, MOSE, grafico con la tastiera.
+- Prove: `tests/mose.test.js`, nuovi casi del pianificatore; in `tests/ui/run.py` colonna che scorre, zoom, × nei campi, MOSE (generale e barriere apribili), grafico con la tastiera, livelli del pianificatore.
 
 ### Novità della v26
 

@@ -998,3 +998,43 @@ html,body{touch-action:pan-x pan-y}
 #tide-btn[data-mose="lampeggia"]::after{animation:sema-ring 1s steps(2,jump-none) infinite}
 @keyframes sema-ring{50%{opacity:.25}}
 @media (prefers-reduced-motion:reduce){#tide-btn[data-mose]::after{animation:none}}
+
+/* ---- v27: PIANIFICATORE A LIVELLI (percorso.js: level()) — il percorso intero resta visibile sulla mappa ----
+   list: i campi diventano una riga riassuntiva (toccandola si riaprono); det: foglio basso con la soluzione scelta (⌃ per alzarlo). */
+.pp-mini{margin:2px 8px 0 0}
+.pp-sum{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:6px 8px 6px 12px;border-radius:var(--r-sm);border:1.5px solid var(--line-strong);background:var(--surface);color:var(--fg);font:inherit;text-align:left;cursor:pointer}
+.pp-sum:hover{border-color:var(--accent)}
+.pp-sum:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.pp-sum-l{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.pp-sum-pts{display:flex;align-items:center;gap:6px;min-width:0;font-weight:800;font-size:var(--fs-sm);line-height:1.25}
+.pp-sum-p{display:inline-flex;align-items:center;gap:4px;min-width:0;flex:0 1 auto}
+.pp-sum-p>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pp-sum-p .ic{flex:none}
+.pp-sum-a{flex:none;color:var(--muted)}
+.pp-sum-w{font-size:var(--fs-xs);color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pp-sum-e{flex:none;display:inline-flex;align-items:center;gap:4px;min-height:40px;padding:0 6px;color:var(--accent);font-weight:800;font-size:var(--fs-sm)}
+.pp-collapse{margin-left:auto;display:inline-flex;align-items:center;gap:4px;min-height:36px}
+.pp-dhead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.pp-dhead .pp-tall{flex:none}
+@media (min-width:641px){ .pp-dhead .pp-tall{display:none} }   /* schermi larghi: il pannello è di lato, la mappa ha già il suo spazio */
+@media (max-width:640px){
+  /* titolo «Pianifica percorso» nascosto quando i campi sono ridotti: basta la riga riassuntiva (comandi nella linguetta) */
+  #panel.is-plan.plv-list .ph-main,#panel.is-plan.plv-det .ph-main{display:none}
+  #panel.is-plan.plv-list .ph,#panel.is-plan.plv-det .ph{padding-bottom:6px}
+  #panel.is-plan.plv-list{max-height:max(58%,min(calc(100% - 260px),34rem))}
+  #panel.is-plan.plv-det{max-height:max(42%,15rem)}
+  #panel.is-plan.plv-det.plv-tall{max-height:calc(100% - 56px)}
+  #panel.is-plan.plv-det .pp-mini{display:none}   /* nel dettaglio la soluzione basta: il riassunto torna con «Tutte le soluzioni» */
+}
+
+/* MOSE: semaforo generale sempre visibile; le 4 barriere si aprono e chiudono */
+.mose-d{margin-top:2px}
+.mose-d>summary{display:flex;align-items:center;gap:8px;min-height:44px;margin:0 -6px;padding:0 6px;border-radius:var(--r-sm);cursor:pointer;list-style:none;font-weight:800;line-height:1.3}
+.mose-d>summary::-webkit-details-marker{display:none}
+.mose-d>summary:hover{background:color-mix(in srgb,var(--text) 6%,transparent)}
+.mose-d>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mose-d>summary .muted{font-weight:700}
+.mose-chev{flex:none;transform:rotate(-90deg);transition:transform .15s}
+.mose-d[open]>summary .mose-chev{transform:none}
+.mose-d[open]>.mose-b{margin-top:6px}
+@media (prefers-reduced-motion:reduce){.mose-chev{transition:none}}

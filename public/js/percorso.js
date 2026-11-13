@@ -14,7 +14,7 @@ let X = null;                      // contesto dato da app.js (mappa, pannello, 
 // mezzi: battelli (nav) e autobus/tram (aut, come i pulsanti della mappa)
 const OPZ0 = { mezzi: ['nav', 'aut'], pref: 'equilibrata', cambi: '4', piedimax: '', passo: 'normale', margine: 'normale' };
 // when: 'now' (parti adesso, tempo reale) · 'at' (parti alle) · 'by' (arriva entro); date: giorno scelto (AAAA-MM-GG), entro le date dei GTFS in archivio
-const S = { walkShow: false, from: null, to: null, when: 'now', time: '', date: '', res: null, err: null, sel: -1, det: null, alts: null, edit: null, q: '', picking: null, loading: false, asked: 0,
+const S = { formOpen: false, tall: false, walkShow: false, from: null, to: null, when: 'now', time: '', date: '', res: null, err: null, sel: -1, det: null, alts: null, edit: null, q: '', picking: null, loading: false, asked: 0,
   opz: { ...OPZ0 }, showOpz: false, opzDirty: false };
 let timer = null, token = 0, retry = null, range = { min: '', max: '' };
 // date con orari disponibili: le stesse della modalità «Programmato» (/api/dates, versioni dei GTFS in archivio)
@@ -115,13 +115,22 @@ export function init(ctx) {
 }
 export const isPicking = () => !!S.picking;
 // livelli interni del pianificatore per il tasto «indietro» (nav.js): ricerca di un punto, opzioni, dettaglio di una soluzione
-export const depth = () => (S.edit ? 1 : 0) + (S.showOpz ? 1 : 0) + (S.det ? 1 : 0);
+export const depth = () => (S.edit ? 1 : 0) + (S.showOpz ? 1 : 0) + (formShown() && S.from && S.to ? 1 : 0) + (S.det ? 1 : 0);
 export function back() {
   if (S.edit) { S.edit = null; S.q = ''; render(); draw(); return true; }
-  if (S.showOpz) { const d = S.opzDirty; S.showOpz = false; S.opzDirty = false; renderForm(); if (d) run(); else renderBody(); return true; }
-  if (S.det) { S.sel = -1; S.det = null; renderBody(); draw(); return true; }
+  if (S.showOpz) { const d = S.opzDirty; S.showOpz = false; S.opzDirty = false; renderForm(); if (d) run(); else renderBody(); X.changed?.(); return true; }
+  if (S.formOpen && S.from && S.to) { S.formOpen = false; render(); return true; }   // modulo riaperto: si richiude nella riga riassuntiva
+  if (S.det) { S.sel = -1; S.det = null; S.tall = false; renderBody(); draw(); return true; }
   return false;
 }
+// TRE LIVELLI DEL PANNELLO (per vedere il percorso sulla mappa anche con il pianificatore aperto):
+//   form  campi completi (partenza, arrivo, quando, opzioni): finché manca un punto, o riaperti con «Modifica»
+//   list  partenza e arrivo scelti: i campi diventano UNA riga riassuntiva (toccandola si riaprono); sotto, le soluzioni
+//   det   una soluzione scelta: il foglio si abbassa ancora (sul telefono circa 40% dello schermo) e la mappa mostra il percorso intero;
+//         «Soluzioni» torna alla lista, la freccia ⌃ allarga il foglio per leggere tutte le tappe (⌄ lo riabbassa)
+const formShown = () => !!(S.edit || S.showOpz || !S.from || !S.to || S.formOpen);
+export const level = () => (formShown() ? 'form' : S.det ? 'det' : 'list');
+export const isTall = () => !!(S.det && S.tall && !formShown());
 // a tutto schermo sul telefono finché non ci sono soluzioni da guardare sulla mappa
 export const wantsFull = () => !!(S.edit || S.showOpz || !S.from || !S.to || (!S.res && !S.err));
 // corse della soluzione disegnata sulla mappa («src:corsa»): i soli mezzi da mostrare mentre il pianificatore è aperto
@@ -237,6 +246,17 @@ function fieldHtml(f) {
   return `<div class="pp-fw"><button type="button" class="pp-f" data-f="${f}" aria-label="${lab}: ${esc(ep ? epName(ep) : 'da scegliere')}"><small>${lab}</small><span class="pp-v">${val}</span></button>`
     + (ep ? `<button type="button" class="ibtn sm pp-fx" data-clr="${f}" aria-label="Cancella ${f === 'from' ? 'la partenza' : "l'arrivo"}" title="Cancella">${icon('close', 'sm')}</button>` : '') + '</div>';
 }
+// riga riassuntiva del modulo (livelli list e det): da → a, quando, opzioni; toccandola si riaprono i campi
+const epIc = ep => (ep.kind === 'me' ? icon('locate', 'sm') : ep.kind === 'point' ? icon('pin', 'sm') : srcIcon(ep.src, 'sm'));
+const dmy = d => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '');
+function miniHtml() {
+  const nf = opzCount(), when = S.when === 'now' ? 'Adesso' : `${S.when === 'by' ? 'Arrivo entro le' : 'Partenza alle'} ${esc(S.time || '')}${S.date && S.date !== today() ? ` · ${dmy(S.date)}` : ''}`;
+  const lab = `Modifica partenza, arrivo e orario. Ora: da ${epName(S.from)} a ${epName(S.to)}, ${when.toLowerCase()}`;
+  return `<div class="pp pp-mini"><button type="button" class="pp-sum" data-expand aria-expanded="false" aria-label="${esc(lab)}">`
+    + `<span class="pp-sum-l"><span class="pp-sum-pts"><span class="pp-sum-p">${epIc(S.from)}<span>${esc(epName(S.from))}</span></span>${icon('next', 'sm pp-sum-a')}<span class="pp-sum-p">${epIc(S.to)}<span>${esc(epName(S.to))}</span></span></span>`
+    + `<span class="pp-sum-w">${when}${nf ? ` · ${nf} ${nf > 1 ? 'opzioni' : 'opzione'}` : ''}</span></span>`
+    + `<span class="pp-sum-e">${icon('edit', 'sm')}<span>Modifica</span></span></button></div>`;
+}
 function renderForm() {
   if (S.edit) {
     X.chips.innerHTML = `<div class="pp pp-editing"><div class="pp-qwrap"><button type="button" class="ibtn sm pp-qback" aria-label="Annulla">${icon('back')}</button>`
@@ -245,6 +265,7 @@ function renderForm() {
     const inp = X.chips.querySelector('.pp-q'); if (inp && document.activeElement !== inp) setTimeout(() => inp.focus(), 30);
     return;
   }
+  if (S.from && S.to && !S.formOpen && !S.showOpz) { X.chips.innerHTML = miniHtml(); return; }
   const at = S.when !== 'now', by = S.when === 'by';
   if (at && !S.time) { const d = new Date(Date.now() + (by ? 60 : 10) * 60000); d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5); S.time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
   if (at) S.date = clampDate(S.date);
@@ -256,6 +277,7 @@ function renderForm() {
     + `<div class="pp-fields">${fieldHtml('from')}${fieldHtml('to')}</div>`
     + `<button type="button" class="ibtn sm pp-swap" aria-label="Inverti partenza e arrivo" title="Inverti">${icon('swap')}</button></div>`
     + `<div class="pp-when"><span class="pp-segw" role="group" aria-label="Quando">${seg}</span>`
+    + (S.formOpen && S.from && S.to && S.res ? `<button type="button" class="nlink pp-collapse" aria-label="Riduci i campi e torna alle soluzioni">${icon('up', 'sm')}<span>Riduci</span></button>` : '')
     + (at ? `<span class="pp-tw"><input class="pp-date" type="date" value="${esc(S.date)}" min="${esc(clampDate(t))}"${range.max ? ` max="${esc(range.max)}"` : ''} aria-label="Giorno${dateLab ? ' (oggi)' : ''}">`
       + `<input class="pp-time" type="time" value="${esc(S.time)}" step="300" aria-label="${by ? 'Arrivo entro le' : 'Partenza alle'}"></span>` : '')
     + `<button type="button" class="pp-opzbtn${S.showOpz ? ' on' : ''}" aria-expanded="${S.showOpz}" aria-label="Opzioni del percorso${opzCount() ? ` (${opzCount()} attive)` : ''}" title="Opzioni">${icon('sliders', 'sm')}<span class="pp-optx">Opzioni</span>${opzCount() ? `<span class="pp-cnt">${opzCount()}</span>` : ''}</button>`
@@ -373,7 +395,8 @@ function renderDetail(o, live) {
     if (nx && nx.tipo === 'mezzo') steps.push(`<li class="pp-step chg"><span class="pp-sic">${icon('next', 'sm')}</span><div><b>Cambio</b><small>stessa fermata</small></div></li>`);
   });
   steps.push(`<li class="pp-step end"><span class="pp-sic">${icon('pin')}</span><div><b>Arrivo alle ${esc(o.arrivi)}</b><small>${esc(epName(S.to))}</small></div></li>`);
-  X.plist.innerHTML = `<button type="button" class="linkback pp-back">${icon('back', 'sm')}<span>Tutte le soluzioni</span></button>`
+  X.plist.innerHTML = `<div class="pp-dhead"><button type="button" class="linkback pp-back">${icon('back', 'sm')}<span>Tutte le soluzioni</span></button>`
+    + `<button type="button" class="ibtn sm pp-tall" aria-pressed="${S.tall}" aria-label="${S.tall ? 'Abbassa il pannello e mostra di più la mappa' : 'Alza il pannello per leggere tutte le tappe'}" title="${S.tall ? 'Più mappa' : 'Più tappe'}">${icon(S.tall ? 'down' : 'up', 'sm')}</button></div>`
     + `<div class="pp-dsum"><span class="pp-times"><b>${esc(o.parti)}</b>${icon('next', 'sm')}<b>${esc(o.arrivi)}</b></span><span class="muted">${minTxt(o.minuti)} · ${cambiTxt(o)}${o.piedi ? ` · ${o.piedi} min a piedi` : ''}</span>${o.rischio ? '<span class="pp-tag warn">Coincidenza a rischio con i tempi aggiornati</span>' : ''}</div>`
     + `<ol class="pp-steps"><li class="pp-step start"><span class="pp-sic">${S.from.kind === 'me' ? icon('locate') : icon('pin')}</span><div><b>Partenza alle ${esc(o.parti)}</b><small>${esc(epName(S.from))}</small></div></li>${steps.join('')}</ol>`
     + '<section class="pp-alts" aria-live="polite"></section>';
@@ -459,10 +482,13 @@ function draw() {
 // ---------------------------------------------------------------------------------------------------------------------
 // TOCCHI
 // ---------------------------------------------------------------------------------------------------------------------
-function choose(f, ep) { S[f] = ep; S.edit = null; S.q = ''; save(); render(); if (S.from && S.to) run(); else { S.edit = !S.from ? 'from' : !S.to ? 'to' : null; render(); } }
+function choose(f, ep) { S[f] = ep; S.edit = null; S.q = ''; if (S.from && S.to) S.formOpen = false; save(); render(); if (S.from && S.to) run(); else { S.edit = !S.from ? 'from' : !S.to ? 'to' : null; render(); } }
 function onClick(e) {
   if (!X.isOpen()) return;
   const t = e.target;
+  if (t.closest('[data-expand]')) { S.formOpen = true; S.tall = false; render(); X.chips.querySelector('.pp-f')?.focus(); return; }
+  if (t.closest('.pp-collapse')) { S.formOpen = false; render(); return; }
+  if (t.closest('.pp-tall')) { S.tall = !S.tall; renderBody(); X.changed?.(); return; }
   const fld = t.closest('.pp-f'); if (fld) { S.edit = fld.dataset.f; S.q = ''; render(); return; }
   if (t.closest('.pp-qback')) { S.edit = null; S.q = ''; render(); draw(); return; }
   if (t.closest('.pp-swap')) { [S.from, S.to] = [S.to, S.from]; save(); render(); run(); return; }
@@ -493,9 +519,9 @@ function onClick(e) {
   if (t.closest('[data-walkonly]')) { S.walkShow = !walkShown(); renderBody(); draw(); return; }
   // soluzioni e alternative
   const alt = t.closest('[data-alt]');
-  if (alt && S.alts?.data) { const [kind, k] = alt.dataset.alt.split(':'), x = S.alts.data[kind]?.[+k]; if (x) { S.det = x; S.sel = -1; renderBody(); draw(); X.plist.scrollTop = 0; } return; }
-  const opt = t.closest('.pp-opt'); if (opt && opt.dataset.k != null) { S.sel = +opt.dataset.k; S.det = S.res?.soluzioni?.[S.sel] || null; renderBody(); draw(); X.plist.scrollTop = 0; return; }
-  if (t.closest('.pp-back')) { S.sel = -1; S.det = null; renderBody(); draw(); return; }
+  if (alt && S.alts?.data) { const [kind, k] = alt.dataset.alt.split(':'), x = S.alts.data[kind]?.[+k]; if (x) { S.det = x; S.sel = -1; S.formOpen = false; renderForm(); renderBody(); draw(); X.plist.scrollTop = 0; } return; }
+  const opt = t.closest('.pp-opt'); if (opt && opt.dataset.k != null) { S.sel = +opt.dataset.k; S.det = S.res?.soluzioni?.[S.sel] || null; S.formOpen = false; S.tall = false; renderForm(); renderBody(); draw(); X.plist.scrollTop = 0; return; }
+  if (t.closest('.pp-back')) { S.sel = -1; S.det = null; S.tall = false; renderBody(); draw(); return; }
   if (t.closest('.pp-later')) {
     const r = S.res; if (!r?.soluzioni?.length) return;
     if (r.entro) {                                             // arrivo entro: un minuto prima dell'arrivo più presto mostrato

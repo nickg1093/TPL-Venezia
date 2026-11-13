@@ -62,10 +62,13 @@ function parse(html) {
   if (et) { const r = et.rows.find(x => (x[col(et, /^data$/i)] || x[col(et, /^orario$/i)])); if (r) evento = { data: r[col(et, /^data$/i)].slice(0, 40), orario: r[col(et, /^orario$/i)].slice(0, 40) }; }
   const worst = barriere.reduce((m, b) => (RANK[b.stato] > RANK[m.stato] ? b : m), barriere[0]);
   const all = k => barriere.every(b => b.stato === k), some = k => barriere.some(b => b.stato === k);
-  const titolo = all('recesso') ? 'MOSE non attivo: paratoie in recesso'
-    : some('sollevata') ? (all('sollevata') ? 'MOSE attivo: tutte le barriere sollevate' : 'MOSE attivo: barriere sollevate')
-    : some('sollevamento') ? 'MOSE in attivazione: barriere in sollevamento'
-    : some('abbassamento') ? 'MOSE in chiusura: barriere in abbassamento'
+  // concordanza: «1 barriera sollevata», «2 barriere sollevate», «tutte le barriere sollevate» (barriera e paratoia: femminili)
+  const n = k => barriere.filter(b => b.stato === k).length, N = barriere.length;
+  const quante = (k, sing, plur) => { const x = n(k); return x === N && N > 1 ? `tutte le barriere ${plur}` : x === 1 ? `1 barriera ${sing} su ${N}` : `${x} barriere ${plur} su ${N}`; };
+  const titolo = all('recesso') ? (N === 1 ? 'MOSE non attivo: paratoia in recesso' : 'MOSE non attivo: paratoie in recesso')
+    : some('sollevata') ? `MOSE attivo: ${quante('sollevata', 'sollevata', 'sollevate')}`
+    : some('sollevamento') ? `MOSE in attivazione: ${quante('sollevamento', 'in sollevamento', 'in sollevamento')}`
+    : some('abbassamento') ? `MOSE in rientro: ${quante('abbassamento', 'in abbassamento', 'in abbassamento')}`
     : some('programmato') ? 'Sollevamento del MOSE programmato'
     : 'Stato del MOSE non riconosciuto';
   return { stato: worst.stato, sem: worst.sem, titolo, barriere, evento, aggiornato: times.length ? Math.max(...times) : null };

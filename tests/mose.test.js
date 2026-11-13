@@ -30,7 +30,9 @@ test('stati della fonte -> semafori: programmato giallo, in sollevamento lampegg
   assert.strictEqual(mose.classify(F).sem, 'lampeggia');
   assert.strictEqual(mose.classify(S).sem, 'rosso');
   assert.strictEqual(mose.classify('Testo nuovo mai visto').sem, 'grigio');
-  const a = mose.parse(page([S, F, R, R])); assert.strictEqual(a.stato, 'sollevata'); assert.strictEqual(a.titolo, 'MOSE attivo: barriere sollevate');
+  const a = mose.parse(page([S, F, R, R])); assert.strictEqual(a.stato, 'sollevata'); assert.strictEqual(a.titolo, 'MOSE attivo: 1 barriera sollevata su 4');
+  assert.strictEqual(mose.parse(page([S, S, F, R])).titolo, 'MOSE attivo: 2 barriere sollevate su 4');
+  assert.strictEqual(mose.parse(page([R, F, R, R])).titolo, 'MOSE in attivazione: 1 barriera in sollevamento su 4');
   const b = mose.parse(page([S, S, S, S])); assert.strictEqual(b.titolo, 'MOSE attivo: tutte le barriere sollevate');
   const c = mose.parse(page([F, F, R, R])); assert.strictEqual(c.sem, 'lampeggia'); assert.match(c.titolo, /in sollevamento/);
   const d = mose.parse(page([P, P, P, P], ['14/11/2026', '06:30'])); assert.strictEqual(d.sem, 'giallo');

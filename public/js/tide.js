@@ -2,7 +2,7 @@
 import { $, esc, icon, hm, api } from './util.js';
 
 const btn = $('tide-btn'), card = $('tide'), body = $('tide-body');
-let data = null, err = null, timer = null, mose = null;
+let data = null, err = null, timer = null, mose = null, moseOpen = false;   // dettaglio delle 4 barriere: chiuso di base, resta come lo lascia l'utente
 const fmtCm = cm => `${cm > 0 ? '+' : cm < 0 ? '−' : ''}${Math.abs(cm)}`;
 const dayTag = ms => { const a = new Date(ms), b = new Date(); return a.toDateString() === b.toDateString() ? '' : a.toLocaleDateString('it-IT', { weekday: 'short' }) + ' '; };
 // Promemoria breve: con la marea (attuale o prevista nel grafico) oltre 85 cm ACTV pubblica quali servizi di navigazione sono previsti
@@ -133,7 +133,7 @@ async function loadMose() {
 
 // ---- MOSE: semafori per barriera (verde in recesso, giallo programmato, giallo lampeggiante in movimento, rosso sollevata) ----
 const SEM_TXT = { verde: 'in recesso', giallo: 'sollevamento programmato', lampeggia: 'in movimento', rosso: 'sollevata', grigio: 'stato non riconosciuto' };
-const STATO_TXT = { recesso: 'In recesso', programmato: 'Programmato', sollevamento: 'In sollevamento', abbassamento: 'In abbassamento', sollevata: 'Sollevata' };
+const STATO_TXT = { recesso: 'In recesso', programmato: 'Sollevamento programmato', sollevamento: 'In sollevamento', abbassamento: 'In abbassamento', sollevata: 'Sollevata' };
 function moseEventMs() {                                      // «14/11/2026» + «06:30» (ora di Venezia) -> ms
   const e = mose && !mose.error && mose.evento; if (!e) return null;
   const d = String(e.data || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/), t = String(e.orario || '').match(/(\d{1,2})[:.](\d{2})/);
@@ -142,6 +142,15 @@ function moseEventMs() {                                      // «14/11/2026» 
   return Number.isFinite(ms) ? ms : null;
 }
 const sema = sem => `<span class="sema" data-sem="${esc(sem)}" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></span>`;
+function riepilogo(list) {                                   // «· 4 in recesso» / «· 2 sollevate, 2 in recesso»
+  if (!list.length) return '';
+  // [singolare, plurale] riferiti a «barriera/barriere» (femminile)
+  const LAB = { verde: ['in recesso', 'in recesso'], giallo: ['con sollevamento programmato', 'con sollevamento programmato'], lampeggia: ['in movimento', 'in movimento'], rosso: ['sollevata', 'sollevate'], grigio: ['con stato non riconosciuto', 'con stato non riconosciuto'] };
+  const lab = (s, n) => esc((LAB[s] || ['', ''])[n > 1 ? 1 : 0]);
+  const c = {}; for (const b of list) c[b.sem] = (c[b.sem] || 0) + 1;
+  const k = Object.keys(c); if (k.length === 1) return ` <span class="muted">· ${list.length === 1 ? '' : 'tutte '}${lab(k[0], list.length)}</span>`;
+  return ` <span class="muted">· ${k.map(s => `${c[s]} ${lab(s, c[s])}`).join(', ')}</span>`;
+}
 function moseHtml() {
   if (!mose) return '<section class="mose" aria-label="MOSE"><h3 class="mose-h">MOSE <span class="muted">· caricamento…</span></h3></section>';
   if (mose.error) return `<section class="mose" aria-label="MOSE"><h3 class="mose-h">MOSE</h3><p class="tide-note">Stato delle barriere non disponibile in questo momento. <a href="https://www.autoritalaguna.it/operativita-m-o-s-e/" target="_blank" rel="noopener noreferrer">Pagina dell'Autorità per la Laguna</a></p></section>`;
@@ -150,7 +159,8 @@ function moseHtml() {
   return `<section class="mose" data-sem="${esc(mose.sem)}" aria-label="MOSE: ${esc(mose.titolo)}">`
     + `<h3 class="mose-h">${sema(mose.sem)}<span>${esc(mose.titolo)}</span></h3>`
     + (mose.evento && (mose.evento.data || mose.evento.orario) ? `<p class="mose-ev">${icon('clock', 'sm')}<span>Sollevamento previsto ${evT ? `${dayTag(evT)}alle ${hm(evT)}` : esc(`${mose.evento.data} ${mose.evento.orario}`.trim())}</span></p>` : '')
-    + `<ul class="mose-b">${groups.map(g => `<li><b>${esc(g.bocca.replace(/^Bocca di /i, ''))}</b><ul>${g.list.map(b => `<li data-sem="${esc(b.sem)}">${sema(b.sem)}<span class="mb-n">${esc(b.barriera.replace(/^Barriera di /i, ''))}</span><span class="mb-s">${esc(STATO_TXT[b.stato] || b.testo)}</span><span class="sr-only"> (${SEM_TXT[b.sem] || ''})</span></li>`).join('')}</ul></li>`).join('')}</ul>`
+    + `<details class="mose-d"${moseOpen ? ' open' : ''}><summary>${icon('chev', 'sm mose-chev')}<span>Barriere${riepilogo(mose.barriere || [])}</span></summary>`
+    + `<ul class="mose-b">${groups.map(g => `<li><b>${esc(g.bocca.replace(/^Bocca di /i, ''))}</b><ul>${g.list.map(b => `<li data-sem="${esc(b.sem)}">${sema(b.sem)}<span class="mb-n">${esc(b.barriera.replace(/^Barriera di /i, ''))}</span><span class="mb-s">${esc(STATO_TXT[b.stato] || b.testo)}</span><span class="sr-only"> (${SEM_TXT[b.sem] || ''})</span></li>`).join('')}</ul></li>`).join('')}</ul></details>`
     + `<p class="tide-foot">${mose.aggiornato ? `Stato aggiornato dall'Autorità alle ${dayTag(mose.aggiornato)}${hm(mose.aggiornato)}` : 'Stato'}${mose.stale ? ' · <b>non aggiornato di recente</b>' : ''}. Il sollevamento si decide con previsioni oltre 110 cm; informazione indicativa.<br>Fonte:<a href="${esc(safeUrl(mose.fonte?.url || ''))}" target="_blank" rel="noopener noreferrer">${esc(mose.fonte?.nome || 'Autorità per la Laguna di Venezia')} · Operatività M.O.S.E.</a></p></section>`;
 }
 function position() {   // la scheda si allinea al suo pulsante, senza uscire dalla mappa
@@ -165,6 +175,7 @@ export function open(beforeOpen) {
 }
 export function close() { if (card.hidden) return; card.hidden = true; btn.setAttribute('aria-expanded', 'false'); clearInterval(timer); }
 export function init(beforeOpen) {
+  body.addEventListener('toggle', e => { if (e.target.classList?.contains('mose-d')) { moseOpen = e.target.open; position(); } }, true);   // «toggle» non risale: in cattura
   body.addEventListener('click', e => { if (e.target.closest('.tide-warn')) window.dispatchEvent(new CustomEvent('tpl:water-alert')); });
   btn.onclick = () => (card.hidden ? open(beforeOpen) : close());
   $('tide-close').onclick = () => { close(); btn.focus(); };

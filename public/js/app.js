@@ -513,7 +513,14 @@ function closePanel() {
 }
 // PIANIFICATORE SUL TELEFONO: mentre si scelgono partenza, arrivo e opzioni il pannello occupa tutto lo schermo (la tastiera non copre più
 // nulla e la mappa non serve); con le soluzioni torna un foglio in basso e la mappa mostra il percorso. «Scegli sulla mappa» lo toglie di mezzo.
-function planLayout() { document.body.classList.toggle('plan-full', current?.t === 'plan' && !panel.hidden && Plan.wantsFull()); }
+// impaginazione del pianificatore: a tutto schermo sul telefono finché si compilano i campi; poi tre livelli (plv-form / plv-list /
+// plv-det, vedi percorso.js) che abbassano il foglio per lasciare alla mappa il percorso intero; plv-tall = foglio alzato a mano
+function planLayout() {
+  const on = current?.t === 'plan' && !panel.hidden, lv = on ? Plan.level() : '';
+  document.body.classList.toggle('plan-full', on && Plan.wantsFull());
+  for (const k of ['form', 'list', 'det']) panel.classList.toggle('plv-' + k, lv === k);
+  panel.classList.toggle('plv-tall', on && Plan.isTall());
+}
 $('pclose').onclick = closePanel;
 
 const refreshPanel = () => { if (!current || current.t === 'plan') return; if (current.t === 'trip') loadTrip(); else loadDepartures(); };   // il percorso si aggiorna da sé (ogni minuto)
