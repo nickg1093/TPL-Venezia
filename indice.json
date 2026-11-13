@@ -1,13 +1,14 @@
 {
  "formato": 1,
- "commit": "24e27afce6e4341daf8ee34b5c803182fd874c0f",
- "creato": "2026-11-12T20:15:22.501Z",
+ "commit": "45ea7ec6e6838403adf41700234895d1b46d9ebf",
+ "creato": "2026-11-13T19:15:03.495Z",
  "fissi": [
   "nav/189116ae5243",
   "nav/38eed93361c1",
   "nav/e280a17ca490",
   "aut/13e238b453a5",
   "aut/1e7d36b025b1",
+  "aut/6010d7cd56eb",
   "aut/8c81af2d223b",
   "aut/f72e67310aa5"
  ],
