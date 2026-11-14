@@ -11,7 +11,7 @@ const store = require('../gtfsstore');
     console.log(`[${src}] ${r.status}${r.file ? ' ' + r.file : ''}${r.from ? ' (valida dal ' + r.from + ')' : ''}${r.error ? ' — ' + r.error : ''}`);
     if (r.status === 'nuova') changes++;
     const del = await store.prune(src);
-    if (del?.length) { console.log(`[${src}] eliminate versioni scadute: ${del.join(', ')}`); changes++; }
+    if (del?.length) { console.log(`[${src}] eliminate le versioni non più in uso: ${del.join(', ')}`); changes++; }
     const l = await store.list(src);
     console.log(`[${src}] in archivio: ` + l.map(c => `${c.info?.from ?? '?'}→${c.info?.cover?.max ?? '?'}${c.legacy ? ' (vecchio file)' : ''}`).join(' | '));
   }

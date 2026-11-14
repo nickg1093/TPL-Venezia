@@ -22,7 +22,7 @@ const { eachRow } = require('./csv');
 const cal = require('./calendar');
 const ids = require('./ids');
 
-const DIR = path.join(__dirname, 'data');
+const DIR = process.env.GTFS_DATA_DIR || path.join(__dirname, 'data');   // GTFS_DATA_DIR: solo per le prove
 const BASE = 'https://actv.avmspa.it/sites/default/files/attachments/opendata/';
 const SOURCES = {
   nav: { url: BASE + 'navigazione/actv_nav.zip', legacy: 'actv_nav.zip' },
@@ -30,7 +30,6 @@ const SOURCES = {
 };
 const REQUIRED = ['trips.txt', 'stop_times.txt', 'stops.txt', 'routes.txt'];
 const MAX_DOWNLOAD = 120 * 1024 * 1024;   // GTFS scaricato: al massimo 120 MB
-const KEEP_MAX = 6, KEEP_DAYS = 60;   // archivio: massimo 6 versioni; le scadute restano 60 giorni (si possono ancora consultare in "Pianificato")
 // il sito ACTV rifiuta le richieste senza User-Agent da browser
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
@@ -195,19 +194,22 @@ async function download(src, { force = false } = {}) {
   return { status: 'errore', error: lastErr };
 }
 
-// Compatta l'archivio: tiene le versioni valide oggi, quelle future, la più recente scaduta e quelle scadute da meno di KEEP_DAYS giorni (max KEEP_MAX). Non tocca mai la copia storica in data/.
-async function prune(src, ymd = cal.romeYmd()) {
-  const rows = (await list(src)).filter(c => c.info && !c.legacy).map(c => ({ c, valid: cal.activeServices(c.info.calendar, c.info.exByDate, ymd).size > 0, future: c.info.from > ymd }));
-  const keep = new Set(rows.filter(r => r.valid || r.future).map(r => r.c.hash));
-  const expired = rows.filter(r => !keep.has(r.c.hash)).sort((a, b) => b.c.info.cover.max.localeCompare(a.c.info.cover.max));
-  if (expired[0]) keep.add(expired[0].c.hash);
-  const limit = cal.addDays(ymd, -KEEP_DAYS);
-  for (const r of expired) if (r.c.info.cover.max >= limit) keep.add(r.c.hash);
-  const order = rows.slice().sort((a, b) => b.c.info.from.localeCompare(a.c.info.from));
-  let n = 0; const removed = [];
-  for (const r of order) {
-    if (keep.has(r.c.hash) && ++n <= KEEP_MAX) continue;
-    try { fs.unlinkSync(r.c.file); removed.push(path.basename(r.c.file)); } catch { /* già rimosso */ }
+// PULIZIA DELL'ARCHIVIO (sempre: a ogni versione nuova, al cambio di giorno, all'avvio, nel workflow dei GTFS).
+// Si tengono SOLO le versioni che servono: quella che verrà scelta per almeno una data da oggi in avanti (stessa regola di choose: la più
+// recente valida in quel giorno) e quelle in uso adesso (inUse: hash, dal server). Tutto il resto si elimina: versioni scadute, versioni
+// ancora «valide» ma superate da una più recente, la vecchia copia in data/. Se nessuna versione è valida si tiene la più vicina.
+async function prune(src, ymd = cal.romeYmd(), inUse = []) {
+  const all = await list(src), cands = all.filter(c => c.info);
+  if (!all.length) return [];
+  const keep = new Set(inUse.filter(Boolean));
+  const end = cands.reduce((m, c) => (c.info.cover.max > m ? c.info.cover.max : m), ymd);
+  for (let d = ymd, k = 0; d <= end && k < 800; d = cal.addDays(d, 1), k++) { const r = choose(cands, d); if (r.pick && !r.approx) keep.add(r.pick.hash); }
+  if (!keep.size) { const r = choose(cands, ymd); if (r.pick) keep.add(r.pick.hash); }
+  if (!keep.size) return [];                                                     // nulla di utilizzabile: non si cancella niente
+  const removed = [];
+  for (const c of all) {
+    if (keep.has(c.hash)) continue;
+    try { fs.unlinkSync(c.file); removed.push(path.basename(c.file)); } catch { /* già rimosso */ }
   }
   return removed;
 }

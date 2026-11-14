@@ -91,6 +91,17 @@ const busyDelta = d => {
   if (pending > 0 && !busyTimer) busyTimer = setTimeout(() => { busyTimer = null; if (pending > 0) busyFn?.(true); }, BUSY_MS);
   if (pending === 0) { clearTimeout(busyTimer); busyTimer = null; busyFn?.(false); }
 };
+// NUOVI TENTATIVI LIMITATI per le risposte «in caricamento» (409) e «occupato» (503/429): attese crescenti (3 s, poi 6 s… fino a 15 s),
+// al massimo 40 tentativi (~5 minuti). Mai un ciclo senza fine: un server in difficoltà non viene tempestato di richieste.
+const tries = new Map();
+export function ritenta(key, fn, ms = 3000, max = 40) {
+  const n = (tries.get(key) || 0) + 1; tries.set(key, n);
+  if (n > max) { tries.delete(key); return false; }
+  setTimeout(fn, Math.min(ms * (1 + Math.floor((n - 1) / 10)), 15000));
+  return true;
+}
+export const riuscito = key => { tries.delete(key); };
+export const NON_ORA = 'orari della data scelta non disponibili ora, riprova tra qualche minuto';
 // cache: 'no-cache' = il browser rivalida (ETag): se il server risponde 304 riusa la copia già scaricata (meno dati, stessi contenuti)
 export async function api(url, { cache = 'no-store' } = {}) {
   busyDelta(1);

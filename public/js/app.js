@@ -1,6 +1,6 @@
 // APP PRINCIPALE: mappa, mezzi in movimento, ricerca, pannelli (fermata · zona · corsa) con navigazione e inseguimento.
 // Moduli: util.js (testo, icone, nomi, colori, etichette) · zones.js (zone di fermate) · tide.js (marea) · pwa.js (installazione).
-import { $, esc, p2, nowSecs, fmtSecs, localDate, icon, srcIcon, vehIcon, vehName, lum, colorInfo, badge, ptHtml, etaText, tickEta, delayInfo, api, onBusy } from './util.js';
+import { $, esc, p2, nowSecs, fmtSecs, localDate, icon, srcIcon, vehIcon, vehName, lum, colorInfo, badge, ptHtml, etaText, tickEta, delayInfo, api, onBusy, ritenta, riuscito, NON_ORA } from './util.js';
 import { zones, zoneOf, snorm, buildZones, norm, unitOf, mergeDuplicates, groups, aliasOf } from './zones.js';
 import * as Tide from './tide.js';
 import * as Avvisi from './avvisi.js';
@@ -314,9 +314,14 @@ async function load() {
     if (d.error && !d.vehicles) throw new Error(d.error);
     if (m === 'live') { fleet.clear(); for (const v of d.vehicles || []) if (v && typeof v.id === 'string') fleet.set(v.id, v); }
     vehicles = d.vehicles || []; render(); showStatus(d, m);
-    if (m === 'sched' && /Carico gli orari/.test(d.error || '')) setTimeout(() => { if (mode === 'sched') load(); }, 3000);   // versione del GTFS per quella data in caricamento
-  } catch (e) { if (m === mode && !e.busy) { statusEl.className = 'err'; statusEl.textContent = 'Errore: ' + e.message; } }
+    if (m === 'sched' && /Carico gli orari|occupato/i.test(d.error || '')) { if (!ritenta('sched', () => { if (mode === 'sched') load(); })) schedFail(); }   // orari di quella data in caricamento
+    else if (m === 'sched') riuscito('sched');
+  } catch (e) {
+    if (m === 'sched' && (e.loading || e.busy)) { if (!ritenta('sched', () => { if (mode === 'sched') load(); })) schedFail(); return; }
+    if (m === mode && !e.busy) { statusEl.className = 'err'; statusEl.textContent = 'Errore: ' + e.message; }
+  }
 }
+function schedFail() { if (mode === 'sched') { statusEl.className = 'err'; statusEl.textContent = 'Errore: ' + NON_ORA; } }
 // stato in alto a sinistra (numero di mezzi, ora dei dati, avvisi sul feed); d = risposta completa o stato inviato dal flusso
 let lastStatus = '', lastMeta = {};
 function showStatus(d, m = mode, force = false) {
@@ -569,8 +574,13 @@ async function loadDepartures() {
     const d = await api(url + schedQS());                                 // url ha sempre già «?»: i parametri si aggiungono con «&»
     if (d.error) throw new Error(d.error);
     if (current !== e) return;
-    lastDeps = d; d._e = e; renderDepartures();
-  } catch (err) { if (current === e && !(err.busy && lastDeps)) plist.innerHTML = `<p class="late pad">Dati non disponibili: ${esc(err.message)}</p>`; }
+    lastDeps = d; d._e = e; renderDepartures(); riuscito('stop');
+  } catch (err) {
+    if (current !== e) return;
+    const mine = lastDeps && lastDeps._e === e;
+    if ((err.loading || err.busy) && !mine && ritenta('stop', () => { if (current === e) loadDepartures(); })) { plist.innerHTML = `<p class="muted pad">${err.loading ? 'Carico gli orari della data scelta…' : 'Server occupato, riprovo tra pochi secondi…'}</p>`; return; }
+    if (!(err.busy && mine)) plist.innerHTML = `<p class="late pad">Dati non disponibili: ${esc(err.loading ? NON_ORA : err.message)}</p>`;
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -813,9 +823,10 @@ async function loadTrip() {
     const d = await api(`/api/trip?id=${encodeURIComponent(e.v.src + ':' + e.v.tripId)}&mode=${mode}${e.v.key ? '&veh=' + encodeURIComponent(e.v.key) : ''}${schedQS()}`);
     if (d.error) throw new Error(d.error);
     if (current !== e) return;
-    lastTrip = d; renderTrip(!e.drawn); e.drawn = true;
+    lastTrip = d; renderTrip(!e.drawn); e.drawn = true; riuscito('trip');
   } catch (err) {
-    if (err.loading) { if (current === e) setTimeout(() => { if (current === e) loadTrip(); }, 3000); return; }
+    if ((err.loading || (err.busy && !lastTrip)) && current === e && ritenta('trip', () => { if (current === e) loadTrip(); })) return;
+    if (err.loading) err = new Error(NON_ORA);
     if (current === e && !(err.busy && lastTrip)) plist.innerHTML = `<p class="late pad">Dati non disponibili: ${esc(err.message)}</p>`; }
 }
 // tratto del percorso (corsa aperta da «Pianifica percorso»): posizioni di salita e discesa nell'elenco delle fermate, o null

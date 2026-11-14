@@ -20,6 +20,7 @@ const flusso = require('./flusso');
 const area = require('./area');
 const fissi = require('./fissi');
 const metriche = require('./metriche');
+const memoria = require('./memoria');
 const mose = require('./mose');
 const { D, S, IDS, ready } = live;
 
@@ -42,7 +43,8 @@ function timeParams(u) {   // { secs, date } già validati; valori invalidi = er
 function gtfsFor(i, date) {
   const r = live.dataFor(i, date);
   if (r.loading) throw fail(409, 'Carico gli orari della data scelta, un momento…');
-  if (r.error) throw fail(503, 'Orari della data scelta non disponibili: ' + r.error);
+  if (r.busy) throw Object.assign(fail(503, 'Server occupato: riprovo tra pochi secondi'), { retry: 5 });
+  if (r.error) throw Object.assign(fail(503, 'Orari della data scelta non disponibili: ' + r.error), { retry: 30 });
   return r;
 }
 const NO_GTFS = 'Nessun GTFS in archivio copre questa data';
@@ -191,7 +193,7 @@ const validStyle = st => {
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
-const ABOUT_VERSION = 'v27';
+const ABOUT_VERSION = 'v28';
 // DATI FISSI sul telefono e dal CDN (fissi.js): file per versione dei GTFS con impronta, indice del ramo «dati» letto da GitHub.
 // DATI_REPO: repository del ramo dati (predefinito: quello da cui Render ha preso il codice); DATI_CDN=0 spegne il CDN (tutto dal server).
 const DATI_REPO = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/.test(process.env.DATI_REPO || '') ? process.env.DATI_REPO : (process.env.RENDER_GIT_REPO_SLUG || 'nickg1093/TPL-Venezia');
@@ -364,6 +366,7 @@ const API = new Map(Object.entries({
 }));
 
 const respCache = new Map(), sharedCache = new Map();
+memoria.quando(() => { respCache.clear(); sharedCache.clear(); });   // memoria alta: via le risposte in cache (si ricalcolano)
 // ---- risposte ----
 function send(req, res, obj, code = 200, extra = {}) {
   const body = Buffer.from(typeof obj === 'string' ? obj : JSON.stringify(obj));
@@ -490,7 +493,7 @@ async function onRequest(req, res) {
       u._req = req;
       if (api.raw) return api.raw(u, req, res);
       if (api.cpu) {                                                       // pianificatore: budget di CPU globale (security.js)
-        if (sec.cpuBusy()) { metriche.count('rinviati'); return send(req, res, { error: 'Server occupato, riprovo tra pochi secondi', busy: true }, 503, { 'Retry-After': '3' }); }
+        if (sec.cpuBusy() || memoria.critico()) { metriche.count('rinviati'); return send(req, res, { error: 'Server occupato, riprovo tra pochi secondi', busy: true }, 503, { 'Retry-After': '3' }); }
         const t0 = performance.now();
         try { return send(req, res, await api.fn(u, req)); } finally { sec.cpuSpent(performance.now() - t0); }
       }
@@ -507,6 +510,7 @@ async function onRequest(req, res) {
       if (api.cache) { const k = req.url, hit = respCache.get(k), now = Date.now(); if (hit && now - hit.t < 1500) return send(req, res, await hit.p); const p = Promise.resolve().then(() => api.fn(u, req)); respCache.set(k, { t: now, p }); p.catch(() => respCache.delete(k)); if (respCache.size > 200) for (const [kk, v] of respCache) if (now - v.t >= 1500) respCache.delete(kk); return send(req, res, await p); }
       send(req, res, await api.fn(u, req));
     } catch (e) {
+      if (e.code === 503) return send(req, res, { error: e.message, busy: true }, 503, { 'Retry-After': String(e.retry || 5) });   // momentaneo: l'app riprova
       const code = e.code >= 400 && e.code < 500 ? e.code : 500;
       if (code === 500) console.error(`errore ${p}:`, e.stack || e.message);
       send(req, res, { error: code === 500 ? 'errore interno' : e.message }, code);       // dettagli interni mai al client

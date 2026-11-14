@@ -47,7 +47,7 @@ jobs:
         run: |
           git config user.name "Bot Aggiornamento GTFS"
           git config user.email "bot@actions.github.io"
-          git add -A data/gtfs
+          git add -A data/gtfs data/actv_nav.zip data/actv_aut.zip 2>/dev/null || git add -A data/gtfs
           if ! git diff --cached --quiet; then
             git commit -m "GTFS ACTV: nuova versione in archivio ($(date -u +'%Y-%m-%d %H:%M UTC'))"
             git pull --rebase --autostash && git push

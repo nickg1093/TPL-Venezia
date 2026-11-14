@@ -67,7 +67,7 @@ function snapshot() {
     totale: { richieste: [...M.ep.values()].reduce((a, e) => a + e.n, 0), MB: +([...M.ep.values()].reduce((a, e) => a + e.byte, 0) / 1e6).toFixed(2) },
     ultima_ora: { richieste: M.min.reduce((a, m) => a + m[1], 0), MB: +(M.min.reduce((a, m) => a + m[2], 0) / 1e6).toFixed(2) },
     endpoint: out, sse: { ...M.sse, kB_flussi_aperti: Math.round([...streams].reduce((a, f) => a + f(), 0) / 1000) }, contemporanee: M.conc, bloccati: M.bloccati, pianificatore_rinviati: M.rinviati,
-    cpu_pct: +cpuPct.toFixed(1), memoria_MB: { rss: Math.round(mem.rss / 1e6), heap: Math.round(mem.heapUsed / 1e6) }
+    cpu_pct: +cpuPct.toFixed(1), memoria_MB: { rss: Math.round(mem.rss / 1e6), heap: Math.round(mem.heapUsed / 1e6) }, protezione_memoria: require('./memoria').stato()
   };
 }
 module.exports = { begin, sseOpen, sseClose, snapshot, count: k => { M[k]++; }, _M: M };

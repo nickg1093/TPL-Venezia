@@ -33,4 +33,29 @@ async function eachRow(buf, fields, fn) {
     if (++n % 500 === 0 && Date.now() - last > 8) { await tick(); last = Date.now(); }
   }
 }
-module.exports = { splitLine, eachRow, tick };
+// Come eachRow, ma da una voce ZIP letta a pezzi (zip.js: entry.stream()): niente buffer con tutto il file decompresso.
+// Le righe si separano sui byte «a capo» (10): un carattere UTF-8 su più byte non viene mai spezzato.
+async function eachRowStream(entry, fields, fn) {
+  if (!entry) return;
+  let idx = null, rest = null, n = 0, last = Date.now();
+  const line = (b, s, e) => {
+    let ln = b.toString('utf8', s, e);
+    if (ln.charCodeAt(ln.length - 1) === 13) ln = ln.slice(0, -1);
+    if (idx === null) { const head = splitLine(ln.replace(/^\uFEFF/, '')).map(h => h.trim()); idx = fields.map(f => head.indexOf(f)); return; }
+    if (!ln) return;
+    const f = splitLine(ln), o = {};
+    fields.forEach((k, j) => { o[k] = idx[j] >= 0 ? f[idx[j]] : undefined; });
+    fn(o);
+  };
+  for await (const chunk of entry.stream()) {
+    const b = rest ? Buffer.concat([rest, chunk]) : chunk;
+    let s = 0;
+    for (let e = b.indexOf(10, s); e >= 0; e = b.indexOf(10, s)) {
+      line(b, s, e); s = e + 1;
+      if (++n % 500 === 0 && Date.now() - last > 8) { await tick(); last = Date.now(); }
+    }
+    rest = s < b.length ? Buffer.from(b.subarray(s)) : null;        // copia: non trattiene il pezzo intero
+  }
+  if (rest && rest.length) line(rest, 0, rest.length);
+}
+module.exports = { splitLine, eachRow, eachRowStream, tick };

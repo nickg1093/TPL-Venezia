@@ -62,6 +62,8 @@ let IX = null;
 // Indici in memoria: quello degli orari in uso e, al massimo, uno per un'altra data (modalità «Programmato» o percorso in un altro giorno,
 // con la versione dei GTFS valida in quella data: stessa scelta di live.dataFor). Ogni indice pesa 1-2 MB.
 const IXS = new Map();
+// memoria alta: resta solo l'indice degli orari in uso adesso (gli altri si ricostruiscono alla prossima richiesta)
+require('./memoria').quando(() => { const live = SRC.map(i => ctx?.G(i)?.meta?.key || ctx?.G(i)?.meta?.hash || '').join('|'); for (const k of [...IXS.keys()]) if (k !== live) IXS.delete(k); });
 // file delle distanze a piedi: riga 1 fermate (n=navigazione, a=automobilistico), riga 2 coppie «i.j.metri» in base 36,
 // riga 3 (facoltativa) fermate lontane da ogni strada della rete (indici in base 36): per quelle resta la linea d'aria
 function walkFile(name) {
@@ -76,7 +78,7 @@ function walkFile(name) {
 const distM = (la1, lo1, la2, lo2) => Math.hypot((la1 - la2) * 111320, (lo1 - lo2) * 111320 * Math.cos(la1 * Math.PI / 180));
 
 function build(Gs = SRC.map(i => ctx.G(i))) {
-  const key = Gs.map(G => G?.meta?.hash || '').join('|');
+  const key = Gs.map(G => G?.meta?.key || G?.meta?.hash || '').join('|');   // key: versione + giorni caricati
   if (IX && IX.key === key) return IX;
   const hit = IXS.get(key); if (hit) return (IX = hit);
   const t0 = Date.now(), ids = [], gid = new Map(), lat = [], lon = [], srcOf = [];
@@ -136,7 +138,7 @@ function build(Gs = SRC.map(i => ctx.G(i))) {
   const trS = new Int32Array(N + 1); for (let g = 0; g < N; g++) trS[g + 1] = trS[g] + tr[g].length;
   const trA = new Int32Array(trS[N]); for (let g = 0; g < N; g++) trA.set(tr[g], trS[g]);
   IX = { key, Gs: [...Gs], ids, gid, lat: Float64Array.from(lat), lon: Float64Array.from(lon), srcOf: Uint8Array.from(srcOf), isLag, isNet, pats, spS: cnt, spP, spK, trS, trA, svc: new Map() };
-  const liveKey = SRC.map(i => ctx.G(i)?.meta?.hash || '').join('|');
+  const liveKey = SRC.map(i => ctx.G(i)?.meta?.key || ctx.G(i)?.meta?.hash || '').join('|');
   IXS.set(key, IX);
   for (const k of [...IXS.keys()]) if (IXS.size > 2 && k !== key && k !== liveKey) IXS.delete(k);   // al massimo 2 indici (memoria di Render)
   console.log(`percorsi: indice pronto in ${Date.now() - t0} ms (${N} fermate, ${pats.length} percorsi, ${trS[N] / 4} cambi a piedi)`);

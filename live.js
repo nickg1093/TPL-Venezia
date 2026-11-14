@@ -15,6 +15,8 @@ const tracker = require('./tracker');
 const assign = require('./assign');
 const turni = require('./turni');
 const { inArea } = require('./geo');
+const memoria = require('./memoria');
+const orari = require('./orari');
 const { secsOfDayRome, hhmm } = schedule;
 
 const events = new EventEmitter();
@@ -619,20 +621,22 @@ function rtSample(id) {
 // se è un'altra si carica a richiesta in `alt` (UNA sola alternativa per servizio: la memoria di Render gratuito è limitata) e intanto si risponde "in caricamento".
 const catalog = {};   // servizio -> versioni in archivio (con calendari), aggiornato a ogni rivalutazione
 const alt = {}, altBusy = {}, altErr = {};
+memoria.quando(() => { for (const id of IDS) if (!altBusy[id]) alt[id] = null; dropStopsCache(); });   // memoria alta: via gli orari di altre date (si ricaricano)
 async function refreshCatalog(id) { try { catalog[id] = await store.list(id); } catch (e) { console.error(`archivio GTFS [${id}]:`, e.message); } }
-// Ritorna { G } pronto, { loading: true } (caricamento in corso), { none: true } (nessuna versione copre la data) o { error }
+// Ritorna { G } pronto, { loading: true } (caricamento in corso), { busy: true } (memoria alta, riprovare), { none: true } (nessuna versione copre la data) o { error }
 function dataFor(id, date) {
   if (!cal.isYmd(date) || date === cal.romeYmd()) return { G: D[id] };
   const r = store.choose(catalog[id] || [], date);
   if (!r.pick || r.approx) return { none: true };
-  const hash = r.pick.hash;
-  if (D[id].meta?.hash === hash) return { G: D[id] };
-  if (alt[id]?.hash === hash) return { G: alt[id].G };
-  if (altErr[id]?.hash === hash && Date.now() - altErr[id].t < 30000) return { error: altErr[id].msg };
+  // in memoria ci sono solo le corse di ieri, oggi e domani: per un'altra data servono le corse del giorno prima, del giorno e del successivo
+  const hash = r.pick.hash, key = hash + '@' + date;
+  if (alt[id]?.key === key) return { G: alt[id].G };
+  if (altErr[id]?.key === key && Date.now() - altErr[id].t < 30000) return { error: altErr[id].msg };
   if (!altBusy[id]) {
-    alt[id] = null;                                                         // libera la precedente prima di caricare la nuova
-    altBusy[id] = gtfs.loadVersion(id, r.pick, date).then(G => { alt[id] = { hash, G }; delete altErr[id]; })
-      .catch(e => { altErr[id] = { hash, t: Date.now(), msg: e.message }; console.error(`GTFS [${id}] versione per ${date}:`, e.message); })
+    if (!memoria.libera()) return { busy: true };                           // memoria alta: si rimanda (l'app riprova), il servizio di oggi non si tocca
+    if (alt[id]) { alt[id] = null; memoria.pulizia(); }                    // libera la precedente prima di caricare la nuova
+    altBusy[id] = orari.perData(id, r.pick, date).then(G => { alt[id] = { key, G }; delete altErr[id]; })
+      .catch(e => { altErr[id] = { key, t: Date.now(), msg: e.message }; console.error(`GTFS [${id}] versione per ${date}:`, e.message); })
       .finally(() => { delete altBusy[id]; });
   }
   return { loading: true };
@@ -641,7 +645,8 @@ function dataFor(id, date) {
 function dateRange() {
   const per = {}; let min = '99999999', max = '00000000';
   for (const id of IDS) {
-    const c = (catalog[id] || []).filter(x => x.info), a = c.map(x => x.info.cover.min).sort()[0], b = c.map(x => x.info.cover.max).sort().pop();
+    const c = (catalog[id] || []).filter(x => x.info), b = c.map(x => x.info.cover.max).sort().pop();
+    let a = c.map(x => x.info.cover.min).sort()[0]; if (a && a < cal.romeYmd()) a = cal.romeYmd();   // solo date di oggi e future
     per[id] = { min: a || null, max: b || null, versions: c.map(x => ({ file: path.basename(x.file), from: x.info.from, to: x.info.cover.max })).sort((p, q) => p.from.localeCompare(q.from)) };
     if (a && a < min) min = a;
     if (b && b > max) max = b;
@@ -656,11 +661,13 @@ async function adopt(id, { force = false } = {}) {
       await refreshCatalog(id);
       const g = await gtfs.load(id, { sample: rtSample(id), force });
       if (!g) return false;
+      const same = D[id]?.meta?.hash === g.meta.hash;                        // stessa versione, giorno nuovo: stesse corse, il tracciamento continua
       D[id] = g; const s8 = S[id];
-      s8.hist.clear(); s8.vs.clear(); s8.snap.clear(); s8.sig.clear(); s8.owner.clear(); s8.ended.clear(); s8.state = {}; s8.live = {};
+      if (!same) { s8.hist.clear(); s8.vs.clear(); s8.snap.clear(); s8.sig.clear(); s8.owner.clear(); s8.ended.clear(); s8.state = {}; s8.live = {}; }
       ready[id] = true; version++; dropStopsCache(); alt[id] = null;
       refresh(id);
-      console.log(`GTFS statico [${id}] in uso: ${g.meta.file} (${g.meta.reason})`);
+      console.log(same ? `GTFS statico [${id}]: nuovo giorno, corse dal ${g.meta.days[0]} al ${g.meta.days[2]} (${g.tripIds.length})`
+        : `GTFS statico [${id}] in uso: ${g.meta.file} (${g.meta.reason})`);
       return true;
     } finally { delete busy[id]; }
   })());
@@ -668,12 +675,23 @@ async function adopt(id, { force = false } = {}) {
 // Scarica l'eventuale nuova versione nell'archivio (senza toccare le altre) e rivaluta quale usare
 async function syncStatic(id) {
   const r = await store.download(id);
-  if (r.status === 'nuova') await store.prune(id).catch(() => {});
   const switched = await adopt(id);
+  await pulisci(id, r.status === 'nuova');
   return { download: r, switched };
 }
+// Archivio: via le versioni che non servono più (scadute o superate), sempre: versione nuova, cambio di giorno, avvio (gtfsstore.prune)
+const pulito = {};
+async function pulisci(id, force = false) {
+  const d = cal.romeYmd(); if (!force && pulito[id] === d) return;
+  pulito[id] = d;
+  try {
+    const keep = [D[id]?.meta?.hash].filter(Boolean); if (!keep.length) return;   // prima di avere una versione in uso non si cancella nulla
+    const del = await store.prune(id, d, keep);
+    if (del.length) { console.log(`GTFS [${id}]: archivio, eliminate le versioni non più in uso: ${del.join(', ')}`); await refreshCatalog(id); }
+  } catch (e) { console.error(`GTFS [${id}]: pulizia dell'archivio non riuscita:`, e.message); }
+}
 async function reselect() {
-  for (const id of IDS) { try { await adopt(id); } catch (e) { console.error(`GTFS statico [${id}]:`, e.message); } }
+  for (const id of IDS) { try { await adopt(id); await pulisci(id); } catch (e) { console.error(`GTFS statico [${id}]:`, e.message); } }
 }
 // Avvio: prima si usa ciò che c'è su disco (partenza immediata), poi si controlla il sito ACTV; senza nulla su disco si scarica e basta.
 async function startStatic() {

@@ -3,7 +3,7 @@
 // scelto, con la distanza calcolata qui: lungo le strade (camminata.js, rete pedonale di OpenStreetMap scaricata dal CDN, fino a 30 minuti
 // a passo svelto) o, se la rete non è disponibile, in linea d'aria come prima. Anche i tratti a piedi sulla mappa seguono le strade. Ogni tratta in mezzo usa gli stessi orari, simboli e diciture del pannello fermata,
 // e si apre nel pannello del mezzo (con «indietro» al percorso).
-import { esc, icon, badge, colorInfo, lum, delayInfo, etaText, api, srcIcon, vehName, localDate } from './util.js';
+import { esc, icon, badge, colorInfo, lum, delayInfo, etaText, api, srcIcon, vehName, localDate, ritenta, riuscito, NON_ORA } from './util.js';
 import { zones, zoneOf, norm, snorm, groups, aliasOf } from './zones.js';
 import * as Fav from './fav.js';
 import * as Walk from './camminata.js';
@@ -208,12 +208,13 @@ async function run(quiet) {
     const r = await api(qs);
     if (my !== token) return;
     if (r.error) throw new Error(r.error);
-    S.res = r; S.loading = false;
+    S.res = r; S.loading = false; riuscito('plan');
     if (S.sel >= r.soluzioni.length) { S.sel = -1; S.det = null; }
     else if (S.sel >= 0) { const f = S.det?.famiglia, k = r.soluzioni.findIndex(o => o.famiglia === f); if (k >= 0) { S.sel = k; S.det = r.soluzioni[k]; } }   // stesso percorso, orari aggiornati
   } catch (e) {
     if (my !== token) return; S.loading = false;
-    if (e.loading || e.busy) { S.loading = true; retry = setTimeout(() => { if (X.isOpen() && my === token) run(quiet); }, 2500); renderBody(); return; }   // orari di un'altra data in caricamento: si riprova da soli
+    if ((e.loading || e.busy) && ritenta('plan', () => { if (X.isOpen() && my === token) run(quiet); }, 2500)) { S.loading = true; renderBody(); return; }   // orari di un'altra data in caricamento o server occupato: si riprova da soli, con un limite
+    if (e.loading || e.busy) e = new Error(NON_ORA);
     if (!quiet || !S.res) { S.res = null; S.err = 'Ricerca non riuscita: ' + e.message; }
   }
   renderBody(); draw();

@@ -5,10 +5,27 @@ const path = require('path');
 const { Zip } = require('./zip');                 // lettore ZIP interno (zlib), al posto di adm-zip
 const ids = require('./ids');
 const store = require('./gtfsstore');
-const { eachRow, tick } = require('./csv');
+const { eachRow, eachRowStream, tick } = require('./csv');
+const cal = require('./calendar');
 const { inArea } = require('./geo');
 
-const loaded = {};   // servizio -> hash del file attualmente in memoria
+const loaded = {};   // servizio -> chiave (hash del file @ giorno) della versione attualmente in memoria
+
+// CORSE CARICATE: solo quelle dei giorni che servono (ieri, oggi, domani), non tutto il periodo coperto dal file.
+// Le versioni ACTV possono coprire mesi (65.000 corse, 134 MB di orari): in un giorno ne circolano ~4.500. Così la memoria dipende da quante
+// corse ci sono in un giorno (stabile), non da quanto è lungo il file pubblicato. Fermate, linee e tracciati restano TUTTI (anche di linee
+// che in quei giorni non circolano): elenchi, dati fissi e impronte per il CDN sono identici a quelli del file intero.
+const window3 = ymd => [cal.addDays(ymd, -1), ymd, cal.addDays(ymd, 1)];
+// servizi attivi in almeno uno dei giorni (stessa regola di schedule.servicesFor, compresa la data fuori dal periodo coperto)
+function servicesOn(calendar, exByDate, days) {
+  const out = new Set(), cov = cal.coverage(calendar, null);
+  for (const d of days) {
+    const set = cal.activeServices(calendar, exByDate, d);
+    if (set.size || exByDate[d] || (d >= cov.min && d <= cov.max)) { for (const x of set) out.add(x); continue; }
+    const dow = cal.dowOf(d); for (const sid in calendar) if (calendar[sid].days[dow]) out.add(sid);
+  }
+  return out;
+}
 
 const empty = () => ({ routes: {}, trips: {}, stops: {}, stopLoc: {}, routeShapes: {}, shapePts: {}, calendar: {},
   exByDate: {}, stopTimes: new Map(), stopIndex: {}, tripIds: [], meta: null, nameToStopIds: new Map(), stopBaseNames: new Map(), stopIsRequest: new Map() });
@@ -22,7 +39,7 @@ const toLL = p => {
 
 const tm = x => { if (!x || !x.trim()) return null; const p = x.trim().split(':'); return +p[0] * 3600 + +p[1] * 60 + +(p[2] || 0); };
 
-async function readStopTimes(buf, intern) {
+async function readStopTimes(entry, intern, keep, seen) {
   const out = new Map(), pats = new Map();
   let id = null, q = [], s = [], a = [], d = [];
   const flush = () => {
@@ -34,7 +51,8 @@ async function readStopTimes(buf, intern) {
     let p = pats.get(key); if (!p) pats.set(key, p = { s, q: Int32Array.from(q) });
     out.set(id, { s: p.s, q: p.q, a: Int32Array.from(a), d: Int32Array.from(d), start: d[0], end: a[n - 1] });
   };
-  await eachRow(buf, ['trip_id', 'stop_sequence', 'stop_id', 'arrival_time', 'departure_time'], r => {
+  await eachRowStream(entry, ['trip_id', 'stop_sequence', 'stop_id', 'arrival_time', 'departure_time'], r => {
+    if (keep && !keep.has(r.trip_id)) { seen.add(intern(r.stop_id)); return; }   // corsa di un altro giorno: si ricorda solo la fermata
     if (r.trip_id !== id) {
       flush(); id = r.trip_id;
       const old = out.get(id);
@@ -52,29 +70,35 @@ async function readStopTimes(buf, intern) {
 
 // Legge la versione scelta da gtfsstore.js. Ritorna null se è la stessa già in memoria (nessun lavoro inutile).
 // opts.sample = campione del realtime { tripId, routeId }[] per scegliere tra più versioni valide; opts.force rilegge comunque.
+// Si rilegge anche quando cambia il giorno (stessa versione, nuova finestra ieri-oggi-domani). opts.full = tutte le corse (solo strumenti).
 async function load(srcId, opts = {}) {
   const sel = await store.select(srcId, { sample: opts.sample });
   if (!sel.pick) throw new Error('nessun GTFS valido in archivio: attendo il download (o copia lo ZIP in data/)');
-  if (!opts.force && loaded[srcId] === sel.pick.hash) return null;
-  const G = await build(srcId, sel.pick, sel);
-  loaded[srcId] = sel.pick.hash;
+  const days = opts.full ? null : window3(sel.today), key = sel.pick.hash + (days ? '@' + sel.today : '');
+  if (!opts.force && loaded[srcId] === key) return null;
+  const G = await build(srcId, sel.pick, sel, days);
+  loaded[srcId] = key;
   return G;
 }
-// Legge una versione ARCHIVIATA qualsiasi (per la modalità "Pianificato" con date fuori dalla versione in uso). Non cambia la versione in uso.
-async function loadVersion(srcId, cand, ymd) {
-  return build(srcId, cand, { reason: `versione per la data ${ymd}`, approx: false, today: ymd });
+// Legge una versione ARCHIVIATA qualsiasi per una data (modalità «Programmato», percorso in un altro giorno): solo le corse del giorno
+// prima, del giorno e del successivo. opts.full = tutte (workflow dei dati per il CDN). Non cambia la versione in uso.
+async function loadVersion(srcId, cand, ymd, opts = {}) {
+  return build(srcId, cand, { reason: `versione per la data ${ymd}`, approx: false, today: ymd }, opts.full ? null : window3(ymd));
 }
 
 // Costruisce le strutture dal file scelto (cand = voce di gtfsstore.list).
-async function build(srcId, pick, sel) {
+// days = giorni di cui caricare le corse (null = tutte).
+async function build(srcId, pick, sel, days = null) {
   const t0 = Date.now(), log = m => console.log(`GTFS [${srcId}]: ${m} (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
-  log(`versione scelta ${path.basename(pick.file)}: ${sel.reason}`);
+  log(`versione scelta ${path.basename(pick.file)}: ${sel.reason}${days ? ` · corse dal ${days[0]} al ${days[days.length - 1]}` : ''}`);
+  const keepSvc = days ? servicesOn(pick.info.calendar, pick.info.exByDate, days) : null, keepTrip = days ? new Set() : null, seen = new Set();
   const buf = fs.readFileSync(pick.file), sig = pick.hash;
 
   await tick();
   const entries = new Zip(buf).getEntries();
   await tick();
-  const read = name => { const e = entries.find(x => { const n = x.entryName.toLowerCase(); return n === name || n.endsWith('/' + name); }); return e ? e.getData() : null; };
+  const entry = name => entries.find(x => { const n = x.entryName.toLowerCase(); return n === name || n.endsWith('/' + name); }) || null;
+  const read = name => { const e = entry(name); return e ? e.getData() : null; };
   const pool = new Map(), intern = x => { let v = pool.get(x); if (v === undefined) pool.set(x, v = x); return v; };
   const G = empty(), { routes, trips, stops, stopLoc, shapePts, nameToStopIds, stopBaseNames, stopIsRequest } = G;
   const usedShapes = new Set(), shapesByRoute = {};
@@ -102,16 +126,18 @@ async function build(srcId, pick, sel) {
     }
   });
 
-  await eachRow(read('trips.txt'), ['trip_id', 'route_id', 'trip_headsign', 'service_id', 'shape_id', 'direction_id'], t => {
-    const route = intern(t.route_id), shape = t.shape_id ? intern(t.shape_id) : null;
-    trips[t.trip_id] = { route, headsign: t.trip_headsign ? intern(t.trip_headsign) : null, service: intern((t.service_id || '').trim()), shape,
+  await eachRowStream(entry('trips.txt'), ['trip_id', 'route_id', 'trip_headsign', 'service_id', 'shape_id', 'direction_id'], t => {
+    const route = intern(t.route_id), shape = t.shape_id ? intern(t.shape_id) : null, service = (t.service_id || '').trim();
+    if (shape) { usedShapes.add(shape); (shapesByRoute[route] ||= new Set()).add(shape); }   // tracciati di tutte le corse (linee complete)
+    if (keepSvc && !keepSvc.has(service)) return;
+    if (keepTrip) keepTrip.add(t.trip_id);
+    trips[t.trip_id] = { route, headsign: t.trip_headsign ? intern(t.trip_headsign) : null, service: intern(service), shape,
       dir: t.direction_id ? intern(t.direction_id) : null };
-    if (shape) { usedShapes.add(shape); (shapesByRoute[route] ||= new Set()).add(shape); }
   });
   log(`${Object.keys(routes).length} linee, ${Object.keys(trips).length} viaggi, ${Object.keys(stops).length} fermate: leggo i tracciati`);
 
   const raw = {};
-  await eachRow(read('shapes.txt'), ['shape_id', 'shape_pt_sequence', 'shape_pt_lat', 'shape_pt_lon'], p => {
+  await eachRowStream(entry('shapes.txt'), ['shape_id', 'shape_pt_sequence', 'shape_pt_lat', 'shape_pt_lon'], p => {
     if (usedShapes.has(p.shape_id)) (raw[p.shape_id] ||= []).push(+p.shape_pt_sequence, +p.shape_pt_lat, +p.shape_pt_lon);
   });
   for (const id in raw) {
@@ -127,7 +153,7 @@ async function build(srcId, pick, sel) {
   G.calendar = pick.info.calendar; G.exByDate = pick.info.exByDate;   // già letti da gtfsstore (stessi dati usati per scegliere la versione)
 
   log('leggo gli orari (stop_times)');
-  G.stopTimes = await readStopTimes(read('stop_times.txt'), intern);
+  G.stopTimes = await readStopTimes(entry('stop_times.txt'), intern, keepTrip, seen);
   const { stopTimes } = G;
 
   G.tripIds = [...stopTimes.keys()];
@@ -139,14 +165,16 @@ async function build(srcId, pick, sel) {
     const s = stopTimes.get(tid).s;
     for (let i = 0; i < s.length; i++) { const p = pos[s[i]] || 0, arr = G.stopIndex[s[i]]; arr[p] = n; arr[p + 1] = i; pos[s[i]] = p + 2; }
   });
+  for (const sid of seen) if (!G.stopIndex[sid]) G.stopIndex[sid] = new Int32Array(0);   // fermate servite solo in altri giorni: esistono, senza passaggi
 
   for (const rid in shapesByRoute) {
     G.routeShapes[rid] = [...shapesByRoute[rid]].filter(s => shapePts[s]).sort((a, b) => shapePts[b].length - shapePts[a].length).slice(0, 4).map(s => shapePts[s]);
   }
   ids.attach(G);
   G.meta = { file: path.basename(pick.file), hash: sig, from: pick.info.from, feedEnd: pick.info.feedEnd, coverage: pick.info.cover,
-    approx: sel.approx, reason: sel.reason, today: sel.today, loadedAt: Date.now() };
+    approx: sel.approx, reason: sel.reason, today: sel.today, loadedAt: Date.now(),
+    days, key: sig + (days ? '@' + days[1] : '') };   // key: cambia anche con la finestra dei giorni (indici del pianificatore, cache)
   log(`PRONTO: ${Object.keys(routes).length} linee, ${Object.keys(trips).length} viaggi, ${Object.keys(stops).length} fermate, ${stopTimes.size} corse con orari`);
   return G;
 }
-module.exports = { load, loadVersion, empty, toLL, loaded };
+module.exports = { load, loadVersion, empty, toLL, loaded, servicesOn, window3 };

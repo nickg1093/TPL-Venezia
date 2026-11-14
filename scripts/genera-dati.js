@@ -26,7 +26,7 @@ async function generaFissi(out) {
   const keep = new Set();
   for (const src of ['nav', 'aut']) {
     for (const c of (await store.list(src)).filter(x => x.ok)) {
-      const G = await gtfs.loadVersion(src, c, c.info.from || '00000000'), v = fissi.versione(G), dir = path.join(out, 'fissi', src, v);
+      const G = await gtfs.loadVersion(src, c, c.info.from || '00000000', { full: true }), v = fissi.versione(G), dir = path.join(out, 'fissi', src, v);
       keep.add(`${src}/${v}`);
       if (fs.existsSync(path.join(dir, 'shapes.json'))) { console.log(`fissi ${src}/${v}: già presenti`); continue; }
       const f = fissi.files(G, gtfs.toLL);
@@ -45,7 +45,7 @@ async function generaPedoni(opl, out) {
   // fermate di tutte le versioni in archivio: la rete copre la zona di ognuna
   const stops = [];
   for (const src of ['nav', 'aut']) for (const c of (await store.list(src)).filter(x => x.ok)) {
-    const G = await gtfs.loadVersion(src, c, c.info.from || '00000000');
+    const G = await gtfs.loadVersion(src, c, c.info.from || '00000000', { full: true });
     for (const s in G.stopIndex) if (G.stopLoc[s]) stops.push(G.stopLoc[s]);
   }
   const cover = P.copertura(stops);

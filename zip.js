@@ -71,4 +71,33 @@ class Entry {
   }
 }
 
+// Lettura A PEZZI (stessi controlli di getData: metodo, tetto, dimensione dichiarata, CRC): il file decompresso non sta mai tutto in memoria.
+// Serve per stop_times.txt e shapes.txt (oltre 100 MB nelle versioni ACTV più lunghe): il picco di memoria resta di pochi MB.
+Entry.prototype.stream = async function* stream() {
+  const { zip, h } = this, b = zip.buf;
+  if (this.isDirectory) return;
+  if (h.flags & 0x1) throw new Error(`${h.name}: file cifrato`);
+  if (h.method !== 0 && h.method !== 8) throw new Error(`${h.name}: compressione ${h.method} non supportata`);
+  if (h.usize > LIMITS.ENTRY_MAX) throw new Error(`${h.name}: file troppo grande`);
+  if (h.loc + 30 > b.length || b.readUInt32LE(h.loc) !== SIG_LOC) throw new Error(`${h.name}: intestazione locale non valida`);
+  const start = h.loc + 30 + b.readUInt16LE(h.loc + 26) + b.readUInt16LE(h.loc + 28);
+  if (start + h.csize > b.length) throw new Error(`${h.name}: dati troncati`);
+  const raw = b.subarray(start, start + h.csize), max = Math.min(LIMITS.ENTRY_MAX, Math.max(h.usize, 1)), crcOk = typeof zlib.crc32 === 'function';
+  let n = 0, crc = 0;
+  const take = c => { n += c.length; if (n > max) throw new Error(`${h.name}: dimensione diversa da quella dichiarata`); if (crcOk) crc = zlib.crc32(c, crc); };
+  if (h.method === 0) {
+    for (let p = 0; p < raw.length; p += 1 << 20) { const c = raw.subarray(p, Math.min(raw.length, p + (1 << 20))); take(c); yield c; }
+  } else {
+    const inf = zlib.createInflateRaw({ chunkSize: 256 * 1024 });
+    inf.end(raw);
+    try {
+      for await (const c of inf) { take(c); yield c; }
+    } catch (e) { inf.destroy(); throw new Error(`${h.name}: decompressione non riuscita (${e.code || e.message})`); }
+  }
+  if (n !== h.usize) throw new Error(`${h.name}: dimensione diversa da quella dichiarata`);
+  if (crcOk && (crc >>> 0) !== h.crc) throw new Error(`${h.name}: CRC non valido`);
+  zip.total += n;
+  if (zip.total > LIMITS.TOTAL_MAX) throw new Error('troppi dati decompressi dallo ZIP');
+};
+
 module.exports = { Zip, LIMITS };
