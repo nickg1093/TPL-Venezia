@@ -21,6 +21,11 @@ Valgono per **ogni** modifica, piccola o grande, senza bisogno di richiamarli. P
 - Niente richieste duplicate o a raffica: riconnessioni con attesa crescente, richieste obsolete scartate.
 - Pagina nascosta: niente flusso, polling, GPS, animazioni e timer non indispensabili; ripresa immediata al ritorno.
 - Rispetto di «riduci movimento» e «risparmio dati»; attenzione a telefoni lenti e connessioni a consumo.
+- **Memoria del server** (512 MB su Render): la memoria non deve dipendere dalla lunghezza dei file pubblicati da altri (GTFS, avvisi…), ma da
+  quanto serve davvero (es. le corse di un giorno). Nessun file grande letto tutto in memoria se si può leggere a pezzi; ogni lavoro pesante
+  chiede prima `memoria.libera()`; ogni cache ricostruibile si registra in `memoria.quando()`. Misurare la memoria sui file veri prima di pubblicare.
+- **Dati derivati sempre coerenti con la fonte**: file sul CDN usati solo se impronta e versione coincidono con quelle scelte dal server,
+  con una riserva esatta se non coincidono; file non più necessari (versioni superate, giorni passati) eliminati sempre.
 - Misure solo aggregate e temporanee (`/api/metriche`, in memoria): nessun registro delle singole richieste, nessun dato personale.
 
 ## 4. Interfaccia

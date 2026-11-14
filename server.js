@@ -198,6 +198,7 @@ const ABOUT_VERSION = 'v28';
 // DATI_REPO: repository del ramo dati (predefinito: quello da cui Render ha preso il codice); DATI_CDN=0 spegne il CDN (tutto dal server).
 const DATI_REPO = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/.test(process.env.DATI_REPO || '') ? process.env.DATI_REPO : (process.env.RENDER_GIT_REPO_SLUG || 'nickg1093/TPL-Venezia');
 const fissiStore = fissi.store(gtfs.toLL), datiRemote = fissi.remote({ repo: DATI_REPO, enabled: process.env.DATI_CDN !== '0' });
+require('./orari').init({ remote: process.env.DATI_CDN === '0' ? null : datiRemote });   // orari di altre date: file per giorno dal CDN (riserva: ZIP)
 function fissiManifest() {
   const idx = datiRemote.get(), src = [];
   for (const i of IDS) {

@@ -75,7 +75,8 @@ function parseIndice(j) {
   if (!j || typeof j !== 'object' || j.formato !== FORMATO || !RE_COMMIT.test(j.commit || '')) return null;
   const fissi = new Set((Array.isArray(j.fissi) ? j.fissi : []).filter(x => typeof x === 'string' && /^(nav|aut)\/[0-9a-f]{12}$/.test(x)));
   const p = j.pedoni, ok = p && RE_VER.test(p.v || '') && RE_SHA.test(p.indice || '') && p.lat > 0 && p.lat < 1 && p.lon > 0 && p.lon < 1;
-  return { commit: j.commit, fissi, pedoni: ok ? { v: p.v, indice: p.indice, lat: +p.lat, lon: +p.lon } : null };
+  const orari = new Set((Array.isArray(j.orari) ? j.orari : []).filter(x => typeof x === 'string' && /^(nav|aut)\/[0-9a-f]{12}$/.test(x)));   // orari per giorno (orari.js)
+  return { commit: j.commit, fissi, orari, pedoni: ok ? { v: p.v, indice: p.indice, lat: +p.lat, lon: +p.lon } : null };
 }
 function remote({ repo, enabled = true, every = 30 * 60e3, fetchFn = globalThis.fetch } = {}) {
   let cur = null, etag = null, timer = null;

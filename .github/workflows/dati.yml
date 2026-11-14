@@ -2,6 +2,8 @@ name: Dati per i telefoni (CDN)
 
 # Pubblica sul ramo «dati» i file che i telefoni scaricano dal CDN invece che dal server (vedi fissi.js e README, «Dati sul telefono e CDN»):
 #   · fermate, linee e tracciati di ogni versione dei GTFS in archivio (dopo ogni aggiornamento dei GTFS);
+#   · orari per giorno di ogni versione, da ieri alla fine del periodo coperto (dopo ogni aggiornamento dei GTFS e ogni notte, per
+#     togliere i giorni passati): il server li usa per «Programmato» e i percorsi in un altro giorno (orari.js);
 #   · rete pedonale di OpenStreetMap in mattonelle, per i percorsi a piedi calcolati sul telefono (ogni lunedì, o a richiesta).
 # Il ramo «dati» contiene SOLO questi file: il codice dell'app resta su main. Prima i file (commit A), poi indice.json con il numero di A:
 # gli indirizzi del CDN usano A, quindi non cambiano mai e i telefoni li tengono in cache per sempre.
@@ -11,9 +13,10 @@ on:
     types: [completed]
   push:
     branches: [main]
-    paths: ['fissi.js', 'gtfs.js', 'scripts/genera-dati.js', 'scripts/pedoni-core.js', '.github/workflows/dati.yml', 'data/gtfs/**']
+    paths: ['fissi.js', 'gtfs.js', 'orari.js', 'calendar.js', 'scripts/genera-dati.js', 'scripts/pedoni-core.js', '.github/workflows/dati.yml', 'data/gtfs/**']
   schedule:
     - cron: '23 2 * * 1'      # lunedì notte: rete pedonale aggiornata da OpenStreetMap
+    - cron: '41 1 * * *'      # ogni notte: orari per giorno (via i giorni passati)
   workflow_dispatch:
     inputs:
       pedoni:
@@ -60,10 +63,13 @@ jobs:
       - name: Fermate, linee e tracciati di ogni versione dei GTFS
         run: node scripts/genera-dati.js fissi out
 
+      - name: Orari per giorno di ogni versione dei GTFS
+        run: node --max-old-space-size=6000 scripts/genera-dati.js orari out
+
       - name: Serve la rete pedonale?
         id: ped
         run: |
-          if [ ! -f out/pedoni/ultimo.json ] || [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event.inputs.pedoni }}" = "1" ] \
+          if [ ! -f out/pedoni/ultimo.json ] || [ "${{ github.event.schedule }}" = "23 2 * * 1" ] || [ "${{ github.event.inputs.pedoni }}" = "1" ] \
              || [ "${{ contains(github.event.head_commit.message, '[pedoni]') }}" = "true" ]; then echo "go=1" >> "$GITHUB_OUTPUT"; else echo "go=0" >> "$GITHUB_OUTPUT"; fi
 
       - name: Rete pedonale da OpenStreetMap (Geofabrik, Italia nord-est)
@@ -89,6 +95,7 @@ jobs:
           I telefoni li scaricano dal CDN (jsDelivr) per non pesare sul server; il server ne controlla l'impronta (vedi `fissi.js` sul ramo main).
 
           - `fissi/` fermate, linee e tracciati derivati dai GTFS statici ACTV (open data).
+          - `orari/` orari per giorno di ogni versione dei GTFS (un file per giorno, nome = impronta del contenuto).
           - `pedoni/` rete pedonale in mattonelle derivata da OpenStreetMap: © OpenStreetMap contributors, disponibile con licenza
             Open Database License (ODbL) 1.0, https://www.openstreetmap.org/copyright — i dati derivati restano sotto la stessa licenza.
           EOF

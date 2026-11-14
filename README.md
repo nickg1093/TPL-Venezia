@@ -4,7 +4,7 @@ Mappa in tempo reale di autobus, tram e vaporetti ACTV di Venezia, con pannelli 
 avvisi di servizio, avvisi di arrivo (notifiche), marea e preferiti. È una **PWA** (si installa come app) servita da un **server Node.js
 senza database**, che gira gratis su Render oppure su un computer di casa.
 
-Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v27** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md)
+Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v28** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md)
 
 ---
 
@@ -21,8 +21,8 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 9. [Prove e test: comandi da digitare](#9-prove-e-test)
 10. [Modifiche frequenti: ricette](#10-modifiche-frequenti)
 11. [Pubblicare una nuova versione e tornare indietro](#11-pubblicare-e-tornare-indietro)
-12. [Novità della v27](#12-novità-della-v27) · [v26](#novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
-- Appendici tecniche: [A. GTFS statici](#a-gtfs-statici-perché-non-si-sovrascrivono-più) · [B. Regole del motore tempo reale](#b-eccezioni-e-contromisure-del-codice-elenco-dettagliato) · [C. Sicurezza](#c-sicurezza-securityjs-serverjs) · [D. Dati sul telefono e CDN](#d-dati-sul-telefono-e-cdn-ramo-dati)
+12. [Novità della v28](#12-novità-della-v28) · [v27](#novità-della-v27) · [v26](#novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
+- Appendici tecniche: [A. GTFS statici](#a-gtfs-statici-perché-non-si-sovrascrivono-più) · [B. Regole del motore tempo reale](#b-eccezioni-e-contromisure-del-codice-elenco-dettagliato) · [C. Sicurezza](#c-sicurezza-securityjs-serverjs) · [D. Dati sul telefono e CDN](#d-dati-sul-telefono-e-cdn-ramo-dati) · [E. Orari per giorno e memoria](#e-orari-per-giorno-e-memoria-del-server-v28)
 
 ---
 
@@ -73,6 +73,8 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 | `gtfs.js`, `gtfsstore.js`, `csv.js`, `zip.js`, `ids.js` | Lettura dei GTFS (zip in memoria), archivio e scelta della versione, collegamento degli identificativi feed ↔ GTFS. | formati nuovi di ACTV |
 | `stopgroups.js`, `prossime.js`, `area.js` | Fermate equivalenti (stesso palo), fermate successive mostrate nei pannelli, area servita sulla mappa. | raramente |
 | `mose.js` | **Stato del MOSE**: legge la tabella «Bocche di porto · Barriere · Stato» della pagina «Operatività M.O.S.E.» dell'Autorità per la Laguna di Venezia, la traduce in semafori, cache 4-10 min | se la pagina cambia struttura: `parse()` e `tests/mose.test.js` |
+| `orari.js` | **Orari di un'altra data** («Programmato», percorso in un altro giorno): file per giorno sul CDN (generati dal workflow «dati» con questo stesso modulo) o, in riserva, lettura dallo ZIP dei soli tre giorni utili. Vedi sezione E. | formato dei file per giorno |
+| `memoria.js` | **Protezione della memoria**: livelli ok / alto (400 MB) / critico (450 MB), cache liberate, lavoro pesante rinviato; tempo reale e notifiche mai toccati. | soglie (variabili `MEM_ALTO_MB`, `MEM_CRITICO_MB`) |
 | `fissi.js` | **Dati fissi per i telefoni**: file di fermate, linee e tracciati per versione dei GTFS con impronta SHA-256 (`/api/fissi`, `/api/fisso`), lettura dell'indice del ramo `dati`. Usato anche dal workflow, così i byte coincidono. | formato dei file (cambiare anche `FORMATO`) |
 | `percorso.js` | **Pianificatore** (algoritmo RAPTOR): soluzioni con cambi e tratti a piedi, preferenze, alternative; usa gli orari della data scelta. | parametri del calcolo (oggetto `C`) |
 | `pedonale-laguna.txt`, `pedonale-terraferma.txt` | Distanze a piedi tra fermate sulla rete pedonale di OpenStreetMap (generate da `scripts/pedonale.js`). | dopo grandi cambi di fermate |
@@ -245,7 +247,8 @@ personale resta sul dispositivo dell'utente (privacy) e ciò che è pubblico sta
 | `PUSH_CONTACT` | facoltativa | `mailto:…` per i servizi di notifica |
 | `RT_POLL_MS` | facoltativa | intervallo massimo di lettura dei feed (default 5000, minimo 3000) |
 | `AVVISI_ARCHIVIO` | facoltativa | indirizzo della cartella `avvisi` dell'archivio, oppure `0` per non usarlo |
-| `DATI_CDN` | facoltativa | `0` = niente CDN: dati fissi solo dal server e niente percorsi a piedi lungo le strade (prove) |
+| `DATI_CDN` | facoltativa | `0` = niente CDN: dati fissi solo dal server, orari di altre date solo dagli ZIP, niente percorsi a piedi lungo le strade (prove) |
+| `MEM_ALTO_MB`, `MEM_CRITICO_MB` | facoltative | soglie della protezione della memoria (predefinite 400 e 450 MB; Render gratuito ha 512 MB) |
 | `DATI_REPO` | facoltativa | repository del ramo `dati` (`utente/nome`); predefinito quello da cui Render prende il codice |
 | `MAREA_ARCHIVIO` | facoltativa | `0` = all'avvio non si recupera la storia della marea dal ramo `archivio-marea` (prove) |
 | `KEEPALIVE_URL` | facoltativa | su Render basta `RENDER_EXTERNAL_URL`, impostata da Render |
@@ -428,7 +431,17 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ---
 
-## 12. Novità della v27
+## 12. Novità della v28
+
+- **Memoria del server sotto controllo**: solo le corse di ieri, oggi e domani; lettura a pezzi; protezione della memoria (sezione E).
+  Misure sui file veri: orari bus ~360 → ~85 MB, navigazione ~70 → ~50 MB; avvio da ~40 s a pochi secondi.
+- **«Programmato» e percorsi in qualsiasi data attuale e futura** coperta dai GTFS pubblicati da ACTV, con i file per giorno dal CDN.
+- **Archivio GTFS pulito sempre**: restano solo le versioni usate da oggi in avanti (sezione A).
+- **App**: nuovi tentativi limitati (attese crescenti, al massimo ~5 minuti) quando gli orari di un'altra data sono in caricamento o il server
+  è occupato, poi un messaggio chiaro; il calendario di «Programmato» parte da oggi.
+- Prove: `tests/memoria-giorni.test.js` (stessi risultati del file intero, CDN = ZIP, file alterati rifiutati, CDN spento, pulizia, memoria).
+
+### Novità della v27
 
 - **MOSE nella marea** (`mose.js`, `/api/mose`): un semaforo generale sempre visibile con il titolo («MOSE attivo: 1 barriera sollevata su 4»,
   «2 barriere sollevate su 4», «tutte le barriere sollevate»: singolare e plurale concordati); «Barriere» apre e chiude i quattro semafori specifici
@@ -514,7 +527,7 @@ un terzo è il tratto di linea dei mezzi (`path`); il **pianificatore** è la vo
 
 Problema risolto: scaricare e sovrascrivere il GTFS può mettere in uso un file **non ancora valido oggi** (o scaduto), e allora corse, fermate e codici non combaciano col feed in tempo reale.
 
-**Archivio**: `data/gtfs/<nav|aut>/<inizio validità>_<hash>.zip`. Ogni versione con contenuto nuovo si *aggiunge*; i file vecchi `data/actv_nav.zip` / `actv_aut.zip` restano leggibili e **non vengono mai cancellati**. Le versioni si riconoscono dal contenuto (hash), quindi lo stesso file scaricato due volte non si duplica.
+**Archivio**: `data/gtfs/<nav|aut>/<inizio validità>_<hash>.zip`. Ogni versione con contenuto nuovo si *aggiunge* (mai sovrascritta). Le versioni si riconoscono dal contenuto (hash), quindi lo stesso file scaricato due volte non si duplica.
 
 **Scelta della versione** (`gtfsstore.choose`, funzione pura e testata), per ogni servizio, in quest'ordine:
 1. solo versioni che hanno **servizi attivi oggi** (data di Venezia, `calendar.txt` + `calendar_dates.txt` con aggiunte e rimozioni);
@@ -523,7 +536,12 @@ Problema risolto: scaricare e sovrascrivere il GTFS può mettere in uso un file 
 4. se **nessuna** è valida oggi: si usa la più vicina e il sistema lo segnala (`approx`, visibile in `/api/gtfs` e nei log).
 Una versione **futura** resta in archivio e si attiva da sola alla sua data (il server rivaluta ogni 10 minuti, scarica ogni 3 ore).
 
-**Pulizia**: restano le versioni valide, le future e **una** scaduta (la più recente), massimo 5 per servizio.
+**Pulizia (sempre, dalla v28)** (`gtfsstore.prune`): restano **solo** le versioni che servono, cioè quella che `choose` sceglie per almeno
+una data da oggi in avanti e quella in uso adesso. Si eliminano le scadute, quelle ancora «valide» ma superate da una più recente e i file vecchi
+(`data/actv_*.zip` compresi, se nessuna data li usa più). La pulizia avviene a ogni versione nuova, al cambio di giorno e all'avvio (server) e
+nel workflow «Aggiorna GTFS ACTV» (repository). Se nessuna versione è valida si tiene la più vicina: non si cancella mai tutto.
+**Corse in memoria (dalla v28)**: solo quelle di ieri, oggi e domani (fermate, linee e tracciati tutti); si rileggono da sole al cambio di
+giorno senza perdere il tracciamento dei mezzi. Le versioni ACTV più lunghe (65.000 corse, 134 MB di orari) occupano così ~85 MB invece di ~360.
 **Download**: ETag, 3 tentativi, scrittura atomica (file temporaneo + rinomina), controllo che sia davvero un ZIP con i file necessari. Un download fallito non tocca nulla.
 
 ---
@@ -646,3 +664,25 @@ così un parcheggio o la strada del terminal non isolano il punto); poi Dijkstra
 **Rifare subito i file**: GitHub → *Actions* → «Dati per i telefoni (CDN)» → *Run workflow* (`pedoni = 1` per la rete pedonale).
 Licenze: rete pedonale © OpenStreetMap contributors, ODbL (i file derivati restano ODbL, vedi `LEGGIMI.md` nel ramo `dati`).
 
+---
+
+## E. Orari per giorno e memoria del server (v28)
+
+**Il problema (14/11/2026).** ACTV ha pubblicato versioni che coprono fino al 15/01/2027: 65.272 corse e 134 MB di orari, il doppio di prima.
+Leggerle per intero superava i 512 MB di Render: riavvii a ogni richiesta di «Programmato» su un'altra data, e dal 15/11 anche senza richieste.
+
+**La soluzione, valida per ogni versione futura.**
+1. *Corse dei soli giorni utili* (`gtfs.js`): la memoria dipende da quante corse ci sono in un giorno, non da quanto è lungo il file.
+   Lettura a pezzi dello ZIP (`zip.js: stream`, `csv.js: eachRowStream`): il file decompresso non sta mai tutto in memoria.
+2. *File per giorno sul CDN* (`orari.js`, workflow «dati»): per ogni data da domani alla fine dell'ultimo periodo coperto, la versione scelta
+   (stessa regola del server) e il giorno prima e dopo. `orari/<src>/<versione>.json` (indice con l'impronta md5 completa dello ZIP e, per ogni
+   giorno, il nome del file) e `orari/<src>/g/<impronta>.json` (corse del giorno; giorni uguali = un file solo). Oggi ~28 MB in tutto,
+   30-80 KB compressi per giorno. Si rigenerano **a ogni versione nuova di ACTV** (dopo «Aggiorna GTFS ACTV») e **ogni notte** (via i giorni passati).
+3. *Il server per un'altra data* scarica i tre giorni dal CDN (~1 s) e li usa SOLO se versione, impronta md5 dell'indice e impronta di ogni file
+   coincidono; altrimenti legge dallo ZIP i soli tre giorni (sempre esatto). I test verificano che le due strade diano partenze e posizioni identiche.
+4. *Protezione della memoria* (`memoria.js`): sopra 400 MB si liberano le cache e si rinvia il lavoro pesante (503 + `Retry-After`), sopra 450 MB
+   anche i percorsi; lo stato è in `/api/metriche` (`protezione_memoria`). L'app riprova da sola con attese crescenti, al massimo ~5 minuti.
+5. *Archivio pulito sempre* (sezione A).
+
+**Telefono.** Gli orari di un'altra data arrivano ancora dal server (che ora li prende dal CDN): così partenze, mezzi sulla mappa e dettaglio
+corsa restano calcolati da un solo codice, senza differenze tra telefono e server.

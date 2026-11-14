@@ -635,7 +635,7 @@ function dataFor(id, date) {
   if (!altBusy[id]) {
     if (!memoria.libera()) return { busy: true };                           // memoria alta: si rimanda (l'app riprova), il servizio di oggi non si tocca
     if (alt[id]) { alt[id] = null; memoria.pulizia(); }                    // libera la precedente prima di caricare la nuova
-    altBusy[id] = orari.perData(id, r.pick, date).then(G => { alt[id] = { key, G }; delete altErr[id]; })
+    altBusy[id] = orari.perData(id, r.pick, date, D[id]).then(G => { alt[id] = { key, G }; delete altErr[id]; })
       .catch(e => { altErr[id] = { key, t: Date.now(), msg: e.message }; console.error(`GTFS [${id}] versione per ${date}:`, e.message); })
       .finally(() => { delete altBusy[id]; });
   }
