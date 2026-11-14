@@ -51,8 +51,10 @@ async function readStopTimes(entry, intern, keep, seen) {
     let p = pats.get(key); if (!p) pats.set(key, p = { s, q: Int32Array.from(q) });
     out.set(id, { s: p.s, q: p.q, a: Int32Array.from(a), d: Int32Array.from(d), start: d[0], end: a[n - 1] });
   };
+  const nums = new Set();   // fermate (codici numerici) di corse di altri giorni: lette come numeri, senza creare testo per ogni riga
+  const skip = keep ? { key: 'trip_id', keep, also: 'stop_id', onSkipNum: v => nums.add(v), onSkip: sid => { if (!seen.has(sid)) seen.add(intern(sid)); } } : null;   // corse di altri giorni: scartate leggendo solo corsa e fermata
   await eachRowStream(entry, ['trip_id', 'stop_sequence', 'stop_id', 'arrival_time', 'departure_time'], r => {
-    if (keep && !keep.has(r.trip_id)) { seen.add(intern(r.stop_id)); return; }   // corsa di un altro giorno: si ricorda solo la fermata
+    if (keep && !keep.has(r.trip_id)) { seen.add(intern(r.stop_id)); return; }   // (righe con virgolette: lettura normale)
     if (r.trip_id !== id) {
       flush(); id = r.trip_id;
       const old = out.get(id);
@@ -63,7 +65,8 @@ async function readStopTimes(entry, intern, keep, seen) {
     if (de == null) de = ar;
     if (ar == null) ar = de = d.length ? d[d.length - 1] : 0;
     q.push(+r.stop_sequence); s.push(intern(r.stop_id)); a.push(ar); d.push(de);
-  });
+  }, { skip });
+  for (const v of nums) seen.add(intern(String(v)));
   flush();
   return out;
 }

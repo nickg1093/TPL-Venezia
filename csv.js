@@ -35,13 +35,48 @@ async function eachRow(buf, fields, fn) {
 }
 // Come eachRow, ma da una voce ZIP letta a pezzi (zip.js: entry.stream()): niente buffer con tutto il file decompresso.
 // Le righe si separano sui byte «a capo» (10): un carattere UTF-8 su più byte non viene mai spezzato.
-async function eachRowStream(entry, fields, fn) {
+// opts.skip = { key, keep, also, onSkip, onSkipNum }: righe da scartare riconosciute leggendo solo i byte delle colonne key/also (es.
+// trip_id di una corsa di un altro giorno): niente scomposizione della riga. Per quelle si chiama onSkipNum(numero) se il valore di also
+// è un numero semplice (es. stop_id «4521»), altrimenti onSkip(testo). Su CPU lente (Render
+// gratuito) è la differenza tra ~40 s e pochi secondi per i GTFS ACTV lunghi. Righe con virgolette: lettura normale.
+async function eachRowStream(entry, fields, fn, opts = {}) {
   if (!entry) return;
-  let idx = null, rest = null, n = 0, last = Date.now();
+  let idx = null, rest = null, n = 0, last = Date.now(), head = null;
+  const sk = opts.skip || null; let kc = -1, ac = -1, lastKey = null, lastKeep = true;
+  const fast = (b, s, e) => {                                    // true = riga gestita (scartata) senza scomporla
+    const maxc = kc > ac ? kc : ac;
+    let col = 0, start = s, ks = -1, ke = -1, as = -1, ae = -1;
+    for (let i = s; i <= e; i++) {                               // solo i byte fino alla colonna più a destra che serve
+      const ch = i < e ? b[i] : 44;
+      if (ch === 34) return false;                               // virgolette: lettura normale
+      if (ch !== 44 && ch !== 13) continue;
+      if (col === kc) { ks = start; ke = i; }
+      if (col === ac) { as = start; ae = i; }
+      if (col >= maxc) break;
+      col++; start = i + 1;
+    }
+    if (ks < 0 || (ac >= 0 && as < 0)) return false;
+    const kb = b.subarray(ks, ke);
+    if (!lastKey || !kb.equals(lastKey)) { lastKey = Buffer.from(kb); lastKeep = sk.keep.has(b.toString('utf8', ks, ke)); }
+    if (lastKeep) return false;
+    if (as < 0) return true;
+    if (sk.onSkipNum) {                                          // valore numerico letto dai byte (senza creare testo): cifre, senza zeri iniziali
+      let v = 0, ok = ae > as && ae - as <= 9 && !(b[as] === 48 && ae - as > 1);
+      for (let i = as; ok && i < ae; i++) { const c = b[i] - 48; if (c < 0 || c > 9) ok = false; else v = v * 10 + c; }
+      if (ok) { sk.onSkipNum(v); return true; }
+    }
+    if (sk.onSkip) sk.onSkip(b.toString('utf8', as, ae));
+    return true;
+  };
   const line = (b, s, e) => {
+    if (sk && idx !== null && kc >= 0 && fast(b, s, e)) return;
     let ln = b.toString('utf8', s, e);
     if (ln.charCodeAt(ln.length - 1) === 13) ln = ln.slice(0, -1);
-    if (idx === null) { const head = splitLine(ln.replace(/^\uFEFF/, '')).map(h => h.trim()); idx = fields.map(f => head.indexOf(f)); return; }
+    if (idx === null) {
+      head = splitLine(ln.replace(/^\uFEFF/, '')).map(h => h.trim()); idx = fields.map(f => head.indexOf(f));
+      if (sk) { kc = head.indexOf(sk.key); ac = sk.also ? head.indexOf(sk.also) : -1; if (sk.also && ac < 0) kc = -1; }
+      return;
+    }
     if (!ln) return;
     const f = splitLine(ln), o = {};
     fields.forEach((k, j) => { o[k] = idx[j] >= 0 ? f[idx[j]] : undefined; });
