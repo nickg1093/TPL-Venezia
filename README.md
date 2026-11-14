@@ -150,8 +150,29 @@ più in alto o torna al pannello precedente; con nulla aperto esce dall'app. L'o
 - **Quando**: interruttore *Adesso · Partenza · Arrivo*; con un orario scelto compaiono **giorno** e **ora**. Le date ammesse sono quelle coperte
   dai GTFS in archivio (le stesse della modalità *Programmato*, `/api/dates`) e per ogni data si usano **gli orari di quella data**
   (`plannerGtfs` in `server.js` → `live.dataFor`): stesso motore di caricamento della modalità Programmato.
-- **Opzioni** (salvate sul telefono): mezzi (battelli · autobus e tram), preferenza (equilibrata, più veloce, meno cambi, meno a piedi), cambi
-  (qualsiasi, al massimo 2, al massimo 1, solo diretti), camminata massima per tratto, passo, tempo per i cambi.
+- **Opzioni** (v28, salvate sul telefono): *Cosa conta di più* (Arrivare prima · Camminare meno · Meno cambi), *Andatura* (Con calma · Normale ·
+  Svelta), *Mezzi* (battelli · autobus e tram). Le vecchie impostazioni si convertono da sole; i vecchi parametri dei link restano accettati.
+- **Parametri del calcolo** (`percorso.js`, oggetto `C`), tutti in un posto:
+
+  | Parametro | Valore | Cosa fa |
+  |---|---|---|
+  | Costo percepito, partenza «alle»/adesso | arrivo + 0,25 × durata + TP × cambi + (WW − 1) × secondi a piedi | prima conta arrivare presto; 4 minuti di viaggio in più valgono 1 minuto di arrivo |
+  | Costo percepito, «arrivo entro» | − partenza + 0,25 × durata + TP × cambi + (WW − 1) × secondi a piedi | prima conta partire tardi; la durata conta sempre |
+  | Arrivare prima (predefinita) | TP 8 min, WW 1,5 | un cambio vale 8 minuti, un minuto a piedi 1,5 |
+  | Camminare meno | TP 8 min, WW 3, cambi a piedi ≤ 10 min | il mezzo si propone anche se a piedi si farebbe prima |
+  | Meno cambi | TP 20 min, WW 1,5 | meglio aspettare il diretto |
+  | Passo normale | 4,5 km/h in laguna, 4,8 km/h in terraferma | ponti, scale e folla a Venezia |
+  | Andatura con calma / svelta | tempi a piedi × 1,3 (+3 min per ogni cambio) / × 0,8 | ≈ 3,5 / 5,6-6 km/h |
+  | Margine per salire | 1 min autobus e tram, 2 min battello | anche alla prima salita, se non si parte dalla fermata |
+  | Cambi | al massimo 4 (5 corse); a piedi tra due mezzi ≤ 15 min | |
+  | Fermate di partenza e arrivo | entro 1,5 km in linea d'aria (× 1,3), o fino a 3,5 km misurati lungo le strade dal telefono | |
+  | Tutto a piedi | fino a 40 min lungo la rete pedonale | se arriva prima, i mezzi con cambi o tanta strada a piedi non si propongono |
+  | Proposte | 5 al massimo, una per «famiglia» (stesse linee e fermate), con gli altri orari | etichette Consigliata · Arrivo prima / Parti più tardi · Meno cambi · Meno a piedi |
+  | Proposte inutili | tolte se un'altra costa almeno 30 s meno ed è almeno altrettanto buona in partenza e arrivo (±2 min) | |
+  | Partenza «alle» | tolte le proposte che arrivano più di 30 min dopo la prima (50 con Camminare meno / Meno cambi) | |
+  | «Arrivo entro» | ultima partenza utile per bisezione al minuto, poi le partenze una per una nella mezz'ora prima; tolte le proposte che partono più di 25 min prima dell'ultima utile; «entro le 9:00» comprende chi arriva alle 9:00 | |
+  | Fermata più comoda (v28) | dopo il calcolo, sulle stesse corse: salita con meno strada e partenza più tardi, cambi con meno strada (a parità più tempo per cambiare), discesa con meno strada | prima si poteva salire a una fermata lontana per una corsa che passava poco dopo sotto casa |
+  | Orizzonte | viaggi fino a 5 ore; in tempo reale anche corse fino a 30 min prima (in ritardo) | |
 - **Sul telefono**, mentre si scelgono partenza, arrivo e opzioni il pianificatore occupa **tutto lo schermo** (la tastiera non copre nulla e la barra in
   basso si toglie); con le soluzioni torna un foglio in basso e la mappa mostra il percorso. «Scegli sulla mappa» lo toglie di mezzo.
 - **Mezzi sulla mappa**: con il pianificatore aperto si vedono **solo i mezzi delle corse della soluzione mostrata** (la prima dell'elenco o quella
@@ -437,9 +458,13 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
   Misure sui file veri: orari bus ~360 → ~85 MB, navigazione ~70 → ~50 MB; avvio da ~40 s a pochi secondi.
 - **«Programmato» e percorsi in qualsiasi data attuale e futura** coperta dai GTFS pubblicati da ACTV, con i file per giorno dal CDN.
 - **Archivio GTFS pulito sempre**: restano solo le versioni usate da oggi in avanti (sezione A).
+- **Pianificatore più furbo** (sezione 3.4, parametri in tabella): sale alla fermata più comoda della stessa corsa e fa i cambi con meno strada a piedi
+  (sulle 2.520 ricerche di prova: da 10 e 52 casi sbagliati a 0); «arrivo entro» trova l'ultima partenza utile (partenze in media 17 minuti più
+  tardi in metà delle ricerche, anticipo mediano 5 minuti); il costo conta sempre anche la durata; opzioni ridotte a tre scelte.
 - **App**: nuovi tentativi limitati (attese crescenti, al massimo ~5 minuti) quando gli orari di un'altra data sono in caricamento o il server
   è occupato, poi un messaggio chiaro; il calendario di «Programmato» parte da oggi.
-- Prove: `tests/memoria-giorni.test.js` (stessi risultati del file intero, CDN = ZIP, file alterati rifiutati, CDN spento, pulizia, memoria).
+- Prove: `tests/memoria-giorni.test.js` (stessi risultati del file intero, CDN = ZIP, file alterati rifiutati, CDN spento, pulizia, memoria),
+  `tests/percorso-v28.test.js` (fermata più comoda, ultima partenza utile con mezzi ogni 2 minuti, orari al minuto, preferenze).
 
 ### Novità della v27
 

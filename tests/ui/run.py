@@ -11,7 +11,7 @@ SIZES = [('phone', 390, 844), ('phone-small', 360, 640), ('landscape', 844, 390)
 fails = []
 ES_LOG = "try{const E=window.EventSource;if(E)window.EventSource=class extends E{constructor(u,o){super(u,o);(window.__es||(window.__es=[])).push(String(u));}}}catch(e){}"   # indirizzi dei flussi aperti (un flusso aperto non compare tra le richieste concluse)
 FAV_ONE = "try{if(!localStorage.getItem('tpl.favorites'))localStorage.setItem('tpl.favorites', JSON.stringify({v:1,items:[{k:'nav:5032',name:'Fermata preferita di prova',src:'nav',at:1}]}))}catch(e){}"   # un preferito: la ricerca non deve mostrarlo
-GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v27', mappa:true, pannello:true}))}catch(e){}"   # guida già vista: le prove non la incontrano (ha una prova sua)
+GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v28', mappa:true, pannello:true}))}catch(e){}"   # guida già vista: le prove non la incontrano (ha una prova sua)
 def check(ok, msg):
     print(('  ok   ' if ok else '  FAIL ') + msg)
     if not ok: fails.append(msg)
@@ -182,10 +182,12 @@ with sync_playwright() as p:
         check(page.evaluate("document.querySelectorAll('.pp-fw [data-clr]').length") == 2, 'pianificatore: × per togliere partenza e arrivo')
         # opzioni: pagina a spunta, salvate; «Mostra le soluzioni» rifà la ricerca; Ripristina torna ai valori normali
         page.click('.pp-opzbtn'); page.wait_for_selector('.pp-opz', timeout=3000)
-        check(page.evaluate("document.querySelectorAll('.pp-opz .pp-og').length") >= 5 and page.evaluate("document.querySelectorAll('.pp-opz [data-o=pref]').length") == 3 and not page.query_selector('.pp-opz [data-o=cambi]'), 'opzioni: mezzi, preferenza (Migliore, Meno cambi, Meno a piedi), a piedi, passo, margine')
+        check(page.evaluate("document.querySelectorAll('.pp-opz .pp-og').length") == 3 and page.evaluate("document.querySelectorAll('.pp-opz [data-o=pref]').length") == 3 and page.evaluate("document.querySelectorAll('.pp-opz [data-o=passo]').length") == 3
+              and not page.query_selector('.pp-opz [data-o=cambi], .pp-opz [data-o=piedimax], .pp-opz [data-o=margine]'), 'opzioni v28: cosa conta (Arrivare prima, Camminare meno, Meno cambi), andatura, mezzi')
+        check(page.inner_text('.pp-opz .pp-og').startswith('Cosa conta di più'), 'opzioni: prima la scelta principale')
         small = page.evaluate("Math.min(...[...document.querySelectorAll('.pp-opz button.chip')].map(b=>b.getBoundingClientRect().height))")
         check(small >= 40, f'scelte delle opzioni alte almeno 40px ({small:.0f})')
-        page.click('[data-o=passo][data-v=veloce]'); page.click('.pp-ook'); page.wait_for_selector('.pp-opt, .pp-walkonly', timeout=15000)
+        page.click('[data-o=passo][data-v=svelta]'); page.click('.pp-ook'); page.wait_for_selector('.pp-opt, .pp-walkonly', timeout=15000)
         check('1' in page.inner_text('.pp-opzbtn'), 'pulsante Opzioni con il numero di opzioni attive')
         page.click('.pp-opzbtn'); page.wait_for_selector('.pp-opz'); page.click('.pp-oreset'); page.click('.pp-ook'); page.wait_for_selector('.pp-opt', timeout=15000)
         page.click('.pp-opt'); page.wait_for_selector('.pp-steps', timeout=5000)

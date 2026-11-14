@@ -25,13 +25,19 @@ const C = {
   ROUNDS: 5,                 // al massimo 5 corse (4 cambi)
   V_LAG: 1.25, V_MAIN: 1.33, // passo «normale» (m/s): 4,5 km/h in laguna (ponti, scale, folla), 4,8 in terraferma (come le app di mappe)
   PASSO: { lento: 1.3, normale: 1, veloce: 0.8 },   // tempi a piedi × fattore: tranquillo ≈ 3,5-3,7 km/h, veloce ≈ 5,6-6 km/h
-  MARGINE_LARGO_S: 180,      // «margine largo» per i cambi (bagagli, passeggini): +3 minuti
-  // costo generalizzato (minuti «percepiti»): ogni cambio pesa come TP secondi di viaggio, ogni secondo a piedi come WW secondi.
-  // Come le app di trasporto (Google Maps, Moovit): «Migliore» (equilibrata), «Meno cambi», «Meno a piedi». v27: un cambio vale 8 minuti
-  // nella migliore (scendere, aspettare al pontile o alla fermata, rischio di perdere la coincidenza): niente più cambi per guadagnare
-  // 3-4 minuti; «meno cambi» 20 minuti. «veloce» resta solo per i link e le impostazioni salvate prima della v27.
-  PREF: { equilibrata: { TP: 480, WW: 1.5 }, veloce: { TP: 120, WW: 1.1 }, cambi: { TP: 1200, WW: 1.5 }, piedi: { TP: 480, WW: 3 } },
-  BY_EARLY_S: 20 * 60,       // «arrivo entro»: si propone chi arriva al massimo 20 min prima dell'orario (o 15 min oltre la più vicina, se nessuna ci sta)
+  MARGINE_LARGO_S: 180,      // andatura «con calma» (bagagli, passeggini, bambini): +3 minuti per ogni cambio
+  // COSTO PERCEPITO di una soluzione (in secondi), come ragiona una persona:
+  //   partenza «alle» / adesso:  arrivo + A × durata + TP × cambi + (WW − 1) × secondi a piedi
+  //   «arrivo entro»:          − partenza + A × durata + TP × cambi + (WW − 1) × secondi a piedi
+  // Prima conta arrivare presto (o partire il più tardi possibile), ma la durata conta sempre: A = 0,25 vuol dire che 4 minuti di viaggio
+  // in più valgono 1 minuto di arrivo in più (o di partenza anticipata). Un cambio pesa TP, un minuto a piedi WW minuti.
+  //   equilibrata  «Arrivare prima»  (predefinita): un cambio = 8 minuti, a piedi × 1,5 (camminare stanca più che stare seduti)
+  //   piedi        «Camminare meno»: a piedi × 3, e ogni tratto a piedi tra due mezzi al massimo 10 minuti
+  //   cambi        «Meno cambi»:     un cambio = 20 minuti (meglio aspettare il diretto)
+  // «veloce» (prima della v27) vale come «equilibrata».
+  PREF: { equilibrata: { TP: 480, WW: 1.5, A: 0.25 }, veloce: { TP: 480, WW: 1.5, A: 0.25 }, cambi: { TP: 1200, WW: 1.5, A: 0.25 }, piedi: { TP: 480, WW: 3, A: 0.25, maxT: 600 } },
+  BY_EARLY_S: 25 * 60,       // «arrivo entro»: niente proposte che fanno partire più di 25 min prima dell'ultima partenza utile (se ce ne sono altre)
+  LATE_S: 30 * 60,           // partenza «alle»: niente proposte che arrivano più di 30 min dopo la prima (50 con «meno cambi» o «camminare meno»)
   BETTER_S: 30,              // una soluzione ne rende inutile un'altra se è migliore di almeno 30 s di costo (e non chiede di partire prima)
   DETOUR: 1.3,               // linea d'aria -> percorso a piedi (terraferma, accesso alla prima fermata)
   MAIN_M: 450,               // fermate fuori dalla rete pedonale: cambi a piedi fino a 450 m in linea d'aria
@@ -46,8 +52,8 @@ const C = {
   CACHE_MS: 30000, CACHE_MAX: 300,
   OPTIONS: 5,                // soluzioni proposte (una per «famiglia»: stesse linee e stessi punti di cambio)
   SHORT_WALK_S: 6 * 60,      // ricerca «meno a piedi»: cambi e tratti finali fino a 6 minuti
-  BY_BACK_S: 2 * 3600,       // «arrivo entro»: prima ricerca 2 ore prima dell'orario (5 se non basta)
-  BY_SLACK_S: 45 * 60        // poi si riparte 45 min prima di «orario − durata minima» (così ci sono anche gli orari precedenti)
+  BY_BACK_S: 2 * 3600,       // «arrivo entro»: l'ultima partenza utile si cerca nelle 2 ore prima dell'orario (5 se non basta)
+  BY_SCAN_S: 30 * 60         // ...e le partenze una per una nella mezz'ora prima di quella
 };
 const INF = 1e9;
 const SRC = ['aut', 'nav'];
@@ -195,7 +201,8 @@ function earliest(q, P, p, t) {
 // RAPTOR
 // ---------------------------------------------------------------------------------------------------------------------
 // q: { T (s del giorno), live, nowMs, layers, access: [[g, s]], egress: Map(g -> s), lc,
-//      K (corse al massimo), wf (fattore del passo), maxT (cambio a piedi più lungo), extra (margine in più per i cambi), allow(P) (mezzi e linee ammessi) }
+//      K (corse al massimo), wf (fattore del passo), maxT (cambio a piedi più lungo), extra (margine in più per i cambi), allow(P) (mezzi e linee ammessi),
+//      noWalkCut (non scartare i mezzi che arrivano dopo chi va tutto a piedi: «arrivo entro» e «camminare meno») }
 function raptor(q) {
   const N = IX.ids.length, K = q.K ?? C.ROUNDS, wf = q.wf ?? 1, extra = q.extra || 0, arr = [], lab = [];
   const best = new Float64Array(N).fill(INF);
@@ -215,7 +222,7 @@ function raptor(q) {
     for (const h of add) from.add(h);
   };
   for (const [g, s] of q.access) { const t = q.T + s; if (t < arr[0][g]) { arr[0][g] = t; best[g] = t; lab[0].kind[g] = 3; lab[0].a[g] = s; marked.add(g); } }
-  walk(0, marked); tgt(0);
+  walk(0, marked); if (!q.noWalkCut) tgt(0);                    // noWalkCut: i mezzi si cercano anche se a piedi (via le fermate) si arriva prima
   for (let k = 1; k <= K && marked.size; k++) {
     const Q = new Map();
     for (const g of marked) for (let o = IX.spS[g]; o < IX.spS[g + 1]; o++) { const pi = IX.spP[o], p = IX.spK[o]; const v = Q.get(pi); if (v === undefined || p < v) Q.set(pi, p); }
@@ -259,6 +266,65 @@ function journey(q, R, k, g) {
     return null;
   }
   return legs;
+}
+
+// AGGIUSTAMENTI DI UNA SOLUZIONE (stesse corse, stessi orari dei mezzi). RAPTOR fa salire alla PRIMA fermata da cui raggiunge una corsa e
+// scendere alla prima utile: può far camminare fino a una fermata lontana per prendere una corsa che passa poco dopo sotto casa. Una persona
+// sceglie invece la fermata più comoda. Per ogni soluzione:
+//   1) cambi: tra due corse, la coppia discesa/salita con meno strada a piedi (a parità, più tempo per il cambio, fino a 10 minuti);
+//   2) partenza: sulla prima corsa la fermata con il costo più basso (meno strada a piedi e partenza da casa più tardi);
+//   3) arrivo: si resta a bordo fino alla fermata da cui si cammina meno, se costa meno (arrivo + strada a piedi pesata).
+// Ogni cambio rispetta lo stesso margine della ricerca (1 min bus e tram, 2 min battello, +3 con calma) e lo stesso limite a piedi.
+function walkMap(q, g) {
+  const m = new Map([[g, 0]]), lim = Math.min(q.maxT ?? INF, C.TRANSFER_MAX_S), wf = q.wf ?? 1;
+  for (let o = IX.trS[g]; o < IX.trS[g + 1]; o += 2) { const w = Math.round(IX.trA[o + 1] * wf), h = IX.trA[o]; if (w <= lim && !(m.get(h) <= w)) m.set(h, w); }
+  return m;
+}
+function refine(q, legs, egr, W) {
+  const R = []; legs.forEach((l, i) => { if (l.t === 'ride') R.push(i); });
+  if (!R.length) return;
+  const chgOf = P => (P.si === 1 ? C.CHANGE_NAV_S : C.CHANGE_AUT_S) + (q.extra || 0);
+  const sumS = (i0, i1) => legs.slice(i0, i1).reduce((s, l) => s + (l.s || 0), 0);
+  const replace = (i0, i1, items, from) => { const d = items.length - (i1 - i0); legs.splice(i0, i1 - i0, ...items); for (let k = from; k < R.length; k++) R[k] += d; };
+  // 1) cambi
+  for (let r = 0; r + 1 < R.length; r++) {
+    const A = legs[R[r]], B = legs[R[r + 1]], chg = chgOf(B), w0 = sumS(R[r] + 1, R[r + 1]);
+    let best = { a: A.p1, b: B.p0, w: w0, slack: B.dep - (A.arr + w0 + chg), ta: A.arr, tb: B.dep };
+    for (let a = A.p0 + 1; a < A.P.stops.length; a++) {
+      const ta = timeAt(q, A.P, A.j, a, A.L, false); if (!(ta < INF)) continue;
+      const wm = walkMap(q, A.P.stops[a]);
+      for (let b = 0; b < B.p1; b++) {
+        const w = wm.get(B.P.stops[b]); if (w == null) continue;
+        const tb = timeAt(q, B.P, B.j, b, B.L, true); if (!(tb < INF)) continue;
+        const slack = tb - (ta + w + chg); if (slack < 0) continue;
+        if (w < best.w - 30 || (Math.abs(w - best.w) <= 30 && Math.min(slack, 600) > Math.min(best.slack, 600) + 30)) best = { a, b, w, slack, ta, tb };
+      }
+    }
+    if (best.a !== A.p1 || best.b !== B.p0) {
+      const ga = A.P.stops[best.a], gb = B.P.stops[best.b];
+      A.p1 = best.a; A.arr = best.ta; B.p0 = best.b; B.dep = best.tb;
+      replace(R[r] + 1, R[r + 1], ga === gb ? [] : [{ t: 'walk', from: ga, to: gb, s: best.w }], r + 1);
+    }
+  }
+  // 2) partenza (stesso margine di salita della ricerca: nessuno se si parte proprio dalla fermata)
+  const F = legs[R[0]], pre = sumS(0, R[0]), accM = new Map(q.access), chgF = chgOf(F);
+  let bestA = { b: F.p0, s: pre, tb: F.dep, c: W.WW * pre - F.dep };
+  for (let b = 0; b < F.p1; b++) {
+    const s = accM.get(F.P.stops[b]); if (s == null) continue;
+    const tb = timeAt(q, F.P, F.j, b, F.L, true); if (!(tb < INF) || tb < q.T + s + (s ? chgF : 0)) continue;
+    const c = W.WW * s - tb; if (c < bestA.c - 30) bestA = { b, s, tb, c };
+  }
+  if (bestA.b !== F.p0 || bestA.s !== pre) { F.p0 = bestA.b; F.dep = bestA.tb; replace(0, R[0], [{ t: 'acc', g: F.P.stops[bestA.b], s: bestA.s }], 0); }
+  // 3) arrivo
+  const Lr = legs[R[R.length - 1]], tail = sumS(R[R.length - 1] + 1, legs.length), cost = (t, w) => t + (W.WW - 1) * w;
+  let cur = { t: Lr.arr + tail, w: tail, p: -1, g: -1 };
+  for (let p = Lr.p0 + 1; p < Lr.P.stops.length; p++) {
+    if (p === Lr.p1) continue;
+    const g = Lr.P.stops[p], w = egr.get(g); if (w == null) continue;
+    const ta = timeAt(q, Lr.P, Lr.j, p, Lr.L, false); if (!(ta < INF)) continue;
+    if (cost(ta + w, w) < cost(cur.t, cur.w) - 30) cur = { t: ta + w, w, p, g };
+  }
+  if (cur.p >= 0) { Lr.p1 = cur.p; Lr.arr = cur.t - cur.w; legs.splice(R[R.length - 1] + 1, legs.length, { t: 'egr', g: cur.g, s: cur.w }); }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -308,9 +374,11 @@ function walkTo(cands, wf = 1, maxS = INF) {
 function normPref(o = {}) {
   const pref = C.PREF[o.pref] ? o.pref : 'equilibrata';
   return { mezzi: o.mezzi && o.mezzi.size && o.mezzi.size < 3 ? o.mezzi : null, cambi: Number.isInteger(o.cambi) ? Math.max(0, Math.min(C.ROUNDS - 1, o.cambi)) : C.ROUNDS - 1,
-    piediMax: o.piediMax > 0 ? o.piediMax * 60 : INF, wf: C.PASSO[o.passo] || 1, extra: o.margine === 'largo' ? C.MARGINE_LARGO_S : 0,
+    piediMax: o.piediMax > 0 ? o.piediMax * 60 : INF, trMax: C.PREF[pref].maxT || INF, wf: C.PASSO[o.passo] || 1, extra: o.margine === 'largo' ? C.MARGINE_LARGO_S : 0,
     pref, W: C.PREF[pref], escludi: o.escludi?.size ? o.escludi : null, solo: o.solo?.size ? o.solo : null };
 }
+// costo percepito (vedi C.PREF): D = orario di «arrivo entro» (null = partenza «alle» / adesso)
+const cost = (D, arr, leave, cambi, walkS, W) => (D == null ? arr : -leave) + W.A * (arr - leave) + W.TP * cambi + (W.WW - 1) * walkS;
 const prefKey = pr => [pr.mezzi ? [...pr.mezzi].sort().join('+') : '', pr.cambi, pr.piediMax, pr.wf, pr.extra, pr.pref, pr.escludi ? [...pr.escludi].sort().join('+') : '', pr.solo ? [...pr.solo].sort().join('+') : ''].join('|');
 
 // «famiglia» di una soluzione: stesse linee, saliti e scesi alle stesse fermate (lettere dei pontili e corsie a parte)
@@ -323,6 +391,7 @@ const famOf = legs => legs.filter(l => l.t === 'ride').map(l => l.P.rk + '@' + b
 function search({ da, a, secs = null, date = null, piediM = null, piediReale = false, entro = false, pr, nowMs, runsMax = 6, discover = true, from = null }) {
   const live = secs == null, ymd = date || cal.romeYmd(nowMs);
   const D = entro && !live ? secs : null;                      // «arrivo entro le»
+  const DL = D == null ? null : D + 59;                        // «entro le 9:00» comprende le 9:00 e qualche secondo (orari al minuto)
   const T = live ? cal.romeParts(nowMs).secs : D != null ? D - C.BY_BACK_S : secs;
   const acc = walkTo(da, pr.wf, pr.piediMax), egr = walkTo(a, pr.wf, pr.piediMax);
   const L = [{ off: 0, ymd }], lo = D != null ? D - C.HORIZON_S : Math.min(T, from ?? T), hi = D != null ? D : T + C.HORIZON_S;
@@ -332,36 +401,24 @@ function search({ da, a, secs = null, date = null, piediM = null, piediReale = f
   const layers = L, opts = [], seen = new Set();
   const allowOf = ex => P => (!pr.mezzi || pr.mezzi.has(P.mode)) && (!pr.escludi || !pr.escludi.has(P.rk)) && (!pr.solo || pr.solo.has(P.rk)) && (!ex || !ex.has(P.rk));
   const short = m => { if (!m.size) return m; const mn = Math.min(...m.values()); return new Map([...m].filter(([, v]) => v <= Math.max(C.SHORT_WALK_S, mn))); };
-  const scoreOf = o => (D == null ? o.arr : -o.leave) + pr.W.TP * (o.rides - 1) + (pr.W.WW - 1) * o.walkS;
+  const scoreOf = o => cost(D, o.arr, o.leave, o.rides - 1, o.walkS, pr.W);
   const leaveOf = o => { const r0 = o.legs.find(l => l.t === 'ride'); return r0.dep - o.legs.slice(0, o.legs.indexOf(r0)).reduce((s, l) => s + (l.s || 0), 0); };
   // una ricerca all'orario ps.t: aggiunge le soluzioni nuove a opts e restituisce la più veloce di questa ricerca (o null)
   const runAt = ps => {
-    const q = { T: ps.t, live, nowMs, layers, lc: new Map(), access: [...ps.acc], egress: ps.egr, maxT: Math.min(ps.maxT ?? INF, pr.piediMax),
-      K: pr.cambi + 1, wf: pr.wf, extra: pr.extra, allow: allowOf(ps.ex) };
+    const q = { T: ps.t, live, nowMs, layers, lc: new Map(), access: [...ps.acc], egress: ps.egr, maxT: Math.min(ps.maxT ?? INF, pr.piediMax, pr.trMax ?? INF),
+      K: ps.K ?? pr.cambi + 1, wf: pr.wf, extra: pr.extra, allow: allowOf(ps.ex), noWalkCut: D != null || pr.pref === 'piedi' };
     const R = raptor(q);
     let first = null;
     for (let k = 1; k < R.arr.length; k++) {
       let bg = -1, bt = INF;
       for (const [g, s] of ps.egr) { const v = R.arr[k][g] + s; if (v < bt) { bt = v; bg = g; } }
       if (bg < 0 || bt >= INF) continue;
-      let prevBest = INF; for (const [g, s] of ps.egr) for (let h = 0; h < k; h++) prevBest = Math.min(prevBest, R.arr[h][g] + s);
+      let prevBest = INF; for (const [g, s] of ps.egr) for (let h = q.noWalkCut ? 1 : 0; h < k; h++) prevBest = Math.min(prevBest, R.arr[h][g] + s);   // (noWalkCut: il «tutto a piedi» non conta)
       if (bt >= prevBest) continue;                            // nessun miglioramento con un cambio in più
       const legs = journey(q, R, k, bg); if (!legs) continue;
       legs.push({ t: 'egr', g: bg, s: ps.egr.get(bg) });
-      // restare a bordo invece di scendere prima e camminare: RAPTOR tiene solo l'arrivo più presto e può far scendere a una fermata da cui
-      // si arriva a piedi 1 minuto prima. Se proseguire con la stessa corsa fino a un'altra fermata vicina all'arrivo «costa» meno, si prosegue.
-      let li = legs.length - 1; while (li >= 0 && legs[li].t !== 'ride') li--;
-      const last = li >= 0 ? legs[li] : null;
-      if (last) {
-        const P = last.P, cost = (t, w) => t + (pr.W.WW - 1) * w, tail = legs.slice(li + 1).reduce((x, l) => x + (l.s || 0), 0);   // a piedi dopo la discesa
-        let cur = { t: bt, w: tail, p: -1, g: bg };
-        for (let p = last.p1 + 1; p < P.stops.length; p++) {
-          const g = P.stops[p], w = ps.egr.get(g); if (w == null) continue;
-          const ta = timeAt(q, P, last.j, p, last.L, false); if (!(ta < INF)) continue;
-          if (cost(ta + w, w) < cost(cur.t, cur.w) - 1) cur = { t: ta + w, w, p, g };
-        }
-        if (cur.p >= 0) { last.p1 = cur.p; last.arr = cur.t - cur.w; legs.splice(li + 1, legs.length, { t: 'egr', g: cur.g, s: cur.w }); bt = cur.t; bg = cur.g; }
-      }
+      refine(q, legs, ps.egr, pr.W);                           // fermate più comode sulle stesse corse (vedi refine)
+      { const li = legs.map(l => l.t).lastIndexOf('ride'); bt = legs[li].arr + legs.slice(li + 1).reduce((x, l) => x + (l.s || 0), 0); bg = legs[legs.length - 1].g; }
       const sig = legs.filter(l => l.t === 'ride').map(l => l.P.si + ':' + l.P.n[l.j] + '@' + l.p0 + '-' + l.p1).join('>');
       if (seen.has(sig)) continue; seen.add(sig);
       const o = { legs, arr: bt, rides: legs.filter(l => l.t === 'ride').length, walkS: legs.reduce((s, l) => s + (l.t === 'ride' ? 0 : l.s || 0), 0), fam: famOf(legs) };
@@ -369,7 +426,7 @@ function search({ da, a, secs = null, date = null, piediM = null, piediReale = f
     }
     return first;
   };
-  const best = () => opts.filter(o => D == null || o.arr <= D).reduce((m, o) => (!m || o.score < m.score ? o : m), null);
+  const best = () => opts.filter(o => D == null || o.arr <= DL).reduce((m, o) => (!m || o.score < m.score ? o : m), null);
   if (acc.size && egr.size) {
     if (D == null) {
       let t = from ?? T, runs = 0;
@@ -383,21 +440,34 @@ function search({ da, a, secs = null, date = null, piediM = null, piediReale = f
         if (opts.length >= C.OPTIONS + 3) break;
       }
     } else {
-      // ARRIVO ENTRO D: 1) la più veloce partendo 2 ore prima (o 5, se serve) dà la durata minima; 2) si riparte poco prima di «D − durata»
-      // e si prendono le partenze successive finché si arriva in tempo; 3) «meno a piedi» dall'ultima partenza utile. Di solito 3-5 ricerche.
-      const ok = () => opts.filter(o => o.arr <= D);
-      let f = runAt({ t: T, acc, egr });
-      if (!ok().length) f = runAt({ t: D - C.HORIZON_S, acc, egr });
-      if (ok().length) {
-        const dur = Math.min(...ok().map(o => o.arr - o.leave));
-        let t = Math.max(Math.min(...ok().map(o => o.leave)) + 60, D - dur - C.BY_SLACK_S), runs = 0;
-        while (runs < runsMax + 2) {
-          runs++; f = runAt({ t, acc, egr });
-          if (!f || f.arr > D) break;                          // da qui in poi si arriva tardi
-          t = Math.max(t + 60, f.leave + 60);
+      // ARRIVO ENTRO D (solo orari programmati: partendo più tardi non si arriva mai prima, quindi «si arriva in tempo?» cambia una volta sola).
+      // 1) L'ULTIMA PARTENZA UTILE si trova per bisezione, al minuto (8 ricerche): con tutte le corse ammesse e con la sola corsa diretta.
+      // 2) Le partenze una per una nella mezz'ora prima dell'ultima utile (al massimo 10 ricerche: ognuna riparte dopo la partenza trovata),
+      //    così compaiono tutte le soluzioni sensate (es. il battello diretto che parte 2 minuti prima di un percorso tutto a piedi), poi
+      //    una «meno a piedi».
+      // Prima (fino alla v28) si andava avanti a passi da una partenza 45 minuti prima: con mezzi frequenti i passi finivano prima
+      // dell'ultima partenza e si arrivava 10-30 minuti prima del necessario.
+      const arrBy = (t, K, ps) => {
+        const R = raptor({ T: t, live: false, nowMs, layers, lc: new Map(), access: [...ps.acc], egress: ps.egr, maxT: Math.min(pr.piediMax, pr.trMax ?? INF), K, wf: pr.wf, extra: pr.extra, allow: allowOf(null), noWalkCut: true });
+        let b = INF; for (let k = 1; k < R.arr.length; k++) for (const [g, s] of ps.egr) b = Math.min(b, R.arr[k][g] + s);   // solo con i mezzi (a piedi: walkOnly)
+        return b;
+      };
+      const latest = (K, ps) => {
+        let lo = D - C.BY_BACK_S, hi = D;
+        if (arrBy(lo, K, ps) > DL) { hi = lo; lo = D - C.HORIZON_S; if (arrBy(lo, K, ps) > DL) return null; }
+        while (hi - lo > 60) { const mid = lo + Math.floor((hi - lo) / 120) * 60; if (arrBy(mid, K, ps) <= DL) lo = mid; else hi = mid; }
+        return lo;
+      };
+      const tF = latest(pr.cambi + 1, { acc, egr });
+      if (tF != null) {
+        let t = tF - C.BY_SCAN_S, runs = 0, last = -INF;
+        while (t <= tF && runs < 10) {
+          runs++; const f = runAt({ t, acc, egr });
+          if (!f) { t += 300; continue; }
+          last = Math.max(last, t); t = Math.max(t + 60, f.leave + 60);
         }
-        const last = ok().reduce((m, o) => (o.leave > m.leave ? o : m), ok()[0]);
-        runAt({ t: last.leave - 1200, acc: short(acc), egr: short(egr), maxT: C.SHORT_WALK_S });
+        if (last < tF) runAt({ t: tF, acc, egr });
+        runAt({ t: tF - 20 * 60, acc: short(acc), egr: short(egr), maxT: C.SHORT_WALK_S });   // meno a piedi
       }
     }
     // linee diverse: senza le linee della soluzione migliore, poi senza la sua prima linea (altre «famiglie» da proporre)
@@ -408,7 +478,7 @@ function search({ da, a, secs = null, date = null, piediM = null, piediReale = f
       if (rks.length > 1) runAt({ t: t0, acc, egr, ex: new Set([rks[0]]) });
     }
   }
-  if (D != null) for (let k = opts.length - 1; k >= 0; k--) if (opts[k].arr > D) opts.splice(k, 1);
+  if (D != null) for (let k = opts.length - 1; k >= 0; k--) if (opts[k].arr > DL) opts.splice(k, 1);
   // solo a piedi: fermate di partenza e arrivo collegate a piedi (laguna) o punti vicini in linea d'aria (terraferma)
   let walkOnly = null;
   if (piediReale && piediM != null && piediM <= C.REAL_MAX_M) {   // misurata dal telefono lungo le strade (anche in laguna: ponti compresi)
@@ -461,7 +531,7 @@ function simili({ da, a, secs = null, date = null, piediM = null, piediReale = f
     // stesso percorso: solo quelle linee, da mezz'ora prima (orario scelto) o da adesso, per le partenze successive
     const live = secs == null, T0 = live ? null : entro ? secs - 2 * 3600 : secs - 1800;
     const same = search({ da, a, secs: live ? null : T0, date, entro: false, pr: { ...base, solo: new Set(rs), escludi: null }, nowMs, runsMax: 9, discover: false });
-    same.opts = same.opts.filter(o => o.fam === fam && (!entro || o.arr <= secs));
+    same.opts = same.opts.filter(o => o.fam === fam && (!entro || o.arr < secs + 60));
     const stesso = present({ ...same, D: null, nowMs, pr: base, all: true }).soluzioni;
     // varianti: senza una delle sue linee (alla volta); altre linee: senza nessuna
     const famsSeen = new Set([fam]), varianti = [], altre = [];
@@ -540,8 +610,8 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
     const leaveS = firstDep - accS, arriveS = (last ? toS(last.a.exp, T) : T) + egrS;
     return { parti: hhmm(leaveS), arrivi: hhmm(arriveS), partiMs: live ? Math.round(nowMs + (leaveS - T) * 1000) : null, minuti: Math.max(1, Math.round((arriveS - leaveS) / 60)),
       cambi: Math.max(0, rides.length - 1), piedi: Math.round(walkS / 60), rischio: risk, famiglia: o.fam, rotte: rides.map(l => l.P.rk), tratte: legs,
-      _arr: arriveS, _leave: leaveS, _score: (D == null ? arriveS : -leaveS) + pr.W.TP * Math.max(0, rides.length - 1) + (pr.W.WW - 1) * walkS };
-  }).filter(o => o.tratte.some(x => x.tipo === 'mezzo') && (D == null || o._arr <= D));
+      _arr: arriveS, _leave: leaveS, _score: cost(D, arriveS, leaveS, Math.max(0, rides.length - 1), walkS, pr.W) };
+  }).filter(o => o.tratte.some(x => x.tipo === 'mezzo') && (D == null || o._arr < D + 60));   // «entro le 18:00»: va bene chi arriva alle 18:00 (orari al minuto)
   const clean = o => { delete o._arr; delete o._leave; delete o._score; return o; };
   const head = { aggiornato: nowMs, live, ora: hhmm(T), data: ymd, entro: D != null ? hhmm(D) : null,
     piedi: walkOnly != null && walkOnly < INF && walkOnly <= 40 * 60 ? Math.max(1, Math.round(walkOnly / 60)) : null, senzaFermate: noStops };
@@ -551,14 +621,19 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
   }
   // 1) soluzioni inutili: un'altra non chiede di partire prima (o, con «arrivo entro», di arrivare dopo) e «costa» meno, contando cambi e
   //    strada a piedi con i pesi della preferenza (es. scendere per prendere un'altra linea che arriva 30 s prima: costa un cambio, si scarta)
-  const useless = (b, o) => b !== o && b._score <= o._score - C.BETTER_S && (D == null ? b._leave >= o._leave - 120 : b._arr <= o._arr + 120);
+  //    Si toglie solo se l'altra è almeno altrettanto buona sia nella partenza sia nell'arrivo (2 minuti di tolleranza): chi arriva prima resta
+  //    proposto anche se la consigliata è un diretto che parte più tardi.
+  const useless = (b, o) => b !== o && b._score <= o._score - C.BETTER_S && b._leave >= o._leave - 120 && b._arr <= o._arr + 120;
   // ...e rispetto all'andare a piedi: chi arriva dopo chi parte adesso a piedi ha senso solo se diretto e senza lunghe camminate
   // (per chi non vuole camminare), non con cambi o con metà strada comunque a piedi
   const wo = walkOnly != null && walkOnly < INF ? walkOnly : null;
-  const worse = o => wo != null && D == null && o._arr > T + wo && (o.cambi > 0 || o.piedi * 60 >= wo / 2);
-  // «arrivo entro»: niente soluzioni che fanno arrivare troppo presto se ce ne sono di più vicine all'orario (come le app di trasporto)
-  const slack0 = D == null || !out.length ? 0 : Math.min(...out.map(o => D - o._arr));
-  const early = o => D != null && D - o._arr > Math.max(C.BY_EARLY_S, slack0 + 15 * 60);
+  const worse = o => wo != null && (D == null ? o._arr > T + wo : o._leave < D - wo) && (o.cambi > 0 || o.piedi * 60 >= wo / 2);   // con «arrivo entro»: a piedi si parte più tardi
+  // «arrivo entro»: niente proposte che fanno partire molto prima dell'ultima partenza utile (come le app di trasporto);
+  // partenza «alle»: niente proposte che arrivano molto dopo la prima. Restano tra gli «altri orari» delle proposte tenute; mai tutte.
+  const latestLeave = D == null || !out.length ? 0 : Math.max(...out.map(o => o._leave));
+  const firstArr = D != null || !out.length ? 0 : Math.min(...out.map(o => o._arr));
+  const early = o => D != null && latestLeave - o._leave > C.BY_EARLY_S;
+  const late = o => D == null && o._arr - firstArr > (pr.pref === 'cambi' || pr.pref === 'piedi' ? 50 * 60 : C.LATE_S);
   const keep = out.filter(o => !out.some(b => useless(b, o)) && !worse(o));
   // 2) famiglie (stesse linee, stesse fermate di salita e discesa): se ne propone una per tipo, la migliore, con gli altri orari della stessa
   const fams = new Map();
@@ -571,7 +646,7 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
   }
   reps.sort((x, y) => x._score - y._score || x._leave - y._leave);
   // le proposte che fanno arrivare troppo presto si tolgono (restano tra gli «altri orari» di quelle tenute); mai tutte
-  const near = reps.filter(o => !early(o));
+  const near = reps.filter(o => !early(o) && !late(o));
   const pick = (near.length ? near : reps).slice(0, C.OPTIONS);
   // 3) etichette: la consigliata (costo più basso con la preferenza scelta), poi chi arriva prima / parte più tardi, meno cambi, meno a piedi
   if (pick.length > 1) {

@@ -12,7 +12,9 @@ const NEAR_M = 1500, NEAR_N = 14, REFRESH_MS = 60000, KEY = 'tpl.percorso', KEY_
 let X = null;                      // contesto dato da app.js (mappa, pannello, fermate, posizione…)
 // det: soluzione mostrata nel dettaglio (dell'elenco o un'alternativa); alts: alternative caricate per il dettaglio; opz: filtri; showOpz: pagina dei filtri
 // mezzi: battelli (nav) e autobus/tram (aut, come i pulsanti della mappa)
-const OPZ0 = { mezzi: ['nav', 'aut'], pref: 'equilibrata', cambi: '4', piedimax: '', passo: 'normale', margine: 'normale' };
+// v28: tre scelte sole. pref: equilibrata (Arrivare prima) | piedi (Camminare meno) | cambi (Meno cambi);
+// passo (andatura): calma (passo tranquillo + 3 minuti per i cambi) | normale | svelta; mezzi: battelli e/o autobus e tram
+const OPZ0 = { mezzi: ['nav', 'aut'], pref: 'equilibrata', passo: 'normale' };
 // when: 'now' (parti adesso, tempo reale) · 'at' (parti alle) · 'by' (arriva entro); date: giorno scelto (AAAA-MM-GG), entro le date dei GTFS in archivio
 const S = { formOpen: false, tall: false, walkShow: false, from: null, to: null, when: 'now', time: '', date: '', res: null, err: null, sel: -1, det: null, alts: null, edit: null, q: '', picking: null, loading: false, asked: 0,
   opz: { ...OPZ0 }, showOpz: false, opzDirty: false };
@@ -78,13 +80,18 @@ const epName = ep => (ep ? ep.label : '');
 const save = () => { try { const k = ep => (ep && (ep.kind === 'stop' || ep.kind === 'zone') ? ep : null); localStorage.setItem(KEY, JSON.stringify({ v: 1, from: k(S.from), to: k(S.to) })); } catch { /* facoltativo */ } };
 function restore() {
   try { const d = JSON.parse(localStorage.getItem(KEY) || 'null'); if (d?.v === 1) { S.from = d.from || null; S.to = d.to || null; } } catch { /* niente */ }
-  try { const o = JSON.parse(localStorage.getItem(KEY_OPZ) || 'null'); if (o && typeof o === 'object') for (const k in OPZ0) if (o[k] != null && typeof o[k] === typeof OPZ0[k]) S.opz[k] = o[k]; } catch { /* niente */ }
+  let old = null;
+  try { const o = JSON.parse(localStorage.getItem(KEY_OPZ) || 'null'); if (o && typeof o === 'object') { old = o; for (const k in OPZ0) if (o[k] != null && typeof o[k] === typeof OPZ0[k]) S.opz[k] = o[k]; } } catch { /* niente */ }
+  // v28: passo «lento» o tempo «largo» per i cambi -> andatura «con calma»; passo «veloce» -> «svelta»; il limite a piedi per tratto non c'è più
+  if (old && (old.passo === 'lento' || old.margine === 'largo')) S.opz.passo = 'calma';
+  else if (S.opz.passo === 'veloce') S.opz.passo = 'svelta';
+  if (!['calma', 'normale', 'svelta'].includes(S.opz.passo)) S.opz.passo = 'normale';
+  if (!['equilibrata', 'piedi', 'cambi', 'veloce'].includes(S.opz.pref)) S.opz.pref = 'equilibrata';
   // versioni precedenti: battelli, bus e tram separati (il tram era già compreso nei bus)
   if (Array.isArray(S.opz.mezzi)) S.opz.mezzi = [...new Set(S.opz.mezzi.map(m => (m === 'bus' || m === 'tram' ? 'aut' : m)).filter(m => m === 'nav' || m === 'aut'))];
   if (!Array.isArray(S.opz.mezzi) || !S.opz.mezzi.length) S.opz.mezzi = [...OPZ0.mezzi];
   // v27: preferenze come nelle app di trasporto (Migliore, Meno cambi, Meno a piedi); «Più veloce» e il tetto ai cambi non ci sono più
   if (S.opz.pref === 'veloce') S.opz.pref = 'equilibrata';
-  S.opz.cambi = OPZ0.cambi;
 }
 const saveOpz = () => { try { localStorage.setItem(KEY_OPZ, JSON.stringify(S.opz)); } catch { /* facoltativo */ } };
 // filtri diversi da quelli normali: numero (per il pulsante) e parametri della richiesta
@@ -93,10 +100,8 @@ function opzQs() {
   const o = S.opz; let q = '';
   if (o.mezzi.length < 2) q += '&mezzi=' + o.mezzi.join(',');
   if (o.pref !== 'equilibrata') q += '&pref=' + o.pref;
-  if (o.cambi !== '4') q += '&cambi=' + o.cambi;
-  if (o.piedimax) q += '&piedimax=' + o.piedimax;
-  if (o.passo !== 'normale') q += '&passo=' + o.passo;
-  if (o.margine === 'largo') q += '&margine=largo';
+  if (o.passo === 'calma') q += '&passo=lento&margine=largo';
+  else if (o.passo === 'svelta') q += '&passo=veloce';
   return q;
 }
 
@@ -336,7 +341,7 @@ function optCard(o, attr, live, compact = false) {
 const kmTxt = m => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`);
 // «tutto a piedi» disegnato sulla mappa: scelto toccando la scheda, o da solo se nessun mezzo conviene
 const walkShown = () => !S.det && !!walkVal.get(walkKey()) && S.res?.piedi != null && (S.walkShow || !S.res.soluzioni.length);
-const PREF_TXT = { equilibrata: 'Migliore', veloce: 'Migliore', cambi: 'Meno cambi', piedi: 'Meno a piedi' };
+const PREF_TXT = { equilibrata: 'Arrivare prima', veloce: 'Arrivare prima', cambi: 'Meno cambi', piedi: 'Camminare meno' };
 function renderBody() {
   if (S.edit) return;
   if (S.showOpz) return renderOpz();
@@ -352,26 +357,24 @@ function renderBody() {
   const walkOnly = r.piedi != null && (!r.soluzioni.length || r.piedi <= Math.min(...r.soluzioni.map(o => o.minuti)) + 5)
     ? `<${walkVal.get(walkKey()) ? `button type="button" data-walkonly aria-pressed="${walkShown()}"` : 'div'} class="pp-walkonly${walkShown() ? ' on' : ''}">${icon('walk')}<span><b>A piedi: circa ${minTxt(r.piedi)}${walkVal.get(walkKey()) ? ` · ${kmTxt(walkVal.get(walkKey()).m)}` : ''}</b>${r.soluzioni.length ? (r.piedi <= Math.min(...r.soluzioni.map(o => o.minuti)) ? '<small>fai prima a piedi</small>' : '') : '<small>nessun mezzo conviene per questo tragitto</small>'}${walkVal.get(walkKey()) ? `<small>${walkShown() ? 'sulla mappa il percorso a piedi' : 'tocca per vederlo sulla mappa'}</small>` : ''}</span></${walkVal.get(walkKey()) ? 'button' : 'div'}>` : '';
   if (!r.soluzioni.length) {
-    X.plist.innerHTML = head + walkOnly + (walkOnly ? '' : `<p class="muted pad">${r.senzaFermate ? `Nessuna fermata ${S.opz.piedimax ? `entro ${S.opz.piedimax} minuti a piedi` : 'vicina'} al punto scelto.` : r.entro ? `Nessuna soluzione per arrivare entro le ${esc(r.entro)} (si guardano le 5 ore prima). Prova un orario più tardi.` : 'Nessuna soluzione nelle prossime ore con autobus, tram o battelli. Prova un altro orario o un punto vicino.'}${nf ? ' Le opzioni attive possono escludere delle soluzioni.' : ''}</p>`);
+    X.plist.innerHTML = head + walkOnly + (walkOnly ? '' : `<p class="muted pad">${r.senzaFermate ? `Nessuna fermata vicina al punto scelto.` : r.entro ? `Nessuna soluzione per arrivare entro le ${esc(r.entro)} (si guardano le 5 ore prima). Prova un orario più tardi.` : 'Nessuna soluzione nelle prossime ore con autobus, tram o battelli. Prova un altro orario o un punto vicino.'}${nf ? ' Le opzioni attive possono escludere delle soluzioni.' : ''}</p>`);
     return;
   }
   X.plist.innerHTML = head + walkOnly + `<div class="pp-list">${r.soluzioni.map((o, k) => optCard(o, `data-k="${k}"`, live)).join('')}</div>`
     + `<button type="button" class="nlink pp-later">${icon('clock', 'sm')}${r.entro ? 'Soluzioni precedenti' : 'Soluzioni più tardi'}</button>`
     + `<p class="pp-note muted">Una proposta per percorso, ordinate per «${esc(PREF_TXT[S.opz.pref] || 'Migliore')}»: nel dettaglio trovi gli altri orari e le alternative. Tempi a piedi sulla rete pedonale di OpenStreetMap; fanno fede gli orari ACTV.</p>`;
 }
-// pagina delle opzioni: mezzi, preferenza, cambi, camminata, passo, margine
+// pagina delle opzioni (v28): cosa conta di più, andatura, mezzi
 function renderOpz() {
   const o = S.opz, seg = (k, vals) => `<div class="chips pp-seg" role="group">${vals.map(([v, t]) => `<button type="button" class="chip all${String(o[k]) === v ? ' on' : ''}" data-o="${k}" data-v="${v}" aria-pressed="${String(o[k]) === v}">${t}</button>`).join('')}</div>`;
   const mz = [['nav', 'ship', 'Battelli'], ['aut', 'bus', 'Autobus e tram']];
   X.plist.innerHTML = `<button type="button" class="linkback pp-oback">${icon('back', 'sm')}<span>Soluzioni</span></button>`
     + '<div class="pp-opz">'
+    + `<div class="pp-og"><b>Cosa conta di più</b>${seg('pref', [['equilibrata', 'Arrivare prima'], ['piedi', 'Camminare meno'], ['cambi', 'Meno cambi']])}`
+    + `<small class="muted">${{ equilibrata: 'Arrivi il prima possibile, contando anche quanto dura il viaggio. Un cambio o un tratto a piedi in più solo se fanno guadagnare davvero tempo (un cambio vale 8 minuti).', piedi: 'Ogni minuto a piedi pesa come tre minuti di viaggio; tra un mezzo e l\'altro al massimo 10 minuti a piedi. Il mezzo si propone anche quando a piedi faresti prima.', cambi: 'Meglio aspettare il diretto: un cambio si propone solo se fa guadagnare almeno 20 minuti.' }[o.pref] || ''}</small></div>`
+    + `<div class="pp-og"><b>Andatura</b>${seg('passo', [['calma', 'Con calma'], ['normale', 'Normale'], ['svelta', 'Svelta']])}`
+    + `<small class="muted">${{ calma: 'Circa 3,5 km/h e 3 minuti in più per ogni cambio: bagagli, bambini, passeggino o chi cammina piano.', normale: 'Circa 4,5 km/h a Venezia (ponti e folla) e 4,8 km/h in terraferma; per salire 1 minuto (autobus e tram) o 2 (battello).', svelta: 'Circa 5,6 km/h a Venezia e 6 km/h in terraferma: chi conosce le calli.' }[o.passo]}</small></div>`
     + `<div class="pp-og"><b>Mezzi</b><div class="chips pp-seg" role="group">${mz.map(([v, ic, t]) => `<button type="button" class="chip all${o.mezzi.includes(v) ? ' on' : ''}" data-m="${v}" aria-pressed="${o.mezzi.includes(v)}">${icon(ic, 'sm')}${t}</button>`).join('')}</div></div>`
-    + `<div class="pp-og"><b>Preferisci</b>${seg('pref', [['equilibrata', 'Migliore'], ['cambi', 'Meno cambi'], ['piedi', 'Meno a piedi']])}`
-    + `<small class="muted">${{ equilibrata: 'Il percorso più comodo: un cambio si propone solo se fa risparmiare almeno 8 minuti.', cambi: 'Meglio aspettare il mezzo diretto: un cambio si propone solo se fa risparmiare almeno 20 minuti.', piedi: 'Ogni minuto a piedi pesa come tre minuti di viaggio.' }[o.pref] || ''}</small></div>`
-    + `<div class="pp-og"><b>A piedi, per ogni tratto</b>${seg('piedimax', [['', 'Senza limite'], ['5', '5 min'], ['10', '10 min'], ['15', '15 min'], ['20', '20 min']])}</div>`
-    + `<div class="pp-og"><b>Il tuo passo</b>${seg('passo', [['lento', 'Tranquillo'], ['normale', 'Normale'], ['veloce', 'Svelto']])}`
-    + `<small class="muted">${{ lento: 'Circa 3,5 km/h: con bagagli, bambini o chi cammina piano.', normale: 'Circa 4,5 km/h a Venezia (ponti e folla) e 4,8 km/h in terraferma.', veloce: 'Circa 5,6 km/h a Venezia e 6 km/h in terraferma: chi conosce le calli.' }[o.passo]}</small></div>`
-    + `<div class="pp-og"><b>Tempo per i cambi</b>${seg('margine', [['normale', 'Normale'], ['largo', 'Più tempo (+3 min)']])}<small class="muted">Normale: 1 minuto tra autobus e tram, 2 se c'è un battello.</small></div>`
     + '</div>'
     + `<div class="pp-obtns"><button type="button" class="nlink pp-oreset"${opzCount() ? '' : ' disabled'}>Ripristina</button><button type="button" class="pp-ook">Mostra le soluzioni</button></div>`;
 }
