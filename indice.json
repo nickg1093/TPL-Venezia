@@ -1,11 +1,18 @@
 {
  "formato": 1,
- "commit": "e5adeac678c294a0d03b676ad32465e782e6a4db",
- "creato": "2026-11-14T14:09:08.032Z",
+ "commit": "87851f623c1e861678b15a60ad069afce6561dfc",
+ "creato": "2026-11-14T14:21:31.888Z",
  "fissi": [
   "nav/189116ae5243",
   "nav/38eed93361c1",
   "aut/13e238b453a5",
+  "aut/6010d7cd56eb",
+  "aut/8c81af2d223b",
+  "aut/f72e67310aa5"
+ ],
+ "orari": [
+  "nav/189116ae5243",
+  "nav/38eed93361c1",
   "aut/6010d7cd56eb",
   "aut/8c81af2d223b",
   "aut/f72e67310aa5"
