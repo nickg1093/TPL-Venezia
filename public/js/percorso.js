@@ -354,8 +354,17 @@ function renderBody() {
   const nf = opzCount();
   const head = `<p class="pp-meta muted">${live ? `In tempo reale · aggiornato alle ${new Date(r.aggiornato).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : r.entro ? `Orari programmati · arrivo entro le ${esc(r.entro)}` : `Orari programmati · partenza dalle ${esc(r.ora)}`}`
     + (nf ? ` · <button type="button" class="nlink pp-opzlink">${nf} ${nf > 1 ? 'opzioni attive' : 'opzione attiva'}</button>` : '') + '</p>';
-  const walkOnly = r.piedi != null && (!r.soluzioni.length || r.piedi <= Math.min(...r.soluzioni.map(o => o.minuti)) + 5)
-    ? `<${walkVal.get(walkKey()) ? `button type="button" data-walkonly aria-pressed="${walkShown()}"` : 'div'} class="pp-walkonly${walkShown() ? ' on' : ''}">${icon('walk')}<span><b>A piedi: circa ${minTxt(r.piedi)}${walkVal.get(walkKey()) ? ` · ${kmTxt(walkVal.get(walkKey()).m)}` : ''}</b>${r.soluzioni.length ? (r.piedi <= Math.min(...r.soluzioni.map(o => o.minuti)) ? '<small>fai prima a piedi</small>' : '') : '<small>nessun mezzo conviene per questo tragitto</small>'}${walkVal.get(walkKey()) ? `<small>${walkShown() ? 'sulla mappa il percorso a piedi' : 'tocca per vederlo sulla mappa'}</small>` : ''}</span></${walkVal.get(walkKey()) ? 'button' : 'div'}>` : '';
+  // «tutto a piedi» in cima all'elenco: se nessun mezzo conviene, se dura poco più del mezzo più rapido (5 minuti) o se FA ARRIVARE PRIMA di
+  // qualsiasi mezzo (con «arrivo entro»: fa partire più tardi), anche quando il mezzo dura meno ma parte tra un po'
+  const mm = hm => { const [h, m] = String(hm).split(':').map(Number); return h * 60 + m; };
+  const rel = (x, ref) => { let d = x - ref; while (d < -720) d += 1440; while (d > 720) d -= 1440; return d; };   // minuti, a cavallo della mezzanotte
+  const walkFirst = r.piedi != null && r.soluzioni.length > 0 && (r.entro
+    ? r.soluzioni.every(o => rel(mm(o.parti), mm(r.entro) - r.piedi) <= 0)
+    : r.soluzioni.every(o => rel(mm(o.arrivi), mm(r.ora) + r.piedi) >= 0));
+  const walkNote = walkFirst ? (r.entro ? 'a piedi parti più tardi che con qualsiasi mezzo' : 'a piedi arrivi prima di qualsiasi mezzo')
+    : r.soluzioni.length && r.piedi <= Math.min(...r.soluzioni.map(o => o.minuti)) ? 'fai prima a piedi' : '';
+  const walkOnly = r.piedi != null && (!r.soluzioni.length || walkFirst || r.piedi <= Math.min(...r.soluzioni.map(o => o.minuti)) + 5)
+    ? `<${walkVal.get(walkKey()) ? `button type="button" data-walkonly aria-pressed="${walkShown()}"` : 'div'} class="pp-walkonly${walkShown() ? ' on' : ''}">${icon('walk')}<span><b>A piedi: circa ${minTxt(r.piedi)}${walkVal.get(walkKey()) ? ` · ${kmTxt(walkVal.get(walkKey()).m)}` : ''}</b>${r.soluzioni.length ? (walkNote ? `<small>${walkNote}</small>` : '') : '<small>nessun mezzo conviene per questo tragitto</small>'}${walkVal.get(walkKey()) ? `<small>${walkShown() ? 'sulla mappa il percorso a piedi' : 'tocca per vederlo sulla mappa'}</small>` : ''}</span></${walkVal.get(walkKey()) ? 'button' : 'div'}>` : '';
   if (!r.soluzioni.length) {
     X.plist.innerHTML = head + walkOnly + (walkOnly ? '' : `<p class="muted pad">${r.senzaFermate ? `Nessuna fermata vicina al punto scelto.` : r.entro ? `Nessuna soluzione per arrivare entro le ${esc(r.entro)} (si guardano le 5 ore prima). Prova un orario più tardi.` : 'Nessuna soluzione nelle prossime ore con autobus, tram o battelli. Prova un altro orario o un punto vicino.'}${nf ? ' Le opzioni attive possono escludere delle soluzioni.' : ''}</p>`);
     return;
