@@ -1,13 +1,13 @@
 {
  "formato": 1,
- "aggiornato": 1794607498856,
+ "aggiornato": 1794732583374,
  "modello": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
  "prompt": "p1-2026-11-09",
  "file": [
   {
    "nome": "2026-09.jsonl",
-   "righe": 5,
-   "sha": "a42ee66f689e540c"
+   "righe": 6,
+   "sha": "f67b97d5aec6eb5d"
   },
   {
    "nome": "2026-10.jsonl",
