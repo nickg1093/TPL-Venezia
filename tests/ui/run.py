@@ -184,11 +184,11 @@ with sync_playwright() as p:
         check(page.evaluate("document.querySelectorAll('.pp-fw [data-clr]').length") == 2, 'pianificatore: × per togliere partenza e arrivo')
         # opzioni: pagina a spunta, salvate; «Mostra le soluzioni» rifà la ricerca; Ripristina torna ai valori normali
         page.click('.pp-opzbtn'); page.wait_for_selector('.pp-opz', timeout=3000)
-        check(page.evaluate("document.querySelectorAll('.pp-opz .pp-og').length") == 2 and page.evaluate("document.querySelectorAll('.pp-opz [data-o=pref]').length") == 3 and page.evaluate("document.querySelectorAll('.pp-opz [data-o=passo]').length") == 3
-              and not page.query_selector('.pp-opz [data-o=cambi], .pp-opz [data-o=piedimax], .pp-opz [data-o=margine], .pp-opz [data-m]'), 'opzioni v28: cosa conta (Arrivare prima, Camminare meno, Meno cambi) e andatura')
-        mz = page.evaluate("[...document.querySelectorAll('.pp-mz [data-fm]')].map(b=>b.textContent.trim())")
-        check(mz == ['Navigazione', 'Automobilistico'], f'mezzi in vista nel modulo: {mz}')
-        check(page.inner_text('.pp-opz .pp-og').startswith('Cosa conta di più'), 'opzioni: prima la scelta principale')
+        check(page.evaluate("document.querySelectorAll('.pp-opz .pp-og').length") == 3 and page.evaluate("document.querySelectorAll('.pp-opz [data-o=pref]').length") == 3 and page.evaluate("document.querySelectorAll('.pp-opz [data-o=passo]').length") == 3
+              and not page.query_selector('.pp-opz [data-o=cambi], .pp-opz [data-o=piedimax], .pp-opz [data-o=margine]'), 'opzioni: mezzi, cosa conta (Arrivare prima, Camminare meno, Meno cambi), andatura')
+        mz = page.evaluate("[...document.querySelectorAll('.pp-opz .pp-og:first-child [data-m]')].map(b=>b.textContent.trim())")
+        check(mz == ['Navigazione', 'Automobilistico'] and not page.query_selector('#pchips [data-fm], .pp-mz'), f'mezzi in cima alle opzioni, non nel modulo: {mz}')
+        check(page.inner_text('.pp-opz .pp-og').startswith('Mezzi'), 'opzioni: in cima i mezzi (Navigazione, Automobilistico)')
         small = page.evaluate("Math.min(...[...document.querySelectorAll('.pp-opz button.chip')].map(b=>b.getBoundingClientRect().height))")
         check(small >= 40, f'scelte delle opzioni alte almeno 40px ({small:.0f})')
         page.click('[data-o=passo][data-v=svelta]'); page.click('.pp-ook'); page.wait_for_selector('.pp-opt, .pp-walkonly', timeout=15000)

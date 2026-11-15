@@ -150,14 +150,14 @@ più in alto o torna al pannello precedente; con nulla aperto esce dall'app. L'o
 - **Quando**: interruttore *Adesso · Partenza · Arrivo*; con un orario scelto compaiono **giorno** e **ora**. Le date ammesse sono quelle coperte
   dai GTFS in archivio (le stesse della modalità *Programmato*, `/api/dates`) e per ogni data si usano **gli orari di quella data**
   (`plannerGtfs` in `server.js` → `live.dataFor`): stesso motore di caricamento della modalità Programmato.
-- **Mezzi** (v29): *Navigazione* e *Automobilistico* subito sotto partenza e arrivo (almeno uno); toccandoli la ricerca si rifà.
-- **Opzioni** (salvate sul telefono): *Cosa conta di più* (Arrivare prima · Camminare meno · Meno cambi) e *Andatura* (Con calma · Normale ·
-  Svelta). Le vecchie impostazioni si convertono da sole; i vecchi parametri dei link restano accettati.
+- **Opzioni** (salvate sul telefono): *Mezzi* in cima (Navigazione · Automobilistico, almeno uno), *Cosa conta di più* (Arrivare prima ·
+  Camminare meno · Meno cambi) e *Andatura* (Con calma · Normale · Svelta). Le vecchie impostazioni si convertono da sole; i vecchi parametri dei link restano accettati.
 - **Giorno e ora** (v29, `public/js/scegli.js`): calendario e orologio dell'app al posto dei selettori del browser (anche nella modalità
   Programmato): stesso aspetto ovunque, icone con il contrasto del tema, sempre dentro lo schermo (foglio dal basso sul telefono; sul computer
   sotto, sopra o accanto al campo, dove c'è posto). Esc chiude, frecce tra i giorni; i giorni senza orari sono disattivati.
-- **Soluzioni** (v29): la *consigliata* in evidenza in cima, sotto «Altre soluzioni»; «coincidenza a rischio» sulla scheda e nel dettaglio
-  (margine del cambio in minuti).
+- **Soluzioni** (v29): la *consigliata* in evidenza in cima, sotto «Altre soluzioni». Avvisi sui cambi in frase intera, con fermata e linea:
+  *a rischio* («Cambio a Rialto con 1 solo minuto di margine: basta un piccolo ritardo per perdere la linea 2») e, in tempo reale, *non riesce*
+  («Con i ritardi di adesso arrivi a … dopo la partenza della linea …: guarda le altre soluzioni»); nel dettaglio il margine di ogni cambio.
 - **Attesa sempre visibile** (v29): barra animata sul bordo del pannello e della barra in basso durante i caricamenti, anche tra un tentativo
   e l'altro; nel pianificatore il motivo (es. «Carico gli orari del giorno scelto: la prima volta può volerci fino a un minuto»).
 - **Parametri del calcolo** (`percorso.js`, oggetto `C`), tutti in un posto:
@@ -465,7 +465,7 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 - **Notifiche su iPhone**: il mittente delle notifiche (VAPID) ora è un indirizzo valido preso da sé (indirizzo pubblico del servizio);
   prima Apple le rifiutava (403). Nel log compare anche il motivo di un eventuale rifiuto.
-- **Pianificatore più chiaro**: mezzi (Navigazione, Automobilistico) in vista nel modulo, consigliata in evidenza, niente tempo fisso per
+- **Pianificatore più chiaro**: mezzi (Navigazione, Automobilistico) in cima alle opzioni, consigliata in evidenza, niente tempo fisso per
   salire, «coincidenza a rischio», giorno e ora con selettori dell'app, attesa sempre visibile (sezione 3.4).
 - Prove: `tests/ui/run.py` (mezzi nel modulo, selettori dentro lo schermo, icone visibili, Esc), `tests/push.test.js` (mittente valido),
   `tests/percorso.test.js` (coincidenza a rischio).

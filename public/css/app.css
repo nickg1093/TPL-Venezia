@@ -1093,3 +1093,10 @@ body.busy #panel:not([hidden])::before,body.busy .dock::before{content:"";positi
 .sc-f{display:flex;justify-content:flex-end;margin-top:10px}
 .sc-ok{min-height:44px;padding:0 22px;border:0;border-radius:99px;background:var(--accent);color:var(--on-accent);font:inherit;font-weight:800;cursor:pointer}
 #tl-date-btn{min-height:44px}
+/* avviso sui cambi (scheda e dettaglio): frase intera, non un'etichetta */
+.pp-risk{display:flex;align-items:flex-start;gap:6px;margin-top:6px;padding:6px 8px;border-radius:10px;font-size:var(--fs-xs);line-height:1.35;text-align:left;
+  color:var(--fg);background:color-mix(in srgb,var(--warn) 14%,transparent);border:1px solid color-mix(in srgb,var(--warn) 45%,transparent)}
+.pp-risk .ic{flex:none;color:var(--warn);margin-top:1px}
+.pp-risk.lost{background:color-mix(in srgb,var(--late) 12%,transparent);border-color:color-mix(in srgb,var(--late) 45%,transparent)}
+.pp-risk.lost .ic{color:var(--late)}
+.pp-dsum .pp-risk{flex-basis:100%}

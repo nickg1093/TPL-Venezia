@@ -600,11 +600,11 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
       const dep = at(r0, sched0), arr = at(r1, sched1);
       const depS = dep.live && dep.expMs ? T + (dep.expMs - nowMs) / 1000 : sched0 + (dep.delay || 0) * 60;
       const arrS = arr.live && arr.expMs ? T + (arr.expMs - nowMs) / 1000 : sched1 + (arr.delay || 0) * 60;
-      let cambioMin = null, aRischio = false;
+      let cambioMin = null, aRischio = false, persa = false;
       if (prevArr != null) {                                  // margine del cambio: partenza di questa corsa − (arrivo della precedente + strada a piedi)
         const slack = depS - (prevArr + walkSince) - (pr.extra || 0);
         cambioMin = Math.max(0, Math.floor((depS - prevArr - walkSince) / 60)); aRischio = slack < C.RISCHIO_S;
-        if (slack < 0) risk = true;                           // con i tempi aggiornati la coincidenza non si prende più
+        if (slack < 0) { risk = true; persa = true; }        // con i tempi aggiornati (ritardi) si arriva dopo la partenza: coincidenza persa
         if (aRischio) nRisk++;
       }
       prevArr = arrS; walkSince = 0;
@@ -617,7 +617,7 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
       const stopsOn = []; for (let p = l.p0; p <= l.p1; p++) { const x = stopInfo(P.stops[p]); stopsOn.push([x.lat, x.lon, x.name]); }
       legs.push({ tipo: 'mezzo', src: i, route: P.rk, mode: P.mode, tripId: tid, line: r.name || trip.route, color: r.color || null, headsign: trip.headsign || G.stops[st.s[st.s.length - 1]] || null,
         da: { ...stopInfo(g0), ...dep }, a: { ...stopInfo(g1), ...arr }, fermate: l.p1 - l.p0, pos: [l.p0, l.p1], veh: r0?.veh || null, vehicle: r0?.vehicle || null,
-        trk: r0 ? (r0.trk ?? (r0.veh ? 3 : r0.live ? 2 : 0)) : 0, shape, stops: stopsOn, ...(cambioMin != null ? { cambioMin, aRischio } : {}) });
+        trk: r0 ? (r0.trk ?? (r0.veh ? 3 : r0.live ? 2 : 0)) : 0, shape, stops: stopsOn, ...(cambioMin != null ? { cambioMin, aRischio, ...(persa ? { persa } : {}) } : {}) });
     }
     const first = legs.find(x => x.tipo === 'mezzo'), last = [...legs].reverse().find(x => x.tipo === 'mezzo');
     // a piedi prima della prima corsa e dopo l'ultima (anche i cambi a piedi fuori dai mezzi)

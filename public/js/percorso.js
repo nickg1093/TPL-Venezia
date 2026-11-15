@@ -96,7 +96,7 @@ function restore() {
 }
 const saveOpz = () => { try { localStorage.setItem(KEY_OPZ, JSON.stringify(S.opz)); } catch { /* facoltativo */ } };
 // filtri diversi da quelli normali: numero (per il pulsante) e parametri della richiesta
-const opzCount = () => Object.keys(OPZ0).filter(k => k !== 'mezzi' && String(S.opz[k]) !== String(OPZ0[k])).length;   // i mezzi stanno nel modulo, in vista
+const opzCount = () => Object.keys(OPZ0).filter(k => String(S.opz[k]) !== String(OPZ0[k])).length;
 const MEZZI = [['nav', 'ship', 'Navigazione'], ['aut', 'bus', 'Automobilistico']];
 const mezziTxt = () => (S.opz.mezzi.length < 2 ? 'solo ' + (S.opz.mezzi[0] === 'nav' ? 'navigazione' : 'automobilistico') : '');
 function opzQs() {
@@ -285,7 +285,6 @@ function renderForm() {
   X.chips.innerHTML = `<div class="pp"><div class="pp-ends"><div class="pp-rail" aria-hidden="true"><span class="pp-o"></span><span class="pp-l"></span><span class="pp-d"></span></div>`
     + `<div class="pp-fields">${fieldHtml('from')}${fieldHtml('to')}</div>`
     + `<button type="button" class="ibtn sm pp-swap" aria-label="Inverti partenza e arrivo" title="Inverti">${icon('swap')}</button></div>`
-    + `<div class="pp-mz chips" role="group" aria-label="Mezzi">${MEZZI.map(([v, ic, l]) => `<button type="button" class="chip all${S.opz.mezzi.includes(v) ? ' on' : ''}" data-fm="${v}" aria-pressed="${S.opz.mezzi.includes(v)}">${icon(ic, 'sm')}${l}</button>`).join('')}</div>`
     + `<div class="pp-when"><span class="pp-segw" role="group" aria-label="Quando">${seg}</span>`
     + (S.formOpen && S.from && S.to && S.res ? `<button type="button" class="nlink pp-collapse" aria-label="Riduci i campi e torna alle soluzioni">${icon('up', 'sm')}<span>Riduci</span></button>` : '')
     + (at ? `<span class="pp-tw"><button type="button" class="dtf pp-dbtn" aria-haspopup="dialog" aria-label="Giorno: ${esc(Scegli.dayLabel(S.date))}">${icon('cal', 'sm')}<span>${esc(Scegli.dayLabel(S.date))}</span></button>`
@@ -328,6 +327,21 @@ function legStatus(s, live) {
 const trkIcon = (lv, live) => (live ? `<span class="pp-trk${lv ? ' on' : ''}" title="${lv ? 'Corsa in tempo reale' : 'Orario programmato'}">${icon(lv ? 'live' : 'clock', 'sm')}</span>` : '');
 const stopName = st => esc(X.stopLabel(st.id) || st.name);
 
+// AVVISO SUI CAMBI, in chiaro e con la fermata:
+//   persa (tempo reale): con i ritardi di adesso il primo mezzo arriva DOPO la partenza del secondo, quindi quel cambio non riesce;
+//   a rischio: il cambio si fa, ma con meno di 2 minuti di margine (basta un piccolo ritardo per perderlo).
+function riskInfo(o) {
+  const t = o.tratte.find(x => x.tipo === 'mezzo' && x.persa) || o.tratte.find(x => x.tipo === 'mezzo' && x.aRischio);
+  if (!t) return null;
+  const at = stopName(t.da);
+  return t.persa ? { cls: 'lost', txt: `Con i ritardi di adesso arrivi a ${at} dopo la partenza della linea ${esc(t.line)}: questo cambio non riesce, guarda le altre soluzioni.` }
+    : { cls: '', txt: `Cambio a ${at} con ${t.cambioMin < 1 ? 'meno di 1 minuto' : t.cambioMin === 1 ? '1 solo minuto' : t.cambioMin + ' minuti'} di margine: basta un piccolo ritardo per perdere la linea ${esc(t.line)}.` };
+}
+// passo «Cambio» nel dettaglio: margine in minuti e, se serve, cosa vuol dire
+const minW = m => (m < 1 ? 'meno di 1 minuto' : m === 1 ? '1 minuto' : m + ' minuti');
+const chgTitle = t => (t.persa ? 'Cambio che non riesce con i ritardi di adesso' : t.cambioMin != null ? `Cambio · ${minW(t.cambioMin)} di margine` : 'Cambio');
+const chgNote = t => (t.persa ? ' · arrivi dopo la partenza: scegli un\'altra soluzione' : t.aRischio ? ' · margine stretto: tieniti pronto, un piccolo ritardo e la perdi' : '');
+const riskLine = o => { const r = riskInfo(o); return r ? `<span class="pp-risk${r.cls ? ' ' + r.cls : ''}">${icon('warn', 'sm')}<span>${r.txt}</span></span>` : ''; };
 const cambiTxt = o => (o.cambi ? `${o.cambi} ${o.cambi > 1 ? 'cambi' : 'cambio'}` : 'senza cambi');
 // scheda di una soluzione (elenco e alternative). attr: attributi del pulsante; compact: senza la riga della partenza
 function optCard(o, attr, live, compact = false) {
@@ -339,7 +353,7 @@ function optCard(o, attr, live, compact = false) {
     + `<span class="pp-o1"><span class="pp-times"><b>${esc(o.parti)}</b>${icon('next', 'sm')}<b>${esc(o.arrivi)}</b></span><span class="pp-dur">${minTxt(o.minuti)}</span></span>`
     + `<span class="pp-seq">${seq}</span>`
     + (compact ? '' : `<span class="pp-o3">${trkIcon(first.trk, live)}<span>Da ${stopName(first.da)}${st.txt ? ` · <span class="${st.cls}">${esc(st.txt)}</span>` : ''}</span></span>`)
-    + `<span class="pp-o4">${when}<span>${cambiTxt(o)}${o.piedi ? ` · ${o.piedi} min a piedi` : ''}</span>${o.etichetta && !compact ? `<span class="pp-tag">${esc(o.etichetta)}</span>` : ''}${o.rischio ? '<span class="pp-tag warn">coincidenza persa?</span>' : o.aRischio ? `<span class="pp-tag warn">${icon('warn', 'sm')}coincidenza a rischio</span>` : ''}</span>`
+    + `<span class="pp-o4">${when}<span>${cambiTxt(o)}${o.piedi ? ` · ${o.piedi} min a piedi` : ''}</span>${o.etichetta && !compact ? `<span class="pp-tag">${esc(o.etichetta)}</span>` : ''}</span>${riskLine(o)}`
     + (compact ? '' : poi) + '</button>';
 }
 const kmTxt = m => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`);
@@ -390,6 +404,7 @@ function renderOpz() {
   const o = S.opz, seg = (k, vals) => `<div class="chips pp-seg" role="group">${vals.map(([v, t]) => `<button type="button" class="chip all${String(o[k]) === v ? ' on' : ''}" data-o="${k}" data-v="${v}" aria-pressed="${String(o[k]) === v}">${t}</button>`).join('')}</div>`;
   X.plist.innerHTML = `<button type="button" class="linkback pp-oback">${icon('back', 'sm')}<span>Soluzioni</span></button>`
     + '<div class="pp-opz">'
+    + `<div class="pp-og"><b>Mezzi</b><div class="chips pp-seg" role="group">${MEZZI.map(([v, ic, l]) => `<button type="button" class="chip all${o.mezzi.includes(v) ? ' on' : ''}" data-m="${v}" aria-pressed="${o.mezzi.includes(v)}">${icon(ic, 'sm')}${l}</button>`).join('')}</div><small class="muted">Almeno uno.</small></div>`
     + `<div class="pp-og"><b>Cosa conta di più</b>${seg('pref', [['equilibrata', 'Arrivare prima'], ['piedi', 'Camminare meno'], ['cambi', 'Meno cambi']])}`
     + `<small class="muted">${{ equilibrata: 'Arrivi il prima possibile, contando anche quanto dura il viaggio. Un cambio o un tratto a piedi in più solo se fanno guadagnare davvero tempo (un cambio vale 8 minuti).', piedi: 'Ogni minuto a piedi pesa come tre minuti di viaggio; tra un mezzo e l\'altro al massimo 10 minuti a piedi. Il mezzo si propone anche quando a piedi faresti prima.', cambi: 'Meglio aspettare il diretto: un cambio si propone solo se fa guadagnare almeno 20 minuti.' }[o.pref] || ''}</small></div>`
     + `<div class="pp-og"><b>Andatura</b>${seg('passo', [['calma', 'Con calma'], ['normale', 'Normale'], ['svelta', 'Svelta']])}`
@@ -415,15 +430,15 @@ function renderDetail(o, live) {
       + `<span class="pp-sp"><span class="pp-st">${a.time}</span><span class="pp-sn"><b>${stopName(t.a)}</b><small>scendi qui</small></span></span>`
       + '</button></li>');
     const nx = o.tratte[k + 1];
-    if (nx && nx.tipo === 'mezzo') steps.push(`<li class="pp-step chg${nx.aRischio ? ' risk' : ''}"><span class="pp-sic">${icon(nx.aRischio ? 'warn' : 'next', 'sm')}</span><div><b>Cambio${nx.cambioMin != null ? ` · ${nx.cambioMin < 1 ? 'meno di 1 minuto' : nx.cambioMin + ' min'}` : ''}</b><small>stessa fermata${nx.aRischio ? ' · coincidenza a rischio: tieniti pronto' : ''}</small></div></li>`);
+    if (nx && nx.tipo === 'mezzo') steps.push(`<li class="pp-step chg${nx.aRischio || nx.persa ? ' risk' : ''}"><span class="pp-sic">${icon(nx.aRischio || nx.persa ? 'warn' : 'next', 'sm')}</span><div><b>${chgTitle(nx)}</b><small>stessa fermata${chgNote(nx)}</small></div></li>`);
     // cambio con tratto a piedi: margine e rischio prima del tratto a piedi verso la corsa successiva
     const nr = o.tratte[k + 2];
-    if (nx && nx.tipo === 'piedi' && nr && nr.tipo === 'mezzo' && nr.cambioMin != null) steps.push(`<li class="pp-step chg note${nr.aRischio ? ' risk' : ''}"><span class="pp-sic">${icon(nr.aRischio ? 'warn' : 'clock', 'sm')}</span><div><b>${nr.aRischio ? 'Coincidenza a rischio' : 'Margine per il cambio'}</b><small>${nr.cambioMin < 1 ? 'meno di 1 minuto' : nr.cambioMin + ' min'} oltre al tratto a piedi</small></div></li>`);
+    if (nx && nx.tipo === 'piedi' && nr && nr.tipo === 'mezzo' && nr.cambioMin != null) steps.push(`<li class="pp-step chg note${nr.aRischio || nr.persa ? ' risk' : ''}"><span class="pp-sic">${icon(nr.aRischio || nr.persa ? 'warn' : 'clock', 'sm')}</span><div><b>${chgTitle(nr)}</b><small>a piedi ${nx.min} min${chgNote(nr)}</small></div></li>`);
   });
   steps.push(`<li class="pp-step end"><span class="pp-sic">${icon('pin')}</span><div><b>Arrivo alle ${esc(o.arrivi)}</b><small>${esc(epName(S.to))}</small></div></li>`);
   X.plist.innerHTML = `<div class="pp-dhead"><button type="button" class="linkback pp-back">${icon('back', 'sm')}<span>Tutte le soluzioni</span></button>`
     + `<button type="button" class="ibtn sm pp-tall" aria-pressed="${S.tall}" aria-label="${S.tall ? 'Abbassa il pannello e mostra di più la mappa' : 'Alza il pannello per leggere tutte le tappe'}" title="${S.tall ? 'Più mappa' : 'Più tappe'}">${icon(S.tall ? 'down' : 'up', 'sm')}</button></div>`
-    + `<div class="pp-dsum"><span class="pp-times"><b>${esc(o.parti)}</b>${icon('next', 'sm')}<b>${esc(o.arrivi)}</b></span><span class="muted">${minTxt(o.minuti)} · ${cambiTxt(o)}${o.piedi ? ` · ${o.piedi} min a piedi` : ''}</span>${o.rischio ? '<span class="pp-tag warn">Coincidenza a rischio con i tempi aggiornati</span>' : ''}</div>`
+    + `<div class="pp-dsum"><span class="pp-times"><b>${esc(o.parti)}</b>${icon('next', 'sm')}<b>${esc(o.arrivi)}</b></span><span class="muted">${minTxt(o.minuti)} · ${cambiTxt(o)}${o.piedi ? ` · ${o.piedi} min a piedi` : ''}</span>${riskLine(o)}</div>`
     + `<ol class="pp-steps"><li class="pp-step start"><span class="pp-sic">${S.from.kind === 'me' ? icon('locate') : icon('pin')}</span><div><b>Partenza alle ${esc(o.parti)}</b><small>${esc(epName(S.from))}</small></div></li>${steps.join('')}</ol>`
     + '<section class="pp-alts" aria-live="polite"></section>';
   renderAlts(); loadAlts(o);
@@ -535,9 +550,6 @@ function onClick(e) {
       return;
     }
   }
-  // mezzi (nel modulo): almeno uno; si rifà subito la ricerca
-  const fm = t.closest('[data-fm]');
-  if (fm) { const v = fm.dataset.fm, m = S.opz.mezzi; S.opz.mezzi = m.includes(v) ? (m.length > 1 ? m.filter(x => x !== v) : m) : [...m, v]; saveOpz(); renderForm(); if (S.from && S.to) run(); return; }
   // giorno e ora: selettori dell'app (scegli.js), sempre dentro lo schermo
   if (t.closest('.pp-dbtn')) { const tt = today(); Scegli.giorno(t.closest('.pp-dbtn'), { value: S.date || tt, min: clampDate(tt), max: range.max || null, onPick: v => { S.date = clampDate(v); renderForm(); run(); } }); return; }
   if (t.closest('.pp-tbtn')) { Scegli.ora(t.closest('.pp-tbtn'), { value: S.time, label: S.when === 'by' ? 'Arrivo entro le' : 'Partenza alle', onPick: v => { S.time = v; renderForm(); run(); } }); return; }
@@ -546,7 +558,7 @@ function onClick(e) {
   const om = t.closest('[data-m]');
   if (om) { const v = om.dataset.m, m = S.opz.mezzi; S.opz.mezzi = m.includes(v) ? (m.length > 1 ? m.filter(x => x !== v) : m) : [...m, v]; S.opzDirty = true; saveOpz(); renderForm(); renderOpz(); return; }
   const oo = t.closest('[data-o]'); if (oo) { S.opz[oo.dataset.o] = oo.dataset.v; S.opzDirty = true; saveOpz(); renderForm(); renderOpz(); return; }
-  if (t.closest('.pp-oreset')) { S.opz = { ...OPZ0, mezzi: [...S.opz.mezzi] }; S.opzDirty = true; saveOpz(); renderForm(); renderOpz(); return; }
+  if (t.closest('.pp-oreset')) { S.opz = { ...OPZ0, mezzi: [...OPZ0.mezzi] }; S.opzDirty = true; saveOpz(); renderForm(); renderOpz(); return; }
   if (t.closest('.pp-ook, .pp-oback')) { const d = S.opzDirty; S.showOpz = false; S.opzDirty = false; renderForm(); if (d) run(); else renderBody(); X.plist.scrollTop = 0; return; }
   if (t.closest('[data-walkonly]')) { S.walkShow = !walkShown(); renderBody(); draw(); return; }
   // soluzioni e alternative
