@@ -1348,7 +1348,7 @@ function shareUrl(e) {
   if (e.t === 'stop') u.searchParams.set('fermata', e.id);
   else if (e.t === 'zone') u.searchParams.set('zona', e.key);
   else if (e.t === 'trip' && e.v?.tripId) u.searchParams.set('corsa', `${e.v.src}:${e.v.tripId}`);
-  else if (e.t === 'plan') { const c = Plan.shareCodes(); if (!c.a) return null; if (c.da) u.searchParams.set('da', c.da); u.searchParams.set('a', c.a); }
+  else if (e.t === 'plan') { const c = Plan.shareCodes(); if (!c.a) return null; if (c.da) u.searchParams.set('da', c.da); u.searchParams.set('a', c.a); if (c.quando) { u.searchParams.set('quando', c.quando); u.searchParams.set('ora', c.ora); u.searchParams.set('data', c.data); } }
   else return null;
   return u.toString();
 }
@@ -1368,7 +1368,7 @@ function openLink() {
   if (linkDone) return; linkDone = true;
   const P = new URLSearchParams(location.search), get = k => { const v = P.get(k); return v && v.length <= 200 ? v : null; };
   const clean = () => Nav.replaceUrl(location.pathname);
-  const keys = ['fermata', 'zona', 'corsa', 'da', 'a', 'apri']; if (!keys.some(k => P.has(k))) return;
+  const keys = ['fermata', 'zona', 'corsa', 'da', 'a', 'apri'];   // (con da/a anche quando, ora, data) if (!keys.some(k => P.has(k))) return;
   clean();
   const fermata = get('fermata'), zona = get('zona'), corsa = get('corsa'), apri = get('apri');
   if (fermata && LINK_ID.test(fermata)) { const s = stopById.get(aliasOf.get(fermata) || fermata); if (s) { openFromMap(entryForStop(s[0], s[1], s[4])); focusOn(L.latLng(+s[2], +s[3]), 16); } else toast('Questa fermata non è negli orari in uso adesso.', 5000); return; }
@@ -1384,7 +1384,10 @@ function openLink() {
       return null;
     };
     const from = ep(get('da')), to = ep(get('a'));
-    if (to || from) { collapseSearch(); openFromMap({ t: 'plan', opts: { ...(from ? { from } : {}), ...(to ? { to } : {}) } }); }
+    // orario del link (se c'è): «quando» partenza|arrivo, «ora» HHMM, «data» AAAAMMGG (se è passata o non ha orari si usa il giorno più vicino)
+    const q = get('quando'), hm = /^([01]\d|2[0-3])([0-5]\d)$/.exec(get('ora') || ''), dd = /^(\d{4})(\d{2})(\d{2})$/.exec(get('data') || '');
+    const when = (q === 'partenza' || q === 'arrivo') && hm ? { quando: q, ora: `${hm[1]}:${hm[2]}`, data: dd ? `${dd[1]}-${dd[2]}-${dd[3]}` : null } : {};
+    if (to || from) { collapseSearch(); openFromMap({ t: 'plan', opts: { ...(from ? { from } : {}), ...(to ? { to } : {}), ...when } }); }
     else toast('Il percorso del link non è più valido.', 5000);
     return;
   }

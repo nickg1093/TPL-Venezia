@@ -192,6 +192,12 @@ più in alto o torna al pannello precedente; con nulla aperto esce dall'app. L'o
   basso si toglie); con le soluzioni torna un foglio in basso e la mappa mostra il percorso. «Scegli sulla mappa» lo toglie di mezzo.
 - **Mezzi sulla mappa**: con il pianificatore aperto si vedono **solo i mezzi delle corse della soluzione mostrata** (la prima dell'elenco o quella
   aperta); per un orario futuro i mezzi compaiono quando le corse entrano in servizio. Chiudendo il pianificatore tornano tutti.
+- **Riapertura** (v29): entro 30 minuti il pianificatore si riapre com'era (punti, orario, soluzioni aggiornate); dopo, o alla prima apertura
+  della pagina, si apre pulito (da «la mia posizione», «Adesso»). Gli **ultimi 5 percorsi** restano tra i suggerimenti («Percorsi recenti»,
+  solo sul telefono; «la mia posizione» senza coordinate).
+- **Preferiti e condivisione**: il percorso preferito salva solo partenza e arrivo, mai l'orario (si riapre sempre con «Adesso»); il link
+  condiviso porta anche l'orario se ne è stato scelto uno (`quando=partenza|arrivo&ora=HHMM&data=AAAAMMGG`), così chi lo apre vede lo stesso
+  viaggio; «la mia posizione» non si condivide mai.
 - **Percorsi preferiti**: stella nella linguetta; nel pannello Preferiti (scheda Percorsi) si possono **rinominare** («Casa → Lavoro»), riordinare ed eliminare.
 - Tempo reale per le partenze di adesso, orari programmati per gli altri orari; «a piedi» sulla rete pedonale OSM.
 - **A piedi lungo le strade** (v25): dal punto di partenza (posizione o punto sulla mappa) alle fermate vicine e dalle fermate all'arrivo il telefono

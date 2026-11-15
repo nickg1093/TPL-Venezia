@@ -78,9 +78,25 @@ async function prepWalk() {
 }
 const pathFor = (a, b) => memoWalk(`p|${a[0].toFixed(5)},${a[1].toFixed(5)}|${b[0].toFixed(5)},${b[1].toFixed(5)}`, () => Walk.percorso({ lat: a[0], lon: a[1] }, { lat: b[0], lon: b[1] }));
 const epName = ep => (ep ? ep.label : '');
-const save = () => { try { const k = ep => (ep && (ep.kind === 'stop' || ep.kind === 'zone') ? ep : null); localStorage.setItem(KEY, JSON.stringify({ v: 1, from: k(S.from), to: k(S.to) })); } catch { /* facoltativo */ } };
+// PERCORSI RECENTI (v29), solo sul telefono: gli ultimi 5 cercati, offerti tra i suggerimenti quando il campo è vuoto. «La mia posizione» si
+// salva senza coordinate (al momento dell'uso si prende quella di adesso). Il modulo NON si riempie da solo con un percorso vecchio.
+const STALE_MS = 30 * 60000;                                       // dopo 30 minuti senza usarlo il pianificatore si riapre pulito
+const epKeep = ep => (!ep ? null : ep.kind === 'me' ? { kind: 'me', label: 'La mia posizione' } : (ep.kind === 'stop' || ep.kind === 'zone' || ep.kind === 'point') ? { ...ep } : null);
+const epSig = ep => (!ep ? '' : ep.kind === 'stop' ? 'f:' + ep.id : ep.kind === 'zone' ? 'z:' + ep.key : ep.kind === 'me' ? 'me' : `p:${(+ep.lat).toFixed(4)},${(+ep.lon).toFixed(4)}`);
+let recenti = [];
+const save = () => {};                                             // (prima: partenza e arrivo rimessi nel modulo alla riapertura)
+function addRecent() {
+  const from = epKeep(S.from), to = epKeep(S.to); if (!from || !to) return;
+  const sig = epSig(from) + '>' + epSig(to);
+  recenti = [{ from, to, at: Date.now() }, ...recenti.filter(r => epSig(r.from) + '>' + epSig(r.to) !== sig)].slice(0, 5);
+  try { localStorage.setItem(KEY, JSON.stringify({ v: 2, recenti })); } catch { /* facoltativo */ }
+}
 function restore() {
-  try { const d = JSON.parse(localStorage.getItem(KEY) || 'null'); if (d?.v === 1) { S.from = d.from || null; S.to = d.to || null; } } catch { /* niente */ }
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (d?.v === 2 && Array.isArray(d.recenti)) recenti = d.recenti.filter(r => r && epKeep(r.from) && epKeep(r.to)).slice(0, 5);
+    else if (d?.v === 1 && d.from && d.to) recenti = [{ from: d.from, to: d.to, at: 0 }];   // versione precedente: l'ultimo percorso diventa un recente
+  } catch { /* niente */ }
   let old = null;
   try { const o = JSON.parse(localStorage.getItem(KEY_OPZ) || 'null'); if (o && typeof o === 'object') { old = o; for (const k in OPZ0) if (o[k] != null && typeof o[k] === typeof OPZ0[k]) S.opz[k] = o[k]; } } catch { /* niente */ }
   // v28: passo «lento» o tempo «largo» per i cambi -> andatura «con calma»; passo «veloce» -> «svelta»; il limite a piedi per tratto non c'è più
@@ -151,14 +167,23 @@ export function tripsShown() {
 export const canSave = () => !!(S.from && S.to);
 // link condivisibile: codice di un punto (fermata f:, zona z:, punto della mappa p:); «la mia posizione» non si condivide mai
 const epCode = ep => (!ep ? null : ep.kind === 'stop' ? 'f:' + ep.id : ep.kind === 'zone' ? 'z:' + ep.key : ep.kind === 'point' ? `p:${(+ep.lat).toFixed(5)},${(+ep.lon).toFixed(5)}` : null);
-export const shareCodes = () => ({ da: epCode(S.from), a: epCode(S.to) });
+// con un orario scelto il link lo porta con sé (giorno, ora, «partenza»/«arrivo entro»); con «Adesso» chi lo apre vede il suo adesso
+export const shareCodes = () => ({ da: epCode(S.from), a: epCode(S.to),
+  ...(S.when !== 'now' && S.time ? { quando: S.when === 'by' ? 'arrivo' : 'partenza', ora: S.time.replace(':', ''), data: clampDate(S.date).replace(/-/g, '') } : {}) });
 export const isSaved = () => Fav.hasRoute(S.from, S.to);
 export function toggleSaved() { if (!canSave()) return undefined; const r = Fav.toggleRoute(S.from, S.to); X.favChanged?.(); if (S.edit && !S.q) renderSuggest(); return r; }
 
 // apre la pianificazione (from: punto di partenza già scelto, es. una fermata)
 export function show(opts = {}) {
+  // riaperto dopo più di 30 minuti (o alla prima apertura): pulito, da «la mia posizione», «Adesso». Entro 30 minuti resta com'era.
+  if (!opts.from && !opts.to && Date.now() - (S.usedAt || 0) > STALE_MS) {
+    Object.assign(S, { from: null, to: null, res: null, det: null, sel: -1, alts: null, sim: null, more: null, err: null, showOpz: false, formOpen: false, edit: null, q: '', when: 'now', walkShow: false, tall: false });
+  }
+  S.usedAt = Date.now();
   if (opts.from || opts.to) { S.res = null; S.det = null; S.sel = -1; S.alts = null; S.showOpz = false; }
   if (opts.from) S.from = opts.from; if (opts.to) S.to = opts.to;
+  if (opts.from && opts.to && !opts.quando) S.when = 'now';        // percorso salvato, recente o link senza orario: si parte da «Adesso»
+  if (opts.quando && /^\d{2}:\d{2}$/.test(opts.ora || '')) { S.when = opts.quando === 'arrivo' ? 'by' : 'at'; S.time = opts.ora; S.date = clampDate(opts.data || today()); }
   // percorso salvato con «la mia posizione»: quella di adesso (se non c'è ancora, si chiede)
   for (const f of ['from', 'to']) if (S[f]?.kind === 'me' && S[f].lat == null) { const me = X.me(); if (me) S[f] = meEp(me); else { S[f] = null; S.edit = f; S.asked = f; X.locate(); } }
   if (!S.from && X.me()) S.from = meEp(X.me());
@@ -169,7 +194,7 @@ export function show(opts = {}) {
   render();
   if (S.from && S.to && !S.res) run(); else draw();
 }
-export function clear() { viewKey = solKey = ''; lastPts = []; clearInterval(timer); timer = null; clearTimeout(retry); S.picking = null; X.layer.clearLayers(); X.setPick(false); }
+export function clear() { if (S.from || S.to) S.usedAt = Date.now(); viewKey = solKey = ''; lastPts = []; clearInterval(timer); timer = null; clearTimeout(retry); S.picking = null; X.layer.clearLayers(); X.setPick(false); }
 export function refresh() { if (S.res && S.when === 'now' && !S.edit) run(true); }
 // posizione arrivata (dopo la richiesta da «La mia posizione»)
 export function onPosition(ll) {
@@ -220,7 +245,8 @@ async function run(quiet) {
     const r = await api(qs);
     if (my !== token) return;
     if (r.error) throw new Error(r.error);
-    S.res = r; S.loading = false; S.wait = null; riuscito('plan');
+    S.res = r; S.loading = false; S.wait = null; riuscito('plan'); S.usedAt = Date.now();
+    if (!quiet) addRecent();
     if (r.soluzioni.length) loadSim(r.soluzioni[0]);
     if (S.sel >= r.soluzioni.length) { S.sel = -1; S.det = null; }
     else if (S.sel >= 0) { const f = S.det?.famiglia, k = r.soluzioni.findIndex(o => o.famiglia === f); if (k >= 0) { S.sel = k; S.det = r.soluzioni[k]; } }   // stesso percorso, orari aggiornati
@@ -302,6 +328,9 @@ function renderSuggest() {
   out.push(`<button type="button" class="pp-sug" data-s="me">${icon('locate')}<span><b>La mia posizione</b><small>usata solo sul telefono: al server vanno le fermate vicine</small></span></button>`);
   out.push(`<button type="button" class="pp-sug" data-s="map">${icon('pin')}<span><b>Scegli sulla mappa</b><small>tocca il punto sulla mappa</small></span></button>`);
   if (!q) {
+    const saved = new Set(Fav.allRoutes().map(r => epSig(r.from) + '>' + epSig(r.to)));
+    const rec = recenti.filter(r => !saved.has(epSig(r.from) + '>' + epSig(r.to)));
+    if (rec.length) out.push('<div class="search-category">Percorsi recenti</div>' + rec.map(r => `<button type="button" class="pp-sug" data-s="recent" data-k="${esc(epSig(r.from) + '>' + epSig(r.to))}">${icon('clock')}<span><b>${esc(r.from.label)}</b><small>${icon('next', 'sm')} ${esc(r.to.label)}</small></span></button>`).join(''));
     const rs = Fav.allRoutes();
     if (rs.length) out.push('<div class="search-category">Percorsi salvati</div>' + rs.slice(0, 8).map(r => `<button type="button" class="pp-sug" data-s="route" data-k="${esc(r.k)}">${icon('route')}<span><b>${esc(r.from.label)}</b><small>${icon('next', 'sm')} ${esc(r.to.label)}</small></span></button>`).join(''));
     const fav = Fav.all();
@@ -610,6 +639,7 @@ function onClick(e) {
     if (sg.dataset.s === 'me') { const me = X.me(); if (me) choose(f, meEp(me)); else { S.asked = f; X.locate(); X.plist.innerHTML = '<p class="muted pad">Cerco la tua posizione…</p>'; } return; }
     if (sg.dataset.s === 'map') { S.picking = f; X.setPick(true, f === 'from' ? 'Tocca la mappa nel punto di partenza' : 'Tocca la mappa nel punto di arrivo'); return; }
     if (sg.dataset.s === 'zone') { const z = zones.get(k); if (z) choose(f, zoneEp(z)); return; }
+    if (sg.dataset.s === 'recent') { const r = recenti.find(x => epSig(x.from) + '>' + epSig(x.to) === k); if (r) { S.edit = null; S.q = ''; show({ from: { ...r.from, ...(r.from.kind === 'me' ? { lat: null } : {}) }, to: { ...r.to, ...(r.to.kind === 'me' ? { lat: null } : {}) } }); } return; }
     if (sg.dataset.s === 'route') { const r = Fav.routeByKey(k); if (r) { S.edit = null; S.q = ''; show({ from: { ...r.from }, to: { ...r.to } }); X.favChanged?.(); } return; }
     if (sg.dataset.s === 'stop') { const s = X.stopById.get(k) || X.allStops().find(x => x[0] === k); if (s) choose(f, stopEp(s[0], s[1], s[4])); return; }
     if (sg.dataset.s === 'fav') {
