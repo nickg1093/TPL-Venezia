@@ -311,6 +311,13 @@ function analyzeBase(title, text, ctx) {
     });
   }
   for (const m of clean.matchAll(/(?<![A-Za-z0-9])(T[1-9])(?![A-Za-z0-9])/g)) decide(m[1], clean.slice(Math.max(0, m.index - 150), m.index + 250), 'aut');   // tram
+  // «People Mover» (navetta P.le Roma – Tronchetto) è la linea PM della rete automobilistica, anche quando il testo non dice «linea PM»
+  // ma non quando è una voce di un elenco di reti o di personale («reti di navigazione, automobilistico, tranviario e People Mover»: avviso di rete)
+  for (const m of clean.matchAll(/\bpeople[\s-]*mover\b/gi)) {
+    const w = clean.slice(Math.max(0, m.index - 120), m.index + 40);
+    if (/\breti?\b|personale|parcheggi/i.test(w) || (/navigazione/i.test(w) && /automobilistic|tranviari/i.test(w))) continue;
+    decide('PM', clean.slice(Math.max(0, m.index - 150), m.index + 250), 'aut');
+  }
   const lead = /^\s*(?:linea\s+)?([A-Z0-9][A-Z0-9.]{0,5})\s*[:–-]/.exec(text); if (lead && !/^[A-Z]$/.test(lead[1])) decide(lead[1], full.slice(0, 400), null);
   const lineList = [...lines.values()].slice(0, 40), srcs = new Set(lineList.map(l => l.s));
   // fermate: con linee nell'avviso, solo le fermate (id) servite da almeno una di quelle linee; senza linee, solo nomi sicuri del servizio indicato dal testo
@@ -610,7 +617,7 @@ const explicitRef = (A, B) => !!refOf(A, B);
 //  'tutte' = l'intero evento · 'parte' = solo alcune delle sue linee (lk) · 'altre' = linee che l'evento non ha (collegamento incerto: nessuna modifica)
 //  'misto' = nessuna linea indicata, ma nello stesso messaggio c'è un nuovo disservizio: non è una chiusura, vale come aggiornamento
 function restoreScope(A, B) {
-  const clauses = textOf(B).split(/[.;:\n!]+|\s[-–]\s/).map(c => c.trim()).filter(Boolean);
+  const clauses = textOf(B).replace(/\bpeople[\s-]*mover\b/g, 'linea pm').split(/[.;:\n!]+|\s[-–]\s/).map(c => c.trim()).filter(Boolean);
   const isRet = c => CLOSE_RE.test(c) || REG_LINE_RE.test(c) || (RETURN_RE.test(c) && /regolar|normal/.test(c));
   const ret = clauses.filter(isRet), mixed = clauses.some(c => !isRet(c) && DISRUPT_RE.test(c));
   const names = new Map(A.lines.map(l => [String(l.n).toLowerCase(), l.s + ':' + l.n]));

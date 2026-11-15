@@ -180,12 +180,15 @@ function readJson(req, max = 4096) {
 // parametri di un avviso di arrivo (creazione e ripristino), controllati: corsa e fermata esistenti, preavviso 1-30 min, iscrizione valida
 function watchArgs(b, req) {
   const t = sec.vFullId(b?.trip, IDS), st = sec.vFullId(b?.stop, IDS), lead = Math.round(+b?.lead);
-  if (!t || !st || t[0] !== st[0] || !(lead >= 1 && lead <= 30)) throw sec.bad('parametri non validi');
+  if (!t || !st || t[0] !== st[0] || !(lead >= 1 && lead <= 45)) throw sec.bad('parametri non validi');
   const G = D[t[0]], seq = G.stopTimes.get(t[1]);
   if (!seq || !seq.s.includes(st[1])) throw fail(404, 'corsa o fermata sconosciuta');
   if (b.sub != null && !require('./push').validSub(b.sub)) throw sec.bad('iscrizione alle notifiche non valida');
   const url = `/?trip=${encodeURIComponent(b.trip)}&stop=${encodeURIComponent(b.stop)}`;
-  return { sub: b.sub ? { endpoint: b.sub.endpoint, keys: { p256dh: b.sub.keys.p256dh, auth: b.sub.keys.auth } } : null, src: t[0], tid: t[1], stop: b.stop,
+  // viaggio guidato (v29): ruolo nel viaggio, identificativo comune (una notifica sola) e minuti a piedi per arrivare alla fermata
+  const ruolo = ['esci', 'cambio', 'scendi'].includes(b.ruolo) ? b.ruolo : null, viaggio = ruolo && typeof b.viaggio === 'string' && /^[A-Za-z0-9_-]{6,40}$/.test(b.viaggio) ? b.viaggio : null;
+  const walk = ruolo && Number.isInteger(+b.walk) && +b.walk >= 0 && +b.walk <= 60 ? +b.walk : 0;
+  return { ruolo, viaggio, walk, sub: b.sub ? { endpoint: b.sub.endpoint, keys: { p256dh: b.sub.keys.p256dh, auth: b.sub.keys.auth } } : null, src: t[0], tid: t[1], stop: b.stop,
     style: validStyle(b.style), stopName: typeof b.stopName === 'string' && b.stopName.trim() && b.stopName.length <= 80 ? b.stopName.replace(/[\u0000-\u001f<>]/g, '').trim() : (G.stopBaseNames?.get(st[1]) || G.stops[st[1]] || st[1]), lead, ip: sec.clientIp(req), url };
 }
 // aspetto della mattonella/cerchio della linea per l'immagine della notifica: solo colori #RRGGBB e due forme
@@ -291,7 +294,7 @@ const API = new Map(Object.entries({
   // avvisi attivi sul telefono ripresentati dopo un riavvio del server (al massimo 6 per volta): vedi watch.restore
   '/api/watch/restore': { method: 'POST', limit: 'watch', fn: async (u, req) => {
     const b = await readJson(req, 8192), out = {};
-    for (const it of Array.isArray(b.items) ? b.items.slice(0, 6) : []) {
+    for (const it of Array.isArray(b.items) ? b.items.slice(0, 8) : []) {
       const id = String(it?.id || '').slice(0, 40);
       try { out[id] = watch.restore({ ...watchArgs(it, req), id: it.id, token: it.token, created: it.created }); }
       catch (e) { out[id] = e.code === 404 ? 'scaduto' : e.code === 429 ? 'limite' : 'non valido'; }

@@ -64,3 +64,20 @@ test('mittente delle notifiche (VAPID «sub»): indirizzo valido o niente (Apple
   assert.strictEqual(subjectFrom({ RENDER_EXTERNAL_URL: 'https://veneziatpl.onrender.com/', APP_CONTACT: 'a@b.it' }), 'https://veneziatpl.onrender.com');
   assert.strictEqual(subjectFrom({ PUSH_CONTACT: 'mailto:io@esempio.it', RENDER_EXTERNAL_URL: 'https://x.onrender.com' }), 'mailto:io@esempio.it');
 });
+
+test('viaggio guidato: testi per «esci», «cambio», «scendi»; una conferma sola; titolo «In viaggio»', () => {
+  const now = Date.UTC(2026, 10, 15, 12, 0), base = { stop: 'aut:512', stopName: 'Piazzale Roma A7', src: 'aut', created: now, k: null, lastDelay: null, lastAt: 0 };
+  const D = (mins, extra = {}, at = now) => ({ live: true, detected: true, trip: { line: '2', headsign: 'Lido' }, stops: [{ id: 'aut:512', state: 'upcoming', expMs: at + mins * 60000, delay: 0, phase: null, ...extra }, { id: 'aut:9', state: 'upcoming' }] });
+  const esci = { ...base, ruolo: 'esci', walk: 6, lead: 8, sent: {} };
+  let r = Wt.step(esci, D(20), now); assert.equal(r.msg.kind, 'conf'); assert.match(r.msg.body, /Viaggio iniziato: ti avviso quando uscire/); assert.match(r.msg.title, /^In viaggio · linea 2/);
+  Wt.step(esci, D(8, {}, now + 12 * 60e3), now + 12 * 60e3);
+  r = Wt.step(esci, D(7, {}, now + 13 * 60e3), now + 13 * 60e3); assert.equal(r.msg.kind, 'lead'); assert.match(r.msg.body, /^Esci ora: la linea 2 passa da Piazzale Roma A7 tra 7 min \(a piedi 6 min\)\./);
+  const cambio = { ...base, ruolo: 'cambio', walk: 2, lead: 5, sent: {} };
+  assert.deepEqual(Wt.step(cambio, D(20), now), {}, 'nessuna seconda conferma');
+  Wt.step(cambio, D(4, {}, now + 16 * 60e3), now + 16 * 60e3); r = Wt.step(cambio, D(4, {}, now + 16.5 * 60e3), now + 16.5 * 60e3);
+  assert.match(r.msg.body, /^Cambio: la linea 2 passa da Piazzale Roma A7 tra 4 min/);
+  const scendi = { ...base, ruolo: 'scendi', lead: 2, sent: {} };
+  Wt.step(scendi, D(20), now); r = Wt.step(scendi, D(1, { phase: 'approaching' }, now + 19 * 60e3), now + 19 * 60e3);
+  assert.equal(r.msg.kind, 'arrive'); assert.equal(r.msg.body, 'Scendi ora: Piazzale Roma A7.');
+  assert.deepEqual(Wt.step({ ...scendi, sent: { conf: true }, k: null }, D(5, { state: 'passed' }), now), { end: true }, 'discesa già passata: nessun messaggio');
+});

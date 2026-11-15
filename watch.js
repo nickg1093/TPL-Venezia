@@ -5,16 +5,26 @@ const crypto = require('crypto');
 const cal = require('./calendar');
 const push = require('./push');
 
-const MAX_PER_IP = 6, MAX_TOTAL = 1000, LIFE_MS = 3 * 3600e3, STEP_MS = 15000, DELAY_STEP = 3, UPDATE_GAP_MS = 4 * 60e3;
+// MAX_PER_IP 8: un viaggio guidato usa al massimo 5-6 avvisi (esci, cambi, discese), più qualche avviso singolo
+const MAX_PER_IP = 8, MAX_TOTAL = 1000, LIFE_MS = 3 * 3600e3, STEP_MS = 15000, DELAY_STEP = 3, UPDATE_GAP_MS = 4 * 60e3;
 const W = new Map();
 const hm = ms => { const s = cal.romeParts(ms).secs; return `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}`; };
 const dly = d => (d == null || Math.abs(d) < 1 ? '' : d > 0 ? ` · ritardo ${d} min` : ` · anticipo ${-d} min`);
 
 // Prossimo messaggio per una corsa (al massimo uno a ogni controllo). w: stato dell'avviso, d: dettaglio della corsa (live.tripDetail).
 // -> { msg?: {kind, title, body, silent}, end?: true }
+// VIAGGIO GUIDATO (v29, w.ruolo): gli stessi controlli, con testi che dicono cosa fare. esci = uscire per prendere il primo mezzo (w.walk minuti
+// a piedi fino alla fermata), cambio = prendere il mezzo successivo, scendi = scendere alla fermata. Una sola notifica per viaggio (tag comune).
+const ROLE_TXT = {
+  esci: { lead: (m, s, d, w) => `Esci ora: la linea ${d.trip.line} passa da ${s} tra ${m} min${w.walk ? ` (a piedi ${w.walk} min)` : ''}.`, arrive: (s, d) => `La linea ${d.trip.line} è in arrivo a ${s}.`,
+    conf: (s, d, when) => `Viaggio iniziato: ti avviso quando uscire. Linea ${d.trip.line} da ${s} ${when}.` },
+  cambio: { lead: (m, s, d, w) => `Cambio: la linea ${d.trip.line} passa da ${s} tra ${m} min${w.walk ? ` (a piedi ${w.walk} min)` : ''}.`, arrive: (s, d) => `Cambio: la linea ${d.trip.line} è in arrivo a ${s}.` },
+  scendi: { lead: (m, s) => `Scendi tra ${m} min a ${s}.`, arrive: s => `Scendi ora: ${s}.` }
+};
 function step(w, d, now = Date.now(), next = null) {
   // titolo breve, senza emoji: la linea (con la sua mattonella o il suo cerchio come immagine della notifica) e la destinazione
-  const title = `Linea ${d.trip.line}${d.trip.headsign ? ' → ' + d.trip.headsign : ''}`, stop = w.stopName;
+  const R = ROLE_TXT[w.ruolo] || null;
+  const title = R ? (w.ruolo === 'scendi' ? `In viaggio · linea ${d.trip.line}` : `In viaggio · linea ${d.trip.line}${d.trip.headsign ? ' → ' + d.trip.headsign : ''}`) : `Linea ${d.trip.line}${d.trip.headsign ? ' → ' + d.trip.headsign : ''}`, stop = w.stopName;
   const out = (kind, body, silent, end = false, ttl = 120) => ({ msg: { kind, title, body, silent, line: d.trip.line, ttl }, end });
   if (w.k == null || w.k >= d.stops.length || d.stops[w.k].id !== w.stop) {     // fermata nella corsa: la prima non ancora passata (le circolari la toccano due volte)
     let k = d.stops.findIndex(s => s.id === w.stop && s.state !== 'passed'); if (k < 0) k = d.stops.findIndex(s => s.id === w.stop);
@@ -25,7 +35,7 @@ function step(w, d, now = Date.now(), next = null) {
   const alt = next ? ` Prossima corsa della linea ${d.trip.line}: alle ${next}.` : '';
   if (d.cancelled) return out('cancel', `Corsa soppressa: non passerà da ${stop}.${alt}`, false, true, 900);
   if (s.skipped) return out('skip', `Il mezzo non ferma a ${stop} (fermata saltata).${alt}`, false, true, 900);
-  if (s.state === 'passed') return w.sent.arr ? { end: true } : out('passed', `Passato da ${stop}.`, true, true);
+  if (s.state === 'passed') return w.sent.arr || w.ruolo === 'scendi' ? { end: true } : out('passed', R ? `La linea ${d.trip.line} è già passata da ${stop}: apri l'app per un'altra soluzione.` : `Passato da ${stop}.`, !R, true);
   const eta = s.expMs ?? now + (s.inMin ?? 0) * 60000, mins = Math.max(0, Math.round((eta - now) / 60000));
   const est = d.live && d.detected !== false ? '' : ' (da orario)', when = `alle ${hm(eta)}${dly(s.delay)}${est}`;
   if (now - w.created > LIFE_MS || eta < now - 10 * 60e3) return { end: true };
@@ -38,16 +48,20 @@ function step(w, d, now = Date.now(), next = null) {
   }
   if (w.sent.nodata && !(d.stale && d.stale.why !== 'fermo')) w.sent.nodata = false;
   const here = s.state === 'at' || s.phase === 'approaching' || mins <= 1;
-  if (!w.sent.arr && here && (w.sent.lead || w.lead <= 2 || mins <= 1)) { w.sent.lead = w.sent.conf = w.sent.arr = true; return out('arrive', `In arrivo ora a ${stop}.`, false, true, 90); }
+  if (!w.sent.arr && here && (w.sent.lead || w.lead <= 2 || mins <= 1)) { w.sent.lead = w.sent.conf = w.sent.arr = true; return out('arrive', R ? R.arrive(stop, d) : `In arrivo ora a ${stop}.`, false, true, 90); }
   // preavviso solo con stima STABILE: due controlli di fila entro la soglia (un GPS che salta non fa suonare il telefono in anticipo),
   // oppure subito se si è già ben dentro la soglia
   if (!w.sent.lead && mins <= w.lead) w.leadHits = (w.leadHits || 0) + 1; else if (!w.sent.lead) w.leadHits = 0;
   // mezzo non più rilevato da 5 minuti (prima del preavviso): lo si dice una volta, l'avviso prosegue con l'orario
   if (d.live && d.detected === false) { w.lostSince ??= now; } else w.lostSince = null;
   if (!w.sent.lead && w.sent.conf && !w.sent.lost && w.lostSince && now - w.lostSince > 5 * 60e3) { w.sent.lost = true; return out('update', `Il mezzo non è rilevato in questo momento: l'avviso prosegue in base all'orario (${hm(eta)}).`, true); }
-  if (!w.sent.lead && mins <= w.lead && (w.leadHits >= 2 || mins <= w.lead - 2 || w.lead <= 2)) { w.sent.lead = w.sent.conf = true; w.lastDelay = s.delay; w.lastAt = now; return out('lead', `Arriva tra ${mins} min a ${stop}, ${when}.`, false, false, Math.max(60, Math.min(900, Math.round((eta - now) / 1000)))); }
-  if (!w.sent.conf) { w.sent.conf = true; w.lastDelay = s.delay; w.lastAt = now; return out('conf', `Ti avviso ${w.lead} min prima dell'arrivo a ${stop}. Previsto ${when}.`, true); }
-  if (!w.sent.lead && s.delay != null && w.lastDelay != null && Math.abs(s.delay - w.lastDelay) >= DELAY_STEP && now - w.lastAt >= UPDATE_GAP_MS) {
+  if (!w.sent.lead && mins <= w.lead && (w.leadHits >= 2 || mins <= w.lead - 2 || w.lead <= 2)) { w.sent.lead = w.sent.conf = true; w.lastDelay = s.delay; w.lastAt = now; return out('lead', R ? R.lead(mins, stop, d, w) : `Arriva tra ${mins} min a ${stop}, ${when}.`, false, false, Math.max(60, Math.min(900, Math.round((eta - now) / 1000)))); }
+  if (!w.sent.conf) {                                            // conferma: una sola per viaggio (quella di «esci»), le altre restano mute
+    w.sent.conf = true; w.lastDelay = s.delay; w.lastAt = now;
+    if (R && !R.conf) return {};
+    return out('conf', R ? R.conf(stop, d, when) : `Ti avviso ${w.lead} min prima dell'arrivo a ${stop}. Previsto ${when}.`, true);
+  }
+  if (!w.sent.lead && w.ruolo !== 'scendi' && s.delay != null && w.lastDelay != null && Math.abs(s.delay - w.lastDelay) >= DELAY_STEP && now - w.lastAt >= UPDATE_GAP_MS) {
     w.lastDelay = s.delay; w.lastAt = now; return out('update', `Ora previsto a ${stop} ${when}.`, true);
   }
   return {};
@@ -61,7 +75,7 @@ function init({ tripDetail, contact, next }) { vapid = push.loadVapid(); getTrip
   if (/example\.invalid/.test(subject)) console.log('push: manca un mittente valido (PUSH_CONTACT o APP_CONTACT): Apple rifiuterà le notifiche'); if (!vapid.fromEnv) console.log('push: chiavi VAPID temporanee (imposta VAPID_PUBLIC_KEY e VAPID_PRIVATE_KEY per conservarle tra i riavvii)'); }
 const publicKey = () => (vapid ? push.b64u(vapid.pub) : null);
 
-function create({ sub, src, tid, stop, stopName, lead, ip, url, style, restore = null }) {
+function create({ sub, src, tid, stop, stopName, lead, ip, url, style, ruolo = null, viaggio = null, walk = 0, restore = null }) {
   const now = Date.now();
   for (const [k, w] of W) if (now - w.created > LIFE_MS) W.delete(k);
   if (W.size >= MAX_TOTAL) { const e = new Error('troppi avvisi attivi, riprova più tardi'); e.code = 429; throw e; }
@@ -70,7 +84,8 @@ function create({ sub, src, tid, stop, stopName, lead, ip, url, style, restore =
   for (const [k, w] of W) if (w.src === src && w.tid === tid && w.stop === stop && ((sub && w.sub?.endpoint === sub.endpoint) || (!sub && w.ip === ip && !w.sub))) W.delete(k);
   const id = restore?.id || crypto.randomBytes(9).toString('base64url'), token = restore?.token || crypto.randomBytes(18).toString('base64url');
   // ripristino dopo un riavvio del server: stessa identità e stessa scadenza; la conferma iniziale non si ripete
-  const w = { id, token, sub: sub || null, src, tid, stop, stopName, lead, ip, url, style: style || null, created: restore ? restore.created : now, sent: restore ? { conf: true } : {}, queue: [], k: null, lastDelay: null, lastAt: 0 };
+  const w = { id, token, sub: sub || null, src, tid, stop, stopName, lead, ip, url, style: style || null, ruolo: ruolo || null, viaggio: viaggio || null, walk: walk || 0,
+    created: restore ? restore.created : now, sent: restore ? { conf: true } : {}, queue: [], k: null, lastDelay: null, lastAt: 0 };
   W.set(id, w); ensureLoop(); tick(w).catch(() => {});
   return { id, token, mode: sub ? 'push' : 'poll' };
 }
@@ -80,7 +95,7 @@ function cancel(id, token) { const w = find(id, token); if (w) W.delete(w.id); r
 function poll(id, token) { const w = find(id, token); if (!w) return null; const q = w.queue.splice(0); if (w.ended) W.delete(w.id); return { active: !w.ended, messages: q }; }
 
 async function deliver(w, msg) {
-  const payload = { ...msg, tag: 'tpl-trip-' + w.id, url: w.url, id: w.id, token: w.token, ts: Date.now(), src: w.src, line: msg.line, style: w.style };
+  const payload = { ...msg, tag: w.viaggio ? 'tpl-viaggio-' + w.viaggio : 'tpl-trip-' + w.id, url: w.url, id: w.id, token: w.token, ts: Date.now(), src: w.src, line: msg.line, style: w.style };
   if (!w.sub) { w.queue.push(payload); if (w.queue.length > 5) w.queue.shift(); return; }
   const body = push.encrypt(JSON.stringify(payload), w.sub.keys.p256dh, w.sub.keys.auth);
   const res = await fetch(w.sub.endpoint, { method: 'POST', body, signal: AbortSignal.timeout(10000),

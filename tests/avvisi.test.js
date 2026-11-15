@@ -217,3 +217,21 @@ test('effetto e gravità (modello GTFS-Realtime)', () => {
   assert.equal(C('Acqua alta', '', { water: { level: 150 } }).severity, 'severe');
   assert.equal(C('Nuovi orari invernali', '', { general: true }).severity, 'info');
 });
+
+test('«People Mover» è la linea PM automobilistica, anche senza «linea PM»; il ripristino del People Mover chiude solo la PM', () => {
+  const A = require('../avvisi');
+  const known = new Map([['PM', [{ n: 'PM', s: 'aut', c: 'E31E24' }]], ['2', [{ n: '2', s: 'nav', c: null }, { n: '2', s: 'aut', c: null }]], ['5.1', [{ n: '5.1', s: 'nav', c: null }]]]);
+  const ctx = { known, byName: new Map(), lineStops: new Map(), nameOf: id => id };
+  const L = r => r.lines.map(l => l.s + ' ' + l.n).sort();
+  assert.deepEqual(L(A.analyze('People Mover sospeso', 'Per manutenzione straordinaria il servizio People Mover è sospeso dalle 9.00 alle 13.00.', ctx)), ['aut PM']);
+  assert.deepEqual(L(A.analyze('Avviso', 'Il people-mover Tronchetto - P.le Roma non è in servizio. Linea 5.1 regolare.', ctx)), ['aut PM', 'nav 5.1']);
+  assert.deepEqual(L(A.analyze('Lavori', 'Linea PM: corse sostituite da bus navetta.', ctx)), ['aut PM']);
+  assert.deepEqual(L(A.analyze('Lavori', 'Nessuna linea interessata, lavori in area Tronchetto.', ctx)), []);
+});
+
+test('«People Mover» in un elenco di reti (sciopero, personale) non diventa la linea PM', () => {
+  const A = require('../avvisi');
+  const ctx = { known: new Map([['PM', [{ n: 'PM', s: 'aut', c: null }]]]), byName: new Map(), lineStops: new Map(), nameOf: id => id };
+  assert.deepEqual(A.analyze('Aggiornamento', 'I servizi di trasporto pubblico locale nelle reti di navigazione, automobilistico, tranviario e People Mover vengono confermati come regolari.', ctx).lines, []);
+  assert.deepEqual(A.analyze('Avviso', 'Coinvolto il personale AVM dei parcheggi in struttura e people mover.', ctx).lines, []);
+});
