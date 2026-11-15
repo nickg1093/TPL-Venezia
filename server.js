@@ -597,7 +597,7 @@ function nextSameLine(i, tid, stopFull) {
   }
   return best == null ? null : schedule.hhmm(best);
 }
-watch.init({ tripDetail: (i, tid) => live.tripDetail(i, tid, true), contact: process.env.PUSH_CONTACT, next: nextSameLine });
+watch.init({ tripDetail: (i, tid) => live.tripDetail(i, tid, true), next: nextSameLine });   // mittente delle notifiche: push.subjectFrom (variabili d'ambiente)
 avvisi.start();
 tide.start({ archivio: process.env.MAREA_ARCHIVIO === '0' ? null : { repo: DATI_REPO } });   // raccolta periodica del livello di marea; storia recuperata dall'archivio GitHub dopo un riavvio
 

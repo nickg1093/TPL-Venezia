@@ -67,4 +67,16 @@ function validSub(s) {
   } catch { return false; }
 }
 
-module.exports = { b64u, unb64u, loadVapid, encrypt, vapidAuth, validSub, PUSH_HOSTS };
+// MITTENTE DELLE NOTIFICHE («sub» della firma VAPID): un indirizzo https o mailto VALIDO. Apple (web.push.apple.com) rifiuta con 403
+// (BadJwtToken) indirizzi finti come «noreply@example.invalid»; Google e Mozilla li tollerano. Ordine: PUSH_CONTACT, indirizzo pubblico del
+// servizio (RENDER_EXTERNAL_URL, impostato da Render), APP_CONTACT (il contatto già pubblicato nella pagina «i»). Un'email diventa «mailto:».
+function subjectFrom(env = process.env) {
+  for (const v of [env.PUSH_CONTACT, env.RENDER_EXTERNAL_URL, env.KEEPALIVE_URL, env.APP_CONTACT]) {
+    const s = String(v || '').trim(); if (!s) continue;
+    if (/^https:\/\/[a-z0-9.-]+\.[a-z]{2,}(\/|$)/i.test(s)) return s.replace(/\/+$/, '');
+    const m = s.replace(/^mailto:/i, '');
+    if (/^[^\s@<>]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/i.test(m) && !/\.(invalid|example|test|localhost)$/i.test(m)) return 'mailto:' + m;
+  }
+  return null;
+}
+module.exports = { b64u, unb64u, loadVapid, encrypt, vapidAuth, validSub, PUSH_HOSTS, subjectFrom };

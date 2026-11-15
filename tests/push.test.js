@@ -55,3 +55,12 @@ test('dati del mezzo non aggiornati (stima senza dati): un solo messaggio, nessu
   const w2 = { ...w, sent: { conf: true }, k: null };
   assert.equal(Wt.step(w2, D(1, { why: 'fermo', min: 12 }, now), now).msg.kind, 'arrive');
 });
+
+test('mittente delle notifiche (VAPID «sub»): indirizzo valido o niente (Apple rifiuta quelli finti con 403)', () => {
+  const { subjectFrom } = require('../push');
+  assert.strictEqual(subjectFrom({}), null);
+  assert.strictEqual(subjectFrom({ PUSH_CONTACT: 'mailto:noreply@example.invalid' }), null);
+  assert.strictEqual(subjectFrom({ APP_CONTACT: 'nome@gmail.com' }), 'mailto:nome@gmail.com');
+  assert.strictEqual(subjectFrom({ RENDER_EXTERNAL_URL: 'https://veneziatpl.onrender.com/', APP_CONTACT: 'a@b.it' }), 'https://veneziatpl.onrender.com');
+  assert.strictEqual(subjectFrom({ PUSH_CONTACT: 'mailto:io@esempio.it', RENDER_EXTERNAL_URL: 'https://x.onrender.com' }), 'mailto:io@esempio.it');
+});

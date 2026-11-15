@@ -56,7 +56,9 @@ function step(w, d, now = Date.now(), next = null) {
 // ---- registro degli avvisi ----
 let vapid = null, subject = 'mailto:noreply@example.invalid', getTrip = null, timer = null;
 let nextOf = () => null;
-function init({ tripDetail, contact, next }) { vapid = push.loadVapid(); getTrip = tripDetail; if (next) nextOf = next; if (contact) subject = contact; if (!vapid.fromEnv) console.log('push: chiavi VAPID temporanee (imposta VAPID_PUBLIC_KEY e VAPID_PRIVATE_KEY per conservarle tra i riavvii)'); }
+function init({ tripDetail, contact, next }) { vapid = push.loadVapid(); getTrip = tripDetail; if (next) nextOf = next;
+  subject = push.subjectFrom(contact ? { PUSH_CONTACT: contact } : process.env) || push.subjectFrom() || subject;
+  if (/example\.invalid/.test(subject)) console.log('push: manca un mittente valido (PUSH_CONTACT o APP_CONTACT): Apple rifiuterà le notifiche'); if (!vapid.fromEnv) console.log('push: chiavi VAPID temporanee (imposta VAPID_PUBLIC_KEY e VAPID_PRIVATE_KEY per conservarle tra i riavvii)'); }
 const publicKey = () => (vapid ? push.b64u(vapid.pub) : null);
 
 function create({ sub, src, tid, stop, stopName, lead, ip, url, style, restore = null }) {
@@ -87,7 +89,10 @@ async function deliver(w, msg) {
     headers: { 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: String(msg.ttl ?? 120), Topic: ('trip' + w.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32),
       Urgency: msg.silent ? 'normal' : 'high', Authorization: push.vapidAuth(vapid, w.sub.endpoint, subject) } });
   if (res.status === 404 || res.status === 410) { W.delete(w.id); return; }          // iscrizione scaduta o revocata dall'utente
-  if (!res.ok) console.log(`push: invio non riuscito (${res.status}) verso ${new URL(w.sub.endpoint).hostname}`);
+  if (!res.ok) {                                                                     // motivo dichiarato dal servizio (es. Apple: {"reason":"BadJwtToken"})
+    const why = (await res.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 120);
+    console.log(`push: invio non riuscito (${res.status}) verso ${new URL(w.sub.endpoint).hostname}${why ? ': ' + why : ''}`);
+  }
 }
 async function tick(w) {
   let d; try { d = getTrip(w.src, w.tid); } catch { W.delete(w.id); return; }     // corsa non più nel GTFS in uso
