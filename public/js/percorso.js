@@ -189,7 +189,7 @@ export function toggleSaved() { if (!canSave()) return undefined; const r = Fav.
 export function show(opts = {}) {
   // viaggio in corso: il pianificatore si apre sulla schermata «In viaggio» (non quando si chiede un percorso preciso, es. «Percorso da qui»)
   S.vg = !!Viaggio.active() && (opts.viaggio || !(opts.from || opts.to));
-  if (vgShown()) { S.edit = null; S.showOpz = false; render(); draw(); return; }
+  if (vgShown()) { S.edit = null; S.showOpz = false; vgTop = true; render(); draw(); return; }
   // riaperto dopo più di 30 minuti (o alla prima apertura): pulito, da «la mia posizione», «Adesso». Entro 30 minuti resta com'era.
   if (!opts.from && !opts.to && Date.now() - (S.usedAt || 0) > STALE_MS) {
     Object.assign(S, { from: null, to: null, res: null, det: null, sel: -1, alts: null, sim: null, more: null, err: null, showOpz: false, formOpen: false, edit: null, q: '', when: 'now', walkShow: false, tall: false });
@@ -303,12 +303,14 @@ function render() {
   renderForm(); if (S.edit) renderSuggest(); else renderBody(); X.favChanged?.(); X.changed?.();
 }
 // schermata «In viaggio»
+let vgTop = false;                                                  // entrando nella schermata «In viaggio» si parte dall'alto (non dallo scorrimento del dettaglio)
 function renderVg() {
   X.chips.innerHTML = '';
   X.pbadge.innerHTML = `<span class="pp-hic">${icon('route')}</span>`; X.pname.innerHTML = '<span>In viaggio</span>'; X.psub.textContent = ''; X.pstatus.textContent = '';
   X.plist.innerHTML = `<div class="pp-dhead"><button type="button" class="linkback vg-plan">${icon('back', 'sm')}<span>Pianifica un altro percorso</span></button>`
     + `<button type="button" class="ibtn sm pp-tall" aria-pressed="${S.tall}" aria-label="${S.tall ? 'Abbassa il pannello e mostra di più la mappa' : 'Alza il pannello per leggere tutte le tappe'}" title="${S.tall ? 'Più mappa' : 'Più tappe'}">${icon(S.tall ? 'down' : 'up', 'sm')}</button></div>`
     + Viaggio.viewHtml();
+  if (vgTop) { vgTop = false; X.plist.scrollTop = 0; }
 }
 function leaveVg(other = false) {
   S.vg = false; vgEndArm = 0;
@@ -322,7 +324,7 @@ function onVg(j) {
   const id = j?.viaggio || null, changed = id !== vgLastId; vgLastId = id;
   if (!X?.isOpen()) return;
   if (S.vg && !j) { if (!vgStarting) leaveVg(); return; }                                   // viaggio terminato
-  if (vgShown()) { if (changed || !Viaggio.updateView(X.plist)) { const y = X.plist.scrollTop; renderVg(); X.plist.scrollTop = y; } return; }
+  if (vgShown()) { if (changed || !Viaggio.updateView(X.plist)) { const keep = !vgTop && !changed, y = X.plist.scrollTop; renderVg(); if (keep) X.plist.scrollTop = y; else X.plist.scrollTop = 0; } return; }
   if (changed && S.edit && !S.q) renderSuggest();                          // riga «Viaggio in corso» nei suggerimenti
 }
 function fieldHtml(f) {
@@ -745,7 +747,7 @@ async function startVg(o) {
   const permP = Notify.askPermission();                             // dentro il tocco: Safari chiede il permesso solo durante un gesto
   Viaggio.preLock();
   const sn = snapOf(o); if (!sn) return;
-  vgStarting = true; vgSol = o; S.vg = true; S.tall = false;
+  vgStarting = true; vgSol = o; S.vg = true; S.tall = false; vgTop = true;
   try {
     await permP;
     const p = Viaggio.start(sn, X.styleOf || (() => null));
@@ -783,7 +785,7 @@ function onClick(e) {
   if (t.closest('.vg-recalc')) { recalcVg(); return; }
   const av = t.closest('.alert-row'); if (av) { Avvisi.openAlert(av.dataset.av); return; }
   const go = t.closest('.pp-go');
-  if (go) { if (go.dataset.golive != null) { S.vg = true; S.tall = false; render(); draw(); } else startVg(S.det); return; }
+  if (go) { if (go.dataset.golive != null) { S.vg = true; S.tall = false; vgTop = true; render(); draw(); } else startVg(S.det); return; }
   if (t.closest('.pp-svtrip')) {
     const sn = snapOf(S.det); if (!sn) return;
     const r = Viaggio.toggleSaved(sn);
@@ -814,7 +816,7 @@ function onClick(e) {
     show({ ...(sv.from ? { from: { ...sv.from, ...(sv.from.kind === 'me' ? { lat: null } : {}) } } : {}), to: { ...sv.to, ...(sv.to.kind === 'me' ? { lat: null } : {}) }, quando: 'partenza', ora: sv.parti, data: sv.date });
     return;
   }
-  if (t.closest('[data-s="live"]')) { S.edit = null; S.q = ''; S.vg = true; S.tall = false; render(); draw(); return; }
+  if (t.closest('[data-s="live"]')) { S.edit = null; S.q = ''; S.vg = true; S.tall = false; vgTop = true; render(); draw(); return; }
   if (t.closest('[data-expand]')) { S.formOpen = true; S.tall = false; render(); X.chips.querySelector('.pp-f')?.focus(); return; }
   if (t.closest('.pp-collapse')) { S.formOpen = false; render(); return; }
   if (t.closest('.pp-tall')) { S.tall = !S.tall; renderBody(); X.changed?.(); return; }

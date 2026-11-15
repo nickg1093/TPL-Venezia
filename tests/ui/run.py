@@ -8,6 +8,10 @@ BASE = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:3111'
 OUT = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else '/tmp/ui'); OUT.mkdir(parents=True, exist_ok=True)
 STUB = (pathlib.Path(__file__).parent / 'leaflet-stub.js').read_text()
 SIZES = [('phone', 390, 844), ('phone-small', 360, 640), ('landscape', 844, 390), ('tablet', 768, 1024), ('desktop', 1440, 900), ('huge', 2560, 1440)]
+# dimensione del testo dell'app (Informazioni): TESTO=1.3 python tests/ui/run.py … ripete tutte le prove con il testo «Molto grande»
+import os
+TESTO = os.environ.get('TESTO', '')
+TESTO_JS = f"try{{localStorage.setItem('tpl.testo','{TESTO}')}}catch(e){{}}" if TESTO in ('1.15', '1.3') else "0"
 fails = []
 ES_LOG = "try{const E=window.EventSource;if(E)window.EventSource=class extends E{constructor(u,o){super(u,o);(window.__es||(window.__es=[])).push(String(u));}}}catch(e){}"   # indirizzi dei flussi aperti (un flusso aperto non compare tra le richieste concluse)
 FAV_ONE = "try{if(!localStorage.getItem('tpl.favorites'))localStorage.setItem('tpl.favorites', JSON.stringify({v:1,items:[{k:'nav:5032',name:'Fermata preferita di prova',src:'nav',at:1}]}))}catch(e){}"   # un preferito: la ricerca non deve mostrarlo
@@ -26,7 +30,7 @@ with sync_playwright() as p:
     for name, w, h in SIZES:
         print(f'== {name} {w}x{h}')
         ctx = br.new_context(viewport={'width': w, 'height': h}, has_touch=name.startswith('phone'), device_scale_factor=1, permissions=['geolocation'], geolocation={'latitude': 45.4375, 'longitude': 12.3358}, extra_http_headers={'X-Forwarded-For': f'10.9.{w % 250}.{h % 250}'})   # IP diverso per schermo: i limiti di frequenza non falsano la prova (server con TRUST_PROXY=1)
-        ctx.add_init_script(GUIDE_OFF); ctx.add_init_script(FAV_ONE); ctx.add_init_script(ES_LOG); page = ctx.new_page(); errs = []
+        ctx.add_init_script(GUIDE_OFF); ctx.add_init_script(FAV_ONE); ctx.add_init_script(ES_LOG); ctx.add_init_script(TESTO_JS); page = ctx.new_page(); errs = []
         page.on('pageerror', lambda e: errs.append(str(e)))
         page.on('console', lambda m: errs.append(m.text) if m.type == 'error' and 'tile' not in m.text else None)
         page.route('**/vendor/leaflet/leaflet.js', lambda r: r.fulfill(body=STUB, content_type='application/javascript'))
@@ -113,7 +117,9 @@ with sync_playwright() as p:
         check(page.get_attribute('#pfollow', 'aria-pressed') == 'false', 'inseguimento spento passando alla fermata')
         check(page.inner_text('#pback').strip() != '', 'link indietro con testo: ' + page.inner_text('#pback').strip()[:40])
         pb = rect(page, '#pback'); check(pb['h'] >= 40, f"link indietro con area di tocco {pb['h']:.0f}px")
-        page.wait_for_selector('#plist .dep', timeout=8000)
+        try: page.wait_for_selector('#plist .dep', timeout=5000)
+        except Exception:                                                     # a certe ore il pontile della corsa non ha partenze: si guardano tutti i pontili
+            page.click('#chips-area [data-p="*"]'); page.wait_for_selector('#plist .dep', timeout=8000)
         page.screenshot(path=str(OUT / f'{name}-3-stop.png'))
         lab = page.evaluate("""()=>{const e=document.querySelector('#plist .dep .in-min'),s=document.querySelector('#plist .dep strong');return e&&s?{l:getComputedStyle(e).color,t:getComputedStyle(s).color,cls:e.className}:null}""")
         check(lab and lab['cls'] == 'in-min', 'etichetta sotto l\'orario senza classe di stato')
@@ -212,7 +218,7 @@ with sync_playwright() as p:
         check(page.evaluate("[...window.__map._polys].filter(p => !p.isPolygon).length") > 0, 'tratte del percorso disegnate')
         check('plv-det' in page.get_attribute('#panel', 'class') and not page.query_selector('.pp-f'), 'dettaglio: pannello ridotto al minimo')
         if w <= 640:
-            h0 = rect(page, '#panel')['h']; check(h0 <= h * 0.5, f'dettaglio: foglio basso, mappa libera sopra ({h0:.0f}/{h}px)'); page.click('.pp-tall'); page.wait_for_timeout(400); h1 = rect(page, '#panel')['h']
+            h0 = rect(page, '#panel')['h']; check(h0 <= h * (0.6 if TESTO else 0.5), f'dettaglio: foglio basso, mappa libera sopra ({h0:.0f}/{h}px)'); page.click('.pp-tall'); page.wait_for_timeout(400); h1 = rect(page, '#panel')['h']
             check(h1 > h0, f'dettaglio: il foglio si alza ({h0:.0f} → {h1:.0f})'); page.click('.pp-tall'); page.wait_for_timeout(400)
         pr = rect(page, '#panel'); check(pr['r'] <= w + 1 and pr['b'] <= h + 1, 'pannello percorso entro lo schermo')
         nf = page.evaluate("parseInt(document.querySelector('.pp-mid').textContent)")

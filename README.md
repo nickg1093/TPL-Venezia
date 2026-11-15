@@ -4,7 +4,7 @@ Mappa in tempo reale di autobus, tram e vaporetti ACTV di Venezia, con pannelli 
 avvisi di servizio, avvisi di arrivo (notifiche), marea e preferiti. È una **PWA** (si installa come app) servita da un **server Node.js
 senza database**, che gira gratis su Render oppure su un computer di casa.
 
-Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v31** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md)
+Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v31.1** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md)
 
 ---
 
@@ -453,7 +453,8 @@ Una volta sola: `pip install playwright` e `python -m playwright install chromiu
 ```powershell
 python tests/ui/run.py http://localhost:3111 C:\temp\ui     # atteso: «FALLITI: 0»; gli screenshot finiscono in C:\temp\ui
 python tests/ui/viaggio.py http://localhost:3111 C:\temp\ui # viaggio guidato, I miei viaggi, calendario, condividi (atteso: «Tutto ok»)
-python tests/ui/sistema.py http://localhost:3111 C:\temp\ui # indietro nell'app installata, testo grande, notifiche perse, errori (atteso: «Tutto ok»)
+python tests/ui/sistema.py http://localhost:3111 C:\temp\ui # indietro nell'app installata, testo grande, testi che scorrono, notifiche perse, errori
+$env:TESTO="1.3"; python tests/ui/run.py http://localhost:3111 C:\temp\ui13; Remove-Item Env:TESTO   # tutte le prove con il testo «Molto grande»
 ```
 
 ### 9.5 Provare le API dal computer (PowerShell) o dal browser
@@ -525,6 +526,10 @@ Aggiornamento di consolidamento (analisi del sito vero del 15/11/2026, fonti: do
   notifiche perse (3.6). Ogni push mostra una notifica (v30.1).
 - **Accessibilità**: «Dimensione del testo» nelle Informazioni (normale, grande, molto grande): ingrandisce l'interfaccia su ogni sistema, anche
   nell'app installata su iPhone dove le impostazioni del telefono non arrivano; lo zoom della pagina resta alla sola mappa (scelta di progetto).
+  **v31.1**: ogni testo su una riga che non entra **scorre** (`public/js/scorri.js`) in tutta l'app (passaggi, fermate della corsa, titolo,
+  campi e riepiloghi del pianificatore, avvisi nei pannelli, preferiti, «torna a…»), con sfumatura ai bordi; si ricalcola da solo quando cambiano
+  contenuto, larghezza o dimensione del testo (anche senza ricaricare); fermo con «riduci movimento». Con il testo grande il foglio del dettaglio e
+  di «In viaggio» è più alto e «In viaggio» si apre dall'inizio; la barra in basso resta su una riga.
 - **Nomi corretti** (`nomi.js`): «Liberta'» → «Libertà», «Scorze'» → «Scorzè», «Nicolo'» → «Nicolò» (restano «Ca'», «Sant'», «dell'»); destinazioni
   senza parole ripetute («Tronchetto Tronchetto Fer» → «Tronchetto Fer»). Preferiti invariati: le chiavi delle zone riportano gli accenti all'apostrofo.
   I file fissi del CDN si rigenerano se il contenuto cambia (`genera-dati.js`); fino ad allora i telefoni li scaricano dal server.

@@ -1024,7 +1024,7 @@ html,body{touch-action:pan-x pan-y}
   #panel.is-plan.plv-list .ph-main,#panel.is-plan.plv-det .ph-main{display:none}
   #panel.is-plan.plv-list .ph,#panel.is-plan.plv-det .ph{padding-bottom:6px}
   #panel.is-plan.plv-list{max-height:max(58%,min(calc(100% - 260px),34rem))}
-  #panel.is-plan.plv-det{max-height:max(42%,15rem)}
+  #panel.is-plan.plv-det{max-height:max(42%,min(calc(15rem * var(--ts,1)),calc(100% - 140px)))}   /* testo grande: foglio più alto, la mappa resta visibile */
   #panel.is-plan.plv-det.plv-tall{max-height:calc(100% - 56px)}
   #panel.is-plan.plv-det .pp-mini{display:none}   /* nel dettaglio la soluzione basta: il riassunto torna con «Tutte le soluzioni» */
 }
@@ -1236,3 +1236,9 @@ body.busy #panel:not([hidden])::before,body.busy .dock::before{content:"";positi
 /* testo «Grande»/«Molto grande»: la barra in basso cresce poco (modalità e orologio restano su una riga anche sui telefoni stretti) */
 #bottom-bar{--fs-sm:min(.875rem,13.5px);--fs-md:min(1rem,16px);--fs-lg:min(1.125rem,17.5px)}
 @media (max-width:380px){#bottom-bar .seg label{padding:0 10px}}
+
+/* v31 · testi su una riga che non entrano: scorrono (scorri.js) in tutta l'app; mentre scorrono niente puntini */
+.mq-on{text-overflow:clip!important;-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 6px,#000 calc(100% - 12px),transparent);mask-image:linear-gradient(90deg,transparent 0,#000 6px,#000 calc(100% - 12px),transparent)}
+.fv-n{display:block;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pp-hs .mq,.fv-t small .mq{display:inline-flex;align-items:center;gap:4px}
+.pp-hs .mq:not(.run),.fv-t small .mq:not(.run){display:inline}

@@ -13,6 +13,7 @@ import * as Notify from './notify.js';
 import * as Info from './info.js';
 import * as Plan from './percorso.js';
 import * as Viaggio from './viaggio.js';
+import * as Scorri from './scorri.js';
 import * as Guida from './guida.js';
 import * as Nav from './nav.js';
 import * as Favs from './favs.js';
@@ -742,17 +743,8 @@ let rowPick = null;
 const styleOf = (line, color, src) => { const k = colorInfo(color, line); return { shape: src === 'aut' ? 'tile' : 'circle', bg: k.c, fg: k.ink }; };
 // TESTI TROPPO LUNGHI (destinazione e riga sotto): scorrono avanti e indietro invece di essere tagliati. La fase dell'animazione dipende
 // dall'orologio, così gli aggiornamenti dell'elenco (ogni pochi secondi) non la fanno ripartire da capo. Con «riduci movimento»: puntini.
-function marquee(root) {
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  for (const el of root.querySelectorAll('.mq')) {
-    el.classList.remove('run');
-    const box = el.parentElement, over = box.scrollWidth - box.clientWidth;      // lo span è in linea: si misura il contenitore
-    if (over <= 2) continue;
-    const t = Math.max(3, over / 28 + 1.5);                                   // secondi per un passaggio (circa 28 px/s, con pause agli estremi)
-    el.classList.add('run'); el.style.setProperty('--mq-d', `-${over + 6}px`);
-    el.style.animationDuration = t + 's'; el.style.animationDelay = `-${(Date.now() / 1000) % (2 * t)}s`;
-  }
-}
+function marquee(root) { Scorri.run(root); }                              // scorri.js: lo stesso meccanismo in tutta l'app
+
 function renderDepartures() {
   if (!lastDeps || !current || (current.t !== 'stop' && current.t !== 'zone')) return;   // mai nel pannello della corsa o del pianificatore
   const live = mode === 'live', z = current.t === 'zone' ? zones.get(current.key) : null;
@@ -1154,7 +1146,7 @@ const hideAttr = Info.init(() => { Tide.close(); Avvisi.close(); Favs.close(); i
 map.on('movestart', hideAttr); map.on('zoomstart', hideAttr); map.on('click', hideAttr);
 Tide.init(() => { Avvisi.close(); Info.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
 Avvisi.init(() => { Tide.close(); Info.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); }, () => { drawStops(); if (current && current.t !== 'trip') renderDepartures(); else if (current?.t === 'trip' && lastTrip) renderTrip(false); });   // quando arrivano avvisi nuovi si aggiornano mappa e pannello fermata
-Pwa.init(); Sistema.init();
+Pwa.init(); Sistema.init(); Scorri.watch(plist, pname, chipsArea, $('favs-body'), $('search-results'), $('pstatus'));
 
 // ---------------------------------------------------------------------------------------------------------------------
 // PREFERITI (stella nel pannello fermata; elenco nella ricerca vuota). Restano nel dispositivo anche dopo gli aggiornamenti dell'app.
@@ -1449,7 +1441,11 @@ function guideBoot(tries = 0) {
     const b = e.target.closest('[data-ts]'); if (!b) return;
     const v = b.dataset.ts; try { localStorage.setItem('tpl.testo', v); } catch { /* solo per questa apertura */ }
     if (v === '1') document.documentElement.style.removeProperty('--ts'); else document.documentElement.style.setProperty('--ts', v);
-    mark(v); setTimeout(() => { map.invalidateSize(); window.dispatchEvent(new Event('resize')); }, 50);
+    mark(v);
+    setTimeout(() => {                                                       // misure nuove: mappa, testi che scorrono, righe delle fermate successive
+      map.invalidateSize(); window.dispatchEvent(new Event('resize')); Scorri.tutto();
+      if (current && (current.t === 'stop' || current.t === 'zone')) renderDepartures();
+    }, 60);
   });
 }
 $('info-guide').addEventListener('click', () => { Info.close(); setTimeout(() => { if (!Guida.active()) Guida.restart(); }, 300); });

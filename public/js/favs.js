@@ -34,8 +34,8 @@ function render() {
     : `<p class="fv-empty">${icon('route')}<span>Nessun percorso salvato.<small>Nel pianificatore scegli partenza e arrivo, poi tocca la stella.</small></span></p>`;
   else h = `<ul class="fv-list${edit ? ' editing' : ''}">` + list.map((x, i) => {
     const main = tab === 'stops'
-      ? `${srcIcon(x.src)}<span class="fv-t">${esc(x.name)}</span>`
-      : `${icon('route')}<span class="fv-t">${esc(Fav.routeTitle(x))}${x.name ? `<small>${routeIcon(x.from)}${esc(x.from.label)} → ${routeIcon(x.to)}${esc(x.to.label)}</small>` : ''}</span>`;
+      ? `${srcIcon(x.src)}<span class="fv-t"><span class="fv-n">${esc(x.name)}</span></span>`
+      : `${icon('route')}<span class="fv-t"><span class="fv-n">${esc(Fav.routeTitle(x))}</span>${x.name ? `<small>${routeIcon(x.from)}${esc(x.from.label)} → ${routeIcon(x.to)}${esc(x.to.label)}</small>` : ''}</span>`;
     if (!edit) return `<li><button type="button" class="fv-it" data-open="${esc(x.k)}">${main}${icon('next', 'sm fv-go')}</button></li>`;
     const ren = tab === 'routes' && renaming === x.k
       ? `<form class="fv-ren" data-k="${esc(x.k)}"><span class="xwrap"><input type="text" maxlength="60" value="${esc(x.name || '')}" placeholder="Nome (es. Casa → Lavoro)" aria-label="Nome del percorso"><button type="button" class="ibtn sm xbtn" data-x aria-label="Cancella il testo"${x.name ? '' : ' hidden'}>${icon('close', 'sm')}</button></span><button type="submit" class="nlink">Salva</button></form>` : '';

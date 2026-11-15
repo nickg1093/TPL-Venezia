@@ -1,7 +1,7 @@
 # PROVE DELL'INTERFACCIA DEL VIAGGIO GUIDATO e di «I miei viaggi» (Playwright + Chromium), con il server di prova già avviato:
 #   AVVISI_ARCHIVIO=0 DATI_CDN=0 MAREA_ARCHIVIO=0 TRUST_PROXY=1 PORT=3111 node -r ./tests/fakefeed.js server.js      poi:   python3 tests/ui/viaggio.py http://localhost:3111 /tmp/ui
 # Chromium senza servizio push: gli avvisi passano per la lettura con l'app aperta (la strada dei dispositivi senza Web Push).
-import sys, json, pathlib, time, math, datetime
+import sys, os, json, pathlib, time, math, datetime
 from playwright.sync_api import sync_playwright
 BASE = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:3111'
 OUT = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else '/tmp/ui'); OUT.mkdir(parents=True, exist_ok=True)
@@ -35,6 +35,7 @@ with sync_playwright() as p:
         ctx = br.new_context(viewport={'width': w, 'height': h}, has_touch=w < 500, permissions=['geolocation', 'notifications', 'clipboard-read', 'clipboard-write'],
                              geolocation={'latitude': 45.4386, 'longitude': 12.3195}, accept_downloads=True)
         ctx.add_init_script(GUIDE_OFF)
+        if os.environ.get('TESTO') in ('1.15', '1.3'): ctx.add_init_script(f"try{{localStorage.setItem('tpl.testo','{os.environ['TESTO']}')}}catch(e){{}}")   # TESTO=1.3: stesse prove con il testo grande
         # Chromium senza interfaccia nega sempre le notifiche: permesso simulato come concesso (l'iscrizione push fallisce: si prova la strada «app aperta»)
         ctx.add_init_script("try{Object.defineProperty(Notification,'permission',{get:()=>'granted'});Notification.requestPermission=()=>Promise.resolve('granted')}catch(e){}")
         ctx.add_init_script(f"try{{localStorage.setItem('theme','{theme}')}}catch(e){{}}")
