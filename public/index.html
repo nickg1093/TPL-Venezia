@@ -235,7 +235,8 @@
         <div class="time-display" id="clock-time">00:00:<small>00</small></div>
       </div>
       <div id="sched-opts">
-        <input id="tl-date" type="date" aria-label="Data">
+        <input id="tl-date" type="date" aria-label="Data" hidden tabindex="-1">
+        <button id="tl-date-btn" type="button" class="dtf" aria-haspopup="dialog" aria-label="Giorno: oggi"><svg class="ic sm" aria-hidden="true"><use href="/icons/sprite.svg#i-cal"/></svg><span>Oggi</span></button>
         <select id="tl-speed" aria-label="Velocità di riproduzione">
           <option value="1">1×</option><option value="5" selected>5×</option><option value="15">15×</option><option value="60">60×</option>
         </select>

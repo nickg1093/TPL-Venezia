@@ -11,12 +11,14 @@ SIZES = [('phone', 390, 844), ('phone-small', 360, 640), ('landscape', 844, 390)
 fails = []
 ES_LOG = "try{const E=window.EventSource;if(E)window.EventSource=class extends E{constructor(u,o){super(u,o);(window.__es||(window.__es=[])).push(String(u));}}}catch(e){}"   # indirizzi dei flussi aperti (un flusso aperto non compare tra le richieste concluse)
 FAV_ONE = "try{if(!localStorage.getItem('tpl.favorites'))localStorage.setItem('tpl.favorites', JSON.stringify({v:1,items:[{k:'nav:5032',name:'Fermata preferita di prova',src:'nav',at:1}]}))}catch(e){}"   # un preferito: la ricerca non deve mostrarlo
-GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v28', mappa:true, pannello:true}))}catch(e){}"   # guida già vista: le prove non la incontrano (ha una prova sua)
+GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v29', mappa:true, pannello:true}))}catch(e){}"   # guida già vista: le prove non la incontrano (ha una prova sua)
 def check(ok, msg):
     print(('  ok   ' if ok else '  FAIL ') + msg)
     if not ok: fails.append(msg)
 def rect(page, sel):
     return page.evaluate("s=>{const e=document.querySelector(s);if(!e||e.hidden||e.offsetParent===null)return null;const r=e.getBoundingClientRect();return {l:r.left,t:r.top,r:r.right,b:r.bottom,w:r.width,h:r.height}}", sel)
+def rectf(page, sel):   # anche per elementi in posizione fissa (offsetParent nullo)
+    return page.evaluate("s=>{const e=document.querySelector(s);if(!e||e.hidden)return null;const r=e.getBoundingClientRect();return r.width&&r.height?{l:r.left,t:r.top,r:r.right,b:r.bottom,w:r.width,h:r.height}:null}", sel)
 def overlap(a, b): return a and b and a['l'] < b['r'] and a['r'] > b['l'] and a['t'] < b['b'] and a['b'] > b['t']
 
 with sync_playwright() as p:
@@ -182,8 +184,10 @@ with sync_playwright() as p:
         check(page.evaluate("document.querySelectorAll('.pp-fw [data-clr]').length") == 2, 'pianificatore: × per togliere partenza e arrivo')
         # opzioni: pagina a spunta, salvate; «Mostra le soluzioni» rifà la ricerca; Ripristina torna ai valori normali
         page.click('.pp-opzbtn'); page.wait_for_selector('.pp-opz', timeout=3000)
-        check(page.evaluate("document.querySelectorAll('.pp-opz .pp-og').length") == 3 and page.evaluate("document.querySelectorAll('.pp-opz [data-o=pref]').length") == 3 and page.evaluate("document.querySelectorAll('.pp-opz [data-o=passo]').length") == 3
-              and not page.query_selector('.pp-opz [data-o=cambi], .pp-opz [data-o=piedimax], .pp-opz [data-o=margine]'), 'opzioni v28: cosa conta (Arrivare prima, Camminare meno, Meno cambi), andatura, mezzi')
+        check(page.evaluate("document.querySelectorAll('.pp-opz .pp-og').length") == 2 and page.evaluate("document.querySelectorAll('.pp-opz [data-o=pref]').length") == 3 and page.evaluate("document.querySelectorAll('.pp-opz [data-o=passo]').length") == 3
+              and not page.query_selector('.pp-opz [data-o=cambi], .pp-opz [data-o=piedimax], .pp-opz [data-o=margine], .pp-opz [data-m]'), 'opzioni v28: cosa conta (Arrivare prima, Camminare meno, Meno cambi) e andatura')
+        mz = page.evaluate("[...document.querySelectorAll('.pp-mz [data-fm]')].map(b=>b.textContent.trim())")
+        check(mz == ['Navigazione', 'Automobilistico'], f'mezzi in vista nel modulo: {mz}')
         check(page.inner_text('.pp-opz .pp-og').startswith('Cosa conta di più'), 'opzioni: prima la scelta principale')
         small = page.evaluate("Math.min(...[...document.querySelectorAll('.pp-opz button.chip')].map(b=>b.getBoundingClientRect().height))")
         check(small >= 40, f'scelte delle opzioni alte almeno 40px ({small:.0f})')
@@ -212,8 +216,16 @@ with sync_playwright() as p:
         # arrivo entro le: soluzioni che arrivano entro l'orario scelto
         page.click('.pp-back'); page.wait_for_selector('.pp-mini', timeout=3000); check('plv-list' in page.get_attribute('#panel', 'class'), '«Tutte le soluzioni» torna alla lista')
         page.click('.pp-sum'); page.wait_for_selector('.pp-when', timeout=3000)
-        page.click('.pp-when [data-w=by]'); page.wait_for_selector('.pp-time', timeout=3000)
-        page.fill('.pp-time', '23:30'); page.dispatch_event('.pp-time', 'change'); page.wait_for_timeout(300)
+        page.click('.pp-when [data-w=by]'); page.wait_for_selector('.pp-tbtn', timeout=3000)
+        ic = page.evaluate("(() => { const c = getComputedStyle(document.querySelector('.pp-tbtn .ic')).color, d = getComputedStyle(document.querySelector('.pp-dbtn .ic')).color; return [c, d]; })()")
+        check(all(x not in ('rgba(0, 0, 0, 0)', 'transparent') for x in ic), f'icone di orologio e calendario visibili ({ic})')
+        page.click('.pp-tbtn'); page.wait_for_selector('.sc', timeout=3000)
+        sc = rectf(page, '.sc'); check(sc['l'] >= -1 and sc['r'] <= w + 1 and sc['t'] >= -1 and sc['b'] <= h + 1, f"scelta dell'ora dentro lo schermo ({sc['l']:.0f},{sc['t']:.0f} {sc['r']:.0f}×{sc['b']:.0f})")
+        page.click('.sc [data-h="23"]'); page.click('.sc [data-m="30"]'); check(page.inner_text('.sc-t') == '23:30', 'ora scelta con le colonne')
+        page.click('.sc-ok'); page.wait_for_timeout(300); check(page.query_selector('.sc') is None and '23:30' in page.inner_text('.pp-tbtn'), '«Fatto» chiude e mette l\'ora nel campo')
+        page.click('.pp-dbtn'); page.wait_for_selector('.sc .sc-d', timeout=3000)
+        sc = rectf(page, '.sc'); check(sc['l'] >= -1 and sc['r'] <= w + 1 and sc['t'] >= -1 and sc['b'] <= h + 1, 'scelta del giorno dentro lo schermo')
+        page.keyboard.press('Escape'); page.wait_for_timeout(200); check(page.query_selector('.sc') is None, 'Esc chiude la scelta del giorno')
         page.wait_for_selector('.pp-opt, #plist .pp-note, #plist p.muted', timeout=15000); page.wait_for_timeout(500)
         arr = page.evaluate("[...document.querySelectorAll('.pp-opt .pp-times b:last-of-type')].map(b=>b.textContent)")
         check(all(x <= '23:30' or x < '06:00' for x in arr), f'arrivo entro le 23:30: {arr}')
@@ -334,6 +346,13 @@ with sync_playwright() as p:
         # --- modalità pianificato
         page.evaluate("document.querySelector('input[name=mode][value=sched]').click()"); page.wait_for_timeout(1200)
         check(page.evaluate("!!document.getElementById('tl-date').min && !!document.getElementById('tl-date').max"), 'selettore data limitato ai GTFS in archivio (min/max)')
+        page.click('#tl-date-btn'); page.wait_for_selector('.sc .sc-d', timeout=3000)
+        sc = rectf(page, '.sc'); check(sc['l'] >= -1 and sc['r'] <= w + 1 and sc['t'] >= -1 and sc['b'] <= h + 1, 'Programmato: calendario dentro lo schermo')
+        dis = page.evaluate("[...document.querySelectorAll('.sc .sc-d')].filter(b=>b.disabled).length"); check(dis > 0, f'giorni senza orari disattivati ({dis})')
+        if page.query_selector('.sc .sc-q [data-d]:nth-child(2)'):
+            page.click('.sc .sc-q [data-d]:nth-child(2)'); page.wait_for_timeout(500); check('Domani' in page.inner_text('#tl-date-btn'), 'Programmato: «Domani» scelto')
+            page.click('#tl-date-btn'); page.wait_for_selector('.sc'); page.click('.sc .sc-q [data-d]:nth-child(1)'); page.wait_for_timeout(500)
+        else: page.keyboard.press('Escape')
         dock = rect(page, '#bottom-bar'); lim = 230 if w < 560 else 160; check(dock['h'] <= lim, f"dock Pianificato compatto ({dock['h']:.0f}px, limite {lim})")
         di = rect(page, '.dock-in'); check(di['w'] <= 761, f"dock-in Pianificato <= 760 ({di['w']:.0f}px)")
         tc = rect(page, '#timeline-controls'); check(tc['r'] <= w + 1 and tc['l'] >= -1, 'controlli orario entro lo schermo')

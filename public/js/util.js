@@ -97,7 +97,8 @@ const tries = new Map();
 export function ritenta(key, fn, ms = 3000, max = 40) {
   const n = (tries.get(key) || 0) + 1; tries.set(key, n);
   if (n > max) { tries.delete(key); return false; }
-  setTimeout(fn, Math.min(ms * (1 + Math.floor((n - 1) / 10)), 15000));
+  busyDelta(1);                                                   // anche durante l'attesa tra un tentativo e l'altro la barra di caricamento resta
+  setTimeout(() => { busyDelta(-1); fn(); }, Math.min(ms * (1 + Math.floor((n - 1) / 10)), 15000));
   return true;
 }
 export const riuscito = key => { tries.delete(key); };

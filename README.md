@@ -4,7 +4,7 @@ Mappa in tempo reale di autobus, tram e vaporetti ACTV di Venezia, con pannelli 
 avvisi di servizio, avvisi di arrivo (notifiche), marea e preferiti. È una **PWA** (si installa come app) servita da un **server Node.js
 senza database**, che gira gratis su Render oppure su un computer di casa.
 
-Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v28** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md)
+Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v29** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md)
 
 ---
 
@@ -21,7 +21,7 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 9. [Prove e test: comandi da digitare](#9-prove-e-test)
 10. [Modifiche frequenti: ricette](#10-modifiche-frequenti)
 11. [Pubblicare una nuova versione e tornare indietro](#11-pubblicare-e-tornare-indietro)
-12. [Novità della v28](#12-novità-della-v28) · [v27](#novità-della-v27) · [v26](#novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
+12. [Novità della v29](#12-novità-della-v29) · [v28](#novità-della-v28) · [v27](#novità-della-v27) · [v26](#novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
 - Appendici tecniche: [A. GTFS statici](#a-gtfs-statici-perché-non-si-sovrascrivono-più) · [B. Regole del motore tempo reale](#b-eccezioni-e-contromisure-del-codice-elenco-dettagliato) · [C. Sicurezza](#c-sicurezza-securityjs-serverjs) · [D. Dati sul telefono e CDN](#d-dati-sul-telefono-e-cdn-ramo-dati) · [E. Orari per giorno e memoria](#e-orari-per-giorno-e-memoria-del-server-v28)
 
 ---
@@ -150,8 +150,16 @@ più in alto o torna al pannello precedente; con nulla aperto esce dall'app. L'o
 - **Quando**: interruttore *Adesso · Partenza · Arrivo*; con un orario scelto compaiono **giorno** e **ora**. Le date ammesse sono quelle coperte
   dai GTFS in archivio (le stesse della modalità *Programmato*, `/api/dates`) e per ogni data si usano **gli orari di quella data**
   (`plannerGtfs` in `server.js` → `live.dataFor`): stesso motore di caricamento della modalità Programmato.
-- **Opzioni** (v28, salvate sul telefono): *Cosa conta di più* (Arrivare prima · Camminare meno · Meno cambi), *Andatura* (Con calma · Normale ·
-  Svelta), *Mezzi* (battelli · autobus e tram). Le vecchie impostazioni si convertono da sole; i vecchi parametri dei link restano accettati.
+- **Mezzi** (v29): *Navigazione* e *Automobilistico* subito sotto partenza e arrivo (almeno uno); toccandoli la ricerca si rifà.
+- **Opzioni** (salvate sul telefono): *Cosa conta di più* (Arrivare prima · Camminare meno · Meno cambi) e *Andatura* (Con calma · Normale ·
+  Svelta). Le vecchie impostazioni si convertono da sole; i vecchi parametri dei link restano accettati.
+- **Giorno e ora** (v29, `public/js/scegli.js`): calendario e orologio dell'app al posto dei selettori del browser (anche nella modalità
+  Programmato): stesso aspetto ovunque, icone con il contrasto del tema, sempre dentro lo schermo (foglio dal basso sul telefono; sul computer
+  sotto, sopra o accanto al campo, dove c'è posto). Esc chiude, frecce tra i giorni; i giorni senza orari sono disattivati.
+- **Soluzioni** (v29): la *consigliata* in evidenza in cima, sotto «Altre soluzioni»; «coincidenza a rischio» sulla scheda e nel dettaglio
+  (margine del cambio in minuti).
+- **Attesa sempre visibile** (v29): barra animata sul bordo del pannello e della barra in basso durante i caricamenti, anche tra un tentativo
+  e l'altro; nel pianificatore il motivo (es. «Carico gli orari del giorno scelto: la prima volta può volerci fino a un minuto»).
 - **Parametri del calcolo** (`percorso.js`, oggetto `C`), tutti in un posto:
 
   | Parametro | Valore | Cosa fa |
@@ -162,8 +170,9 @@ più in alto o torna al pannello precedente; con nulla aperto esce dall'app. L'o
   | Camminare meno | TP 8 min, WW 3, cambi a piedi ≤ 10 min | il mezzo si propone anche se a piedi si farebbe prima |
   | Meno cambi | TP 20 min, WW 1,5 | meglio aspettare il diretto |
   | Passo normale | 4,5 km/h in laguna, 4,8 km/h in terraferma | ponti, scale e folla a Venezia |
-  | Andatura con calma / svelta | tempi a piedi × 1,3 (+3 min per ogni cambio) / × 0,8 | ≈ 3,5 / 5,6-6 km/h |
-  | Margine per salire | 1 min autobus e tram, 2 min battello | anche alla prima salita, se non si parte dalla fermata |
+  | Andatura con calma / svelta | tempi a piedi × 1,3 (+2 min per ogni cambio) / × 0,8 | ≈ 3,5 / 5,6-6 km/h |
+  | Tempo per salire (v29) | nessuno fisso: contano i tempi a piedi dell'andatura; con calma almeno 2 min per ogni cambio | prima 1 min autobus e tram, 2 battello |
+  | Coincidenza a rischio (v29) | cambio con meno di 2 min di margine | proposta lo stesso, segnata, e costa 5 minuti in più nel confronto |
   | Cambi | al massimo 4 (5 corse); a piedi tra due mezzi ≤ 15 min | |
   | Fermate di partenza e arrivo | entro 1,5 km in linea d'aria (× 1,3), o fino a 3,5 km misurati lungo le strade dal telefono | |
   | Tutto a piedi | fino a 40 min lungo la rete pedonale | se arriva prima, i mezzi con cambi o tanta strada a piedi non si propongono |
@@ -452,7 +461,16 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ---
 
-## 12. Novità della v28
+## 12. Novità della v29
+
+- **Notifiche su iPhone**: il mittente delle notifiche (VAPID) ora è un indirizzo valido preso da sé (indirizzo pubblico del servizio);
+  prima Apple le rifiutava (403). Nel log compare anche il motivo di un eventuale rifiuto.
+- **Pianificatore più chiaro**: mezzi (Navigazione, Automobilistico) in vista nel modulo, consigliata in evidenza, niente tempo fisso per
+  salire, «coincidenza a rischio», giorno e ora con selettori dell'app, attesa sempre visibile (sezione 3.4).
+- Prove: `tests/ui/run.py` (mezzi nel modulo, selettori dentro lo schermo, icone visibili, Esc), `tests/push.test.js` (mittente valido),
+  `tests/percorso.test.js` (coincidenza a rischio).
+
+### Novità della v28
 
 - **Memoria del server sotto controllo**: solo le corse di ieri, oggi e domani; lettura a pezzi; protezione della memoria (sezione E).
   Misure sui file veri: orari bus ~360 → ~85 MB, navigazione ~70 → ~50 MB; avvio da ~40 s a pochi secondi.

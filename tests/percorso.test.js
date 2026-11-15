@@ -138,12 +138,13 @@ test('terraferma: con la rete pedonale (pedonale-terraferma.txt) i cambi seguono
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pedonale-'));
   const ctx = { G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [], walkDir: dir };
   try {
-    // M2 e P0 sono a 200 m in linea d'aria, ma a piedi (es. sottopasso della ferrovia) ce ne vogliono 650: 8-9 minuti, si perde il battello delle 08:20
+    // M2 e P0 sono a 200 m in linea d'aria, ma a piedi (es. sottopasso della ferrovia) ce ne vogliono 650: 8 minuti. Dal v28 niente tempo fisso
+    // per salire: il battello delle 08:20 si prende con meno di 2 minuti di margine, quindi «coincidenza a rischio»
     fs.writeFileSync(path.join(dir, 'pedonale-terraferma.txt'), '# prova\naM0,aM1,aM2,nP0,nP1,nP2\n2.3.i2\n');
     percorso.init(ctx);
     const o = percorso.plan({ da: [['aut:M0', 0]], a: [['nav:P2', 0]], secs: 8 * 3600, date: '20261102' }).soluzioni[0];
     assert.equal(o.tratte[1].tipo, 'piedi'); assert.ok(o.tratte[1].min >= 8 && o.tratte[1].min <= 9, 'a piedi ' + o.tratte[1].min + ' min');
-    assert.equal(o.tratte[2].da.sched, '08:40'); assert.equal(o.arrivi, '09:00');
+    assert.equal(o.tratte[2].da.sched, '08:20'); assert.equal(o.arrivi, '08:40'); assert.equal(o.tratte[2].aRischio, true); assert.equal(o.aRischio, 1);
     // nessun cammino sulla rete (fiume, ferrovia senza passaggi): niente cambio a piedi, anche se vicine in linea d'aria
     fs.writeFileSync(path.join(dir, 'pedonale-terraferma.txt'), '# prova\naM0,aM1,aM2,nP0,nP1,nP2\n\n');
     percorso.init(ctx);

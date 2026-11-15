@@ -3,6 +3,7 @@
 import { $, esc, p2, nowSecs, fmtSecs, localDate, icon, srcIcon, vehIcon, vehName, lum, colorInfo, badge, ptHtml, etaText, tickEta, delayInfo, api, onBusy, ritenta, riuscito, NON_ORA } from './util.js';
 import { zones, zoneOf, snorm, buildZones, norm, unitOf, mergeDuplicates, groups, aliasOf } from './zones.js';
 import * as Tide from './tide.js';
+import * as Scegli from './scegli.js';
 import * as Avvisi from './avvisi.js';
 import * as Pwa from './pwa.js';
 import { createLocator } from './locate.js';
@@ -47,6 +48,10 @@ let current = null, lastDeps = null, lastTrip = null, panelTimer = null;
 const navStack = [];
 
 dateEl.value = localDate();
+// campo del giorno (modalità Programmato): selettore dell'app (scegli.js), il campo nascosto tiene il valore come prima
+const dateBtn = $('tl-date-btn');
+function syncDateBtn() { const l = Scegli.dayLabel(dateEl.value); dateBtn.querySelector('span').textContent = l; dateBtn.setAttribute('aria-label', 'Giorno: ' + l); }
+dateBtn.onclick = () => Scegli.giorno(dateBtn, { value: dateEl.value, min: dateEl.min || null, max: dateEl.max || null, onPick: v => { dateEl.value = v; dateEl.onchange(); } });
 range.value = nowSecs();
 const keyOf = () => [...active].join(',');
 // Date selezionabili in «Programmato»: solo quelle coperte dai GTFS in archivio (il server le legge da data/gtfs/<servizio>/)
@@ -57,9 +62,9 @@ api('/api/dates').then(d => {
   clampDate();
 }).catch(() => {});
 function clampDate() {
-  const v = dateEl.value; if (!v) { dateEl.value = localDate(); return false; }
-  if (dateEl.min && v < dateEl.min) { dateEl.value = dateEl.min; return true; }
-  if (dateEl.max && v > dateEl.max) { dateEl.value = dateEl.max; return true; }
+  const v = dateEl.value; if (!v) { dateEl.value = localDate(); syncDateBtn(); return false; }
+  if (dateEl.min && v < dateEl.min) { dateEl.value = dateEl.min; syncDateBtn(); return true; }
+  if (dateEl.max && v > dateEl.max) { dateEl.value = dateEl.max; syncDateBtn(); return true; }
   return false;
 }
 const schedQS = () => mode === 'sched' ? `&secs=${encodeURIComponent(range.value)}&date=${encodeURIComponent(dateEl.value.replace(/\D/g, ''))}` : '';
@@ -191,10 +196,10 @@ $('tl-play').onclick = () => {
   isPlaying = !isPlaying; syncPlay(); clearInterval(playTimer);
   if (isPlaying) playTimer = setInterval(() => { if (document.hidden) return; const v = +range.value + +$('tl-speed').value; applyTime(v > 86400 ? 0 : v); }, 1000);   // in pausa con la pagina nascosta
 };
-$('tl-now').onclick = () => { stopPlay(); dateEl.value = localDate(); applyTime(nowSecs(), true); };
+$('tl-now').onclick = () => { stopPlay(); dateEl.value = localDate(); syncDateBtn(); applyTime(nowSecs(), true); };
 range.oninput = () => applyTime(+range.value);
 dateEl.onchange = () => {
-  const moved = clampDate();
+  const moved = clampDate(); syncDateBtn();
   if (moved) { statusEl.className = 'warn'; statusEl.textContent = `Orari disponibili dal ${dateEl.min.split('-').reverse().join('/')} al ${dateEl.max.split('-').reverse().join('/')}`; }
   applyTime(+range.value, true);
 };

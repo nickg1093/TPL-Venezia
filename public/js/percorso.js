@@ -6,6 +6,7 @@
 import { esc, icon, badge, colorInfo, lum, delayInfo, etaText, api, srcIcon, vehName, localDate, ritenta, riuscito, NON_ORA } from './util.js';
 import { zones, zoneOf, norm, snorm, groups, aliasOf } from './zones.js';
 import * as Fav from './fav.js';
+import * as Scegli from './scegli.js';
 import * as Walk from './camminata.js';
 
 const NEAR_M = 1500, NEAR_N = 14, REFRESH_MS = 60000, KEY = 'tpl.percorso', KEY_OPZ = 'tpl.percorso.opz';
@@ -95,7 +96,9 @@ function restore() {
 }
 const saveOpz = () => { try { localStorage.setItem(KEY_OPZ, JSON.stringify(S.opz)); } catch { /* facoltativo */ } };
 // filtri diversi da quelli normali: numero (per il pulsante) e parametri della richiesta
-const opzCount = () => Object.keys(OPZ0).filter(k => String(S.opz[k]) !== String(OPZ0[k])).length;
+const opzCount = () => Object.keys(OPZ0).filter(k => k !== 'mezzi' && String(S.opz[k]) !== String(OPZ0[k])).length;   // i mezzi stanno nel modulo, in vista
+const MEZZI = [['nav', 'ship', 'Navigazione'], ['aut', 'bus', 'Automobilistico']];
+const mezziTxt = () => (S.opz.mezzi.length < 2 ? 'solo ' + (S.opz.mezzi[0] === 'nav' ? 'navigazione' : 'automobilistico') : '');
 function opzQs() {
   const o = S.opz; let q = '';
   if (o.mezzi.length < 2) q += '&mezzi=' + o.mezzi.join(',');
@@ -213,12 +216,12 @@ async function run(quiet) {
     const r = await api(qs);
     if (my !== token) return;
     if (r.error) throw new Error(r.error);
-    S.res = r; S.loading = false; riuscito('plan');
+    S.res = r; S.loading = false; S.wait = null; riuscito('plan');
     if (S.sel >= r.soluzioni.length) { S.sel = -1; S.det = null; }
     else if (S.sel >= 0) { const f = S.det?.famiglia, k = r.soluzioni.findIndex(o => o.famiglia === f); if (k >= 0) { S.sel = k; S.det = r.soluzioni[k]; } }   // stesso percorso, orari aggiornati
   } catch (e) {
     if (my !== token) return; S.loading = false;
-    if ((e.loading || e.busy) && ritenta('plan', () => { if (X.isOpen() && my === token) run(quiet); }, 2500)) { S.loading = true; renderBody(); return; }   // orari di un'altra data in caricamento o server occupato: si riprova da soli, con un limite
+    if ((e.loading || e.busy) && ritenta('plan', () => { if (X.isOpen() && my === token) run(quiet); }, 2500)) { S.loading = true; S.wait = e.loading ? 'orari' : 'occupato'; renderBody(); return; }   // orari di un'altra data in caricamento o server occupato: si riprova da soli, con un limite
     if (e.loading || e.busy) e = new Error(NON_ORA);
     if (!quiet || !S.res) { S.res = null; S.err = 'Ricerca non riuscita: ' + e.message; }
   }
@@ -260,7 +263,7 @@ function miniHtml() {
   const lab = `Modifica partenza, arrivo e orario. Ora: da ${epName(S.from)} a ${epName(S.to)}, ${when.toLowerCase()}`;
   return `<div class="pp pp-mini"><button type="button" class="pp-sum" data-expand aria-expanded="false" aria-label="${esc(lab)}">`
     + `<span class="pp-sum-l"><span class="pp-sum-pts"><span class="pp-sum-p">${epIc(S.from)}<span>${esc(epName(S.from))}</span></span>${icon('next', 'sm pp-sum-a')}<span class="pp-sum-p">${epIc(S.to)}<span>${esc(epName(S.to))}</span></span></span>`
-    + `<span class="pp-sum-w">${when}${nf ? ` · ${nf} ${nf > 1 ? 'opzioni' : 'opzione'}` : ''}</span></span>`
+    + `<span class="pp-sum-w">${when}${mezziTxt() ? ` · ${mezziTxt()}` : ''}${nf ? ` · ${nf} ${nf > 1 ? 'opzioni' : 'opzione'}` : ''}</span></span>`
     + `<span class="pp-sum-e">${icon('edit', 'sm')}<span>Modifica</span></span></button></div>`;
 }
 function renderForm() {
@@ -282,10 +285,11 @@ function renderForm() {
   X.chips.innerHTML = `<div class="pp"><div class="pp-ends"><div class="pp-rail" aria-hidden="true"><span class="pp-o"></span><span class="pp-l"></span><span class="pp-d"></span></div>`
     + `<div class="pp-fields">${fieldHtml('from')}${fieldHtml('to')}</div>`
     + `<button type="button" class="ibtn sm pp-swap" aria-label="Inverti partenza e arrivo" title="Inverti">${icon('swap')}</button></div>`
+    + `<div class="pp-mz chips" role="group" aria-label="Mezzi">${MEZZI.map(([v, ic, l]) => `<button type="button" class="chip all${S.opz.mezzi.includes(v) ? ' on' : ''}" data-fm="${v}" aria-pressed="${S.opz.mezzi.includes(v)}">${icon(ic, 'sm')}${l}</button>`).join('')}</div>`
     + `<div class="pp-when"><span class="pp-segw" role="group" aria-label="Quando">${seg}</span>`
     + (S.formOpen && S.from && S.to && S.res ? `<button type="button" class="nlink pp-collapse" aria-label="Riduci i campi e torna alle soluzioni">${icon('up', 'sm')}<span>Riduci</span></button>` : '')
-    + (at ? `<span class="pp-tw"><input class="pp-date" type="date" value="${esc(S.date)}" min="${esc(clampDate(t))}"${range.max ? ` max="${esc(range.max)}"` : ''} aria-label="Giorno${dateLab ? ' (oggi)' : ''}">`
-      + `<input class="pp-time" type="time" value="${esc(S.time)}" step="300" aria-label="${by ? 'Arrivo entro le' : 'Partenza alle'}"></span>` : '')
+    + (at ? `<span class="pp-tw"><button type="button" class="dtf pp-dbtn" aria-haspopup="dialog" aria-label="Giorno: ${esc(Scegli.dayLabel(S.date))}">${icon('cal', 'sm')}<span>${esc(Scegli.dayLabel(S.date))}</span></button>`
+      + `<button type="button" class="dtf pp-tbtn" aria-haspopup="dialog" aria-label="${by ? 'Arrivo entro le' : 'Partenza alle'} ${esc(S.time)}">${icon('clock', 'sm')}<span>${esc(S.time)}</span></button></span>` : '')
     + `<button type="button" class="pp-opzbtn${S.showOpz ? ' on' : ''}" aria-expanded="${S.showOpz}" aria-label="Opzioni del percorso${opzCount() ? ` (${opzCount()} attive)` : ''}" title="Opzioni">${icon('sliders', 'sm')}<span class="pp-optx">Opzioni</span>${opzCount() ? `<span class="pp-cnt">${opzCount()}</span>` : ''}</button>`
     + '</div></div>';
 }
@@ -335,7 +339,7 @@ function optCard(o, attr, live, compact = false) {
     + `<span class="pp-o1"><span class="pp-times"><b>${esc(o.parti)}</b>${icon('next', 'sm')}<b>${esc(o.arrivi)}</b></span><span class="pp-dur">${minTxt(o.minuti)}</span></span>`
     + `<span class="pp-seq">${seq}</span>`
     + (compact ? '' : `<span class="pp-o3">${trkIcon(first.trk, live)}<span>Da ${stopName(first.da)}${st.txt ? ` · <span class="${st.cls}">${esc(st.txt)}</span>` : ''}</span></span>`)
-    + `<span class="pp-o4">${when}<span>${cambiTxt(o)}${o.piedi ? ` · ${o.piedi} min a piedi` : ''}</span>${o.etichetta && !compact ? `<span class="pp-tag">${esc(o.etichetta)}</span>` : ''}${o.rischio ? '<span class="pp-tag warn">coincidenza a rischio</span>' : ''}</span>`
+    + `<span class="pp-o4">${when}<span>${cambiTxt(o)}${o.piedi ? ` · ${o.piedi} min a piedi` : ''}</span>${o.etichetta && !compact ? `<span class="pp-tag">${esc(o.etichetta)}</span>` : ''}${o.rischio ? '<span class="pp-tag warn">coincidenza persa?</span>' : o.aRischio ? `<span class="pp-tag warn">${icon('warn', 'sm')}coincidenza a rischio</span>` : ''}</span>`
     + (compact ? '' : poi) + '</button>';
 }
 const kmTxt = m => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`);
@@ -347,13 +351,16 @@ function renderBody() {
   if (S.showOpz) return renderOpz();
   const r = S.res, live = !!r?.live;
   if (!S.from || !S.to) { X.plist.innerHTML = `<p class="muted pad">Scegli ${!S.from ? 'la partenza' : 'l\'arrivo'}: una fermata, la tua posizione o un punto sulla mappa.</p>`; return; }
-  if (S.loading && !r) { X.plist.innerHTML = '<p class="muted pad">Cerco le soluzioni…</p>'; return; }
+  if (S.loading && !r) {                                          // attesa sempre visibile, con il motivo se è lunga
+    const why = S.wait === 'orari' ? 'Carico gli orari del giorno scelto: la prima volta può volerci fino a un minuto.' : S.wait === 'occupato' ? 'Server occupato: riprovo tra pochi secondi.' : '';
+    X.plist.innerHTML = `<div class="pp-wait" role="status"><span class="spin" aria-hidden="true"></span><span><b>Cerco le soluzioni…</b>${why ? `<small>${why}</small>` : ''}</span></div>`; return;
+  }
   if (S.err) { X.plist.innerHTML = `<p class="late pad">${esc(S.err)}</p>`; return; }
   if (!r) { X.plist.innerHTML = ''; return; }
   if (S.det) return renderDetail(S.det, live);
   const nf = opzCount();
   const head = `<p class="pp-meta muted">${live ? `In tempo reale · aggiornato alle ${new Date(r.aggiornato).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : r.entro ? `Orari programmati · arrivo entro le ${esc(r.entro)}` : `Orari programmati · partenza dalle ${esc(r.ora)}`}`
-    + (nf ? ` · <button type="button" class="nlink pp-opzlink">${nf} ${nf > 1 ? 'opzioni attive' : 'opzione attiva'}</button>` : '') + '</p>';
+    + (mezziTxt() ? ` · ${mezziTxt()}` : '') + (nf ? ` · <button type="button" class="nlink pp-opzlink">${nf} ${nf > 1 ? 'opzioni attive' : 'opzione attiva'}</button>` : '') + '</p>';
   // «tutto a piedi» in cima all'elenco: se nessun mezzo conviene, se dura poco più del mezzo più rapido (5 minuti) o se FA ARRIVARE PRIMA di
   // qualsiasi mezzo (con «arrivo entro»: fa partire più tardi), anche quando il mezzo dura meno ma parte tra un po'
   const mm = hm => { const [h, m] = String(hm).split(':').map(Number); return h * 60 + m; };
@@ -361,7 +368,9 @@ function renderBody() {
   const walkFirst = r.piedi != null && r.soluzioni.length > 0 && (r.entro
     ? r.soluzioni.every(o => rel(mm(o.parti), mm(r.entro) - r.piedi) <= 0)
     : r.soluzioni.every(o => rel(mm(o.arrivi), mm(r.ora) + r.piedi) >= 0));
-  const walkNote = walkFirst ? (r.entro ? 'a piedi parti più tardi che con qualsiasi mezzo' : 'a piedi arrivi prima di qualsiasi mezzo')
+  const walkTie = walkFirst && (r.entro ? r.soluzioni.some(o => rel(mm(o.parti), mm(r.entro) - r.piedi) === 0) : r.soluzioni.some(o => rel(mm(o.arrivi), mm(r.ora) + r.piedi) === 0));
+  const walkNote = walkFirst ? (walkTie ? (r.entro ? 'a piedi parti alla stessa ora che con il mezzo' : 'a piedi arrivi alla stessa ora che con il mezzo')
+    : r.entro ? 'a piedi parti più tardi che con qualsiasi mezzo' : 'a piedi arrivi prima di qualsiasi mezzo')
     : r.soluzioni.length && r.piedi <= Math.min(...r.soluzioni.map(o => o.minuti)) ? 'fai prima a piedi' : '';
   const walkOnly = r.piedi != null && (!r.soluzioni.length || walkFirst || r.piedi <= Math.min(...r.soluzioni.map(o => o.minuti)) + 5)
     ? `<${walkVal.get(walkKey()) ? `button type="button" data-walkonly aria-pressed="${walkShown()}"` : 'div'} class="pp-walkonly${walkShown() ? ' on' : ''}">${icon('walk')}<span><b>A piedi: circa ${minTxt(r.piedi)}${walkVal.get(walkKey()) ? ` · ${kmTxt(walkVal.get(walkKey()).m)}` : ''}</b>${r.soluzioni.length ? (walkNote ? `<small>${walkNote}</small>` : '') : '<small>nessun mezzo conviene per questo tragitto</small>'}${walkVal.get(walkKey()) ? `<small>${walkShown() ? 'sulla mappa il percorso a piedi' : 'tocca per vederlo sulla mappa'}</small>` : ''}</span></${walkVal.get(walkKey()) ? 'button' : 'div'}>` : '';
@@ -369,21 +378,22 @@ function renderBody() {
     X.plist.innerHTML = head + walkOnly + (walkOnly ? '' : `<p class="muted pad">${r.senzaFermate ? `Nessuna fermata vicina al punto scelto.` : r.entro ? `Nessuna soluzione per arrivare entro le ${esc(r.entro)} (si guardano le 5 ore prima). Prova un orario più tardi.` : 'Nessuna soluzione nelle prossime ore con autobus, tram o battelli. Prova un altro orario o un punto vicino.'}${nf ? ' Le opzioni attive possono escludere delle soluzioni.' : ''}</p>`);
     return;
   }
-  X.plist.innerHTML = head + walkOnly + `<div class="pp-list">${r.soluzioni.map((o, k) => optCard(o, `data-k="${k}"`, live)).join('')}</div>`
+  // la CONSIGLIATA in evidenza (la più semplice da fare per te, secondo «Cosa conta di più»); sotto le altre
+  const [top, ...rest] = r.soluzioni;
+  X.plist.innerHTML = head + walkOnly + `<div class="pp-list"><div class="pp-top">${optCard(top, 'data-k="0"', live)}</div>`
+    + (rest.length ? `<h3 class="pp-ah">Altre soluzioni</h3>${rest.map((o, k) => optCard(o, `data-k="${k + 1}"`, live)).join('')}` : '') + '</div>'
     + `<button type="button" class="nlink pp-later">${icon('clock', 'sm')}${r.entro ? 'Soluzioni precedenti' : 'Soluzioni più tardi'}</button>`
     + `<p class="pp-note muted">Una proposta per percorso, ordinate per «${esc(PREF_TXT[S.opz.pref] || 'Migliore')}»: nel dettaglio trovi gli altri orari e le alternative. Tempi a piedi sulla rete pedonale di OpenStreetMap; fanno fede gli orari ACTV.</p>`;
 }
 // pagina delle opzioni (v28): cosa conta di più, andatura, mezzi
 function renderOpz() {
   const o = S.opz, seg = (k, vals) => `<div class="chips pp-seg" role="group">${vals.map(([v, t]) => `<button type="button" class="chip all${String(o[k]) === v ? ' on' : ''}" data-o="${k}" data-v="${v}" aria-pressed="${String(o[k]) === v}">${t}</button>`).join('')}</div>`;
-  const mz = [['nav', 'ship', 'Battelli'], ['aut', 'bus', 'Autobus e tram']];
   X.plist.innerHTML = `<button type="button" class="linkback pp-oback">${icon('back', 'sm')}<span>Soluzioni</span></button>`
     + '<div class="pp-opz">'
     + `<div class="pp-og"><b>Cosa conta di più</b>${seg('pref', [['equilibrata', 'Arrivare prima'], ['piedi', 'Camminare meno'], ['cambi', 'Meno cambi']])}`
     + `<small class="muted">${{ equilibrata: 'Arrivi il prima possibile, contando anche quanto dura il viaggio. Un cambio o un tratto a piedi in più solo se fanno guadagnare davvero tempo (un cambio vale 8 minuti).', piedi: 'Ogni minuto a piedi pesa come tre minuti di viaggio; tra un mezzo e l\'altro al massimo 10 minuti a piedi. Il mezzo si propone anche quando a piedi faresti prima.', cambi: 'Meglio aspettare il diretto: un cambio si propone solo se fa guadagnare almeno 20 minuti.' }[o.pref] || ''}</small></div>`
     + `<div class="pp-og"><b>Andatura</b>${seg('passo', [['calma', 'Con calma'], ['normale', 'Normale'], ['svelta', 'Svelta']])}`
-    + `<small class="muted">${{ calma: 'Circa 3,5 km/h e 3 minuti in più per ogni cambio: bagagli, bambini, passeggino o chi cammina piano.', normale: 'Circa 4,5 km/h a Venezia (ponti e folla) e 4,8 km/h in terraferma; per salire 1 minuto (autobus e tram) o 2 (battello).', svelta: 'Circa 5,6 km/h a Venezia e 6 km/h in terraferma: chi conosce le calli.' }[o.passo]}</small></div>`
-    + `<div class="pp-og"><b>Mezzi</b><div class="chips pp-seg" role="group">${mz.map(([v, ic, t]) => `<button type="button" class="chip all${o.mezzi.includes(v) ? ' on' : ''}" data-m="${v}" aria-pressed="${o.mezzi.includes(v)}">${icon(ic, 'sm')}${t}</button>`).join('')}</div></div>`
+    + `<small class="muted">${{ calma: 'Circa 3,5 km/h e almeno 2 minuti per ogni cambio: bagagli, bambini, passeggino o chi cammina piano.', normale: 'Circa 4,5 km/h a Venezia (ponti e folla) e 4,8 km/h in terraferma. I cambi con meno di 2 minuti sono segnati «coincidenza a rischio».', svelta: 'Circa 5,6 km/h a Venezia e 6 km/h in terraferma: chi conosce le calli.' }[o.passo]}</small></div>`
     + '</div>'
     + `<div class="pp-obtns"><button type="button" class="nlink pp-oreset"${opzCount() ? '' : ' disabled'}>Ripristina</button><button type="button" class="pp-ook">Mostra le soluzioni</button></div>`;
 }
@@ -405,7 +415,10 @@ function renderDetail(o, live) {
       + `<span class="pp-sp"><span class="pp-st">${a.time}</span><span class="pp-sn"><b>${stopName(t.a)}</b><small>scendi qui</small></span></span>`
       + '</button></li>');
     const nx = o.tratte[k + 1];
-    if (nx && nx.tipo === 'mezzo') steps.push(`<li class="pp-step chg"><span class="pp-sic">${icon('next', 'sm')}</span><div><b>Cambio</b><small>stessa fermata</small></div></li>`);
+    if (nx && nx.tipo === 'mezzo') steps.push(`<li class="pp-step chg${nx.aRischio ? ' risk' : ''}"><span class="pp-sic">${icon(nx.aRischio ? 'warn' : 'next', 'sm')}</span><div><b>Cambio${nx.cambioMin != null ? ` · ${nx.cambioMin < 1 ? 'meno di 1 minuto' : nx.cambioMin + ' min'}` : ''}</b><small>stessa fermata${nx.aRischio ? ' · coincidenza a rischio: tieniti pronto' : ''}</small></div></li>`);
+    // cambio con tratto a piedi: margine e rischio prima del tratto a piedi verso la corsa successiva
+    const nr = o.tratte[k + 2];
+    if (nx && nx.tipo === 'piedi' && nr && nr.tipo === 'mezzo' && nr.cambioMin != null) steps.push(`<li class="pp-step chg note${nr.aRischio ? ' risk' : ''}"><span class="pp-sic">${icon(nr.aRischio ? 'warn' : 'clock', 'sm')}</span><div><b>${nr.aRischio ? 'Coincidenza a rischio' : 'Margine per il cambio'}</b><small>${nr.cambioMin < 1 ? 'meno di 1 minuto' : nr.cambioMin + ' min'} oltre al tratto a piedi</small></div></li>`);
   });
   steps.push(`<li class="pp-step end"><span class="pp-sic">${icon('pin')}</span><div><b>Arrivo alle ${esc(o.arrivi)}</b><small>${esc(epName(S.to))}</small></div></li>`);
   X.plist.innerHTML = `<div class="pp-dhead"><button type="button" class="linkback pp-back">${icon('back', 'sm')}<span>Tutte le soluzioni</span></button>`
@@ -522,12 +535,18 @@ function onClick(e) {
       return;
     }
   }
+  // mezzi (nel modulo): almeno uno; si rifà subito la ricerca
+  const fm = t.closest('[data-fm]');
+  if (fm) { const v = fm.dataset.fm, m = S.opz.mezzi; S.opz.mezzi = m.includes(v) ? (m.length > 1 ? m.filter(x => x !== v) : m) : [...m, v]; saveOpz(); renderForm(); if (S.from && S.to) run(); return; }
+  // giorno e ora: selettori dell'app (scegli.js), sempre dentro lo schermo
+  if (t.closest('.pp-dbtn')) { const tt = today(); Scegli.giorno(t.closest('.pp-dbtn'), { value: S.date || tt, min: clampDate(tt), max: range.max || null, onPick: v => { S.date = clampDate(v); renderForm(); run(); } }); return; }
+  if (t.closest('.pp-tbtn')) { Scegli.ora(t.closest('.pp-tbtn'), { value: S.time, label: S.when === 'by' ? 'Arrivo entro le' : 'Partenza alle', onPick: v => { S.time = v; renderForm(); run(); } }); return; }
   // opzioni
   if (t.closest('.pp-opzbtn, .pp-opzlink')) { S.showOpz = !S.showOpz || !!t.closest('.pp-opzlink'); S.opzDirty = false; renderForm(); renderBody(); X.plist.scrollTop = 0; return; }
   const om = t.closest('[data-m]');
   if (om) { const v = om.dataset.m, m = S.opz.mezzi; S.opz.mezzi = m.includes(v) ? (m.length > 1 ? m.filter(x => x !== v) : m) : [...m, v]; S.opzDirty = true; saveOpz(); renderForm(); renderOpz(); return; }
   const oo = t.closest('[data-o]'); if (oo) { S.opz[oo.dataset.o] = oo.dataset.v; S.opzDirty = true; saveOpz(); renderForm(); renderOpz(); return; }
-  if (t.closest('.pp-oreset')) { S.opz = { ...OPZ0, mezzi: [...OPZ0.mezzi] }; S.opzDirty = true; saveOpz(); renderForm(); renderOpz(); return; }
+  if (t.closest('.pp-oreset')) { S.opz = { ...OPZ0, mezzi: [...S.opz.mezzi] }; S.opzDirty = true; saveOpz(); renderForm(); renderOpz(); return; }
   if (t.closest('.pp-ook, .pp-oback')) { const d = S.opzDirty; S.showOpz = false; S.opzDirty = false; renderForm(); if (d) run(); else renderBody(); X.plist.scrollTop = 0; return; }
   if (t.closest('[data-walkonly]')) { S.walkShow = !walkShown(); renderBody(); draw(); return; }
   // soluzioni e alternative

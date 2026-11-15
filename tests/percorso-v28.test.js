@@ -33,9 +33,9 @@ percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () =
 const toS = hm => { const [h, m] = hm.split(':').map(Number); return h * 3600 + m * 60; };
 
 test('sale alla fermata più vicina quando la stessa corsa ci passa poco dopo (non a quella più lontana)', () => {
-  // alle 07:54: M0 a 250 m (≈ 4 min + 1 per salire: corsa delle 08:00), M1 a 40 m (la corsa delle 07:55 è appena persa). La corsa delle
+  // alle 07:54:30: M0 a 250 m (≈ 4 min: corsa delle 08:00), M1 a 40 m (≈ 40 s: la corsa delle 07:55 è appena persa). La corsa delle
   // 08:00 da M0 passa da M1 alle 08:05: stessa corsa, stesso arrivo, 4 minuti a piedi in meno -> si sale a M1
-  const r = percorso.plan({ da: [['aut:M0', 250], ['aut:M1', 40]], a: [['aut:M3', 0]], secs: 7 * 3600 + 54 * 60, date: '20261117' });
+  const r = percorso.plan({ da: [['aut:M0', 250], ['aut:M1', 40]], a: [['aut:M3', 0]], secs: 7 * 3600 + 54 * 60 + 30, date: '20261117' });
   const o = r.soluzioni[0], ride = o.tratte.find(t => t.tipo === 'mezzo');
   assert.equal(ride.da.id, 'aut:M1', 'sale a M1');
   assert.equal(ride.da.sched, '08:05'); assert.equal(o.arrivi, '08:15');
@@ -61,4 +61,9 @@ test('preferenze v28: «Camminare meno» e «Meno cambi» accettate; «veloce» 
     const r = percorso.plan({ da: [['aut:M0', 0]], a: [['aut:M3', 0]], secs: 8 * 3600, date: '20261117', prefs: { pref } });
     assert.equal(r.soluzioni[0].arrivi, '08:15', pref);
   }
+});
+
+test('v28: nessun tempo fisso per salire: chi è già alla fermata alle 08:00 prende la corsa delle 08:00', () => {
+  const r = percorso.plan({ da: [['aut:M0', 0]], a: [['aut:M3', 0]], secs: 8 * 3600, date: '20261117' });
+  assert.equal(r.soluzioni[0].parti, '08:00');
 });
