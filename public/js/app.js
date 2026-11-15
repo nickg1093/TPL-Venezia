@@ -582,7 +582,7 @@ function showStopPanel(e) {
   loadDepartures(); startPanelTimer();
 }
 async function loadDepartures() {
-  const e = current; if (!e || e.t === 'trip') return;
+  const e = current; if (!e || (e.t !== 'stop' && e.t !== 'zone')) return;   // solo fermate e zone (non corsa né pianificatore)
   const z = e.t === 'zone' ? zones.get(e.key) : null;
   const url = z ? '/api/zone?ids=' + encodeURIComponent(z.items.map(i => i.id).join(','))
     : e.ids?.length > 1 ? '/api/zone?ids=' + encodeURIComponent(e.ids.join(',')) : '/api/stop?id=' + encodeURIComponent(e.id);
@@ -753,7 +753,7 @@ function marquee(root) {
   }
 }
 function renderDepartures() {
-  if (!lastDeps || !current || current.t === 'trip') return;
+  if (!lastDeps || !current || (current.t !== 'stop' && current.t !== 'zone')) return;   // mai nel pannello della corsa o del pianificatore
   const live = mode === 'live', z = current.t === 'zone' ? zones.get(current.key) : null;
   psub.textContent = (z ? `${z.letters.length} ${unitOf(z)[1]} · ` : '') + (live ? (lastDeps.liveUpdated ? 'Live' : 'Live · in attesa dei dati') : 'Orario') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
   const rows = lastDeps.departures.map(x => ({ ...x, tIn: live ? x.expIn : x.schedIn, tSec: live ? x.expSec : x.schedIn * 60 }))

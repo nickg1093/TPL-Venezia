@@ -66,6 +66,10 @@ with sync_playwright() as p:
             page.click('.pp-cal')
         d = dl.value; txt = pathlib.Path(d.path()).read_text()
         check(d.suggested_filename.endswith('.ics') and 'BEGIN:VEVENT' in txt and 'TRIGGER:-PT10M' in txt, f'file del calendario {d.suggested_filename}')
+        # «Programmato» con il pianificatore aperto: nessuna richiesta di partenze di una fermata, nessun errore nel pannello (difetto trovato sul sito)
+        page.click('label:has(input[value=sched])'); page.wait_for_timeout(1500)
+        check('parametro id' not in page.inner_text('#plist') and page.query_selector('.pp-acts') is not None, '«Programmato» con il pianificatore aperto: dettaglio intatto')
+        page.click('label:has(input[value=live])'); page.wait_for_timeout(800)
         # inizia il viaggio
         page.click('.pp-go'); page.wait_for_selector('.vg-now', timeout=8000)
         check(wait_js(page, "document.querySelector('.vg-note')?.innerText.length>20 && !/Attivo gli avvisi/.test(document.querySelector('.vg-note').innerText)"), 'stato delle notifiche detto chiaramente')

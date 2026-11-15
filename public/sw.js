@@ -4,7 +4,7 @@
 //  - /api/*, /healthz e mattonelle della mappa: MAI intercettati (dati live sempre freschi; le mattonelle le gestisce il browser)
 //  - dati fissi e rete pedonale dal CDN: non passano di qui; li salva fissi.js in una cache sua («tpl-fissi-1», che resta tra le versioni)
 // Dopo modifiche ai file della shell (icone, manifest, elenco SHELL) incrementare VERSION: la cache vecchia viene cancellata.
-const VERSION = 'v30';
+const VERSION = 'v30.1';
 const CACHE = `tpl-venezia-${VERSION}`;
 const SHELL = ['/', '/css/app.css', '/js/app.js', '/js/util.js', '/js/zones.js', '/js/tide.js', '/js/avvisi.js', '/js/locate.js', '/js/fav.js', '/js/favs.js', '/js/nav.js', '/js/fissi.js', '/js/pedoni.js', '/js/camminata.js', '/js/notify.js', '/js/info.js', '/js/percorso.js', '/js/scegli.js', '/js/viaggio.js', '/js/guida.js', '/js/pwa.js', '/js/theme-init.js', '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
   '/icons/sprite.svg', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/favicon-48.png'];
@@ -94,7 +94,10 @@ self.addEventListener('push', e => {
   let m = {}; try { m = e.data ? e.data.json() : {}; } catch { m = { title: 'Venezia TPL live', body: e.data ? e.data.text() : '' }; }
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async cs => {
     const front = cs.find(c => c.visibilityState === 'visible' && c.focused);
-    if (front) front.postMessage({ type: 'tpl-push', msg: m }); else await show(m);
+    // OGNI push mostra una notifica di sistema: Safari (iPhone, iPad, Mac) revoca l'iscrizione dopo 3 push senza notifica, e con
+    // il viaggio guidato l'app è spesso aperta. Con l'app davanti: notifica senza suono né vibrazione, e l'app mostra il suo messaggio.
+    await show(front ? { ...m, silent: true } : m);
+    if (front) front.postMessage({ type: 'tpl-push', msg: m });
     if (ENDS.includes(m.kind)) await toClients({ type: 'tpl-watch-ended', id: m.id });
   }));
 });
