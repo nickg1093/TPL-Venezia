@@ -190,14 +190,17 @@ export function pick(ll) {
 // RICERCA
 // ---------------------------------------------------------------------------------------------------------------------
 // parametri comuni di /api/percorso e /api/percorso-simili (null se mancano i punti)
-function baseQs() {
+function baseQs(over = null) {
   const da = cands(S.from), a = cands(S.to);
   if (!da || !a || !da.length || !a.length) return null;
   let qs = `da=${encodeURIComponent(da.join(','))}&a=${encodeURIComponent(a.join(','))}`;
   const wv = walkVal.get(walkKey());
   if (wv) qs += `&piedi=${wv.m}&piedir=1`;                       // tutto a piedi: metri lungo le strade
   else if (S.from.lat != null && S.to.lat != null) qs += `&piedi=${Math.round(mDist(S.from.lat, S.from.lon, S.to.lat, S.to.lon))}`;
-  if (S.when !== 'now' && S.time) {
+  if (over) {                                                     // «più tardi» / «prima»: orario dato, stesso giorno
+    qs += `&secs=${over.secs}&date=${over.date.replace(/-/g, '')}`;
+    if (over.entro) qs += '&arrivo=1';
+  } else if (S.when !== 'now' && S.time) {
     const [h, m] = S.time.split(':').map(Number);
     qs += `&secs=${h * 3600 + m * 60}&date=${clampDate(S.date).replace(/-/g, '')}`;
     if (S.when === 'by') qs += '&arrivo=1';
@@ -205,7 +208,8 @@ function baseQs() {
   return qs + opzQs();
 }
 async function run(quiet) {
-  if (!quiet) { S.walkShow = false; if (S.from && S.to) { S.loading = true; S.err = null; S.sel = -1; S.det = null; S.alts = null; renderBody(); } }
+  // nuova ricerca: i risultati vecchi spariscono subito (niente proposte di un altro orario o di un altro giorno mentre si aspetta)
+  if (!quiet) { S.walkShow = false; S.more = null; S.sim = null; if (S.from && S.to) { S.loading = true; S.res = null; S.err = null; S.sel = -1; S.det = null; S.alts = null; renderBody(); draw(); } }
   const my0 = ++token; await prepWalk(); if (my0 !== token) return;   // al massimo pochi secondi (la prima volta); poi linea d'aria
   const da = cands(S.from), a = cands(S.to);
   if (!da || !a) { S.res = null; render(); return; }
@@ -217,11 +221,12 @@ async function run(quiet) {
     if (my !== token) return;
     if (r.error) throw new Error(r.error);
     S.res = r; S.loading = false; S.wait = null; riuscito('plan');
+    if (r.soluzioni.length) loadSim(r.soluzioni[0]);
     if (S.sel >= r.soluzioni.length) { S.sel = -1; S.det = null; }
     else if (S.sel >= 0) { const f = S.det?.famiglia, k = r.soluzioni.findIndex(o => o.famiglia === f); if (k >= 0) { S.sel = k; S.det = r.soluzioni[k]; } }   // stesso percorso, orari aggiornati
   } catch (e) {
     if (my !== token) return; S.loading = false;
-    if ((e.loading || e.busy) && ritenta('plan', () => { if (X.isOpen() && my === token) run(quiet); }, 2500)) { S.loading = true; S.wait = e.loading ? 'orari' : 'occupato'; renderBody(); return; }   // orari di un'altra data in caricamento o server occupato: si riprova da soli, con un limite
+    if ((e.loading || e.busy) && ritenta('plan', () => { if (X.isOpen() && my === token) run(quiet); }, 2500)) { S.loading = true; S.wait = e.loading ? 'orari' : 'occupato'; if (!quiet || e.loading) { S.res = null; S.more = null; S.sim = null; draw(); } renderBody(); return; }   // orari di un'altra data in caricamento o server occupato: si riprova da soli, con un limite
     if (e.loading || e.busy) e = new Error(NON_ORA);
     if (!quiet || !S.res) { S.res = null; S.err = 'Ricerca non riuscita: ' + e.message; }
   }
@@ -342,9 +347,67 @@ const minW = m => (m < 1 ? 'meno di 1 minuto' : m === 1 ? '1 minuto' : m + ' min
 const chgTitle = t => (t.persa ? 'Cambio che non riesce con i ritardi di adesso' : t.cambioMin != null ? `Cambio · ${minW(t.cambioMin)} di margine` : 'Cambio');
 const chgNote = t => (t.persa ? ' · arrivi dopo la partenza: scegli un\'altra soluzione' : t.aRischio ? ' · margine stretto: tieniti pronto, un piccolo ritardo e la perdi' : '');
 const riskLine = o => { const r = riskInfo(o); return r ? `<span class="pp-risk${r.cls ? ' ' + r.cls : ''}">${icon('warn', 'sm')}<span>${r.txt}</span></span>` : ''; };
+// ALTRI ORARI dello stesso percorso come pulsanti sotto la scheda (non dentro: si toccano uno per uno)
+function poiRow(o, k) {
+  if (!o.poi?.length) return '';
+  return `<div class="pp-poi" role="group" aria-label="${S.res?.entro ? 'Stesso percorso, partenze prima' : 'Stesso percorso, partenze dopo'}"><span class="muted">${S.res?.entro ? 'Anche prima, alle' : 'Anche alle'}</span>`
+    + o.poi.map(x => `<button type="button" class="pp-pchip" data-k="${k}" data-poi="${esc(x.parti)}" aria-label="Partenza alle ${esc(x.parti)}, arrivo alle ${esc(x.arrivi)}"><b>${esc(x.parti)}</b><small>${esc(x.arrivi)}</small></button>`).join('') + '</div>';
+}
+// SIMILI ALLA CONSIGLIATA: stesse ore circa, con un'altra linea (riepilogo subito nell'elenco, una riga ciascuna)
+const hmMin = hm => { const [h, m] = String(hm).split(':').map(Number); return h * 60 + m; };
+function simHtml(r) {
+  const top = r.soluzioni[0]; if (!top || !S.sim || S.sim.key !== simKey(top)) return '';
+  if (S.sim.loading) return `<p class="pp-simload muted"><span class="spin sm" aria-hidden="true"></span>Cerco soluzioni simili con altre linee…</p>`;
+  const d = S.sim.data; if (!d) return '';
+  const fams = new Set(r.soluzioni.map(o => o.famiglia)), rows = [];
+  for (const kind of ['varianti', 'altre']) (d[kind] || []).forEach((x, k) => { if (!fams.has(x.famiglia)) { fams.add(x.famiglia); rows.push([kind, k, x]); } });
+  if (!rows.length) return '';
+  const diff = x => { const v = r.entro ? hmMin(top.parti) - hmMin(x.parti) : hmMin(x.arrivi) - hmMin(top.arrivi); return v === 0 ? (r.entro ? 'stessa partenza' : 'stesso arrivo') : r.entro ? (v > 0 ? `parte ${v} min prima` : `parte ${-v} min dopo`) : (v > 0 ? `+${v} min` : `${v} min`); };
+  return `<h3 class="pp-ah">Simili, con altre linee</h3><div class="pp-sim">${rows.slice(0, 4).map(([kind, k, x]) => {
+    const seq = x.tratte.filter(t => t.tipo === 'mezzo').map(t => badge(t.line, t.color, t.src, ' sm')).join(`<span class="pp-sep">${icon('next', 'sm')}</span>`);
+    return `<button type="button" class="pp-srow" data-sim="${kind}:${k}"><span class="pp-sseq">${seq}</span><span class="pp-stimes"><b>${esc(x.parti)}</b>${icon('next', 'sm')}<b>${esc(x.arrivi)}</b></span><span class="pp-sdiff">${esc(diff(x))}${x.cambi ? ` · ${cambiTxt(x)}` : ''}</span></button>`;
+  }).join('')}</div>`;
+}
+const simKey = o => o.famiglia + '|' + (baseQs() || '');
+async function loadSim(o) {
+  const key = simKey(o); if (S.sim?.key === key && !S.sim.err) return;
+  const base = baseQs(); if (!base) return;
+  S.sim = { key, loading: true };
+  try {
+    const r = await api(`/api/percorso-simili?${base}&fam=${encodeURIComponent(o.famiglia)}&rotte=${encodeURIComponent(o.rotte.join(','))}&arr=${encodeURIComponent(o.arrivi)}`);
+    if (S.sim?.key !== key) return;
+    if (r.error) throw new Error(r.error);
+    S.sim = { key, data: r };
+    if (!S.alts) S.alts = { key: o.famiglia + '|' + (S.res?.aggiornato || ''), data: r };   // aprendo la consigliata le alternative sono già pronte
+  } catch { if (S.sim?.key === key) S.sim = { key, err: true }; }
+  if (!S.det && !S.showOpz && !S.edit && S.res) renderBody();
+}
+// PIÙ TARDI / PRIMA: un'altra ricerca dall'ultima partenza (o dall'arrivo più presto, con «arrivo entro»), aggiunta in fondo
+function moreHtml(r) {
+  if (!S.more?.list?.length) return S.more?.err ? `<p class="muted pad">${esc(S.more.err)}</p>` : '';
+  return `<h3 class="pp-ah">${r.entro ? 'Arrivano prima' : 'Più tardi'}</h3>` + S.more.list.map((o, k) => `<div class="pp-card">${optCard(o, `data-mk="${k}"`, false, false, true)}</div>`).join('');
+}
+async function loadMore() {
+  const r = S.res; if (!r?.soluzioni?.length || S.more?.loading) return;
+  const all = [...r.soluzioni, ...(S.more?.list || [])], date = S.when === 'now' ? today() : clampDate(S.date);
+  let secs;
+  if (r.entro) { const first = all.reduce((m, o) => Math.min(m, hmMin(o.arrivi)), 1e9); secs = (first - 1) * 60; }
+  else { const last = all.reduce((m, o) => Math.max(m, hmMin(o.parti), ...(o.poi || []).map(x => hmMin(x.parti))), 0); secs = (last + 1) * 60; }
+  if (secs < 0 || secs >= 30 * 3600) return;
+  const base = baseQs({ secs, date, entro: !!r.entro }); if (!base) return;
+  S.more = { ...(S.more || { list: [] }), loading: true, err: null }; renderBody();
+  try {
+    const q = await api('/api/percorso?' + base);
+    if (q.error) throw new Error(q.error);
+    const seen = new Set(all.map(o => o.famiglia + '@' + o.parti));
+    const add = q.soluzioni.filter(o => !seen.has(o.famiglia + '@' + o.parti));
+    S.more = { list: [...(S.more?.list || []), ...add], loading: false, err: add.length ? null : 'Nessun\'altra soluzione nelle ore successive.' };
+  } catch (e) { S.more = { ...(S.more || {}), loading: false, err: e.loading ? NON_ORA : 'Non riuscito: ' + e.message }; }
+  if (S.res && !S.det) renderBody();
+}
 const cambiTxt = o => (o.cambi ? `${o.cambi} ${o.cambi > 1 ? 'cambi' : 'cambio'}` : 'senza cambi');
 // scheda di una soluzione (elenco e alternative). attr: attributi del pulsante; compact: senza la riga della partenza
-function optCard(o, attr, live, compact = false) {
+function optCard(o, attr, live, compact = false, noPoi = false) {
   const first = o.tratte.find(t => t.tipo === 'mezzo'), st = legStatus(first.da, live);
   const seq = o.tratte.map(t => t.tipo === 'piedi' ? walkChip(t.min) : `<span class="pp-b">${badge(t.line, t.color, t.src, ' sm')}</span>`).join(`<span class="pp-sep">${icon('next', 'sm')}</span>`);
   const when = live && o.partiMs ? `<span class="in-min" data-exp="${o.partiMs}">${esc(etaText(null, o.partiMs, 0))}</span>` : '';
@@ -354,7 +417,7 @@ function optCard(o, attr, live, compact = false) {
     + `<span class="pp-seq">${seq}</span>`
     + (compact ? '' : `<span class="pp-o3">${trkIcon(first.trk, live)}<span>Da ${stopName(first.da)}${st.txt ? ` · <span class="${st.cls}">${esc(st.txt)}</span>` : ''}</span></span>`)
     + `<span class="pp-o4">${when}<span>${cambiTxt(o)}${o.piedi ? ` · ${o.piedi} min a piedi` : ''}</span>${o.etichetta && !compact ? `<span class="pp-tag">${esc(o.etichetta)}</span>` : ''}</span>${riskLine(o)}`
-    + (compact ? '' : poi) + '</button>';
+    + (compact || noPoi ? '' : poi) + '</button>';
 }
 const kmTxt = m => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`);
 // «tutto a piedi» disegnato sulla mappa: scelto toccando la scheda, o da solo se nessun mezzo conviene
@@ -366,8 +429,9 @@ function renderBody() {
   const r = S.res, live = !!r?.live;
   if (!S.from || !S.to) { X.plist.innerHTML = `<p class="muted pad">Scegli ${!S.from ? 'la partenza' : 'l\'arrivo'}: una fermata, la tua posizione o un punto sulla mappa.</p>`; return; }
   if (S.loading && !r) {                                          // attesa sempre visibile, con il motivo se è lunga
-    const why = S.wait === 'orari' ? 'Carico gli orari del giorno scelto: la prima volta può volerci fino a un minuto.' : S.wait === 'occupato' ? 'Server occupato: riprovo tra pochi secondi.' : '';
-    X.plist.innerHTML = `<div class="pp-wait" role="status"><span class="spin" aria-hidden="true"></span><span><b>Cerco le soluzioni…</b>${why ? `<small>${why}</small>` : ''}</span></div>`; return;
+    const day = Scegli.dayLabel(S.when === 'now' ? today() : S.date), title = S.wait === 'orari' ? `Carico gli orari di ${day === 'Oggi' || day === 'Domani' ? day.toLowerCase() : day}…` : 'Cerco le soluzioni…';
+    const why = S.wait === 'orari' ? 'Le soluzioni compaiono appena gli orari sono pronti: la prima volta può volerci fino a un minuto.' : S.wait === 'occupato' ? 'Server occupato: riprovo tra pochi secondi.' : '';
+    X.plist.innerHTML = `<div class="pp-wait${S.wait === 'orari' ? ' big' : ''}" role="status" aria-live="polite"><span class="spin" aria-hidden="true"></span><span><b>${esc(title)}</b>${why ? `<small>${why}</small>` : ''}</span></div>`; return;
   }
   if (S.err) { X.plist.innerHTML = `<p class="late pad">${esc(S.err)}</p>`; return; }
   if (!r) { X.plist.innerHTML = ''; return; }
@@ -393,11 +457,11 @@ function renderBody() {
     return;
   }
   // la CONSIGLIATA in evidenza (la più semplice da fare per te, secondo «Cosa conta di più»); sotto le altre
-  const [top, ...rest] = r.soluzioni;
-  X.plist.innerHTML = head + walkOnly + `<div class="pp-list"><div class="pp-top">${optCard(top, 'data-k="0"', live)}</div>`
-    + (rest.length ? `<h3 class="pp-ah">Altre soluzioni</h3>${rest.map((o, k) => optCard(o, `data-k="${k + 1}"`, live)).join('')}` : '') + '</div>'
-    + `<button type="button" class="nlink pp-later">${icon('clock', 'sm')}${r.entro ? 'Soluzioni precedenti' : 'Soluzioni più tardi'}</button>`
-    + `<p class="pp-note muted">Una proposta per percorso, ordinate per «${esc(PREF_TXT[S.opz.pref] || 'Migliore')}»: nel dettaglio trovi gli altri orari e le alternative. Tempi a piedi sulla rete pedonale di OpenStreetMap; fanno fede gli orari ACTV.</p>`;
+  const [top, ...rest] = r.soluzioni, card = (o, k) => `<div class="pp-card">${optCard(o, `data-k="${k}"`, live, false, true)}${poiRow(o, k)}</div>`;
+  X.plist.innerHTML = head + walkOnly + `<div class="pp-list"><div class="pp-top">${card(top, 0)}</div>${simHtml(r)}`
+    + (rest.length ? `<h3 class="pp-ah">Altre soluzioni</h3>${rest.map((o, k) => card(o, k + 1)).join('')}` : '') + moreHtml(r) + '</div>'
+    + `<button type="button" class="pp-later"${S.more?.loading ? ' disabled aria-busy="true"' : ''}>${S.more?.loading ? '<span class="spin sm" aria-hidden="true"></span>' : icon('clock', 'sm')}<span>${r.entro ? 'Mostra soluzioni che arrivano prima' : 'Mostra soluzioni più tardi'}</span></button>`
+    + `<p class="pp-note muted">Ordinate per «${esc(PREF_TXT[S.opz.pref] || 'Arrivare prima')}». Tocca un orario per aprire quella partenza; tocca una soluzione per le tappe e altre alternative. Tempi a piedi sulla rete pedonale di OpenStreetMap; fanno fede gli orari ACTV.</p>`;
 }
 // pagina delle opzioni (v28): cosa conta di più, andatura, mezzi
 function renderOpz() {
@@ -450,6 +514,10 @@ function renderAlts() {
   if (!A || A.loading) { box.innerHTML = `<h3 class="pp-ah">Alternative</h3><p class="muted pad">Cerco gli altri orari e le alternative…</p>`; return; }
   if (A.err || !A.data) { box.innerHTML = `<h3 class="pp-ah">Alternative</h3><p class="muted pad">Alternative non disponibili.</p>`; return; }
   const d = A.data, same = d.stesso.filter(x => x.famiglia === o.famiglia);
+  if (S.wantTime) {                                              // aperto toccando un orario sotto la scheda: si passa a quella partenza
+    const w = S.wantTime; S.wantTime = null; const x = same.find(z => z.parti === w);
+    if (x && !(x.parti === o.parti && x.arrivi === o.arrivi)) { S.det = x; S.sel = -1; renderBody(); draw(); return; }
+  }
   let h = '';
   if (same.length > 1) h += `<h3 class="pp-ah">Stesso percorso, altri orari</h3><div class="pp-trow" role="list">${same.map((x, k) => { const cur = x.parti === o.parti && x.arrivi === o.arrivi;
     return `<button type="button" class="pp-tchip${cur ? ' on' : ''}" data-alt="stesso:${k}" role="listitem" aria-current="${cur}"><b>${esc(x.parti)}</b><span>${esc(x.arrivi)}</span></button>`; }).join('')}</div>`;
@@ -566,15 +634,15 @@ function onClick(e) {
   if (alt && S.alts?.data) { const [kind, k] = alt.dataset.alt.split(':'), x = S.alts.data[kind]?.[+k]; if (x) { S.det = x; S.sel = -1; S.formOpen = false; renderForm(); renderBody(); draw(); X.plist.scrollTop = 0; } return; }
   const opt = t.closest('.pp-opt'); if (opt && opt.dataset.k != null) { S.sel = +opt.dataset.k; S.det = S.res?.soluzioni?.[S.sel] || null; S.formOpen = false; S.tall = false; renderForm(); renderBody(); draw(); X.plist.scrollTop = 0; return; }
   if (t.closest('.pp-back')) { S.sel = -1; S.det = null; S.tall = false; renderBody(); draw(); return; }
-  if (t.closest('.pp-later')) {
-    const r = S.res; if (!r?.soluzioni?.length) return;
-    if (r.entro) {                                             // arrivo entro: un minuto prima dell'arrivo più presto mostrato
-      const first = r.soluzioni.reduce((m, o) => (cmpHm(o.arrivi, m, r.entro) < 0 ? o.arrivi : m), r.soluzioni[0].arrivi), [h, m] = first.split(':').map(Number), d = new Date(); d.setHours(h, m - 1, 0, 0);
-      S.time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; render(); run(); return;
-    }
-    const last = r.soluzioni.reduce((m, o) => (o.parti > m ? o.parti : m), r.soluzioni[0].parti), [h, m] = last.split(':').map(Number), d = new Date(); d.setHours(h, m + 1, 0, 0);
-    if (S.when === 'now') S.date = today(); S.when = 'at'; S.time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; render(); run(); return;
-  }
+  // «Più tardi» / «Prima»: si AGGIUNGONO le soluzioni successive (o precedenti) in fondo all'elenco; l'orario scelto non cambia
+  if (t.closest('.pp-later')) { loadMore(); return; }
+  const mk = t.closest('[data-mk]'); if (mk && S.more?.list) { const x = S.more.list[+mk.dataset.mk]; if (x) { S.det = x; S.sel = -1; S.formOpen = false; S.tall = false; renderForm(); renderBody(); draw(); X.plist.scrollTop = 0; } return; }
+  // orario di un'altra partenza dello stesso percorso (pulsanti sotto la scheda): si apre quella partenza
+  const pc = t.closest('[data-poi]');
+  if (pc) { const k = +pc.dataset.k, o = S.res?.soluzioni?.[k]; if (o) { S.sel = k; S.det = o; S.wantTime = pc.dataset.poi; S.formOpen = false; S.tall = false; renderForm(); renderBody(); draw(); X.plist.scrollTop = 0; } return; }
+  // simili alla consigliata (riepilogo nell'elenco)
+  const sm = t.closest('[data-sim]');
+  if (sm && S.sim?.data) { const [kind, k] = sm.dataset.sim.split(':'), x = S.sim.data[kind]?.[+k]; if (x) { S.det = x; S.sel = -1; S.formOpen = false; S.tall = false; renderForm(); renderBody(); draw(); X.plist.scrollTop = 0; } return; }
   const ride = t.closest('.pp-ride');
   if (ride) { const leg = S.det?.tratte[+ride.dataset.leg]; if (leg) X.openTrip(leg); }
 }

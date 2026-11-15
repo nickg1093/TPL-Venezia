@@ -26,6 +26,7 @@
 <div id="wrap">
   <div id="busybar" class="busybar" role="progressbar" aria-label="Caricamento in corso" aria-busy="true" hidden><span></span></div>
   <div id="map" role="application" aria-label="Mappa dei mezzi pubblici in tempo reale" tabindex="0"></div>
+  <div id="maploading" class="maploading" role="status" aria-live="polite" hidden><span class="spin" aria-hidden="true"></span><span><b></b><small>I mezzi compaiono appena gli orari sono pronti: la prima volta può volerci fino a un minuto.</small></span></div>
   <!-- PIANIFICA PERCORSO: pulsante principale in basso a sinistra (sul telefono si nasconde con un pannello aperto: dal pannello di una
        fermata si usa «Percorso da qui» accanto alla stella) -->
   <button id="plan-btn" class="plan-fab" type="button" aria-expanded="false" aria-controls="panel" title="Pianifica percorso"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-route"/></svg><span>Percorso</span></button>

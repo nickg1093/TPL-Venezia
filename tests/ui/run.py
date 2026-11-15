@@ -194,6 +194,18 @@ with sync_playwright() as p:
         page.click('[data-o=passo][data-v=svelta]'); page.click('.pp-ook'); page.wait_for_selector('.pp-opt, .pp-walkonly', timeout=15000)
         check('1' in page.inner_text('.pp-opzbtn'), 'pulsante Opzioni con il numero di opzioni attive')
         page.click('.pp-opzbtn'); page.wait_for_selector('.pp-opz'); page.click('.pp-oreset'); page.click('.pp-ook'); page.wait_for_selector('.pp-opt', timeout=15000)
+        # v29: altri orari come pulsanti sotto la scheda; «Mostra soluzioni più tardi» aggiunge in fondo senza cambiare l'orario scelto
+        chips = page.evaluate("[...document.querySelectorAll('.pp-top .pp-pchip')].map(b=>b.dataset.poi)")
+        check(not page.query_selector('.pp-top .pp-opt .pp-o5'), 'orari dello stesso percorso non più come testo dentro la scheda')
+        if chips:
+            page.click('.pp-top .pp-pchip'); page.wait_for_selector('.pp-steps', timeout=8000); page.wait_for_timeout(800)
+            check(chips[0] in page.inner_text('.pp-dsum'), f'toccando l\'orario {chips[0]} si apre quella partenza')
+            page.click('.pp-back'); page.wait_for_selector('.pp-later', timeout=5000)
+        nb = page.evaluate("document.querySelectorAll('.pp-opt').length")
+        page.click('.pp-later'); page.wait_for_timeout(300); [page.wait_for_timeout(250) for _ in range(60) if page.query_selector('.pp-later[disabled]')]   # attesa senza eval (CSP)
+        na = page.evaluate("document.querySelectorAll('.pp-opt').length")
+        still_now = page.evaluate("(() => { const s = document.querySelector('.pp-sum-w'); if (s) return s.textContent.includes('Adesso'); const b = document.querySelector('.pp-when [data-w=now]'); return !!b && b.getAttribute('aria-pressed') === 'true'; })()")
+        check(na >= nb and still_now, f'«più tardi» aggiunge ({nb} → {na}) e l\'orario resta «Adesso»')
         page.click('.pp-opt'); page.wait_for_selector('.pp-steps', timeout=5000)
         page.wait_for_selector('.pp-alts .pp-ah', timeout=15000); [page.wait_for_timeout(250) for _ in range(60) if page.evaluate("document.querySelector('.pp-alts').textContent.includes('Cerco')")]   # attesa senza eval (la CSP della pagina lo vieta)
         check(page.evaluate("!!document.querySelector('.pp-alts .pp-tchip.on, .pp-alts .pp-opt, .pp-alts p')"), 'dettaglio: alternative (altri orari / simili / altre linee)')

@@ -155,7 +155,13 @@ più in alto o torna al pannello precedente; con nulla aperto esce dall'app. L'o
 - **Giorno e ora** (v29, `public/js/scegli.js`): calendario e orologio dell'app al posto dei selettori del browser (anche nella modalità
   Programmato): stesso aspetto ovunque, icone con il contrasto del tema, sempre dentro lo schermo (foglio dal basso sul telefono; sul computer
   sotto, sopra o accanto al campo, dove c'è posto). Esc chiude, frecce tra i giorni; i giorni senza orari sono disattivati.
-- **Soluzioni** (v29): la *consigliata* in evidenza in cima, sotto «Altre soluzioni». Avvisi sui cambi in frase intera, con fermata e linea:
+- **Soluzioni** (v29): la *consigliata* in evidenza in cima. Sotto ogni scheda gli **altri orari dello stesso percorso come pulsanti** (uno tocco
+  apre quella partenza); sotto la consigliata **«Simili, con altre linee»**: una riga ciascuna con la differenza in minuti (caricate subito con
+  `/api/percorso-simili`, già pronte quando si apre la consigliata); poi «Altre soluzioni». **«Mostra soluzioni più tardi»** (con «arrivo entro»:
+  «che arrivano prima») AGGIUNGE in fondo le soluzioni successive, senza cambiare l'orario scelto né togliere quelle già mostrate.
+- **Orari di un altro giorno in caricamento**: proposte, partenze della fermata e mezzi della modalità Programmato di un altro orario o giorno
+  si tolgono subito; resta un avviso chiaro («Carico gli orari di mar 24/11…») al centro del pannello o della mappa, finché sono pronti.
+- Avvisi sui cambi in frase intera, con fermata e linea:
   *a rischio* («Cambio a Rialto con 1 solo minuto di margine: basta un piccolo ritardo per perdere la linea 2») e, in tempo reale, *non riesce*
   («Con i ritardi di adesso arrivi a … dopo la partenza della linea …: guarda le altre soluzioni»); nel dettaglio il margine di ogni cambio.
 - **Attesa sempre visibile** (v29): barra animata sul bordo del pannello e della barra in basso durante i caricamenti, anche tra un tentativo

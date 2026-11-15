@@ -310,23 +310,32 @@ requestAnimationFrame(frame);
 
 // Mezzi: in tempo reale arrivano dal flusso (solo le differenze, vedi più sotto); la richiesta completa resta per la modalità
 // Programmato e come riserva se il flusso non è disponibile.
+// MODALITÀ PROGRAMMATO, ORARI DI UN ALTRO GIORNO IN CARICAMENTO: niente mezzi di un altro giorno sulla mappa, ma un avviso chiaro al centro
+function schedWait(on) {
+  const el = $('maploading'); if (!el) return;
+  if (on) { const l = Scegli.dayLabel(dateEl.value); el.querySelector('b').textContent = `Carico gli orari di ${l === 'Oggi' || l === 'Domani' ? l.toLowerCase() : l}…`; if (vehicles.length) { vehicles = []; render(); } }
+  el.hidden = !on;
+}
 async function load() {
   const m = mode, key = keyOf();
+  if (m !== 'sched') schedWait(false);
   if (m === 'live' && streamLive()) { vehicles = [...fleet.values()]; render(); return; }
   try {
     const d = await api(`/api/${m === 'sched' ? 'scheduled' : 'vehicles'}?src=${key}${schedQS()}`, { cache: m === 'sched' ? 'no-store' : 'no-cache' });
     if (m !== mode || key !== keyOf()) return;
     if (d.error && !d.vehicles) throw new Error(d.error);
     if (m === 'live') { fleet.clear(); for (const v of d.vehicles || []) if (v && typeof v.id === 'string') fleet.set(v.id, v); }
-    vehicles = d.vehicles || []; render(); showStatus(d, m);
-    if (m === 'sched' && /Carico gli orari|occupato/i.test(d.error || '')) { if (!ritenta('sched', () => { if (mode === 'sched') load(); })) schedFail(); }   // orari di quella data in caricamento
+    const waiting = m === 'sched' && /Carico gli orari|occupato/i.test(d.error || '');
+    if (!waiting) { vehicles = d.vehicles || []; render(); }
+    showStatus(d, m); schedWait(waiting && /Carico gli orari/i.test(d.error || ''));
+    if (waiting) { if (!ritenta('sched', () => { if (mode === 'sched') load(); })) schedFail(); }   // orari di quella data in caricamento
     else if (m === 'sched') riuscito('sched');
   } catch (e) {
-    if (m === 'sched' && (e.loading || e.busy)) { if (!ritenta('sched', () => { if (mode === 'sched') load(); })) schedFail(); return; }
+    if (m === 'sched' && (e.loading || e.busy)) { schedWait(!!e.loading); if (!ritenta('sched', () => { if (mode === 'sched') load(); })) schedFail(); return; }
     if (m === mode && !e.busy) { statusEl.className = 'err'; statusEl.textContent = 'Errore: ' + e.message; }
   }
 }
-function schedFail() { if (mode === 'sched') { statusEl.className = 'err'; statusEl.textContent = 'Errore: ' + NON_ORA; } }
+function schedFail() { schedWait(false); if (mode === 'sched') { statusEl.className = 'err'; statusEl.textContent = 'Errore: ' + NON_ORA; } }
 // stato in alto a sinistra (numero di mezzi, ora dei dati, avvisi sul feed); d = risposta completa o stato inviato dal flusso
 let lastStatus = '', lastMeta = {};
 function showStatus(d, m = mode, force = false) {
@@ -583,7 +592,12 @@ async function loadDepartures() {
   } catch (err) {
     if (current !== e) return;
     const mine = lastDeps && lastDeps._e === e;
-    if ((err.loading || err.busy) && !mine && ritenta('stop', () => { if (current === e) loadDepartures(); })) { plist.innerHTML = `<p class="muted pad">${err.loading ? 'Carico gli orari della data scelta…' : 'Server occupato, riprovo tra pochi secondi…'}</p>`; return; }
+    // orari di un altro giorno in caricamento: le partenze vecchie spariscono (sono di un altro giorno) e resta l'attesa, ben visibile
+    if ((err.loading || (err.busy && !mine)) && ritenta('stop', () => { if (current === e) loadDepartures(); })) {
+      plist.innerHTML = `<div class="pp-wait${err.loading ? ' big' : ''}" role="status" aria-live="polite"><span class="spin" aria-hidden="true"></span><span><b>${err.loading ? `Carico gli orari di ${(l => (l === 'Oggi' || l === 'Domani' ? l.toLowerCase() : l))(Scegli.dayLabel(dateEl.value))}…` : 'Server occupato'}</b><small>${err.loading ? 'Le partenze compaiono appena gli orari sono pronti: la prima volta può volerci fino a un minuto.' : 'Riprovo tra pochi secondi.'}</small></span></div>`;
+      if (err.loading) lastDeps = null;
+      return;
+    }
     if (!(err.busy && mine)) plist.innerHTML = `<p class="late pad">Dati non disponibili: ${esc(err.loading ? NON_ORA : err.message)}</p>`;
   }
 }
