@@ -197,7 +197,7 @@ const validStyle = st => {
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
-const ABOUT_VERSION = 'v30';
+const ABOUT_VERSION = 'v31';
 // DATI FISSI sul telefono e dal CDN (fissi.js): file per versione dei GTFS con impronta, indice del ramo «dati» letto da GitHub.
 // DATI_REPO: repository del ramo dati (predefinito: quello da cui Render ha preso il codice); DATI_CDN=0 spegne il CDN (tutto dal server).
 const DATI_REPO = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/.test(process.env.DATI_REPO || '') ? process.env.DATI_REPO : (process.env.RENDER_GIT_REPO_SLUG || 'nickg1093/TPL-Venezia');
@@ -220,7 +220,7 @@ function sendTagged(req, res, body, gz, etag, cc = 'no-cache') {
   res.end(req.method === 'HEAD' ? undefined : z ? gz : (body || zlib.gunzipSync(gz)));
 }
 let stopsTag = null, routesMemo = null;
-const POSTS = new Set(['/api/reload-gtfs', '/api/watch', '/api/watch/cancel', '/api/watch/resub', '/api/watch/restore']);
+const POSTS = new Set(['/api/reload-gtfs', '/api/watch', '/api/watch/cancel', '/api/watch/resub', '/api/watch/restore', '/api/watch/handoff', '/api/errore']);
 
 // ---- ROUTE API ----  auth: 'diag' | 'admin' | undefined;  method: 'POST' solo per azioni che modificano lo stato
 const API = new Map(Object.entries({
@@ -314,6 +314,22 @@ const API = new Map(Object.entries({
     const b = await readJson(req), P = require('./push');
     if (typeof b.old !== 'string' || !P.validSub(b.sub)) throw sec.bad('parametri non validi');
     return { updated: watch.resubscribe(b.old, { endpoint: b.sub.endpoint, keys: { p256dh: b.sub.keys.p256dh, auth: b.sub.keys.auth } }) };
+  } },
+  // passaggio degli avvisi dalla vecchia istanza (SIGTERM durante un deploy) a questa: firmato (watch.handoffOk), mai da un browser
+  '/api/watch/handoff': { method: 'POST', limit: 'admin', fn: async (u, req) => {
+    const raw = await new Promise((ok, ko) => { let n = 0; const parts = []; req.on('data', c => { n += c.length; if (n > 4e6) { ko(fail(413, 'richiesta troppo grande')); req.destroy(); } else parts.push(c); }); req.on('end', () => ok(Buffer.concat(parts).toString('utf8'))); req.on('error', ko); });
+    const ts = Number(req.headers['x-tpl-ts']), sig = String(req.headers['x-tpl-sig'] || '');
+    if (!watch.handoffOk(ts, raw, sig)) throw fail(403, 'non ammesso');
+    let items; try { items = JSON.parse(raw).items; } catch { throw sec.bad('JSON non valido'); }
+    if (req.headers['x-tpl-from'] === watch.INSTANCE) return { istanza: watch.INSTANCE, importati: 0, stessa: true };
+    return { istanza: watch.INSTANCE, importati: watch.importAll(items), ricevuti: Array.isArray(items) ? items.length : 0 };
+  } },
+  // errore imprevisto in un telefono (public/js/sistema.js): solo testo tecnico ripulito, contato in memoria (/api/metriche), niente dati dell'utente
+  '/api/errore': { method: 'POST', limit: 'watch', fn: async (u, req) => {
+    const b = await readJson(req, 1024), t = (x, n) => (typeof x === 'string' ? x.replace(/[^\x20-\x7e\u00c0-\u017f]/g, ' ').replace(/https?:\/\/\S+/g, '').replace(/\d{4,}/g, '#').trim().slice(0, n) : '');
+    const k = b.k === 'promessa' ? 'promessa' : 'errore', m = t(b.m, 160), w = t(b.w, 120), v = /^v\d{1,3}(?:\.\d)?$/.test(b.v || '') ? b.v : '?';
+    if (m) require('./metriche').errore({ k, m, w, v });
+    return { ok: true };
   } },
   '/api/watch/cancel': { method: 'POST', limit: 'watch', fn: async (u, req) => { const b = await readJson(req); return { ok: watch.cancel(String(b.id || ''), String(b.token || '')) }; } },
   // ids=<id>.<token>,… (al massimo 8): un viaggio guidato su un dispositivo senza Web Push legge tutti i suoi avvisi con una richiesta sola
@@ -632,9 +648,37 @@ if (SELF && /^https?:\/\//.test(SELF)) setInterval(() => fetch(SELF.replace(/\/$
 
 // ---- ROBUSTEZZA ----
 process.on('unhandledRejection', e => console.error('promessa non gestita:', e && e.stack || e));
-process.on('uncaughtException', e => { console.error('errore non gestito, riavvio:', e && e.stack || e); process.exit(1); });   // l'orchestratore (Render) riavvia il processo
-function shutdown(sig) {
+// errore non gestito: riavvio (lo fa Render). Prima, al massimo 3 s per dire ai dispositivi con avvisi attivi di riaprire l'app (dopo il riavvio
+// la memoria è vuota e gli avvisi tornano quando il telefono li ripresenta)
+let crash = false;
+process.on('uncaughtException', e => {
+  console.error('errore non gestito, riavvio:', e && e.stack || e);
+  if (crash) process.exit(1); crash = true;
+  setTimeout(() => process.exit(1), 3500).unref();
+  Promise.resolve().then(() => watch.pauseAll(3000)).catch(() => {}).finally(() => process.exit(1));
+});
+// avvisi attivi alla nuova istanza (vedi watch.js); se non è possibile, un messaggio «avvisi in pausa» ai dispositivi
+async function passaAvvisi() {
+  const items = watch.exportAll(); if (!items.length) return;
+  let ok = false;
+  if (SELF && /^https?:\/\//.test(SELF) && process.env.VAPID_PRIVATE_KEY) {
+    try {
+      const body = JSON.stringify({ items }), ts = Date.now();
+      const r = await fetch(SELF.replace(/\/$/, '') + '/api/watch/handoff', { method: 'POST', body, signal: AbortSignal.timeout(10000),
+        headers: { 'Content-Type': 'application/json', 'X-Tpl-Ts': String(ts), 'X-Tpl-Sig': watch.handoffSig(ts, body), 'X-Tpl-From': watch.INSTANCE } });
+      const d = r.ok ? await r.json() : null;
+      ok = !!d && !d.stessa && d.istanza !== watch.INSTANCE && d.ricevuti === items.length;
+      console.log(`avvisi: passaggio alla nuova istanza ${ok ? 'riuscito' : 'non riuscito'} (${items.length} attivi, ${d?.importati ?? 0} nuovi là)`);
+    } catch (e) { console.log('avvisi: passaggio non riuscito:', e.message); }
+  }
+  if (!ok) console.log(`avvisi: messaggio «in pausa» a ${await watch.pauseAll()} dispositivi`);
+}
+let chiusura = false;
+async function shutdown(sig) {
+  if (chiusura) return; chiusura = true;
   console.log(sig + ': chiusura ordinata');
+  setTimeout(() => process.exit(0), 25000).unref();                    // Render aspetta 30 s prima di SIGKILL
+  try { await passaAvvisi(); } catch { /* si chiude comunque */ }
   for (const r of sse) { try { r.end(); } catch { /* già chiusa */ } }
   for (const f of flussi) f.conn.close();
   server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 8000).unref();

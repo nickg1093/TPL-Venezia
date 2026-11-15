@@ -88,6 +88,15 @@ function bindChart(c) {                                       // collega cursore
   svg.addEventListener('pointermove', e => { if (e.buttons || e.pointerType === 'mouse') fromPtr(e); });
   set(cursorT ?? c.now);
 }
+// oltre 85 cm ACTV modifica alcuni servizi di navigazione: quando (adesso o il primo massimo previsto oltre la soglia) e link al piano ACTV
+function aaLink(d) {
+  if (!(peakOf(d) > AA_CM)) return '';
+  const nx = (d.next || []).find(n => n.type === 'max' && n.cm > AA_CM), fc = ((d.chart && d.chart.forecast) || []).find(p => p[1] > AA_CM && p[0] > Date.now());
+  const txt = d.cm > AA_CM ? `Adesso ${fmtCm(d.cm)} cm: alcuni servizi di navigazione sono modificati`
+    : nx ? `Prevista ${fmtCm(nx.cm)} cm ${dayTag(nx.ts)}${hm(nx.ts)}: alcuni servizi di navigazione cambiano`
+    : fc ? `Prevista oltre ${AA_CM} cm ${dayTag(fc[0])}${hm(fc[0])}: alcuni servizi di navigazione cambiano` : `Oltre ${AA_CM} cm alcuni servizi di navigazione cambiano`;
+  return `<a class="tide-aa" href="${AA_URL}" target="_blank" rel="noopener noreferrer">${icon('warn', 'sm')}<span>${txt} · piano ACTV</span></a>`;
+}
 function render() {
   const d = data;
   if (!d) { body.innerHTML = err ? `<p class="tide-note">Dati di marea non disponibili: ${esc(err)}</p>` : 'Caricamento…'; return; }
@@ -100,7 +109,7 @@ function render() {
   body.innerHTML = `<div class="tide-level"><span class="num">${fmtCm(d.cm)}</span><span class="unit">cm</span></div>`
     + `<div class="tide-cat" data-cat="${esc(d.category.key)}">${esc(d.category.label)}${d.cm > AA_CM ? warnBtn : ''}</div>`
     + `<div class="tide-trend">${icon(tr.icon)}<span>${tr.txt}${t && t.basis === 'previsione' ? ' <span class="muted">(da previsione)</span>' : ''}</span></div>`
-    + (peakOf(d) > AA_CM ? `<a class="tide-aa" href="${AA_URL}" target="_blank" rel="noopener noreferrer">${icon('warn', 'sm')}<span>Oltre ${AA_CM} cm: servizi di navigazione previsti</span></a>` : '')
+    + aaLink(d)
     + (d.stale ? `<p class="tide-note" role="status">Ultimo dato di ${Math.round(+d.ageMin) || 0} minuti fa: potrebbe non essere aggiornato.</p>` : '')
     + (next ? `<ul class="tide-next" aria-label="Prossime alte e basse maree previste">${next}</ul>` : '')
     + (d.chart ? chartHtml(d.chart) : '')

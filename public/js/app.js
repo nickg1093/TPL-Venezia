@@ -1,5 +1,6 @@
 // APP PRINCIPALE: mappa, mezzi in movimento, ricerca, pannelli (fermata · zona · corsa) con navigazione e inseguimento.
 // Moduli: util.js (testo, icone, nomi, colori, etichette) · zones.js (zone di fermate) · tide.js (marea) · pwa.js (installazione).
+import * as Sistema from './sistema.js';   // per primo: i controlli sugli errori imprevisti valgono anche durante l'avvio
 import { $, esc, p2, nowSecs, fmtSecs, localDate, icon, srcIcon, vehIcon, vehName, lum, colorInfo, badge, ptHtml, etaText, tickEta, delayInfo, api, onBusy, ritenta, riuscito, NON_ORA } from './util.js';
 import { zones, zoneOf, snorm, buildZones, norm, unitOf, mergeDuplicates, groups, aliasOf } from './zones.js';
 import * as Tide from './tide.js';
@@ -1153,7 +1154,7 @@ const hideAttr = Info.init(() => { Tide.close(); Avvisi.close(); Favs.close(); i
 map.on('movestart', hideAttr); map.on('zoomstart', hideAttr); map.on('click', hideAttr);
 Tide.init(() => { Avvisi.close(); Info.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
 Avvisi.init(() => { Tide.close(); Info.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); }, () => { drawStops(); if (current && current.t !== 'trip') renderDepartures(); else if (current?.t === 'trip' && lastTrip) renderTrip(false); });   // quando arrivano avvisi nuovi si aggiornano mappa e pannello fermata
-Pwa.init();
+Pwa.init(); Sistema.init();
 
 // ---------------------------------------------------------------------------------------------------------------------
 // PREFERITI (stella nel pannello fermata; elenco nella ricerca vuota). Restano nel dispositivo anche dopo gli aggiornamenti dell'app.
@@ -1288,7 +1289,7 @@ function backOne() {
 }
 const levels = () => (Plan.isPicking() ? 1 : 0) + [Info.isOpen(), Favs.isOpen(), Avvisi.isOpen(), Tide.isOpen(), searchOpen()].filter(Boolean).length
   + (panel.hidden ? 0 : 1 + navStack.length + (current?.t === 'plan' ? Plan.depth() : 0));
-Nav.init({ levels, back: backOne });
+Nav.init({ levels, back: backOne, hint: () => toast('Premi di nuovo «indietro» per uscire dall\'app', 2500) });
 { // ogni livello che si apre o si chiude (anche da un modulo: marea, avvisi, informazioni, preferiti) aggiorna la cronologia
   const mo = new MutationObserver(() => Nav.sync());
   for (const id of ['panel', 'tide', 'avvisi', 'info', 'favs']) mo.observe($(id), { attributes: true, attributeFilter: ['hidden'] });
@@ -1439,6 +1440,18 @@ function guideBoot(tries = 0) {
   if (!document.querySelector('.bus-marker') && tries < 10) { setTimeout(() => guideBoot(tries + 1), 1000); return; }
   Guida.boot();
 }
+// DIMENSIONE DEL TESTO (Informazioni): 1 / 1,15 / 1,3 di tutta l'interfaccia; la mappa ricalcola le sue misure
+{
+  const box = document.querySelector('.ip-ts'), get = () => { try { return localStorage.getItem('tpl.testo') || '1'; } catch { return '1'; } };
+  const mark = v => box?.querySelectorAll('[data-ts]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.ts === v)));
+  mark(get());
+  box?.addEventListener('click', e => {
+    const b = e.target.closest('[data-ts]'); if (!b) return;
+    const v = b.dataset.ts; try { localStorage.setItem('tpl.testo', v); } catch { /* solo per questa apertura */ }
+    if (v === '1') document.documentElement.style.removeProperty('--ts'); else document.documentElement.style.setProperty('--ts', v);
+    mark(v); setTimeout(() => { map.invalidateSize(); window.dispatchEvent(new Event('resize')); }, 50);
+  });
+}
 $('info-guide').addEventListener('click', () => { Info.close(); setTimeout(() => { if (!Guida.active()) Guida.restart(); }, 300); });
 let nearOnFix = false;                                                  // scorciatoia «Fermate vicine»: alla prima posizione si apre l'elenco
 
@@ -1448,4 +1461,4 @@ let nearOnFix = false;                                                  // scorc
 $('tl-time').textContent = fmtSecs(+range.value); syncPlay(); setFollow(false); drawStops(); updateClock(); load();
 
 // PERSISTENZA: con preferiti o avvisi salvati si chiede al browser di non cancellare da solo la memoria del sito quando lo spazio scarseggia
-if (Fav.all().length || Fav.allRoutes().length || Notify.all().length) { try { navigator.storage?.persist?.(); } catch { /* facoltativo */ } }
+if (Fav.all().length || Fav.allRoutes().length || Notify.all().length || Viaggio.savedList().length || Viaggio.active()) { try { navigator.storage?.persist?.(); } catch { /* facoltativo */ } }

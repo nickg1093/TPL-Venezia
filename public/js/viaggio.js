@@ -119,7 +119,9 @@ export function toggleSaved(s) {                                    // -> { save
   savedList();
   if (saved.length >= MAX_SAVED) return { error: `Hai già ${MAX_SAVED} viaggi salvati: elimina quello che non ti serve più.` };
   const { started, viaggio, notif, mode, ...keep } = s;
-  saved.push(keep); saved.sort((a, b) => a.leaveMs - b.leaveMs); writeSaved(); return { saved: true };
+  saved.push(keep); saved.sort((a, b) => a.leaveMs - b.leaveMs); writeSaved();
+  try { navigator.storage?.persist?.(); } catch { /* facoltativo: chiede al browser di non cancellare da solo i dati del sito */ }
+  return { saved: true };
 }
 export const removeSaved = id => { saved = saved.filter(x => x.id !== id); writeSaved(); };
 export const savedById = id => saved.find(s => s.id === id) || null;
@@ -157,6 +159,12 @@ export function watchItems(s, now = Date.now(), styleOf = () => null) {
   }
   return out.slice(0, 8);
 }
+// «quando uscire, cambiare e scendere» secondo il viaggio: niente «cambiare» senza cambi, niente «uscire» se si parte già dalla fermata
+export function momenti(s) {
+  const R = rides(s), walk0 = s.legs.findIndex(l => l.t === 'r') > 0 && s.legs.slice(0, s.legs.findIndex(l => l.t === 'r')).some(l => l.t === 'w' && l.min > 0);
+  const m = [walk0 ? 'uscire' : 'salire', ...(R.length > 1 ? ['cambiare'] : []), 'scendere'];
+  return m.length === 2 ? m.join(' e ') : m.slice(0, -1).join(', ') + ' e ' + m[m.length - 1];
+}
 // -> { ok, msg }  (msg: com'è andata con le notifiche, sempre detto chiaramente)
 export async function start(s, styleOf) {
   if (J) await end(true);
@@ -170,7 +178,7 @@ export async function start(s, styleOf) {
     if (!J) return { ok: false, msg: '' };                           // terminato nel frattempo
     if (r.ok) {
       J.mode = r.mode;
-      msg = r.mode === 'push' ? 'Notifiche attive: ti avviso quando uscire, cambiare e scendere, anche con l\'app chiusa.' : r.note;
+      msg = r.mode === 'push' ? `Notifiche attive: ti avviso quando ${momenti(J)}, anche con l'app chiusa.` : r.note;
       if (r.made < r.total) msg += ` (${r.total - r.made} ${r.total - r.made === 1 ? 'avviso non attivato' : 'avvisi non attivati'})`;
     } else msg = (r.msg || 'Notifiche non disponibili.') + ' Tieni l\'app aperta: le indicazioni restano qui.';
   }
@@ -290,7 +298,7 @@ export function viewHtml(now = Date.now()) {
     + `${ph.when ? `<span class="vg-c" data-when="${ph.when}">${esc(inTxt(ph.when, now))}</span>` : ''}<small class="vg-sub">${esc(ph.sub)}</small></div></div>`
     + (ph.warn ? `<p class="vg-warn">${icon('warn', 'sm')}<span>${esc(ph.warn)}</span></p>` : '')
     + `<ol class="vg-steps">${stepsHtml(s, ph, now)}</ol>`
-    + `<p class="vg-note">${icon('bell', 'sm')}<span>${esc(s.notif || 'Attivo gli avvisi…')}</span></p>`
+    + `<p class="vg-note">${icon('bell', 'sm')}<span>${esc(s.notif || 'Attivo gli avvisi…')}${s.mode === 'push' && /android/i.test(navigator.userAgent) ? ' Se arrivano in ritardo, togli il browser dalle app in sospensione nelle impostazioni della batteria.' : ''}</span></p>`
     + `<label class="vg-lock"><input type="checkbox" class="vg-lockcb"${lockWanted() ? ' checked' : ''}${lockSupported() ? '' : ' disabled'}><span><b>Schermo sempre acceso</b><small>${esc(lockTxt)} Consuma più batteria; si spegne a fine viaggio.</small></span></label>`
     + `<div class="vg-acts"><button type="button" class="btn vg-recalc">${icon('route', 'sm')}<span>Ricalcola da qui</span></button>`
     + `<button type="button" class="btn vg-end">${icon('close', 'sm')}<span>Termina viaggio</span></button></div></div>`;

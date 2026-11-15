@@ -442,7 +442,7 @@ function simHtml(r) {
   const fams = new Set(r.soluzioni.map(o => o.famiglia)), rows = [];
   for (const kind of ['varianti', 'altre']) (d[kind] || []).forEach((x, k) => { if (!fams.has(x.famiglia)) { fams.add(x.famiglia); rows.push([kind, k, x]); } });
   if (!rows.length) return '';
-  const diff = x => { const v = r.entro ? hmMin(top.parti) - hmMin(x.parti) : hmMin(x.arrivi) - hmMin(top.arrivi); return v === 0 ? (r.entro ? 'stessa partenza' : 'stesso arrivo') : r.entro ? (v > 0 ? `parte ${v} min prima` : `parte ${-v} min dopo`) : (v > 0 ? `+${v} min` : `${v} min`); };
+  const diff = x => { const v = r.entro ? hmMin(top.parti) - hmMin(x.parti) : hmMin(x.arrivi) - hmMin(top.arrivi); return v === 0 ? (r.entro ? 'stessa partenza' : 'stesso arrivo') : r.entro ? (v > 0 ? `parte ${v} min prima` : `parte ${-v} min dopo`) : (v > 0 ? `arriva ${v} min dopo` : `arriva ${-v} min prima`); };
   return `<h3 class="pp-ah">Simili, con altre linee</h3><div class="pp-sim">${rows.slice(0, 4).map(([kind, k, x]) => {
     const seq = x.tratte.filter(t => t.tipo === 'mezzo').map(t => badge(t.line, t.color, t.src, ' sm')).join(`<span class="pp-sep">${icon('next', 'sm')}</span>`);
     return `<button type="button" class="pp-srow" data-sim="${kind}:${k}"><span class="pp-sseq">${seq}</span><span class="pp-stimes"><b>${esc(x.parti)}</b>${icon('next', 'sm')}<b>${esc(x.arrivi)}</b></span><span class="pp-sdiff">${esc(diff(x))}${x.cambi ? ` · ${cambiTxt(x)}` : ''}</span></button>`;
@@ -536,7 +536,7 @@ function actsHtml(o, sn) {
   if (cur) h += `<button type="button" class="btn primary pp-go" data-golive>${icon('live', 'sm')}<span>Torna al viaggio in corso</span></button>`;
   else if (go) {
     h += `<button type="button" class="btn primary pp-go">${icon('play', 'sm')}<span>Inizia il viaggio</span></button>`
-      + `<small class="pp-gonote">Ti avviso quando uscire, cambiare e scendere${Notify.needsInstall() ? '. Su iPhone le notifiche richiedono l\'app installata sulla schermata Home: senza, le indicazioni restano nell\'app aperta' : ', anche con l\'app chiusa'}.</small>`;
+      + `<small class="pp-gonote">Ti avviso quando ${Viaggio.momenti(sn)}${Notify.needsInstall() ? '. Su iPhone le notifiche richiedono l\'app installata sulla schermata Home: senza, le indicazioni restano nell\'app aperta' : ', anche con l\'app chiusa'}.</small>`;
   }
   h += '<div class="pp-acts2">'
     + (future && !cur ? `<button type="button" class="pp-act pp-svtrip" aria-pressed="${sv}">${icon('bookmark', 'sm')}<span>${sv ? 'Salvato' : 'Salva viaggio'}</span></button>` : '')
@@ -602,7 +602,7 @@ function renderBody() {
   X.plist.innerHTML = head + walkOnly + `<div class="pp-list"><div class="pp-top">${card(top, 0)}</div>${simHtml(r)}`
     + (rest.length ? `<h3 class="pp-ah">Altre soluzioni</h3>${rest.map((o, k) => card(o, k + 1)).join('')}` : '') + moreHtml(r) + '</div>'
     + `<button type="button" class="pp-later"${S.more?.loading ? ' disabled aria-busy="true"' : ''}>${S.more?.loading ? '<span class="spin sm" aria-hidden="true"></span>' : icon('clock', 'sm')}<span>${r.entro ? 'Mostra soluzioni che arrivano prima' : 'Mostra soluzioni più tardi'}</span></button>`
-    + `<p class="pp-note muted">Ordinate per «${esc(PREF_TXT[S.opz.pref] || 'Arrivare prima')}». Tocca un orario per aprire quella partenza; tocca una soluzione per le tappe e altre alternative. Tempi a piedi sulla rete pedonale di OpenStreetMap; fanno fede gli orari ACTV.</p>`;
+    + `<p class="pp-note muted">Ordinate per «${esc(PREF_TXT[S.opz.pref] || 'Arrivare prima')}». Fanno fede gli orari ACTV.</p>`;
 }
 // pagina delle opzioni (v28): cosa conta di più, andatura, mezzi
 function renderOpz() {

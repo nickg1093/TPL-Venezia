@@ -885,6 +885,38 @@ function applyAi(it, src, ctx) {
   if (v.effetto && v.certezza !== 'bassa') it.aiEffect = v.effetto;
   if (!it.dated && v.periodo) { it.from = v.periodo.from; it.to = v.periodo.to; it.dated = true; it.open = false; it.aiInfo.campi.push('periodo'); }
 }
+// TESTI LEGGIBILI (solo ciò che si mostra; date, linee e fermate si ricavano sempre dal testo originale):
+//  · titoli del sito ACTV tutti in maiuscolo → «Mestre - Chiusura di via Pio X: Ulteriore proroga lavori» (iniziali di frase, sigle, numeri romani,
+//    codici di linea, nomi dopo via/piazza/San…, località note dai nomi delle fermate);
+//  · testi Telegram senza emoji e senza indirizzi web scritti per intero (il link resta in «Leggi l'avviso completo»).
+const SIGLE = new Set(['actv', 'avm', 'fs', 'sfmr', 'mose', 'ztl', 'atvo', 'ulss', 'tpl', 'pm', 'ss', 'sr', 'sp']);
+const DOPO = /^(?:via|viale|piazza|piazzale|p\.le|calle|campo|campiello|corso|ponte|riva|fondamenta|fondamente|f\.te|stazione|san|santa|santo|sant'|s\.|rio|salizada|ramo|isola|lungomare|largo)$/;
+let luoghiMemo = null;
+function luoghi(ctx) {
+  if (luoghiMemo && luoghiMemo.src === ctx.byName) return luoghiMemo.set;
+  const set = new Set();
+  for (const k of ctx.byName?.keys?.() || []) { const w = String(k).split(' ')[0]; if (w.length >= 4 && !STOPW.has(w) && !DOPO.test(w)) set.add(w); }
+  luoghiMemo = { src: ctx.byName, set }; return set;
+}
+function titoloLeggibile(t, ctx = {}) {
+  const lettere = String(t).replace(/[^\p{L}]/gu, ''); if (lettere.length < 8 || lettere !== lettere.toUpperCase()) return t;
+  const L = luoghi(ctx); let inizio = true, dopo = false;
+  return String(t).toLowerCase().split(/(\s+)/).map(w => {
+    if (/^\s+$/.test(w)) return w;
+    const core = w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}.']+$/gu, ''), base = noAccents(core.replace(/['.]+$/, ''));
+    let out = w;
+    if (/\d/.test(core) && core.length <= 5) out = w.toUpperCase();                                   // T1, 2E, N1
+    else if (/^[ivxlc]{1,4}$/.test(core) && /^(?:i{1,3}|iv|v|vi{1,3}|ix|x{1,3}|xi{1,3}|xiv|xv|xx|l|c)$/.test(core)) out = w.toUpperCase();   // Pio X, IV Novembre
+    else if (SIGLE.has(base)) out = w.toUpperCase();
+    else if (inizio || dopo || L.has(base)) out = w.replace(/\p{L}/u, c => c.toUpperCase());
+    dopo = DOPO.test(core); inizio = /[:\-–—|.!?]$/.test(w) || /^[\-–—|:]$/.test(w);
+    return out;
+  }).join('');
+}
+const EMOJI = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}\u{1F1E6}-\u{1F1FF}]/gu;
+const testoLeggibile = t => String(t).replace(EMOJI, ' ').replace(/\s*(?:(?:per\s+)?(?:tutte\s+le\s+|maggiori\s+)?info(?:rmazioni)?\s*[:.]?\s*)?https?:\/\/\S+/gi, '')
+  .replace(/[ \t]{2,}/g, ' ').replace(/\s+([,.;:])/g, '$1').trim();
+
 function prepare(now, { window = true } = {}) {
   const ctx = ST.ctx() || {}, items = [], byUrl = new Map(), src = sources();
   const keep = it => !window || it.published >= now - WINDOW_MS || it.to >= now - 7 * DAY;
@@ -920,8 +952,19 @@ function prepare(now, { window = true } = {}) {
     const it = { key: m.key, id: idOf(m.key), source: 'telegram', title, text: short(body || title, 700), url: m.links.find(l => /actv|avm/.test(l)) || m.url, tgUrl: m.url,
       published: m.pubMs, ...(m.replyTo ? { replyTo: m.replyTo } : {}),
       ...interp(ctx, 'tg', m.key, m.text + '|' + m.pubMs, () => ({ ...parseValidity(m.text, m.pubMs, 'tg', ctx), ...analyze(title, m.text, ctx) })) };
-    if (keep(it)) { applyAi(it, m, ctx); items.push(it); }
+    if (keep(it)) {
+      applyAi(it, m, ctx); items.push(it);
+      // PROROGA o VARIAZIONE annunciata su Telegram con il link alla pagina ACTV di una notizia più vecchia (es. via Pio X: pagina di settembre,
+      // messaggio di novembre «ulteriormente prorogata»): il messaggio prende il posto della notizia, che non compare più due volte.
+      // Solo con riferimento esplicito (stesso link) e parole di variazione; mai per annullamenti (li gestiscono i fili) né per date senza variazione.
+      const tt = noAccents(m.text.toLowerCase()), old = m.links.map(l => byUrl.get(l)).find(r => r && r.source === 'actv' && r.published < it.published);
+      if (old && it.dated && (CHANGE_RE.test(tt) || /\bulterior\w*/.test(tt)) && !CANCEL_RE.test(tt)) {
+        old.superseded = it.key; it.url = old.url;
+        it.ev ||= newEv(it); it.ev.hist.push({ at: it.published, azione: 'sostituisce la notizia ACTV (stesso link, proroga o variazione)', msg: old.key, certezza: 'esplicita' });
+      }
+    }
   }
+  for (let i = items.length - 1; i >= 0; i--) if (items[i].superseded) items.splice(i, 1);
   thread(items);
   return { items, ctx, ver: src.ver };
 }
@@ -938,7 +981,7 @@ function build(now = Date.now(), { interni = false } = {}) {   // interni: solo 
     if (!state) continue;                                                   // troppo lontano nel tempo
     const cl = classify(it);
     if (cl.effect === 'other' && !it.lines.length && !it.stops.length && NOT_SERVICE.test(noAccents((it.title + ' ' + String(it.text).slice(0, 300)).toLowerCase()))) continue;   // notizie aziendali: non sono avvisi
-    const { drop, words, restoring, closure, key, ev, replyTo, dir, seg, ai, aiInfo, aiEffect, ...pub } = it; out.push({ ...pub, ...(interni ? { closure, eventId: ev?.id } : {}), ...cl, state });
+    const { drop, words, restoring, closure, key, ev, replyTo, dir, seg, ai, aiInfo, aiEffect, superseded, ...pub } = it; out.push({ ...pub, title: titoloLeggibile(pub.title, ctx), text: testoLeggibile(pub.text), ...(interni ? { closure, eventId: ev?.id } : {}), ...cl, state });
   }
   out.sort((a, b) => (a.state === b.state ? 0 : a.state === 'active' ? -1 : 1) || SEV[a.severity] - SEV[b.severity] || b.published - a.published);
   return out.slice(0, 40);

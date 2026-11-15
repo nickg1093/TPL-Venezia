@@ -13,7 +13,7 @@ on:
     types: [completed]
   push:
     branches: [main]
-    paths: ['fissi.js', 'gtfs.js', 'orari.js', 'calendar.js', 'scripts/genera-dati.js', 'scripts/pedoni-core.js', '.github/workflows/dati.yml', 'data/gtfs/**']
+    paths: ['fissi.js', 'gtfs.js', 'nomi.js', 'orari.js', 'calendar.js', 'scripts/genera-dati.js', 'scripts/pedoni-core.js', '.github/workflows/dati.yml', 'data/gtfs/**']
   schedule:
     - cron: '23 2 * * 1'      # lunedì notte: rete pedonale aggiornata da OpenStreetMap
     - cron: '41 1 * * *'      # ogni notte: orari per giorno (via i giorni passati)

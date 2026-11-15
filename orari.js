@@ -18,6 +18,7 @@
 // In ogni altro caso (CDN irraggiungibile, versione non ancora elaborata dal workflow, giorno mancante, versione diversa) si leggono le
 // corse dallo ZIP in archivio, a pezzi e solo per quei tre giorni (gtfs.loadVersion): più lento, sempre esatto. Il CDN non è mai indispensabile.
 const crypto = require('crypto');
+const { destinazione } = require('./nomi');
 const gtfs = require('./gtfs');
 const cal = require('./calendar');
 const ids = require('./ids');
@@ -87,7 +88,7 @@ function ricostruisci(base, giorni, date) {
   const ord = [...rows.values()].sort((x, y) => (x.r[0] < 0) - (y.r[0] < 0) || x.r[0] - y.r[0]);
   for (const { r, P } of ord) {
     const [n, tid, route, headsign, service, shape, dir, pi, t0, a, w] = r;
-    G.trips[tid] = { route, headsign, service, shape, dir };
+    G.trips[tid] = { route, headsign: destinazione(headsign), service, shape, dir };   // anche dai file del CDN generati prima di nomi.js
     if (n < 0 || pi < 0) continue;
     const p = P[pi], A = Int32Array.from(a, x => x + t0), Dp = Int32Array.from(A, (x, i) => x + (w ? w[i] : 0));
     G.stopTimes.set(tid, { s: p.s, q: p.q, a: A, d: Dp, start: Dp[0], end: A[A.length - 1] });

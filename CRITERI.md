@@ -35,7 +35,10 @@ Valgono per **ogni** modifica, piccola o grande, senza bisogno di richiamarli. P
   finestre o file, schermo acceso) si chiede subito nel gestore del tocco, prima di ogni attesa; su iPhone/iPad le notifiche esistono solo con
   l'app installata (iOS 16.4+) e va detto chiaramente quando mancano; file da aprire con app di sistema (calendario) da un indirizzo vero, non
   creati nella pagina. Orari sempre nel fuso di Venezia, indipendenti da quello del dispositivo. Dati letti dalla memoria del telefono
-  ricostruiti e controllati campo per campo.
+  ricostruiti e controllati campo per campo, e provati con la memoria già piena all'apertura (tests/memoria-telefono.test.js).
+- **Tasto «indietro»**: mai uscite per sbaglio dall'app installata, mai trappole: la protezione si aggiunge solo con un gesto dell'utente.
+- **Deploy senza perdere funzioni**: ciò che vive solo nella memoria del server (avvisi attivi) passa alla nuova istanza o, se non è possibile,
+  i dispositivi interessati lo sanno con una notifica.
 
 ## 5. Prove
 - `npm test` e `tests/ui/run.py` (6 dimensioni di schermo) devono passare; ogni novità aggiunge le sue prove (casi normali, anomali, limiti).

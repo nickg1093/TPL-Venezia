@@ -6,7 +6,7 @@
 import { api } from './util.js';
 
 const KEY = 'tpl.watches', LIFE = 3 * 3600e3;
-let list = load(), pollTimer = null, onChange = () => {}, onFront = () => {};
+let list = [], pollTimer = null, onChange = () => {}, onFront = () => {};
 // La memoria del browser non è affidabile (può essere stata modificata): ogni avviso si ricostruisce campo per campo, con tipi e lunghezze
 // controllati, prima di usarlo nell'interfaccia.
 const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
@@ -22,6 +22,8 @@ function clean(w) {
     ...(viaggio ? { ruolo, viaggio, walk: Number.isInteger(w.walk) && w.walk >= 0 && w.walk <= 60 ? w.walk : 0 } : {}) };
 }
 function load() { try { const d = JSON.parse(localStorage.getItem(KEY) || '[]'); return Array.isArray(d) ? d.map(clean).filter(w => w && w.until > Date.now()).slice(0, 50) : []; } catch { return []; } }
+// letti DOPO aver definito str/clean (prima, dalla v24 alla v30, la lettura falliva in silenzio e la lista ripartiva vuota a ogni apertura)
+list = load();
 function save() { list = list.filter(w => w.until > Date.now()); try { localStorage.setItem(KEY, JSON.stringify(list)); } catch { /* solo in memoria */ } onChange(); }
 // onFront(msg): messaggio arrivato con l'app in primo piano (lo mostra l'app, non il sistema)
 export const init = (fn, front) => {
@@ -97,6 +99,21 @@ export async function start({ trip, stop, stopName, lead, line, headsign, style 
   const r = await post('/api/watch', { sub: sub ? sub.toJSON() : null, trip, stop, stopName, lead, style });
   list.push({ id: r.id, token: r.token, mode: r.mode, trip, stop, stopName, lead, line, headsign, until: Date.now() + LIFE, style: style || null }); save(); startPolling();
   return { ok: true, mode: r.mode, note: r.mode === 'poll' ? POLL_NOTE : null };
+}
+// SALUTE DELLE NOTIFICHE: avvisi attivi in modalità push ma il telefono non può più riceverli (permesso tolto dalle impostazioni, iscrizione
+// revocata dal sistema, es. Safari dopo push senza notifica, o rinnovata senza avviso). -> 'ok' | 'perso' (si riattiva con un tocco) | 'negato'
+export async function health() {
+  const ws = live().filter(w => w.mode === 'push'); if (!ws.length || !supported()) return 'ok';
+  if (Notification.permission === 'denied') return 'negato';
+  if (Notification.permission !== 'granted') return 'perso';
+  try { const reg = await ready(); const sub = reg.pushManager ? await reg.pushManager.getSubscription() : null; return sub ? 'ok' : 'perso'; } catch { return 'ok'; }
+}
+// riattivazione: DENTRO il tocco (Safari concede permesso e iscrizione solo durante un gesto); gli avvisi attivi passano alla nuova iscrizione
+export async function reactivate() {
+  const p = await prepare(); if (!p.ok) return p;
+  if (!p.sub) return { ok: false, msg: POLL_NOTE };
+  await restoreAll(true);
+  return { ok: true };
 }
 // VIAGGIO GUIDATO: un avviso per ogni momento del viaggio (esci, cambio, scendi), con un identificativo comune: le notifiche si sostituiscono
 // l'una con l'altra invece di accumularsi. items: [{ trip, stop, stopName, lead, ruolo, walk, line, headsign, style }] in ordine di tempo.

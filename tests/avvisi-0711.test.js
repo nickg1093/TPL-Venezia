@@ -70,7 +70,7 @@ test('T1 · 5) ripristino completo (SINTETICO): chiude il guasto con chiusura es
   assertMonday(out, now, 'dopo il ripristino');
   const g = others(out); assert.equal(g.length, 1); assert.ok(g[0].resolved, 'resta solo la notizia «Risolto»'); assert.equal(g[0].effect, 'resolved');
   assert.deepEqual(g[0].lines.map(l => l.n), ['T1']);
-  const guasto = others(run(B.pubMs, { tg: [M94, B], interni: true })).find(o => o.title === 'SERVIZIO INFOMOBILITÀ' && !o.resolved);
+  const guasto = others(run(B.pubMs, { tg: [M94, B], interni: true })).find(o => /^servizio infomobilità$/i.test(o.title) && !o.resolved);
   assert.equal(guasto.closure, 'esplicita'); assert.equal(guasto.to, B.pubMs);
   assert.ok(!('closure' in run(B.pubMs, { tg: [M94, B] })[0]), 'il dato interno non esce dall\'API');
 });

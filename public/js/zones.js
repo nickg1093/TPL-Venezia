@@ -12,7 +12,9 @@ export const ALIAS = { 'favretti mestre fs': 'stazione mestre fs' };
 // "NOME "A"" | "NOME CORSIA 3" | "NOME C12"  ->  [tutto, nome, lettera tra virgolette, corsia, sigla]
 export const LETTER = /^(.*?)\s*(?:"([^"]+)"|\bCORSIA\s+([A-Z0-9]+)|\s([A-Z]\d{1,2}))\s*$/i;
 
-export const norm = s => s.toLowerCase().replace(/"/g, '').replace(/f\.te\b/g, 'fondamente').replace(/p\.le\b/g, 'piazzale').replace(/\bs\.\s*/g, 'san ').replace(/\s+/g, ' ').trim();
+// accenti finali riportati all'apostrofo dei dati ACTV («libertà» → «liberta'»): chiavi delle zone (preferiti) uguali a prima di nomi.js, ricerca con o senza accento
+const FOLD = { 'à': "a'", 'è': "e'", 'é': "e'", 'ì': "i'", 'ò': "o'", 'ù': "u'" };
+export const norm = s => s.toLowerCase().normalize('NFC').replace(/[àèéìòù](?=$|[\s,.;:()\-/"])/g, c => FOLD[c]).replace(/"/g, '').replace(/f\.te\b/g, 'fondamente').replace(/p\.le\b/g, 'piazzale').replace(/\bs\.\s*/g, 'san ').replace(/\s+/g, ' ').trim();
 const nice = n => n === n.toUpperCase() && /[A-Z]/.test(n) ? n.toLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_, a, b) => a + b.toUpperCase()) : n;
 const meters = (a, b) => Math.hypot((a.lat - b.lat) * 111000, (a.lon - b.lon) * 78000);
 

@@ -33,8 +33,9 @@ async function generaFissi(out) {
     for (const c of (await store.list(src)).filter(x => x.ok)) {
       const G = await gtfs.loadVersion(src, c, c.info.from || '00000000', { full: true }), v = fissi.versione(G), dir = path.join(out, 'fissi', src, v);
       keep.add(`${src}/${v}`);
-      if (fs.existsSync(path.join(dir, 'shapes.json'))) { console.log(`fissi ${src}/${v}: già presenti`); continue; }
+      // già presenti E uguali a quelli che il server calcola con il codice attuale (es. nomi corretti in una nuova versione dell'app): altrimenti si riscrivono
       const f = fissi.files(G, gtfs.toLL);
+      if (fissi.NOMI.every(k => { try { return fs.readFileSync(path.join(dir, k + '.json')).equals(f[k]); } catch { return false; } })) { console.log(`fissi ${src}/${v}: già presenti`); continue; }
       for (const k of fissi.NOMI) write(path.join(dir, k + '.json'), f[k]);
       console.log(`fissi ${src}/${v} (${path.basename(c.file)}): fermate ${f.stops.length} B, linee ${f.routes.length} B, tracciati ${f.shapes.length} B`);
     }

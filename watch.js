@@ -131,7 +131,11 @@ const ID_RE = /^[A-Za-z0-9_-]{8,40}$/;
 function restore(item, now = Date.now()) {
   if (!ID_RE.test(item.id) || !ID_RE.test(item.token)) return 'diverso';
   const w = W.get(item.id);
-  if (w) return find(item.id, item.token) ? 'attivo' : 'diverso';
+  if (w) {
+    if (!find(item.id, item.token)) return 'diverso';
+    if (item.sub?.endpoint && w.sub?.endpoint !== item.sub.endpoint) w.sub = item.sub;   // stesso avviso, nuova iscrizione del telefono (riattivazione)
+    return 'attivo';
+  }
   const created = Math.min(now, Math.max(0, Number(item.created) || now));
   if (now - created > LIFE_MS) return 'scaduto';
   create({ ...item, restore: { id: item.id, token: item.token, created } });
@@ -139,5 +143,43 @@ function restore(item, now = Date.now()) {
 }
 // il servizio di notifica ha rinnovato l'iscrizione del dispositivo (evento pushsubscriptionchange): gli avvisi attivi passano alla nuova
 function resubscribe(oldEndpoint, sub) { let n = 0; for (const w of W.values()) if (w.sub && w.sub.endpoint === oldEndpoint) { w.sub = sub; n++; } return n; }
+// PASSAGGIO DEGLI AVVISI A UNA NUOVA ISTANZA DEL SERVER (deploy o riavvio su Render). Render avvia la nuova istanza, le passa il traffico e
+// solo 60 s dopo manda SIGTERM alla vecchia: la vecchia allora manda i suoi avvisi attivi all'indirizzo pubblico, cioè alla nuova (server.js).
+// Il passaggio è firmato con una chiave derivata dalla chiave privata VAPID (uguale nelle due istanze, mai trasmessa): nessun altro può usarlo.
+// Si passa lo stato completo (iscrizione, messaggi già inviati), così non si ripetono conferme né avvisi.
+const INSTANCE = crypto.randomBytes(8).toString('hex');                // identità di questa istanza: il passaggio a sé stessa non vale
+const hkey = () => (process.env.VAPID_PRIVATE_KEY ? crypto.createHmac('sha256', process.env.VAPID_PRIVATE_KEY).update('tpl-handoff-v1').digest() : null);
+function handoffSig(ts, body) { const k = hkey(); return k ? crypto.createHmac('sha256', k).update(ts + '|' + body).digest('base64url') : null; }
+function handoffOk(ts, body, sig, now = Date.now()) {
+  const want = handoffSig(ts, body); if (!want || typeof sig !== 'string' || !Number.isFinite(ts) || Math.abs(now - ts) > 120000) return false;
+  const a = Buffer.from(want), b = Buffer.from(sig.padEnd(want.length).slice(0, want.length));
+  return crypto.timingSafeEqual(a, b) && sig.length === want.length;
+}
+const KEEP = ['id', 'token', 'sub', 'src', 'tid', 'stop', 'stopName', 'lead', 'ip', 'url', 'style', 'ruolo', 'viaggio', 'walk', 'created', 'sent', 'k', 'lastDelay', 'lastAt', 'queue'];
+function exportAll(now = Date.now()) { return [...W.values()].filter(w => !w.ended && now - w.created < LIFE_MS).map(w => Object.fromEntries(KEEP.map(k => [k, w[k] ?? null]))); }
+function importAll(items, now = Date.now()) {
+  let n = 0;
+  for (const it of Array.isArray(items) ? items.slice(0, MAX_TOTAL) : []) {
+    if (!it || !ID_RE.test(it.id) || !ID_RE.test(it.token) || W.has(it.id) || W.size >= MAX_TOTAL) continue;
+    if (typeof it.src !== 'string' || typeof it.tid !== 'string' || typeof it.stop !== 'string' || !Number.isFinite(it.created) || now - it.created > LIFE_MS) continue;
+    if (it.sub != null && !push.validSub(it.sub)) continue;
+    const w = { ...Object.fromEntries(KEEP.map(k => [k, it[k] ?? null])), sub: it.sub ? { endpoint: it.sub.endpoint, keys: { p256dh: it.sub.keys.p256dh, auth: it.sub.keys.auth } } : null,
+      sent: it.sent && typeof it.sent === 'object' ? it.sent : { conf: true }, queue: Array.isArray(it.queue) ? it.queue.slice(-5) : [], walk: it.walk || 0 };
+    W.set(w.id, w); n++;
+  }
+  if (n) ensureLoop();
+  return n;
+}
+// passaggio non riuscito (riavvio senza una nuova istanza pronta): un solo messaggio per dispositivo e viaggio, visibile, per riaprire l'app
+async function pauseAll(ms = 8000) {
+  const seen = new Set(), jobs = [];
+  for (const w of W.values()) {
+    if (w.ended || !w.sub) continue;
+    const key = w.sub.endpoint + '|' + (w.viaggio || w.id); if (seen.has(key)) continue; seen.add(key);
+    jobs.push(deliver(w, { kind: 'pausa', title: w.viaggio ? 'In viaggio · avvisi in pausa' : 'Avviso in pausa', body: 'Il servizio si è appena riavviato: apri l\'app per riattivare gli avvisi.', silent: false, line: null, ttl: 1800 }).catch(() => {}));
+  }
+  await Promise.race([Promise.all(jobs), new Promise(r => setTimeout(r, ms).unref?.())]);
+  return seen.size;
+}
 // lo stato di "poll" resta attivo finché la coda non è stata letta dopo la fine
-module.exports = { step, init, create, cancel, poll, publicKey, resubscribe, restore, _W: W };
+module.exports = { step, init, create, cancel, poll, publicKey, resubscribe, restore, exportAll, importAll, pauseAll, handoffSig, handoffOk, INSTANCE, _W: W };

@@ -7,7 +7,7 @@
 // Memoria sul telefono (localStorage «tpl.guida»): versione della guida vista e quali parti; nessun dato esce dal telefono.
 import { esc, icon } from './util.js';
 
-export const GUIDA_VER = 'v30';
+export const GUIDA_VER = 'v31';
 const KEY = 'tpl.guida';
 
 // Nei testi: html scritto qui (fisso), mai dati che arrivano da fuori.
@@ -54,6 +54,7 @@ const GUIDA_PANNELLO = [
 ];
 // novità senza un punto nell'app (solo a chi aveva già visto la guida di una versione precedente)
 const NOVITA_EXTRA = [
+  { since: 'v31', icon: 'info', title: 'Testo più grande, uscite evitate', html: 'Nelle <b>Informazioni</b> puoi ingrandire tutto il testo dell\'app. Nell\'app installata, con niente aperto, il primo «indietro» chiede conferma prima di uscire. Se le notifiche smettono di funzionare, l\'app te lo dice e le riattivi con un tocco.' },
   { since: 'v30', icon: 'route', title: 'Inizia il viaggio', html: 'Scelta una soluzione che parte a breve, tocca <b>Inizia il viaggio</b>: ti avviso quando uscire, cambiare e scendere, anche con l\'app chiusa, e con l\'app aperta vedi passo per passo cosa fare. I viaggi per un altro giorno li <b>salvi</b> in «I miei viaggi», li metti nel <b>calendario</b> o li <b>condividi</b> come testo.' },
   { since: 'v24', icon: 'back', title: 'Il tasto «indietro» funziona', html: 'Il tasto o il gesto <b>indietro</b> del telefono chiude la finestra aperta o torna al pannello precedente. I comandi dei pannelli sono nella <b>linguetta</b> sul bordo, e il nome della fermata resta su una riga.' },
   { since: 'v27', icon: 'tide', title: 'MOSE nella marea', html: 'Nel pannello della marea un semaforo dice se il MOSE è attivo; tocca «Barriere» per vedere le quattro barriere, una per una: verde in recesso, giallo con sollevamento programmato, giallo lampeggiante in movimento, rosso sollevata. Fonte: Autorità per la Laguna di Venezia.' },

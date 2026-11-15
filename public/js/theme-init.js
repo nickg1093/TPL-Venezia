@@ -13,6 +13,8 @@
 // e coprire il dock in basso finché non cambia qualcosa (tocco, rotazione): qui si legge la misura vera subito e la si riverifica poco dopo l'avvio.
 // TASTIERA APERTA (campo di testo attivo e area visibile ridotta di oltre 120 px): l'app si adatta all'area sopra la tastiera (anche su iPhone,
 // dove la tastiera copre la pagina invece di ridurla) e la classe «kbd» nasconde la barra in basso, che servirebbe a poco.
+// DIMENSIONE DEL TESTO scelta nelle Informazioni (prima di disegnare la pagina: niente salti)
+(function () { try { var t = localStorage.getItem('tpl.testo'); if (t === '1.15' || t === '1.3') document.documentElement.style.setProperty('--ts', t); } catch (e) { /* facoltativo */ } })();
 (function () {
   var r = document.documentElement, last = 0, full = 0;
   function typing() { var a = document.activeElement; return !!a && (a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && /^(text|search|email|url|tel|number)$/.test(a.type || 'text'))); }

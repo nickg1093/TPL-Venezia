@@ -295,7 +295,7 @@ body.sched-mode #timeline-controls{display:flex;align-items:center;gap:8px 10px}
   .side-panel .ph::before{content:"";position:absolute;top:8px;left:50%;width:44px;height:5px;margin-left:-22px;border-radius:3px;background:var(--line-strong)}
   #tide{top:var(--gap)}
   #search-container{max-width:none}
-  .snack{right:calc(var(--gap) + var(--safe-r));bottom:var(--gap)}
+  .snack{right:calc(var(--tap) + 2*var(--gap) + var(--safe-r));bottom:var(--gap)}   /* lascia liberi i pulsanti in basso a destra (preferiti, informazioni) */
   .dock-row{justify-content:space-between}
 }
 /* schermi bassi (telefono in orizzontale): il pannello occupa tutta l'altezza della mappa e lo stato dei dati lascia il posto */
@@ -820,8 +820,10 @@ strong.unc{color:var(--warn)}
    ===================================================================================================================== */
 /* SCALA: tutta la grafica in rem segue la dimensione del testo; sui telefoni stretti la base scende in proporzione (16 px da ~720 px in su,
    14 px sotto ~400 px). Le percentuali partono dalla dimensione scelta nel telefono: chi ingrandisce il testo per leggere meglio lo trova ingrandito. */
-html{font-size:clamp(87.5%,calc(75% + .45vw),100%)}
-@media (max-height:520px){html{font-size:87.5%}}
+html{font-size:calc(clamp(87.5%,calc(75% + .45vw),100%) * var(--ts,1))}
+@media (max-height:520px){html{font-size:calc(87.5% * var(--ts,1))}}
+/* --ts: «Dimensione del testo» scelta nelle Informazioni (1, 1,15, 1,3): ingrandisce tutta l'interfaccia, non la mappa. Vale su ogni sistema,
+   anche dove le impostazioni del telefono non arrivano alla pagina (app installata su iPhone) e senza lo zoom della pagina, che resta alla sola mappa. */
 :root{--tap:clamp(44px,calc(2.6rem + 4px),48px)}
 
 /* LINGUETTA DEI COMANDI del pannello (preferito, condividi, percorso, avviso, segui, chiudi): fuori dal pannello, così il titolo ha tutta la
@@ -1219,3 +1221,18 @@ body.busy #panel:not([hidden])::before,body.busy .dock::before{content:"";positi
 .plan-fab.vg-on .ic{animation:vgpulse 2s ease-in-out infinite}
 @keyframes vgpulse{50%{opacity:.45}}
 @media (prefers-reduced-motion:reduce){.plan-fab.vg-on .ic{animation:none}}
+
+/* v31 · barra dei messaggi di sistema (notifiche da riattivare, nuova versione, errori): come il suggerimento di installazione, sopra di esso */
+.sysbar{z-index:1310}
+.sysbar .btn{white-space:nowrap}
+.sysbar span{line-height:1.4}
+
+/* v31 · dimensione del testo (Informazioni) */
+.ip-ts{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 10px}
+.ip-ts-h{flex:1 0 100%;font-weight:750;font-size:var(--fs-sm)}
+.ip-ts button{flex:1;min-height:44px;padding:0 10px;border:1px solid var(--line-strong);border-radius:99px;background:var(--surface);color:var(--fg);font:inherit;font-weight:700;cursor:pointer}
+.ip-ts button[aria-checked="true"]{border-color:var(--accent);background:var(--accent);color:var(--on-accent)}
+.ip-ts button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+/* testo «Grande»/«Molto grande»: la barra in basso cresce poco (modalità e orologio restano su una riga anche sui telefoni stretti) */
+#bottom-bar{--fs-sm:min(.875rem,13.5px);--fs-md:min(1rem,16px);--fs-lg:min(1.125rem,17.5px)}
+@media (max-width:380px){#bottom-bar .seg label{padding:0 10px}}

@@ -1,6 +1,7 @@
 // LETTURA DEL GTFS STATICO in strutture compatte (tracciati come Float32Array, orari come Int32Array).
 // Quale file leggere lo decide gtfsstore.js (validità nel calendario + coerenza col realtime): qui non c'è più alcun download.
 const fs = require('fs');
+const { nome, destinazione } = require('./nomi');
 const path = require('path');
 const { Zip } = require('./zip');                 // lettore ZIP interno (zlib), al posto di adm-zip
 const ids = require('./ids');
@@ -112,7 +113,7 @@ async function build(srcId, pick, sel, days = null) {
   
   await eachRow(read('stops.txt'), ['stop_id', 'stop_name', 'stop_lat', 'stop_lon'], s => {
     const sId = intern(s.stop_id);
-    const sName = s.stop_name || '';
+    const sName = nome(s.stop_name || '');                            // «Liberta'» → «Libertà» (nomi.js)
     
     stops[sId]  = sName;
     if (inArea(+s.stop_lat, +s.stop_lon)) stopLoc[s.stop_id] = [+s.stop_lat, +s.stop_lon];   // coordinate vuote, a zero o fuori area = fermata senza posizione
@@ -134,7 +135,7 @@ async function build(srcId, pick, sel, days = null) {
     if (shape) { usedShapes.add(shape); (shapesByRoute[route] ||= new Set()).add(shape); }   // tracciati di tutte le corse (linee complete)
     if (keepSvc && !keepSvc.has(service)) return;
     if (keepTrip) keepTrip.add(t.trip_id);
-    trips[t.trip_id] = { route, headsign: t.trip_headsign ? intern(t.trip_headsign) : null, service: intern(service), shape,
+    trips[t.trip_id] = { route, headsign: t.trip_headsign ? intern(destinazione(t.trip_headsign)) : null, service: intern(service), shape,
       dir: t.direction_id ? intern(t.direction_id) : null };
   });
   log(`${Object.keys(routes).length} linee, ${Object.keys(trips).length} viaggi, ${Object.keys(stops).length} fermate: leggo i tracciati`);

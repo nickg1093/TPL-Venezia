@@ -81,3 +81,35 @@ test('viaggio guidato: testi per «esci», «cambio», «scendi»; una conferma 
   assert.equal(r.msg.kind, 'arrive'); assert.equal(r.msg.body, 'Scendi ora: Piazzale Roma A7.');
   assert.deepEqual(Wt.step({ ...scendi, sent: { conf: true }, k: null }, D(5, { state: 'passed' }), now), { end: true }, 'discesa già passata: nessun messaggio');
 });
+
+test('passaggio degli avvisi a una nuova istanza: firma obbligatoria e a tempo, stato completo, niente doppioni', () => {
+  const Wt = require('../watch');
+  const prev = process.env.VAPID_PRIVATE_KEY; process.env.VAPID_PRIVATE_KEY = 'chiave-di-prova-0123456789';
+  try {
+    const body = JSON.stringify({ items: [] }), ts = Date.now(), sig = Wt.handoffSig(ts, body);
+    assert.ok(Wt.handoffOk(ts, body, sig), 'firma valida');
+    assert.ok(!Wt.handoffOk(ts, body + ' ', sig), 'corpo cambiato');
+    assert.ok(!Wt.handoffOk(ts - 5 * 60e3, body, Wt.handoffSig(ts - 5 * 60e3, body)), 'troppo vecchia');
+    assert.ok(!Wt.handoffOk(ts, body, 'x'), 'firma falsa');
+    delete process.env.VAPID_PRIVATE_KEY; assert.ok(!Wt.handoffOk(ts, body, sig), 'senza chiave: mai');
+  } finally { if (prev == null) delete process.env.VAPID_PRIVATE_KEY; else process.env.VAPID_PRIVATE_KEY = prev; }
+  const W = Wt._W; W.clear();
+  const sub = { endpoint: 'https://fcm.googleapis.com/fcm/send/abc', keys: { p256dh: 'B'.repeat(87), auth: 'A'.repeat(22) } };
+  const it = { id: 'abcdefgh12', token: 'tokentokentoken1234', sub, src: 'aut', tid: 'T1', stop: 'aut:510', stopName: 'VENEZIA', lead: 5, ip: 'x', url: '/?apri=viaggio', style: null,
+    ruolo: 'esci', viaggio: 'viaggio123', walk: 3, created: Date.now() - 60e3, sent: { conf: true, lead: true }, k: 'lead', lastDelay: null, lastAt: 0, queue: [] };
+  assert.equal(Wt.importAll([it, { ...it, id: 'bad id!' }, { ...it, id: 'vecchiovecchio', created: Date.now() - 4 * 3600e3 }]), 1, 'solo quello valido e non scaduto');
+  assert.equal(Wt.importAll([it]), 0, 'già presente: niente doppioni');
+  const ex = Wt.exportAll(); assert.equal(ex.length, 1); assert.deepEqual([ex[0].ruolo, ex[0].viaggio, ex[0].sent.lead], ['esci', 'viaggio123', true]);
+  W.clear();
+});
+
+test('ripristino dal telefono con una nuova iscrizione (notifiche riattivate): l\'avviso esistente passa alla nuova', () => {
+  const Wt = require('../watch'); const W = Wt._W; W.clear();
+  const old = { endpoint: 'https://fcm.googleapis.com/fcm/send/vecchia', keys: { p256dh: 'B'.repeat(87), auth: 'A'.repeat(22) } }, neu = { ...old, endpoint: 'https://fcm.googleapis.com/fcm/send/nuova' };
+  Wt.importAll([{ id: 'idid1234ab', token: 'tok1234567890abc', sub: old, src: 'aut', tid: 'T1', stop: 'aut:510', lead: 5, ip: 'x', created: Date.now(), sent: { conf: true } }]);
+  assert.equal(Wt.restore({ id: 'idid1234ab', token: 'altrotoken12345', sub: neu }), 'diverso', 'token sbagliato: niente');
+  assert.equal(W.get('idid1234ab').sub.endpoint, old.endpoint);
+  assert.equal(Wt.restore({ id: 'idid1234ab', token: 'tok1234567890abc', sub: neu }), 'attivo');
+  assert.equal(W.get('idid1234ab').sub.endpoint, neu.endpoint);
+  W.clear();
+});

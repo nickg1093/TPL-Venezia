@@ -67,7 +67,14 @@ function snapshot() {
     totale: { richieste: [...M.ep.values()].reduce((a, e) => a + e.n, 0), MB: +([...M.ep.values()].reduce((a, e) => a + e.byte, 0) / 1e6).toFixed(2) },
     ultima_ora: { richieste: M.min.reduce((a, m) => a + m[1], 0), MB: +(M.min.reduce((a, m) => a + m[2], 0) / 1e6).toFixed(2) },
     endpoint: out, sse: { ...M.sse, kB_flussi_aperti: Math.round([...streams].reduce((a, f) => a + f(), 0) / 1000) }, contemporanee: M.conc, bloccati: M.bloccati, pianificatore_rinviati: M.rinviati,
-    cpu_pct: +cpuPct.toFixed(1), memoria_MB: { rss: Math.round(mem.rss / 1e6), heap: Math.round(mem.heapUsed / 1e6) }, protezione_memoria: require('./memoria').stato()
+    errori_telefoni: Object.fromEntries([...ERR].sort((a, b) => b[1] - a[1]).slice(0, 30)), cpu_pct: +cpuPct.toFixed(1), memoria_MB: { rss: Math.round(mem.rss / 1e6), heap: Math.round(mem.heapUsed / 1e6) }, protezione_memoria: require('./memoria').stato()
   };
 }
-module.exports = { begin, sseOpen, sseClose, snapshot, count: k => { M[k]++; }, _M: M };
+// errori imprevisti segnalati dai telefoni (sistema.js): solo un conteggio per messaggio tecnico e punto del codice, al massimo 60 voci, in memoria
+const ERR = new Map();
+function errore({ k, m, w, v }) {
+  const key = `${v} · ${k} · ${m}${w ? ' @ ' + w : ''}`;
+  if (!ERR.has(key) && ERR.size >= 60) return;
+  ERR.set(key, (ERR.get(key) || 0) + 1);
+}
+module.exports = { begin, sseOpen, sseClose, snapshot, errore, count: k => { M[k]++; }, _M: M, _ERR: ERR };
