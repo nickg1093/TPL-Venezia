@@ -49,9 +49,29 @@ function reindex() {
 }
 const uniq = list => { const seen = new Set(); return list.filter(a => isWarn(a) && !seen.has(a.id) && seen.add(a.id)); };
 // avvisi in corso che citano esplicitamente una delle fermate indicate
+export const _setData = d => { data = d; reindex(); };              // solo per le prove
 export const forStops = ids => uniq(ids.flatMap(id => byStop.get(id) || []));
 // avvisi in corso su una delle linee indicate ([{ s: 'aut', n: '7E' }]): valgono in ogni fermata in cui la linea ferma e sul mezzo
 export const forLines = list => uniq(list.flatMap(l => byLine.get(lineKey(l.s, l.n)) || []));
+// AVVISI PER UN VIAGGIO DEL PIANIFICATORE (linee e fermate della soluzione, nel SUO giorno e nelle SUE ore; mai la data di pubblicazione):
+//  · avvisi con un periodo (lavori, manifestazioni, scioperi, acqua alta prevista): solo se il periodo si sovrappone al viaggio;
+//  · avvisi senza periodo (guasti, ritardi del momento): solo se sono in corso adesso e il viaggio parte entro 3 ore;
+//  · sciopero: avviso di rete (senza linee), vale per ogni viaggio nel suo periodo; esclusi gli avvisi risolti e quelli generali.
+// Il server pubblica gli avvisi in corso e quelli che iniziano entro 3 giorni: per viaggi più lontani l'elenco può essere incompleto.
+const SEV_ORD = { severe: 0, warning: 1, info: 2 };
+export function forJourney({ lines = [], stops = [], fromMs, toMs }, t = now()) {
+  const lk = new Set(lines.map(l => lineKey(l.s, l.n))), sk = new Set(stops), out = [];
+  for (const a of data?.items || []) {
+    if (a.resolved || a.effect === 'resolved') continue;
+    const strike = a.effect === 'strike';
+    if (a.general && !strike) continue;
+    if (!(strike ? a.dated : (a.lines || []).some(l => lk.has(lineKey(l.s, l.n))) || (a.stops || []).some(id => sk.has(id)))) continue;
+    if (a.dated || a.source === 'auto') { if (!(a.from <= toMs && a.to >= fromMs)) continue; }
+    else if (!(a.from <= t && a.to >= t && fromMs <= t + 3 * 3600e3 && a.to >= fromMs)) continue;
+    out.push(a);
+  }
+  return out.sort((a, b) => (SEV_ORD[a.severity] ?? 1) - (SEV_ORD[b.severity] ?? 1) || a.from - b.from).slice(0, 6);
+}
 // triangolo (mappa, titolo della fermata, riga del passaggio): solo avvisi gravi o di attenzione, non quelli informativi
 const isAlarm = a => isWarn(a) && a.severity !== 'info';
 export const lineHasAlert = (s, n) => (byLine.get(lineKey(s, n)) || []).some(isAlarm);

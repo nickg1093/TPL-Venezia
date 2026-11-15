@@ -4,7 +4,7 @@ Mappa in tempo reale di autobus, tram e vaporetti ACTV di Venezia, con pannelli 
 avvisi di servizio, avvisi di arrivo (notifiche), marea e preferiti. È una **PWA** (si installa come app) servita da un **server Node.js
 senza database**, che gira gratis su Render oppure su un computer di casa.
 
-Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v29** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md)
+Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v30** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md)
 
 ---
 
@@ -21,7 +21,7 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 9. [Prove e test: comandi da digitare](#9-prove-e-test)
 10. [Modifiche frequenti: ricette](#10-modifiche-frequenti)
 11. [Pubblicare una nuova versione e tornare indietro](#11-pubblicare-e-tornare-indietro)
-12. [Novità della v29](#12-novità-della-v29) · [v28](#novità-della-v28) · [v27](#novità-della-v27) · [v26](#novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
+12. [Novità della v30](#12-novità-della-v30) · [v29](#novità-della-v29) · [v28](#novità-della-v28) · [v27](#novità-della-v27) · [v26](#novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
 - Appendici tecniche: [A. GTFS statici](#a-gtfs-statici-perché-non-si-sovrascrivono-più) · [B. Regole del motore tempo reale](#b-eccezioni-e-contromisure-del-codice-elenco-dettagliato) · [C. Sicurezza](#c-sicurezza-securityjs-serverjs) · [D. Dati sul telefono e CDN](#d-dati-sul-telefono-e-cdn-ramo-dati) · [E. Orari per giorno e memoria](#e-orari-per-giorno-e-memoria-del-server-v28)
 
 ---
@@ -81,8 +81,9 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 | `avvisi.js` | Avvisi di servizio: legge RSS ACTV e Telegram, riconosce linee, fermate, date ed eventi (aggiornamenti, ripristini, annullamenti). | regole di riconoscimento |
 | `avvisi-archivio.js` | Legge l'archivio degli avvisi dal ramo `archivio-avvisi` di GitHub (sola lettura) e le interpretazioni AI. | raramente |
 | `avvisi-ai.js` | Interpretazione AI facoltativa degli avvisi (Cloudflare Workers AI): prompt, schema, validazione. | prompt o regole di validazione |
-| `watch.js`, `push.js` | Avvisi di arrivo: regole dei messaggi, ciclo di controllo, ripristino dopo un riavvio, invio Web Push cifrato (VAPID). | testi delle notifiche, tempi |
+| `watch.js`, `push.js` | Avvisi di arrivo e del viaggio guidato (ruoli esci/cambio/scendi): regole dei messaggi, ciclo di controllo, ripristino dopo un riavvio, invio Web Push cifrato (VAPID). | testi delle notifiche, tempi |
 | `tide.js` | Marea CPSM: livello, tendenza, estremi, storia. | soglie e testi della marea |
+| `ics.js` | File per il calendario di un viaggio (`/api/ics`): dati controllati, nessun salvataggio. | testo e promemoria dell'evento |
 | `flusso.js` | Flusso SSE dei mezzi: elenco completo all'apertura, poi solo le differenze, compresso. | raramente |
 | `feedaudit.js` | Diagnosi dei feed GTFS-RT (riservata). | mai |
 | `avvia-windows.bat`, `avvia.command`, `avvia.sh` | Avvio con doppio clic in locale (Windows, macOS, Linux). | mai |
@@ -96,6 +97,7 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 | `js/app.js` | App principale: mappa e mezzi in movimento, ricerca, pannelli fermata/zona/corsa, navigazione tra pannelli e tasto «indietro», mezzi «?», collegamento di tutti i moduli. |
 | `js/nav.js` | Tasto e gesto **«indietro»** del sistema: una voce di cronologia per ogni livello aperto. |
 | `js/percorso.js` | Pianificatore lato telefono: punti di partenza/arrivo, quando, opzioni, soluzioni, dettaglio, disegno sulla mappa. |
+| `js/viaggio.js` | Viaggio guidato («In viaggio», notifiche, schermo acceso, tempo reale della corsa che conta), «I miei viaggi», testo da condividere, calendario. |
 | `js/fissi.js` | **Dati fissi sul telefono**: fermate, linee e tracciati salvati nella cache del sito (`tpl-fissi-1`), scaricati dal CDN con controllo dell'impronta, o dal server. Restituisce gli stessi dati dei vecchi `/api/stops`, `/api/routes`, `/api/shapes`. |
 | `js/pedoni.js` | **Percorsi a piedi**: rete pedonale in mattonelle caricate quando servono, aggancio dei punti alla strada, ricerca del percorso (Dijkstra/A*). Puro, senza import (provato anche con `node --test`). |
 | `js/camminata.js` | Collega `pedoni.js` al CDN e al pianificatore: distanze verso le fermate vicine e percorsi da disegnare, entro 30 minuti a passo svelto; se la rete non c'è, linea d'aria come prima. |
@@ -206,6 +208,26 @@ più in alto o torna al pannello precedente; con nulla aperto esce dall'app. L'o
   la scheda «A piedi: circa …» si tocca per vedere il percorso. La posizione non esce dal telefono. Senza rete pedonale (CDN irraggiungibile,
   browser senza HTTPS) tutto funziona come prima, in linea d'aria.
 
+- **Dopo aver scelto una soluzione** (v30, `public/js/viaggio.js`). Nel dettaglio:
+  - **Inizia il viaggio** (solo se la soluzione parte entro 2 ore, o è partita da meno di 10 minuti): notifiche per ogni momento — *esci*
+    (preavviso = minuti a piedi + 2), *cambio* (minuti a piedi + 3), *scendi* (2 minuti prima) — che si sostituiscono l'una con l'altra (una
+    sola notifica «In viaggio» per volta). Con l'app davanti, schermata **In viaggio**: cosa fare adesso con il conto alla rovescia, le tappe
+    fatte e da fare, cambio a rischio segnalato già a bordo, corsa soppressa, «Ricalcola da qui», «Termina viaggio» (due tocchi). Lo schermo
+    resta acceso (Screen Wake Lock, si può spegnere). Il pulsante «Percorso» sulla mappa diventa «In viaggio · Esci tra 3 min» e riporta alla
+    schermata; toccare una notifica la apre. Il viaggio finisce da solo 20 minuti dopo l'arrivo.
+  - **In secondo piano** nessun browser lascia lavorare una pagina web: lì lavorano le notifiche (Web Push), anche a schermo spento. iPhone e iPad:
+    con l'app installata sulla schermata Home (iOS 16.4 o successivo). Senza Web Push le indicazioni arrivano finché l'app resta aperta (detto chiaramente).
+  - **Salva viaggio** (soluzioni future): «**I miei viaggi**», in cima ai suggerimenti del pianificatore, separati dai preferiti (che sono luoghi e
+    percorsi senza orario). Al massimo 10, sul telefono, cancellati da soli dopo l'arrivo; un tocco riapre la stessa soluzione (se gli orari sono
+    cambiati lo dice e mostra le alternative); vicino alla partenza compare «Inizia il viaggio».
+  - **Calendario**: evento con promemoria 10 minuti prima; il file lo prepara il server (`/api/ics`, senza salvare niente) perché su iPhone Safari apre
+    un indirizzo vero con «Aggiungi al calendario». **Condividi**: testo semplice e ordinato (giorno, orari, linee, fermate, link alla stessa soluzione).
+  - **Avvisi di servizio sulla soluzione**: quelli delle sue linee e fermate **nel giorno e nelle ore del viaggio** (con periodo: se si sovrappone;
+    senza periodo, es. guasti: solo se in corso e il viaggio parte entro 3 ore; sciopero: tutti i viaggi del periodo). Una riga sulla scheda, l'elenco
+    nel dettaglio. Il server pubblica gli avvisi in corso e quelli dei prossimi 3 giorni.
+  - **Marea**: con tratti a piedi nella città storica (Giudecca e Murano comprese) e marea prevista o misurata di almeno 100 cm nelle ore del viaggio,
+    una nota con il livello e lo stato del MOSE. Usa i dati della marea già sul telefono (previsione fino a circa 18 ore): nessuna richiesta in più.
+
 ### 3.5 Preferiti
 Stella in basso a destra → pannello con schede **Fermate** e **Percorsi**. Un tocco apre; **Modifica** per riordinare, rinominare (percorsi) ed eliminare;
 **Salva una copia** scarica un file JSON; **Ripristina** lo rilegge e lo **unisce** a quelli presenti (cambio di telefono o di browser).
@@ -219,8 +241,8 @@ ripresenta da solo gli avvisi attivi (`/api/watch/restore`), all'apertura dell'a
 - **Avvisi**: sito ACTV + Telegram, collegati a linee e fermate (bordo rosso sulla mappa, «!» nei pannelli); archivio storico nel ramo `archivio-avvisi`.
 - **Marea**: livello CPSM, tendenza, prossimi estremi, grafico con cursore.
 - **Programmato** (barra in basso): posizioni e orari di un altro giorno o di un'altra ora, con riproduzione accelerata.
-- **Guida**: alla prima apertura e, dopo un aggiornamento, solo le novità (`guida.js`, `GUIDA_VER = 'v25'`).
-- **Link condivisibili**: `?fermata=nav:5013`, `?zona=…`, `?corsa=nav:…`, `?da=…&a=…`; scorciatoie `?apri=percorso|vicine|preferiti`.
+- **Guida**: alla prima apertura e, dopo un aggiornamento, solo le novità (`guida.js`, `GUIDA_VER = 'v30'`).
+- **Link condivisibili**: `?fermata=nav:5013`, `?zona=…`, `?corsa=nav:…`, `?da=…&a=…`; scorciatoie `?apri=percorso|vicine|preferiti|viaggio`.
 
 ### 3.8 Scala della grafica
 La dimensione di base del testo segue lo schermo: 16 px da circa 720 px di larghezza, in proporzione fino a 14 px sui telefoni stretti e in orizzontale;
@@ -236,6 +258,8 @@ I bersagli di tocco restano tra 44 e 48 px. La regola è in testa alla sezione v
 | Fermate e percorsi preferiti, nomi dei percorsi | telefono (`localStorage`: `tpl.favorites`, `tpl.percorsi`) | finché non si cancellano i dati del sito | `navigator.storage.persist()` chiesto all'avvio; copia di sicurezza dal pannello Preferiti |
 | Tema, vista dei passaggi, opzioni del pianificatore, mezzi «?», guida vista | telefono (`localStorage`) | come sopra | sopravvivono agli aggiornamenti dell'app |
 | Avvisi di arrivo attivi | telefono (`tpl.watches`) **e** memoria del server | al massimo 3 ore | dopo un riavvio del server il telefono li ripresenta (`watch.restore`) |
+| Viaggio in corso (v30) | telefono (`tpl.viaggio`, pochi KB) e i suoi avvisi come sopra | fino a 20 minuti dopo l'arrivo o «Termina» | schermo acceso: scelta in `tpl.viaggio.schermo` |
+| I miei viaggi (v30) | telefono (`tpl.viaggi`, al massimo 10) | fino all'arrivo di ciascun viaggio | dati ricostruiti e controllati a ogni lettura |
 | Chiavi delle notifiche (VAPID) | variabili d'ambiente su Render | sempre | senza, le iscrizioni non valgono più dopo un riavvio |
 | GTFS statici | repository GitHub (`data/gtfs/`) | sempre | aggiunti dal workflow, mai sovrascritti |
 | Archivio avvisi e interpretazioni AI | ramo GitHub `archivio-avvisi` | 6 mesi letti dal server | scritto solo dal workflow |
@@ -261,13 +285,14 @@ personale resta sul dispositivo dell'utente (privacy) e ciò che è pubblico sta
 | `/api/fisso?src=nav&f=stops\|routes\|shapes&h=<impronta>` | GET | un file dei dati fissi (se l'impronta è quella in uso; in cache per sempre) |
 | `/api/stops`, `/api/routes`, `/api/shapes?id=…`, `/api/area` | GET | fermate, linee, tracciati, area servita (per le app non aggiornate e come riserva; stops e routes con ETag) |
 | `/api/stop?id=nav:5013`, `/api/zone?ids=…` | GET | passaggi di una fermata o di una zona (`&secs=&date=` per Programmato) |
-| `/api/trip?id=nav:<corsa>` | GET | dettaglio di una corsa |
+| `/api/trip?id=nav:<corsa>[&lite=1]` | GET | dettaglio di una corsa (`lite=1`: senza tracciato, per il viaggio guidato) |
 | `/api/percorso?da=…&a=…[&secs=&date=&arrivo=1&mezzi=nav,aut&pref=…&cambi=…&piedimax=…&passo=…&margine=…&piedi=…&piedir=1]` | GET | soluzioni del pianificatore. `da`/`a`: `src:id~metri` (linea d'aria) o `src:id~metri~r` (lungo le strade, misurati dal telefono) |
 | `/api/percorso-simili?…&fam=…&rotte=…&arr=hh:mm` | GET | alternative di una soluzione |
 | `/api/dates` | GET | date coperte dai GTFS in archivio |
 | `/api/avvisi`, `/api/tide`, `/api/about`, `/api/push-key` | GET | avvisi, marea, versione e contatto, chiave pubblica VAPID |
 | `/api/watch`, `/api/watch/cancel`, `/api/watch/resub`, `/api/watch/restore` | POST | avvisi di arrivo: crea, annulla, nuova iscrizione, ripristino dopo un riavvio |
-| `/api/watch/poll?id=&token=` | GET | messaggi per i dispositivi senza Web Push |
+| `/api/watch/poll?id=&token=` · `?ids=id.token,…` | GET | messaggi per i dispositivi senza Web Push (`ids`: fino a 8 avvisi con una richiesta) |
+| `/api/ics?v=…[&dl=1]` | GET | file per il calendario di un viaggio (dati dal telefono, niente salvato) |
 | `/api/audit`, `/api/gtfs`, `/api/avvisi-eventi`, `/api/whoami`, `/api/tide?debug=1` | GET, **DIAG_TOKEN** | diagnosi |
 | `/api/reload-gtfs` | POST, **ADMIN_TOKEN** | ricontrolla e ricarica i GTFS |
 | `/healthz` | GET | `ok` (controllo di salute di Render e keep-alive) |
@@ -473,7 +498,18 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ---
 
-## 12. Novità della v29
+## 12. Novità della v30
+
+- **Viaggio guidato**, **I miei viaggi**, **calendario**, **condividi come testo**, **avvisi e marea sulla soluzione** (sezione 3.4).
+- **Carico sul server**: per un viaggio 2-6 avvisi (stesso meccanismo degli avvisi di arrivo, al massimo 8 per dispositivo); tempo reale solo della
+  corsa che conta, ogni 30 s e solo con l'app davanti, senza tracciato (`/api/trip?lite=1`, circa un decimo dei dati); dispositivi senza Web Push:
+  una sola lettura ogni 20 s per tutti gli avvisi (`/api/watch/poll?ids=…`); calendario solo al tocco (`/api/ics`, senza stato). In secondo piano:
+  nessun timer né richiesta dal telefono.
+- **Avvisi**: «People Mover» è la linea **PM** automobilistica anche senza «linea PM» (non negli elenchi di reti, es. scioperi).
+- Prove: `tests/viaggio.test.js` (orari di Venezia e cambio dell'ora, fasi, avvisi da attivare, testo, avvisi per data, memoria manomessa),
+  `tests/ics.test.js`, `tests/push.test.js` (testi esci/cambio/scendi), `tests/avvisi.test.js` (People Mover), `tests/ui/viaggio.py` (telefono, schermo piccolo, computer, due temi).
+
+### Novità della v29
 
 - **Notifiche su iPhone**: il mittente delle notifiche (VAPID) ora è un indirizzo valido preso da sé (indirizzo pubblico del servizio);
   prima Apple le rifiutava (403). Nel log compare anche il motivo di un eventuale rifiuto.

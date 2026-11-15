@@ -31,6 +31,11 @@ Valgono per **ogni** modifica, piccola o grande, senza bisogno di richiamarli. P
 ## 4. Interfaccia
 - Desktop, tablet, smartphone; tema chiaro e scuro; testo ingrandito; orizzontale; tastiera aperta; aree sicure.
 - Bersagli di tocco ≥ 44 px, nessuno scorrimento orizzontale, nessun elemento che si sovrappone o si sposta in modo inatteso.
+- **Compatibilità tra dispositivi (Apple compresa)**: ciò che il browser concede solo durante un tocco (permesso delle notifiche, apertura di
+  finestre o file, schermo acceso) si chiede subito nel gestore del tocco, prima di ogni attesa; su iPhone/iPad le notifiche esistono solo con
+  l'app installata (iOS 16.4+) e va detto chiaramente quando mancano; file da aprire con app di sistema (calendario) da un indirizzo vero, non
+  creati nella pagina. Orari sempre nel fuso di Venezia, indipendenti da quello del dispositivo. Dati letti dalla memoria del telefono
+  ricostruiti e controllati campo per campo.
 
 ## 5. Prove
 - `npm test` e `tests/ui/run.py` (6 dimensioni di schermo) devono passare; ogni novità aggiunge le sue prove (casi normali, anomali, limiti).

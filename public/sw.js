@@ -4,9 +4,9 @@
 //  - /api/*, /healthz e mattonelle della mappa: MAI intercettati (dati live sempre freschi; le mattonelle le gestisce il browser)
 //  - dati fissi e rete pedonale dal CDN: non passano di qui; li salva fissi.js in una cache sua («tpl-fissi-1», che resta tra le versioni)
 // Dopo modifiche ai file della shell (icone, manifest, elenco SHELL) incrementare VERSION: la cache vecchia viene cancellata.
-const VERSION = 'v29';
+const VERSION = 'v30';
 const CACHE = `tpl-venezia-${VERSION}`;
-const SHELL = ['/', '/css/app.css', '/js/app.js', '/js/util.js', '/js/zones.js', '/js/tide.js', '/js/avvisi.js', '/js/locate.js', '/js/fav.js', '/js/favs.js', '/js/nav.js', '/js/fissi.js', '/js/pedoni.js', '/js/camminata.js', '/js/notify.js', '/js/info.js', '/js/percorso.js', '/js/scegli.js', '/js/guida.js', '/js/pwa.js', '/js/theme-init.js', '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
+const SHELL = ['/', '/css/app.css', '/js/app.js', '/js/util.js', '/js/zones.js', '/js/tide.js', '/js/avvisi.js', '/js/locate.js', '/js/fav.js', '/js/favs.js', '/js/nav.js', '/js/fissi.js', '/js/pedoni.js', '/js/camminata.js', '/js/notify.js', '/js/info.js', '/js/percorso.js', '/js/scegli.js', '/js/viaggio.js', '/js/guida.js', '/js/pwa.js', '/js/theme-init.js', '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
   '/icons/sprite.svg', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/favicon-48.png'];
 
 self.addEventListener('install', e => {
@@ -84,7 +84,8 @@ async function show(m) {
     body: m.body || '', tag: m.tag || 'tpl', renotify: !m.silent, silent: !!m.silent, icon, badge, lang: 'it', dir: 'ltr',
     timestamp: m.ts || Date.now(), requireInteraction: m.kind === 'lead' || m.kind === 'arrive', vibrate: m.silent ? undefined : [140, 70, 140],
     data: { url: m.url || '/', id: m.id, token: m.token, kind: m.kind },
-    actions: m.id && !['arrive', 'cancel', 'skip', 'passed'].includes(m.kind) ? [{ action: 'stop', title: 'Non avvisarmi più' }] : []
+    // viaggio guidato: nessun «Non avvisarmi più» (fermerebbe un solo momento del viaggio): si termina dall'app
+    actions: m.id && !String(m.tag || '').startsWith('tpl-viaggio-') && !['arrive', 'cancel', 'skip', 'passed'].includes(m.kind) ? [{ action: 'stop', title: 'Non avvisarmi più' }] : []
   });
 }
 const ENDS = ['arrive', 'cancel', 'skip', 'passed'];

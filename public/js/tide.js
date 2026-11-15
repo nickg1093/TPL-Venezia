@@ -167,6 +167,15 @@ function position() {   // la scheda si allinea al suo pulsante, senza uscire da
   const w = $('wrap').getBoundingClientRect(), b = btn.getBoundingClientRect(), h = card.offsetHeight, g = 12;
   card.style.top = Math.max(g, Math.min(b.top - w.top - 8, w.height - h - g)) + 'px';
 }
+// marea più alta in un periodo (osservata o prevista), per il pianificatore: { cm, kind, ts } oppure null se il periodo esce dai dati
+// (la previsione arriva a circa 18 ore). Usa i dati già scaricati per il pulsante della marea: nessuna richiesta in più.
+export function peakIn(fromMs, toMs) {
+  const c = data?.chart; if (!c || !(c.observed?.length || c.forecast?.length) || toMs < c.from || fromMs > c.to) return null;
+  let best = null;
+  for (let t = Math.max(fromMs, c.from), end = Math.min(toMs, c.to); t <= end; t += 5 * 60e3) { const v = valueAt(c, t); if (v && (!best || v.cm > best.cm)) best = { ...v, ts: t }; }
+  return best;
+}
+export const moseState = () => (mose && !mose.error ? mose.stato : data?.mose?.stato) || null;
 export const isOpen = () => !card.hidden;
 export function open(beforeOpen) {
   if (beforeOpen) beforeOpen();

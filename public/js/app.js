@@ -11,6 +11,7 @@ import * as Fav from './fav.js';
 import * as Notify from './notify.js';
 import * as Info from './info.js';
 import * as Plan from './percorso.js';
+import * as Viaggio from './viaggio.js';
 import * as Guida from './guida.js';
 import * as Nav from './nav.js';
 import * as Favs from './favs.js';
@@ -538,6 +539,7 @@ function planLayout() {
   const on = current?.t === 'plan' && !panel.hidden, lv = on ? Plan.level() : '';
   document.body.classList.toggle('plan-full', on && Plan.wantsFull());
   for (const k of ['form', 'list', 'det']) panel.classList.toggle('plv-' + k, lv === k);
+  panel.classList.toggle('plv-vg', on && !!Viaggio.active() && Plan.inVg());
   panel.classList.toggle('plv-tall', on && Plan.isTall());
 }
 $('pclose').onclick = closePanel;
@@ -1257,6 +1259,7 @@ Notify.init(() => { Info.updateWatchButton(); if (Info.isOpen()) Info.renderWatc
 // apertura da una notifica: /?trip=src:id&stop=src:id (anche con l'app già aperta, tramite il service worker)
 function openFromUrl(href) {
   let u; try { u = new URL(href, location.href); } catch { return; }
+  if (u.searchParams.get('apri') === 'viaggio') { openJourney(); return; }   // notifica del viaggio guidato: schermata «In viaggio»
   const t = u.searchParams.get('trip'), st = u.searchParams.get('stop'); if (!t || !st) return;
   const k = t.indexOf(':'), src = t.slice(0, k), tripId = t.slice(k + 1); if (!src || !tripId) return;
   const v = vehicles.find(c => c.src === src && c.tripId === tripId && !c.co) || { id: null, src, tripId, routeId: null, line: '', headsign: '', color: null };
@@ -1318,7 +1321,7 @@ function fitFree(pts) {
 Plan.init({
   chips: chipsArea, plist, pbadge, pname, psub, pstatus, layer: planLayer, drawLine, stopById, stopLabel,
   allStops: () => stops, me: () => meLL, isOpen: () => current?.t === 'plan' && !panel.hidden,
-  map, locate: () => { if (!meLL) locator.start(); }, setPick: (on, msg) => setPlanPick(on, msg), fit: fitFree, favChanged: () => { updateFav(); Favs.refresh(); },
+  map, toast, styleOf: (l, c, s) => styleOf(l, c, s), locate: () => { if (!meLL) locator.start(); }, setPick: (on, msg) => setPlanPick(on, msg), fit: fitFree, favChanged: () => { updateFav(); Favs.refresh(); },
   changed: () => { planLayout(); render(); Nav.sync(); },                // pagine del pianificatore, soluzione mostrata: livelli, mezzi e impaginazione
   openTrip: t => {
     const v = vehicles.find(c => c.src === t.src && c.tripId === t.tripId && (!t.veh || c.key === t.veh) && !c.co)
@@ -1333,7 +1336,29 @@ function openPlan() {
     : { kind: 'stop', id: current.id, label: current.name, src: current.src, lat: +(stopById.get(current.id)?.[2] ?? NaN), lon: +(stopById.get(current.id)?.[3] ?? NaN) }) : null;
   if (from) openFromPanel({ t: 'plan', opts: { from } }); else openFromMap({ t: 'plan', opts: {} });   // dalla fermata: «indietro» la riapre
 }
-planBtn.onclick = e => { e.stopPropagation(); if (current?.t === 'plan') closePanel(); else openPlan(); };
+function openJourney() {
+  if (!Viaggio.active()) { openPlan(); return; }
+  collapseSearch(); Tide.close(); Avvisi.close(); Info.close(); Favs.close();
+  if (current?.t === 'plan' && !panel.hidden) Plan.show({ viaggio: true }); else openFromMap({ t: 'plan', opts: { viaggio: true } });
+}
+planBtn.onclick = e => {
+  e.stopPropagation();
+  if (Viaggio.active() && current?.t !== 'plan') { openJourney(); return; }
+  if (current?.t === 'plan') closePanel(); else openPlan();
+};
+// VIAGGIO IN CORSO: il pulsante «Percorso» diventa «In viaggio» con l'indicazione del momento (aggiornata ogni 15 s, solo con l'app davanti)
+const planBtnHtml = planBtn.innerHTML;
+let planBtnTxt = null;
+function updatePlanBtn() {
+  const j = Viaggio.active(), txt = j ? Viaggio.shortText() : null;
+  if (txt === planBtnTxt) return; planBtnTxt = txt;
+  planBtn.classList.toggle('vg-on', !!j);
+  if (j) {
+    planBtn.innerHTML = `<svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-live"/></svg><span><small>In viaggio</small>${esc(txt)}</span>`;
+    planBtn.setAttribute('aria-label', `In viaggio: ${txt}. Apri le indicazioni`); planBtn.title = 'In viaggio';
+  } else { planBtn.innerHTML = planBtnHtml; planBtn.removeAttribute('aria-label'); planBtn.title = 'Pianifica percorso'; }
+}
+Viaggio.onChange(updatePlanBtn); updatePlanBtn();
 pplan.onclick = () => openPlan();
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1391,7 +1416,8 @@ function openLink() {
     else toast('Il percorso del link non è più valido.', 5000);
     return;
   }
-  if (apri === 'percorso') openPlan();
+  if (apri === 'viaggio') openJourney();
+  else if (apri === 'percorso') openPlan();
   else if (apri === 'preferiti') Favs.open();
   else if (apri === 'vicine') { nearOnFix = true; locator.start(); }
 }

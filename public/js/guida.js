@@ -7,7 +7,7 @@
 // Memoria sul telefono (localStorage «tpl.guida»): versione della guida vista e quali parti; nessun dato esce dal telefono.
 import { esc, icon } from './util.js';
 
-export const GUIDA_VER = 'v29';
+export const GUIDA_VER = 'v30';
 const KEY = 'tpl.guida';
 
 // Nei testi: html scritto qui (fisso), mai dati che arrivano da fuori.
@@ -36,7 +36,7 @@ const GUIDA_MAPPA = [
   { since: 'v23', el: q('#search-toggle-btn'), round: true, icon: 'search', title: 'Cerca fermate e linee', html: 'Scrivi il nome di una fermata o il numero di una linea. Qui ritrovi anche i tuoi <b>preferiti</b>.' },
   { since: 'v23', el: q('#locate'), round: true, icon: 'locate', title: 'Fermate vicine a te', html: 'Mostra dove sei e le fermate più vicine. <b>La tua posizione resta sul telefono.</b>' },
   { since: 'v23', el: q('#controls .group'), icon: 'ship', title: 'Battelli e bus', html: 'Mostra o nascondi la navigazione e i bus/tram, anche separatamente.' },
-  { since: 'v23', el: q('#plan-btn'), icon: 'route', title: 'Pianifica un percorso', html: 'Dimmi da dove a dove: ti propongo le soluzioni migliori, con cambi e tratti a piedi. Puoi <b>salvare</b> i percorsi che fai spesso.' },
+  { since: 'v23', el: q('#plan-btn'), icon: 'route', title: 'Pianifica un percorso', html: 'Dimmi da dove a dove: ti propongo le soluzioni migliori, con cambi e tratti a piedi. Puoi <b>salvare</b> i percorsi che fai spesso e, quando parti, farti <b>guidare</b> fino all\'arrivo.' },
   { since: 'v23', el: () => document.getElementById('avvisi-btn')?.closest('.group'), icon: 'warn', title: 'Avvisi e marea', html: 'Scioperi, deviazioni e fermate sospese; il livello della <b>marea</b> e i servizi in caso di acqua alta.' },
   { since: 'v24', el: q('#unk-btn'), round: true, icon: 'unknown', title: 'Mezzi senza linea', html: 'I mezzi che il feed ACTV non associa a nessuna linea (simbolo <b>?</b>) sono nascosti: con questo tasto li mostri, in grigio.' },
   { since: 'v24', el: q('#favs-btn'), round: true, icon: 'star', title: 'I tuoi preferiti', html: 'Fermate e percorsi salvati, a portata di tocco. Puoi riordinarli, dare un nome ai percorsi e salvarne una <b>copia</b>.' },
@@ -54,6 +54,7 @@ const GUIDA_PANNELLO = [
 ];
 // novità senza un punto nell'app (solo a chi aveva già visto la guida di una versione precedente)
 const NOVITA_EXTRA = [
+  { since: 'v30', icon: 'route', title: 'Inizia il viaggio', html: 'Scelta una soluzione che parte a breve, tocca <b>Inizia il viaggio</b>: ti avviso quando uscire, cambiare e scendere, anche con l\'app chiusa, e con l\'app aperta vedi passo per passo cosa fare. I viaggi per un altro giorno li <b>salvi</b> in «I miei viaggi», li metti nel <b>calendario</b> o li <b>condividi</b> come testo.' },
   { since: 'v24', icon: 'back', title: 'Il tasto «indietro» funziona', html: 'Il tasto o il gesto <b>indietro</b> del telefono chiude la finestra aperta o torna al pannello precedente. I comandi dei pannelli sono nella <b>linguetta</b> sul bordo, e il nome della fermata resta su una riga.' },
   { since: 'v27', icon: 'tide', title: 'MOSE nella marea', html: 'Nel pannello della marea un semaforo dice se il MOSE è attivo; tocca «Barriere» per vedere le quattro barriere, una per una: verde in recesso, giallo con sollevamento programmato, giallo lampeggiante in movimento, rosso sollevata. Fonte: Autorità per la Laguna di Venezia.' },
   { since: 'v27', icon: 'route', title: 'Il pianificatore si fa da parte', html: 'Scelti partenza e arrivo, il pianificatore si riduce a una riga: la mappa mostra tutto il percorso, mezzi e tratti a piedi. Toccando una soluzione il pannello si abbassa ancora; «Modifica» o «Tutte le soluzioni» per tornare indietro.' },

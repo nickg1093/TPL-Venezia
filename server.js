@@ -184,9 +184,10 @@ function watchArgs(b, req) {
   const G = D[t[0]], seq = G.stopTimes.get(t[1]);
   if (!seq || !seq.s.includes(st[1])) throw fail(404, 'corsa o fermata sconosciuta');
   if (b.sub != null && !require('./push').validSub(b.sub)) throw sec.bad('iscrizione alle notifiche non valida');
-  const url = `/?trip=${encodeURIComponent(b.trip)}&stop=${encodeURIComponent(b.stop)}`;
+  let url = `/?trip=${encodeURIComponent(b.trip)}&stop=${encodeURIComponent(b.stop)}`;
   // viaggio guidato (v29): ruolo nel viaggio, identificativo comune (una notifica sola) e minuti a piedi per arrivare alla fermata
   const ruolo = ['esci', 'cambio', 'scendi'].includes(b.ruolo) ? b.ruolo : null, viaggio = ruolo && typeof b.viaggio === 'string' && /^[A-Za-z0-9_-]{6,40}$/.test(b.viaggio) ? b.viaggio : null;
+  if (viaggio) url = '/?apri=viaggio';                                // la notifica apre la schermata «In viaggio»
   const walk = ruolo && Number.isInteger(+b.walk) && +b.walk >= 0 && +b.walk <= 60 ? +b.walk : 0;
   return { ruolo, viaggio, walk, sub: b.sub ? { endpoint: b.sub.endpoint, keys: { p256dh: b.sub.keys.p256dh, auth: b.sub.keys.auth } } : null, src: t[0], tid: t[1], stop: b.stop,
     style: validStyle(b.style), stopName: typeof b.stopName === 'string' && b.stopName.trim() && b.stopName.length <= 80 ? b.stopName.replace(/[\u0000-\u001f<>]/g, '').trim() : (G.stopBaseNames?.get(st[1]) || G.stops[st[1]] || st[1]), lead, ip: sec.clientIp(req), url };
@@ -196,7 +197,7 @@ const validStyle = st => {
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
-const ABOUT_VERSION = 'v29';
+const ABOUT_VERSION = 'v30';
 // DATI FISSI sul telefono e dal CDN (fissi.js): file per versione dei GTFS con impronta, indice del ramo «dati» letto da GitHub.
 // DATI_REPO: repository del ramo dati (predefinito: quello da cui Render ha preso il codice); DATI_CDN=0 spegne il CDN (tutto dal server).
 const DATI_REPO = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/.test(process.env.DATI_REPO || '') ? process.env.DATI_REPO : (process.env.RENDER_GIT_REPO_SLUG || 'nickg1093/TPL-Venezia');
@@ -290,6 +291,14 @@ const API = new Map(Object.entries({
   // informazioni sul servizio per la pagina «i»: versione e, se impostato, contatto del titolare (variabile APP_CONTACT; nessun nome)
   '/api/about': { fn: () => ({ version: ABOUT_VERSION, contact: (process.env.APP_CONTACT || '').slice(0, 160) || null }) },
   '/api/push-key': { fn: () => ({ key: watch.publicKey() }) },
+  // file per il calendario di un viaggio (ics.js): nessun dato salvato, solo trasformato; dl=1 scarica, senza si apre (iPhone/iPad)
+  '/api/ics': { raw: (u, req, res) => {
+    const d = require('./ics').parse(q(u, 'v')); if (!d) return text(res, 400, 'Dati del calendario non validi');
+    const host = String(req.headers.host || ''), origin = /^[A-Za-z0-9.-]{1,100}(:\d{1,5})?$/.test(host) ? (/^(localhost|127\.0\.0\.1)(:|$)/.test(host) ? 'http://' : 'https://') + host : null;
+    const body = require('./ics').build(d, origin);
+    res.writeHead(200, { 'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': `${q(u, 'dl') === '1' ? 'attachment' : 'inline'}; filename="${require('./ics').fileName(d.start)}"`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+    res.end(req.method === 'HEAD' ? undefined : body);
+  } },
   '/api/watch': { method: 'POST', limit: 'watch', fn: async (u, req) => watch.create(watchArgs(await readJson(req), req)) },
   // avvisi attivi sul telefono ripresentati dopo un riavvio del server (al massimo 6 per volta): vedi watch.restore
   '/api/watch/restore': { method: 'POST', limit: 'watch', fn: async (u, req) => {
@@ -307,14 +316,26 @@ const API = new Map(Object.entries({
     return { updated: watch.resubscribe(b.old, { endpoint: b.sub.endpoint, keys: { p256dh: b.sub.keys.p256dh, auth: b.sub.keys.auth } }) };
   } },
   '/api/watch/cancel': { method: 'POST', limit: 'watch', fn: async (u, req) => { const b = await readJson(req); return { ok: watch.cancel(String(b.id || ''), String(b.token || '')) }; } },
-  '/api/watch/poll': { fn: u => { const r = watch.poll(q(u, 'id') || '', q(u, 'token') || ''); if (!r) throw fail(404, 'avviso non attivo'); return r; } },
+  // ids=<id>.<token>,… (al massimo 8): un viaggio guidato su un dispositivo senza Web Push legge tutti i suoi avvisi con una richiesta sola
+  '/api/watch/poll': { fn: u => {
+    const ids = q(u, 'ids');
+    if (ids != null) {
+      const out = {};
+      for (const p of String(ids).split(',').slice(0, 8)) { const [id, token] = p.split('.'); if (id && token) out[id] = watch.poll(id, token); }
+      return { r: out };
+    }
+    const r = watch.poll(q(u, 'id') || '', q(u, 'token') || ''); if (!r) throw fail(404, 'avviso non attivo'); return r;
+  } },
   '/api/trip': { fn: async u => {
     const [i, tid] = fullId(u, 'id'), veh = q(u, 'veh');
     if (!sec.vVeh(veh)) throw sec.bad('parametro veh non valido');
     const sched = q(u, 'mode') === 'sched', G = sched ? (gtfsFor(i, timeParams(u).date).G || D[i]) : D[i];
     if (!G.stopTimes.has(tid)) throw fail(404, 'corsa sconosciuta');
     if (sched) return live.tripDetail(i, tid, false, veh || null, G, timeParams(u));
-    return live.tripDetail(i, tid, true, veh || null, G, null);
+    const r = live.tripDetail(i, tid, true, veh || null, G, null);
+    if (q(u, 'lite') !== '1') return r;
+    // viaggio guidato: solo stato e fermate (orari attesi), senza il tracciato (che la mappa ha già): ~1/10 dei dati a ogni aggiornamento
+    const { shape, others, ...lite } = r; return lite;
   } },
   // pianifica percorso: da/a = fermate candidate (vedi stopsParam); secs/date = partenza scelta (assenti = adesso, in tempo reale)
   '/api/percorso': { cpu: true, fn: u => percorso.plan(planParams(u)) },

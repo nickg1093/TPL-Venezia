@@ -101,7 +101,7 @@ async function deliver(w, msg) {
   const res = await fetch(w.sub.endpoint, { method: 'POST', body, signal: AbortSignal.timeout(10000),
     // TTL = per quanto il messaggio ha ancora senso (un preavviso consegnato dopo l'arrivo è inutile); Topic = un solo messaggio in attesa per corsa:
     // se il telefono è offline, quando torna riceve solo l'ultimo stato e non una pila di messaggi vecchi
-    headers: { 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: String(msg.ttl ?? 120), Topic: ('trip' + w.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32),
+    headers: { 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', TTL: String(msg.ttl ?? 120), Topic: (w.viaggio ? 'viaggio' + w.viaggio : 'trip' + w.id).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32),
       Urgency: msg.silent ? 'normal' : 'high', Authorization: push.vapidAuth(vapid, w.sub.endpoint, subject) } });
   if (res.status === 404 || res.status === 410) { W.delete(w.id); return; }          // iscrizione scaduta o revocata dall'utente
   if (!res.ok) {                                                                     // motivo dichiarato dal servizio (es. Apple: {"reason":"BadJwtToken"})
