@@ -72,7 +72,7 @@ function Aggiorna-Csv {
   Write-Host "Oggi ($($o.data)): $($o.persone) persone, $($o.operazioni.'viaggi pianificati') viaggi pianificati, $($o.operazioni.'fermate consultate') fermate consultate."
 }
 
-function H($s) { return [Net.WebUtility]::HtmlEncode([string]$s) }
+function Testo-Html($s) { return [Net.WebUtility]::HtmlEncode([string]$s) }
 
 function Mostra-Browser {
   $d = Scarica
@@ -81,21 +81,21 @@ function Mostra-Browser {
   [void]$sb.Append('<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TPL Venezia - misure per giorno</title>')
   [void]$sb.Append('<style>body{font:14px system-ui,sans-serif;margin:20px;color:#222}table{border-collapse:collapse;margin:12px 0}th,td{border:1px solid #ccc;padding:4px 8px;text-align:right}th{background:#eef;position:sticky;top:0}td:first-child,th:first-child{text-align:left}.k{font-size:2em;font-weight:700}.box{display:inline-block;margin:0 24px 8px 0}small{color:#666}@media(prefers-color-scheme:dark){body{background:#111;color:#ddd}th{background:#223}td,th{border-color:#444}}</style></head><body>')
   $o = $d.oggi
-  [void]$sb.Append("<h1>TPL Venezia - oggi $(H $o.data)</h1>")
-  [void]$sb.Append("<div class='box'><div class='k'>$(H $o.persone)$(if($o.persone_almeno){'+'})</div>persone</div>")
+  [void]$sb.Append("<h1>TPL Venezia - oggi $(Testo-Html $o.data)</h1>")
+  [void]$sb.Append("<div class='box'><div class='k'>$(Testo-Html $o.persone)$(if($o.persone_almeno){'+'})</div>persone</div>")
   foreach ($k in @('aperture app (flusso mezzi)', 'viaggi pianificati', 'fermate consultate', 'avvisi di arrivo attivati')) {
-    [void]$sb.Append("<div class='box'><div class='k'>$(H $o.operazioni.$k)</div>$(H $k)</div>")
+    [void]$sb.Append("<div class='box'><div class='k'>$(Testo-Html $o.operazioni.$k)</div>$(Testo-Html $k)</div>")
   }
   [void]$sb.Append('<h2>Per giorno</h2><table><tr><th>data</th><th>persone</th>')
-  foreach ($k in $Operazioni) { [void]$sb.Append("<th>$(H $k)</th>") }
+  foreach ($k in $Operazioni) { [void]$sb.Append("<th>$(Testo-Html $k)</th>") }
   [void]$sb.Append('<th>MB</th></tr>')
   foreach ($g in $giorni) {
     $v = Riga $g
-    [void]$sb.Append('<tr>'); foreach ($x in $v) { [void]$sb.Append("<td>$(H $x)</td>") }; [void]$sb.Append('</tr>')
+    [void]$sb.Append('<tr>'); foreach ($x in $v) { [void]$sb.Append("<td>$(Testo-Html $x)</td>") }; [void]$sb.Append('</tr>')
   }
   [void]$sb.Append('</table><h2>Tutte le richieste di oggi</h2><table><tr><th>endpoint</th><th>richieste</th></tr>')
-  foreach ($p in $o.richieste.PSObject.Properties) { [void]$sb.Append("<tr><td>$(H $p.Name)</td><td>$(H $p.Value)</td></tr>") }
-  [void]$sb.Append("</table><p><small>$(H $d.nota). Pagina creata il $(Get-Date -Format 'dd/MM/yyyy HH:mm'), non salvata.</small></p></body></html>")
+  foreach ($p in $o.richieste.PSObject.Properties) { [void]$sb.Append("<tr><td>$(Testo-Html $p.Name)</td><td>$(Testo-Html $p.Value)</td></tr>") }
+  [void]$sb.Append("</table><p><small>$(Testo-Html $d.nota). Pagina creata il $(Get-Date -Format 'dd/MM/yyyy HH:mm'), non salvata.</small></p></body></html>")
   # file temporaneo: il browser lo apre e dopo pochi secondi viene cancellato (la pagina resta visibile finché non la chiudi)
   $tmp = Join-Path $env:TEMP ("tpl-metriche-" + [guid]::NewGuid().ToString('N') + '.html')
   [IO.File]::WriteAllText($tmp, $sb.ToString(), (New-Object System.Text.UTF8Encoding($false)))
