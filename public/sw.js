@@ -4,13 +4,15 @@
 //  - /api/*, /healthz e mattonelle della mappa: MAI intercettati (dati live sempre freschi; le mattonelle le gestisce il browser)
 //  - dati fissi e rete pedonale dal CDN: non passano di qui; li salva fissi.js in una cache sua («tpl-fissi-1», che resta tra le versioni)
 // Dopo modifiche ai file della shell (icone, manifest, elenco SHELL) incrementare VERSION: la cache vecchia viene cancellata.
-const VERSION = 'v31.1';
+const VERSION = 'v32';
 const CACHE = `tpl-venezia-${VERSION}`;
 const SHELL = ['/', '/css/app.css', '/js/app.js', '/js/util.js', '/js/zones.js', '/js/tide.js', '/js/avvisi.js', '/js/locate.js', '/js/fav.js', '/js/favs.js', '/js/nav.js', '/js/fissi.js', '/js/pedoni.js', '/js/camminata.js', '/js/notify.js', '/js/info.js', '/js/percorso.js', '/js/scegli.js', '/js/viaggio.js', '/js/sistema.js', '/js/scorri.js', '/js/guida.js', '/js/pwa.js', '/js/theme-init.js', '/vendor/leaflet/leaflet.js', '/vendor/leaflet/leaflet.css',
   '/icons/sprite.svg', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/favicon-48.png'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => Promise.all(SHELL.map(u => c.add(new Request(u, { cache: 'reload' })).catch(() => {})))).then(() => self.skipWaiting()));   // sempre dal server, mai dalla cache del browser
+  // 'no-cache': ogni file si ricontrolla sul server con la sua impronta (ETag); se non è cambiato arriva una risposta vuota (304) invece del file.
+  // Prima ('reload') a ogni nuova versione ogni telefono riscaricava tutti i file (~250 KB) anche se ne erano cambiati due: banda di Render.
+  e.waitUntil(caches.open(CACHE).then(c => Promise.all(SHELL.map(u => c.add(new Request(u, { cache: 'no-cache' })).catch(() => {})))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('tpl-venezia-') && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));

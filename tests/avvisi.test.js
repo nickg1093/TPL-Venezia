@@ -263,3 +263,63 @@ test('proroga annunciata su Telegram con il link a una notizia ACTV più vecchia
   assert.equal(pio.length, 1, 'un solo avviso'); assert.equal(pio[0].tgUrl, 'https://t.me/muoversivenezia/11880'); assert.equal(pio[0].url, url, 'con il link alla pagina ACTV');
   A._load({});
 });
+
+test('linee e fermate citate come ALTERNATIVA («sarà possibile accedere…», «potranno utilizzare…») non diventano linee colpite (caso People Mover)', () => {
+  const A = require('../avvisi');
+  const known = new Map([['2', [{ n: '2', s: 'nav', c: null }, { n: '2', s: 'aut', c: null }]], ['N', [{ n: 'N', s: 'nav', c: null }]], ['PM', [{ n: 'PM', s: 'aut', c: null }]],
+    ['12', [{ n: '12', s: 'nav', c: null }]], ['4.1', [{ n: '4.1', s: 'nav', c: null }]], ['T1', [{ n: 'T1', s: 'aut', c: null }]]]);
+  const ctx = { known, byName: new Map([['p.le roma g', ['nav:5031']], ['tronchetto mercato', ['nav:5004']], ['tronchetto', ['nav:5005']]]), lineStops: new Map(), nameOf: x => x };
+  const L = r => r.lines.map(l => l.s + ':' + l.n).sort();
+  const pm = A.analyze('People Mover chiusura temporanea impianto per manutenzione',
+    'AVM/Actv informa che mercoledì 18 e 25 novembre 2026 dalle 9:00 alle 17:00 c.a. , l’impianto People Mover rimarrà chiuso per manutenzione.\n\nDurante tutta la durata della sospensione, sarà possibile accedere al servizio di navigazione di linea 2 e linea N , esclusivamente negli approdi di P.le Roma G, Tronchetto Mercato e Tronchetto e limitatamente alla percorrenza inclusa tra tali fermate, anche con il biglietto automobilistico da € 1,50 .', ctx);
+  assert.deepEqual([L(pm), pm.stops], [['aut:PM'], []], 'solo il People Mover, niente approdi dell\'alternativa');
+  assert.deepEqual(L(A.analyze('Avviso', 'Linea 4.1 sospesa per avaria. I passeggeri potranno utilizzare la linea 12 da Fondamente Nove.', ctx)), ['nav:4.1']);
+  assert.deepEqual(L(A.analyze('Avviso', 'In alternativa si consiglia la linea 2. Resta sospesa la linea N fino a domani.', ctx)), ['nav:N']);
+  // il servizio sostitutivo della linea X riguarda la linea X: resta
+  assert.deepEqual(L(A.analyze('Tram: servizio sostitutivo linea T1', 'viene sospesa la linea T1 Favaro – Venezia e attivato il servizio sostitutivo con bus.', ctx)), ['aut:T1']);
+});
+
+test('la proroga su Telegram che sostituisce la notizia ACTV eredita linee e fermate se non ne cita di sue', () => {
+  const A = require('../avvisi'), now = Date.parse('2026-11-15T17:00:00+01:00');
+  A.setContext(() => ({ known: K(['24', '53E']), byName: new Map(), lineStops: new Map(), nameOf: x => x }));
+  const url = 'https://actv.avmspa.it/it/content/mestre-chiusura-via-x';
+  A._load({
+    rss: [{ key: 'rss:9', title: 'MESTRE - CHIUSURA DI VIA X', url, text: 'chiusura di via X', pubMs: Date.parse('2026-09-08T15:03:00+02:00') }],
+    pages: { [url]: 'Chiusura di via X fino a lunedì 30 novembre 2026. Deviate le linee 24 e 53E.' },
+    tg: [{ key: 'tg:2', id: 2, text: 'Mestre - via X: viene ulteriormente prorogata, fino a lunedì 30 novembre 2026, la chiusura di via X. I bus delle linee interessate continueranno le deviazioni. info ' + url,
+      links: [url], pubMs: Date.parse('2026-11-01T15:10:00+01:00'), url: 'https://t.me/muoversivenezia/2' }]
+  });
+  const r = A.build(now).filter(x => /via x/i.test(x.title));
+  assert.equal(r.length, 1);
+  assert.deepEqual(r[0].lines.map(l => l.n).sort(), ['24', '53E'], 'linee ereditate dalla notizia sostituita');
+  A._load({});
+});
+
+test('date: elenco di giorni non consecutivi («mercoledì 18 e 25 novembre») = giorni separati; «sabato 21 e domenica 22» = due giorni', () => {
+  const A = require('../avvisi'), pub = Date.parse('2026-11-09T10:00:00+01:00'), h = ms => new Date(ms).toLocaleString('it-IT', { timeZone: 'Europe/Rome' });
+  const pm = A.parseValidity('AVM/Actv informa che mercoledì 18 e 25 novembre 2026 dalle 9:00 alle 17:00 c.a. , l’impianto People Mover rimarrà chiuso.', pub, 'rss');
+  assert.deepEqual(pm.giorni.map(([a, b]) => [h(a), h(b)]), [['18/11/2026, 09:00:00', '18/11/2026, 17:00:00'], ['25/11/2026, 09:00:00', '25/11/2026, 17:00:00']]);
+  const we = A.parseValidity('sabato 21 e domenica 22 novembre 2026 servizio aggiuntivo', pub, 'rss');
+  assert.deepEqual([h(we.from), h(we.to), we.giorni], ['21/11/2026, 00:00:00', '22/11/2026, 23:59:59', undefined], 'giorni consecutivi: periodo continuo, dal sabato');
+  assert.equal(A.parseValidity('lavori il 10, 11 e 12 novembre 2026', pub, 'rss').giorni, undefined);
+  assert.equal(A.parseValidity('corse sospese il 7, 14 e 21 dicembre 2026', pub, 'rss').giorni.length, 3);
+  assert.equal(A.parseValidity('chiusa dal 2 al 4 dicembre 2026', pub, 'rss').giorni, undefined);
+});
+
+test('promemoria di un altro avviso («Si ricorda che…») non dà date, linee né fermate; People Mover in «servizio regolare» non è la linea PM', () => {
+  const A = require('../avvisi'), pub = Date.parse('2026-11-16T10:57:00+01:00'), h = ms => new Date(ms).toLocaleString('it-IT', { timeZone: 'Europe/Rome' });
+  A.setContext(() => ({ known: new Map([['1', [{ n: '1', s: 'nav', c: null }]], ['2', [{ n: '2', s: 'nav', c: null }]], ['PM', [{ n: 'PM', s: 'aut', c: null }]]]),
+    byName: new Map([['s. maria del giglio', ['nav:9']], ['salute', ['nav:8']]]), lineStops: new Map(), nameOf: x => x }));
+  const url = 'https://actv.avmspa.it/it/content/madonna-della-salute-servizi-di-trasporto-pubblico';
+  A._load({ rss: [{ key: 'rss:7526', title: 'Madonna della Salute: servizi di trasporto pubblico e mobilità', url, text: 'x', pubMs: pub }],
+    pages: { [url]: 'AVM/Actv informa che in occasione della festa della Madonna della Salute, da inizio servizi di venerdì 20 novembre 2026 sino a fine servizi di lunedì 23 novembre 2026 , l’utilizzo degli impianti della Salute viene modificato come segue:\n\nLinea 1 in direzione P. Roma approderà alla fermata di Salute.\n\nSi ricorda che da dalle ore 07:00 di martedì 17 novembre fino alle ore 17:00 di lunedì 30 novembre 2026 viene sospesa la fermata di S. Maria del Giglio per la presenza del ponte votivo.\n\nMentre i servizi di trasporto pubblico urbano (autobus, tram, navigazione e people mover) seguiranno il normale orario feriale.' },
+    tg: [{ key: 'tg:11914', id: 11914, text: 'Madonna della Salute\n\nsabato 21 e domenica 22 novembre 2026\n\nsono effettuati collegamenti aggiuntivi linea 1 nel tratto San Tomà-Lido SME.\nNella news linee e orari https://actv.avmspa.it/it/content/madonna-della-salute-servizi-di-trasporto-pubblico-e-mobilita',
+      links: ['https://actv.avmspa.it/it/content/madonna-della-salute-servizi-di-trasporto-pubblico-e-mobilita'], pubMs: pub + 6 * 60e3, url: 'https://t.me/muoversivenezia/11914' }] });
+  const r = A.build(pub + 2 * 864e5).filter(x => /salute/i.test(x.title));   // (si pubblicano gli avvisi che iniziano entro 3 giorni)
+  assert.equal(r.length, 1, 'Telegram e ACTV uniti anche con l\'indirizzo della pagina allungato');
+  assert.equal(r[0].source, 'both');
+  assert.deepEqual([h(r[0].from), h(r[0].to)], ['20/11/2026, 00:00:00', '23/11/2026, 23:59:59'], 'periodo della festa, non quello del promemoria');
+  assert.deepEqual(r[0].lines.map(l => l.s + ':' + l.n), ['nav:1'], 'niente PM (servizio regolare)');
+  assert.ok(!r[0].stops.includes('nav:9'), 'S. Maria del Giglio (promemoria) non è una fermata di questo avviso');
+  A._load({});
+});

@@ -270,3 +270,15 @@ test('AI · percorso completo simulato: workflow (script) -> ramo (cartella) -> 
   assert.equal(A.eventiDiag().ai.interpretazioni, 1);
   AR._setRecords([]); AR._setAi([]);
 });
+
+test('linee che l\'AI cita da una frase di ALTERNATIVA («sarà possibile accedere… linea 2 e linea N») vengono scartate (caso People Mover, archivio 16/11)', () => {
+  const V = require('../avvisi-ai');
+  const rec = { id: 'rss:10334', src: 'rss', pub: Date.parse('2026-11-09T10:00:00+01:00'), title: 'People Mover chiusura temporanea impianto per manutenzione',
+    text: 'manutenzione', page: 'AVM/Actv informa che mercoledì 18 e 25 novembre 2026 dalle 9:00 alle 17:00 c.a. , l’impianto People Mover rimarrà chiuso per interventi di manutenzione programmata.\n\nDurante tutta la durata della sospensione, sarà possibile accedere al servizio di navigazione di linea 2 e linea N , esclusivamente negli approdi di P.le Roma G, Tronchetto Mercato e Tronchetto.' };
+  const known = new Map([['2', [{ n: '2', s: 'nav', c: null }]], ['N', [{ n: 'N', s: 'nav', c: null }]]]);
+  const ai = { servizio: 'automobilistico', tipo: 'limitazione', certezza: 'alta', relazioni: [], periodi: [],
+    linee: [{ linea: '2', servizio: 'navigazione', citazione: 'linea 2' }, { linea: 'N', servizio: 'navigazione', citazione: 'linea N' }] };
+  const v = V.validate(ai, rec, { known });
+  assert.deepEqual(v.linee, []);
+  assert.ok(v.scarti.some(x => /alternativa/.test(x)));
+});

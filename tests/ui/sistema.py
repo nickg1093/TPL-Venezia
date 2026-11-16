@@ -112,6 +112,26 @@ with sync_playwright() as p:
     check(d2['run'] == d2['over'] and d2['over'] <= d['over'], f'tornati al testo normale: scorrono solo quelli che ancora non entrano ({d2})')
     ctx.close()
 
+    # --- 2c) donazione volontaria: sezione nelle Informazioni, link sicuro a PayPal; cuore accanto alla «i» solo dal 3° giorno d'uso, nascondibile
+    print('== donazione')
+    for giorni, visto in [(1, False), (3, True)]:
+        ctx = br.new_context(viewport={'width': 390, 'height': 844}, has_touch=True); setup(ctx)
+        ctx.add_init_script("localStorage.setItem('tpl.giorni', JSON.stringify({d:'2000-01-01', n:%d}))" % (giorni - 1))
+        page = ctx.new_page(); page.goto(BASE + '/'); page.wait_for_selector('.bus-marker', timeout=30000); page.wait_for_timeout(600)
+        check(page.is_visible('#dona-btn') == visto, f'{giorni}° giorno d\'uso: cuore accanto alla «i» {"visibile" if visto else "nascosto"}')
+        if visto:
+            page.click('#dona-btn'); page.wait_for_timeout(500)
+            a = page.evaluate("(()=>{const a=document.getElementById('dona-go');const r=document.getElementById('ip-dona').getBoundingClientRect();return {href:a.href,t:a.target,rel:a.rel,top:r.top,vis:r.top<innerHeight}})()")
+            check(a['href'] == 'https://paypal.me/olocing' and a['t'] == '_blank' and 'noopener' in a['rel'], f'link PayPal corretto e sicuro ({a["href"]})')
+            check(a['vis'], 'il cuore apre le Informazioni sulla sezione della donazione (non PayPal direttamente)')
+            page.screenshot(path=str(OUT / 'sys-dona.png'))
+            page.click('#dona-hide'); page.wait_for_timeout(200); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+            check(not page.is_visible('#dona-btn'), '«Non mostrare il cuore»: sparisce')
+            page.reload(); page.wait_for_selector('.bus-marker', timeout=30000); page.wait_for_timeout(500)
+            check(not page.is_visible('#dona-btn'), '… e resta nascosto dopo la riapertura')
+            check(page.evaluate("!!document.getElementById('ip-dona')"), 'la sezione resta nelle Informazioni')
+        ctx.close()
+
     # --- 3) notifiche perse
     print('== notifiche perse')
     ctx = br.new_context(viewport={'width': 390, 'height': 844}); setup(ctx)

@@ -4,7 +4,7 @@ Mappa in tempo reale di autobus, tram e vaporetti ACTV di Venezia, con pannelli 
 avvisi di servizio, avvisi di arrivo (notifiche), marea e preferiti. È una **PWA** (si installa come app) servita da un **server Node.js
 senza database**, che gira gratis su Render oppure su un computer di casa.
 
-Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v31.1** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md)
+Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v32** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md)
 
 ---
 
@@ -21,7 +21,7 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 9. [Prove e test: comandi da digitare](#9-prove-e-test)
 10. [Modifiche frequenti: ricette](#10-modifiche-frequenti)
 11. [Pubblicare una nuova versione e tornare indietro](#11-pubblicare-e-tornare-indietro)
-12. [Novità della v31](#12-novità-della-v31) · [v30](#novità-della-v30) · [v29](#novità-della-v29) · [v28](#novità-della-v28) · [v27](#novità-della-v27) · [v26](#novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
+12. [Novità della v32](#12-novità-della-v32) · [v31](#novità-della-v31) · [v30](#novità-della-v30) · [v29](#novità-della-v29) · [v28](#novità-della-v28) · [v27](#novità-della-v27) · [v26](#novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
 - Appendici tecniche: [A. GTFS statici](#a-gtfs-statici-perché-non-si-sovrascrivono-più) · [B. Regole del motore tempo reale](#b-eccezioni-e-contromisure-del-codice-elenco-dettagliato) · [C. Sicurezza](#c-sicurezza-securityjs-serverjs) · [D. Dati sul telefono e CDN](#d-dati-sul-telefono-e-cdn-ramo-dati) · [E. Orari per giorno e memoria](#e-orari-per-giorno-e-memoria-del-server-v28)
 
 ---
@@ -516,7 +516,25 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ---
 
-## 12. Novità della v31
+## 12. Novità della v32
+
+- **Donazione volontaria** (Informazioni, in cima): testo non insistente, pulsante verso `https://paypal.me/olocing` (nuova scheda, `noopener`).
+  Il cuore accanto alla «i» compare solo dal 3° giorno d'uso (contati sul telefono), apre la sezione e non PayPal direttamente, si nasconde per
+  sempre («Non mostrare il cuore») e per 6 mesi dopo aver aperto PayPal. L'app non riceve dati del pagamento (informativa privacy aggiornata).
+  Nessuna pubblicità: richiederebbe cookie, consenso e script di terzi, in contrasto con «Nessun tracciamento».
+- **Avvisi, regole nuove** (dall'archivio reale del 16/11/2026):
+  - linee e fermate di una frase di **alternativa** («sarà possibile accedere alla linea 2 e linea N…», «potranno utilizzare…», «in alternativa…»)
+    non sono linee colpite, né per le regole né per l'interpretazione AI (People Mover chiuso ≠ vaporetti 2 e N);
+  - frasi di **promemoria** di un altro avviso («Si ricorda che…») non danno date, linee né fermate (Madonna della Salute: 20–23 novembre, non 17–30);
+  - «People Mover» non è la linea PM negli elenchi di reti («autobus, tram, navigazione e people mover») né nelle frasi di servizio regolare;
+  - **stessa pagina ACTV con indirizzo allungato** (titolo modificato): Telegram e ACTV si uniscono comunque;
+  - **giorni non consecutivi** («mercoledì 18 e 25 novembre, 9–17»): l'avviso vale solo in quei giorni (`giorni`), si legge «mer 18 nov e mer 25 nov,
+    9:00–17:00» e nel pianificatore compare solo per viaggi in quei giorni; «sabato 21 e domenica 22» ora vale dal sabato (prima solo la domenica);
+  - una proroga su Telegram che sostituisce la notizia ACTV ne eredita linee e fermate se non ne cita.
+- **Banda**: aggiornando l'app il telefono ricontrolla i file con l'impronta (304 se invariati) invece di riscaricarli tutti (~250 KB per telefono
+  a ogni versione).
+
+### Novità della v31
 
 Aggiornamento di consolidamento (analisi del sito vero del 15/11/2026, fonti: documentazione Render, Chromium, WebKit).
 - **Protezioni**: «indietro» che non chiude l'app per sbaglio (3.3); barra dei messaggi di sistema (`public/js/sistema.js`) per notifiche da

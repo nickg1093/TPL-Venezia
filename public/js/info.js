@@ -35,6 +35,30 @@ export function open() {
 export function close() {
   if (card.hidden) return; card.hidden = true; btn.setAttribute('aria-expanded', 'false');
 }
+// DONAZIONE VOLONTARIA (sezione in cima alle Informazioni, sempre visibile; cuore accanto alla «i» solo dal 3° giorno d'uso).
+// Discreta per scelta: il cuore apre le Informazioni sulla sezione (mai PayPal direttamente, niente tocchi per sbaglio verso un pagamento);
+// si nasconde per sempre con «Non mostrare il cuore» e per 6 mesi dopo aver aperto PayPal. Giorni d'uso contati solo su questo dispositivo.
+const LS = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* facoltativo */ } } };
+function initDona() {
+  const hb = $('dona-btn'), go = $('dona-go'), hide = $('dona-hide'); if (!hb) return;
+  const oggi = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+  let g; try { g = JSON.parse(LS.get('tpl.giorni') || '{}'); } catch { g = {}; }
+  if (g.d !== oggi) { g = { d: oggi, n: Math.min(999, (Number.isInteger(g.n) ? g.n : 0) + 1) }; LS.set('tpl.giorni', JSON.stringify(g)); }
+  const show = () => {
+    const no = LS.get('tpl.dona.no') === '1', grazie = Number(LS.get('tpl.dona.aperto')) || 0;
+    hb.hidden = no || g.n < 3 || Date.now() - grazie < 180 * 864e5;
+    hide.hidden = no || g.n < 3;
+  };
+  show();
+  hb.onclick = () => {
+    if (card.hidden) open();
+    const s = $('ip-dona'), top = s.getBoundingClientRect().top - card.getBoundingClientRect().top + card.scrollTop - card.querySelector('.fp-h').offsetHeight - 12;
+    card.scrollTop = Math.max(0, top);
+    const h = s.querySelector('h3'); h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true });
+  };
+  go.addEventListener('click', () => { LS.set('tpl.dona.aperto', String(Date.now())); show(); });
+  hide.onclick = () => { LS.set('tpl.dona.no', '1'); show(); };
+}
 export function init(beforeOpen) {
   before = beforeOpen || before;
   btn.onclick = () => (card.hidden ? open() : close());
@@ -46,6 +70,7 @@ export function init(beforeOpen) {
     const h = list.querySelector('h3'); if (h) { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
   };
   updateWatchButton();
+  initDona();
   $('info-close').onclick = () => { close(); btn.focus(); };
   // indice della pagina: scorrimento alla sezione senza toccare l'indirizzo
   card.querySelector('.ip-toc').addEventListener('click', e => {

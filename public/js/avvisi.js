@@ -7,7 +7,10 @@ let data = null, err = null, timer = null, highlight = null, onChange = () => {}
 const byStop = new Map(), byLine = new Map();                      // fermata "src:id" / linea "src:NOME" -> [avviso, …]  (solo avvisi in corso)
 
 const now = () => Date.now();
-const isActive = a => a.from <= now() && a.to >= now();
+// giorni: avviso valido solo in giorni separati («mercoledì 18 e 25 novembre»): [[inizio, fine], …]; tra un giorno e l'altro non è in corso
+const okGiorni = g => Array.isArray(g) && g.length >= 2 && g.length <= 40 && g.every(x => Array.isArray(x) && Number.isFinite(x[0]) && Number.isFinite(x[1]));
+const overlaps = (a, x, y) => (okGiorni(a.giorni) ? a.giorni.some(([p, q]) => p <= y && q >= x) : a.from <= y && a.to >= x);
+const isActive = a => a.from <= now() && a.to >= now() && overlaps(a, now(), now());
 // avviso che "pesa" su fermate e mezzi: in corso, non risolto, non generale (es. nuovi orari di tutta la rete)
 const isWarn = a => isActive(a) && !a.resolved && !a.general;
 const two = n => String(n).padStart(2, '0');
@@ -29,6 +32,11 @@ function validity(a) {
   const f = midnight(a.from) ? dayOf(a.from) : fmt(a.from), t = endOfDay(a.to) ? dayOf(a.to) : fmt(a.to);
   if (a.open) return `Dal ${f}${up}`;
   if (a.untilEnd) return `${midnight(a.from) ? dayOf(a.from) : `${dayOf(a.from)} dalle ${hmOf(a.from)}`} fino al termine${up}`;
+  if (okGiorni(a.giorni)) {                                          // «mer 18 e mer 25 nov, 9:00–17:00»
+    const g = a.giorni, ds = g.map(([p]) => dayOf(p)), list = ds.length > 1 ? `${ds.slice(0, -1).join(', ')} e ${ds[ds.length - 1]}` : ds[0];
+    const [p0, q0] = g[0], same = g.every(([p, q]) => hmOf(p) === hmOf(p0) && hmOf(q) === hmOf(q0));
+    return same && !(midnight(p0) && endOfDay(q0)) ? `${list}, ${hmOf(p0)}–${hmOf(q0)}${up}` : `${list}${up}`;
+  }
   if (sameDay(a.from, a.to)) return midnight(a.from) && endOfDay(a.to) ? `${dayOf(a.from)}${up}` : `${dayOf(a.from)}, ${hmOf(a.from)}–${hmOf(a.to)}${up}`;
   return `Dal ${f} al ${t}${up}`;
 }
@@ -66,7 +74,7 @@ export function forJourney({ lines = [], stops = [], fromMs, toMs }, t = now()) 
     const strike = a.effect === 'strike';
     if (a.general && !strike) continue;
     if (!(strike ? a.dated : (a.lines || []).some(l => lk.has(lineKey(l.s, l.n))) || (a.stops || []).some(id => sk.has(id)))) continue;
-    if (a.dated || a.source === 'auto') { if (!(a.from <= toMs && a.to >= fromMs)) continue; }
+    if (a.dated || a.source === 'auto') { if (!overlaps(a, fromMs, toMs)) continue; }
     else if (!(a.from <= t && a.to >= t && fromMs <= t + 3 * 3600e3 && a.to >= fromMs)) continue;
     out.push(a);
   }

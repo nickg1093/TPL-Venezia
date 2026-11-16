@@ -165,6 +165,28 @@ function romeLocalMs(s) {
   for (const off of [60, 120]) { const ms = Date.UTC(y, mo - 1, d, h, mi) - off * 60e3, p = cal.romeParts(ms); if (p.ymd === ymd && p.secs === secs) return ms; }
   return null;
 }
+// FRASI CHE OFFRONO UN'ALTERNATIVA («sarà possibile accedere/utilizzare…», «in alternativa…», «i passeggeri potranno utilizzare…»):
+// le linee e le fermate citate lì sono il ripiego consigliato, non il servizio colpito (es. People Mover chiuso -> «linea 2 e linea N» negli
+// approdi di P.le Roma: l'avviso non riguarda i vaporetti 2 e N). Il confine di frase non cade dentro «P.le» o «c.a.» (punto + maiuscola).
+const ALT_RE = /(?:sar[aà]|saranno|e|è|resta|rimane)?\s*possibile\s+(?:accedere|utilizzare|usufruire|servirsi|raggiungere)|in alternativa|si (?:consiglia|invita|suggerisce)\b|potr(?:a|à|anno)\s+(?:essere\s+utilizzat|utilizzare|servirsi)|possono\s+(?:essere\s+utilizzat|utilizzare)/i;
+function altRanges(s) {
+  const out = []; let start = 0;
+  for (const m of [...s.matchAll(/\n|[.;!?](?=\s+[A-ZÀ-Ý«"(\d])/g), { index: s.length }]) {
+    if (ALT_RE.test(s.slice(start, m.index))) out.push([start, m.index]);
+    start = m.index + 1;
+  }
+  return out;
+}
+const inAlt = (rs, at) => rs.some(([a, b]) => at >= a && at < b);
+// citazione presente SOLO dentro frasi di alternativa (spazi e maiuscole indifferenti)
+function soloAlternativa(text, cit) {
+  const words = String(cit || '').trim().split(/\s+/).filter(Boolean).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (!words.length) return false;
+  const rs = altRanges(text); if (!rs.length) return false;
+  let any = false;
+  for (const m of String(text).matchAll(new RegExp(words.join('\\s+'), 'gi'))) { any = true; if (!inAlt(rs, m.index)) return false; }
+  return any;
+}
 // ai: JSON del modello; rec: record d'archivio interpretato; ctx: contesto GTFS (known: numero -> [{n,s,c}]); candidati: id proposti al modello
 function validate(ai, rec, ctx = null, candidati = []) {
   const scarti = [], out = { ok: false, formale: false, servizio: null, tipo: null, effetto: null, linee: [], periodo: null, relazioni: [], certezza: null, scarti };
@@ -181,6 +203,7 @@ function validate(ai, rec, ctx = null, candidati = []) {
     const n = String(l?.linea || '').toUpperCase().replace(/^(?:LINEA|LINEE|BUS|TRAM)\s+/, '').trim(), s = l?.servizio === 'navigazione' ? 'nav' : l?.servizio === 'automobilistico' ? 'aut' : null;
     if (!LINE_RE.test(n) || !s) { scarti.push(`linea "${clip(l?.linea, 12)}": formato o servizio non valido`); continue; }
     if (!cites(l.citazione)) { scarti.push(`linea ${n}: citazione non presente nel testo`); continue; }
+    if (soloAlternativa([t.titolo, t.corpo].join('\n'), l.citazione)) { scarti.push(`linea ${n}: citata come alternativa, non come linea colpita`); continue; }
     const pc = plain(l.citazione);
     const nEsc = n.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     if (!new RegExp(`(?:^|[^a-z0-9.])${nEsc}(?![a-z0-9])`).test(pc)) { scarti.push(`linea ${n}: non compare nella citazione`); continue; }
@@ -272,5 +295,5 @@ function consumo(dir) {
   return { get: () => c, add(n) { c.neuroni = Math.round((c.neuroni + (n || 0)) * 10) / 10; c.richieste++; }, save() { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(f, JSON.stringify(c, null, 1) + '\n'); } };
 }
 
-module.exports = { mapRelazioni, FORMATO, PROMPT_VER, MODELLI, MODELLO_PREDEFINITO, TIPI, RELAZIONI, SCHEMA, SISTEMA, EFFETTO, userPrompt, testoDi, chiama, parseOutput, neuroniDi,
+module.exports = { altRanges, inAlt, mapRelazioni, FORMATO, PROMPT_VER, MODELLI, MODELLO_PREDEFINITO, TIPI, RELAZIONI, SCHEMA, SISTEMA, EFFETTO, userPrompt, testoDi, chiama, parseOutput, neuroniDi,
   validate, romeLocalMs, plain, mergeAi, openAiDir, consumo, monthOf, QuotaError, TransientError, OutputError, MAX_TENTATIVI };

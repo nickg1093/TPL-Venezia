@@ -101,8 +101,13 @@ function findDates(text, pubMs, ctx = null) {
   // elenchi e intervalli compatti "10, 11 e 12 novembre" / "1-2 novembre [2026]" / "1 e 2 novembre" / "dal 2 al 4 gennaio": dal primo all'ultimo giorno.
   // I numeri devono essere parole a sé: in «9E 27 ottobre» la E del codice di linea non è la congiunzione «e».
   const used = [];
-  for (const r of t.matchAll(new RegExp(`(?<![\\w.,/])(\\d{1,2})((?:\\s*,\\s*\\d{1,2})*)\\s*(?:-|–|—|\\s+e\\s+|\\s+al\\s+|\\s+ed\\s+)\\s*(\\d{1,2})\\s+${MON_RE}(?:\\s+(\\d{4}))?(?![\\w])`, 'g'))) {
+  for (const r of t.matchAll(new RegExp(`(?<![\\w.,/])(\\d{1,2})((?:\\s*,\\s*\\d{1,2})*)\\s*(?:-|–|—|\\s+e\\s+|\\s+al\\s+|\\s+ed\\s+)\\s*(?:${WD}\\s+)?(\\d{1,2})\\s+${MON_RE}(?:\\s+(\\d{4}))?(?![\\w])`, 'g'))) {
     const end = r.index + r[0].length; if (place(r.index, end)) { used.push([r.index, end]); continue; }
+    // ELENCO di giorni non consecutivi («mercoledì 18 e 25 novembre», «7, 14 e 21 dicembre»): giorni separati, non un periodo continuo
+    const nums = [r[1], ...(r[2].match(/\d{1,2}/g) || []), r[3]].map(Number), elenco = /\s(?:e|ed)\s/.test(r[0].slice(r[1].length)) || /,/.test(r[2]);
+    if (elenco && !/[-–—]|\sal\s/.test(r[0]) && nums.some((n, k) => k && n !== nums[k - 1] + 1)) {
+      nums.forEach((n, k) => push(String(n), r[4], r[5], r.index + k, end, { lista: true })); used.push([r.index, end]); continue;
+    }
     push(r[1], r[4], r[5], r.index, end, { pair: 'from' }); push(r[3], r[4], r[5], r.index + 1, end, { pair: 'to' }); used.push([r.index, end]);
   }
   for (const r of t.matchAll(new RegExp(`(?<![\\w.,/])(\\d{1,2})\\s*(?:°|º)?\\s+${MON_RE}(?:\\s+(\\d{4}))?(?![\\w])`, 'g'))) {
@@ -181,7 +186,10 @@ function parseValidity(text, pubMs, kind = 'rss', ctx = null) {
   }
   // «fino al termine» si mostra così solo per un evento di un giorno; con una data di fine («fino al termine dei servizi di sabato 30 novembre») si mostra la data
   const sameDayEnd = cal.romeYmd(from) === cal.romeYmd(romeMs(last.y, last.m, last.d, 43200));
-  return { from, to, open, dated: true, untilEnd: (untilEvent && sameDayEnd && last.e == null && !tos.some(d => d.e != null)) || undefined };
+  // solo giorni di un elenco (nessun «dal… al…»): l'avviso vale in quei giorni, con la stessa fascia oraria se indicata
+  const lista = !open && !tos.length && distinct >= 2 && all.every(d => d.lista) ? [...new Map(all.map(d => [key(d), d])).values()] : null;
+  const giorni = lista ? lista.map(d => [romeMs(d.y, d.m, d.d, d.s ?? g0 ?? 0), romeMs(d.y, d.m, d.d, d.e ?? g1 ?? 86399)]).filter(([a, b]) => b > a) : null;
+  return { from, to, open, dated: true, untilEnd: (untilEvent && sameDayEnd && last.e == null && !tos.some(d => d.e != null)) || undefined, ...(giorni?.length >= 2 ? { giorni } : {}) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -219,7 +227,7 @@ const count = (re, t) => (t.match(re) || []).length;
 // Ritorna Map(nome normalizzato -> { ids, strong }): "strong" = nome sicuro (più parole, tra virgolette, dopo "fermata/pontile/capolinea", o in un percorso "A – B – C").
 const STREET = /(?:\b(?:via|viale|v\.le|piazza|p\.za|piazzale|p\.le|corso|largo|calle|strada|ponte|rio|riva|campo|fondamenta|salizada)\s+)$/i;   // "via Torino", "rio Terà": una strada, non la fermata omonima
 const CUE = /(?:fermat\w*|pontil\w*|capolinea|capilinea|stazione|[“«"'‘])\s*(?:di\s+|del\s+|della\s+|dello\s+|dei\s+|a\s+)?$/i;
-function stopMentions(text, byName) {
+function stopMentions(text, byName, skip = null) {
   const found = new Map(), hits = []; if (!byName?.size) return found;
   const toks = [...text.matchAll(/[A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9.'’]*/g)].map(m => ({ w: m[0], at: m.index, end: m.index + m[0].length }));
   for (let i = 0; i < toks.length;) {
@@ -231,6 +239,7 @@ function stopMentions(text, byName) {
     if (hit) {
       const first = toks[i], last = toks[i + hit.n - 1], before = text.slice(Math.max(0, first.at - 40), first.at);
       if (hit.n === 1 && STREET.test(before)) { i++; continue; }
+      if (skip && skip(first.at)) { i += hit.n; continue; }                   // citata nella frase dell'alternativa
       hits.push({ k: hit.k, n: hit.n, at: first.at, end: last.end, cue: CUE.test(before) }); i += hit.n;
     } else i++;
   }
@@ -252,10 +261,13 @@ function stopMentions(text, byName) {
 function analyze(title, text, ctx) {
   const r = analyzeBase(title, text, ctx); return withWater(r, title + '\n' + text, ctx);
 }
+const { altRanges, inAlt } = aiv;                                    // frasi che offrono un'alternativa (avvisi-ai.js)
+
 function analyzeBase(title, text, ctx) {
   const full = title + '\n' + text, empty = { lines: [], stops: [], stopNames: [] };
   if (/sciopero/i.test(title) || /^\s*[^\n]{0,80}\bsciopero\b/i.test(text)) return empty;
-  const known = ctx.known, mentions = stopMentions(full, ctx.byName), strongIds = new Set(), mSrc = new Set();
+  const altFull = altRanges(full);
+  const known = ctx.known, mentions = stopMentions(full, ctx.byName, at => inAlt(altFull, at)), strongIds = new Set(), mSrc = new Set();
   for (const v of mentions.values()) if (v.strong) for (const id of v.ids) { strongIds.add(id); mSrc.add(id.split(':')[0]); }
   const gAut = count(AUT_WORDS, full) + 2 * count(AUT_EMO, full), gNav = count(NAV_WORDS, full) + 2 * count(NAV_EMO, full);
   const served = x => ctx.lineStops?.get(x.s + ':' + String(x.n).toUpperCase());
@@ -280,8 +292,10 @@ function analyzeBase(title, text, ctx) {
       lines.set(x.s + ':' + x.n, { n: x.n, s: x.s, c: x.c || null });
     }
   };
+  const altClean = altRanges(clean);
   // linee: elenchi che seguono una parola di linea ("linee 9S, 21 e 56E", "bus 7", "tram T1", "vaporetto 4.1", "linee interessate: 2, 6") e i tram T1/T2 ovunque
   for (const m of clean.matchAll(TRIG)) {
+    if (inAlt(altClean, m.index)) continue;
     const rest = clean.slice(m.index + m[0].length), { toks, rest: after } = listAfter(rest); if (!toks.length) continue;
     // elenco «codice + percorso» («linee 15 Mestre FS - Aeroporto e 19 Venezia - Altinia»): dopo ogni descrizione può seguire un altro codice
     if (/^\s+[A-ZÀ-Ý][a-zà-ÿ]/.test(after)) {
@@ -310,12 +324,15 @@ function analyzeBase(title, text, ctx) {
       decide(tok, around, hint);
     });
   }
-  for (const m of clean.matchAll(/(?<![A-Za-z0-9])(T[1-9])(?![A-Za-z0-9])/g)) decide(m[1], clean.slice(Math.max(0, m.index - 150), m.index + 250), 'aut');   // tram
+  for (const m of clean.matchAll(/(?<![A-Za-z0-9])(T[1-9])(?![A-Za-z0-9])/g)) { if (!inAlt(altClean, m.index)) decide(m[1], clean.slice(Math.max(0, m.index - 150), m.index + 250), 'aut'); }   // tram
   // «People Mover» (navetta P.le Roma – Tronchetto) è la linea PM della rete automobilistica, anche quando il testo non dice «linea PM»
   // ma non quando è una voce di un elenco di reti o di personale («reti di navigazione, automobilistico, tranviario e People Mover»: avviso di rete)
   for (const m of clean.matchAll(/\bpeople[\s-]*mover\b/gi)) {
+    if (inAlt(altClean, m.index)) continue;
     const w = clean.slice(Math.max(0, m.index - 120), m.index + 40);
-    if (/\breti?\b|personale|parcheggi/i.test(w) || (/navigazione/i.test(w) && /automobilistic|tranviari/i.test(w))) continue;
+    const reti = ['autobus', 'tram', 'navigazione', 'automobilistic', 'tranviari'].filter(x => new RegExp(x, 'i').test(w)).length;
+    const dopo = clean.slice(m.index, m.index + 90).split(/[.;\n]/)[0];   // stessa frase
+    if (/\breti?\b|personale|parcheggi/i.test(w) || reti >= 2 || /normal[ei]\s+orari|regolar|confermat/i.test(dopo)) continue;   // elenco di reti o servizio regolare
     decide('PM', clean.slice(Math.max(0, m.index - 150), m.index + 250), 'aut');
   }
   const lead = /^\s*(?:linea\s+)?([A-Z0-9][A-Z0-9.]{0,5})\s*[:–-]/.exec(text); if (lead && !/^[A-Z]$/.test(lead[1])) decide(lead[1], full.slice(0, 400), null);
@@ -917,28 +934,45 @@ const EMOJI = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}\u{1F1E6}-\u{1F
 const testoLeggibile = t => String(t).replace(EMOJI, ' ').replace(/\s*(?:(?:per\s+)?(?:tutte\s+le\s+|maggiori\s+)?info(?:rmazioni)?\s*[:.]?\s*)?https?:\/\/\S+/gi, '')
   .replace(/[ \t]{2,}/g, ' ').replace(/\s+([,.;:])/g, '$1').trim();
 
+// PROMEMORIA DI UN ALTRO AVVISO («Si ricorda che dal 17 al 30 novembre è sospesa la fermata di S. Maria del Giglio»): date, linee e fermate
+// di quella frase sono di un'altra comunicazione (che ha il suo avviso). Tolta per le date e le linee, se resta almeno una data.
+const PROM_RE = /(^|\n|[.!?;]\s+)((?:si (?:ricorda|rammenta)|(?:vi )?ricordiamo)\b[^\n]*?)(?=[.!?](?:\s|$)|\n|$)/gi;
+function senzaPromemoria(t) {
+  const out = String(t).replace(PROM_RE, '$1');
+  return out !== t && new RegExp(`\\d{1,2}\\s+${MON_RE}`, 'i').test(out) ? out : t;
+}
+// STESSA PAGINA ACTV CON INDIRIZZO ALLUNGATO: cambiando il titolo ACTV allunga l'indirizzo («…trasporto-pubblico» → «…trasporto-pubblico-e-mobilita»),
+// l'RSS resta con il vecchio e Telegram usa il nuovo. Stessa pagina se un nome è l'inizio dell'altro seguito da «-» (almeno 25 caratteri in comune).
+function stessaPagina(a, b) {
+  const sl = u => { try { const x = new URL(u); return OK_HOSTS.has(x.hostname) && /^\/it\/content\//.test(x.pathname) ? x.pathname.slice(12).replace(/\/$/, '') : null; } catch { return null; } };
+  const A = sl(a), B = sl(b); if (!A || !B || A === B) return A != null && A === B;
+  const [s1, s2] = A.length < B.length ? [A, B] : [B, A];
+  return s1.length >= 25 && s2.startsWith(s1 + '-');
+}
+
 function prepare(now, { window = true } = {}) {
   const ctx = ST.ctx() || {}, items = [], byUrl = new Map(), src = sources();
   const keep = it => !window || it.published >= now - WINDOW_MS || it.to >= now - 7 * DAY;
   for (const r of src.rss) {
-    const body = dropPubDate(src.pages.get(r.url) || r.text, r.title, r.pubMs), full = r.title + '\n' + body;
+    const body = dropPubDate(src.pages.get(r.url) || r.text, r.title, r.pubMs), corpo = senzaPromemoria(body), full = r.title + '\n' + corpo;
     const it = { key: r.key, id: idOf(r.key), source: 'actv', title: r.title, text: short(body.replace(r.title, '').trim() || r.text, 700), url: r.url, published: r.pubMs,
-      ...interp(ctx, 'rss', r.key, full + '|' + r.pubMs, () => ({ ...parseValidity(full, r.pubMs, 'rss', ctx), ...analyze(r.title, body, ctx) })) };
+      ...interp(ctx, 'rss', r.key, full + '|' + r.pubMs, () => ({ ...parseValidity(full, r.pubMs, 'rss', ctx), ...analyze(r.title, corpo, ctx) })) };
     if (!keep(it)) continue;
     applyAi(it, r, ctx);
     items.push(it); byUrl.set(r.url, it);
   }
   for (const m of src.tg) {
+    const links = (m.links || []).map(l => byUrl.has(l) ? l : [...byUrl.keys()].find(u => stessaPagina(u, l)) || l);   // indirizzi allungati -> quello dell'RSS
     // già presente dal sito ACTV: si unisce. MA se il messaggio è molto più recente della notizia a cui rimanda (ACTV aggiorna spesso la stessa
     // pagina, es. "chiusura di via Pio X: ulteriore proroga" datata settembre e riannunciata a novembre), vale il messaggio: date e testo nuovi.
-    let first = m.links.find(l => byUrl.has(l) && m.pubMs - byUrl.get(l).published <= RELINK_MS), tgv = null;
+    let first = links.find(l => byUrl.has(l) && m.pubMs - byUrl.get(l).published <= RELINK_MS), tgv = null;
     // oltre i 2 giorni: stessa notizia solo se il messaggio ripete il periodo della pagina (date proprie, tutte dentro quel periodo) e non annuncia
     // variazioni, annullamenti o ripristini (es. P.le Roma "G", notizia del 5/11 e messaggio dell'8/11 con le stesse date). Date nuove: vale il messaggio (Pio X).
-    if (!first && m.links.some(l => byUrl.has(l)) && !SERVICE_MSG.test(m.text)) {
+    if (!first && links.some(l => byUrl.has(l)) && !SERVICE_MSG.test(m.text)) {
       tgv = interp(ctx, 'tgv', m.key, m.text + '|' + m.pubMs, () => parseValidity(m.text, m.pubMs, 'tg', ctx));
       const t = noAccents(m.text.toLowerCase());
       if (tgv.dated && !tgv.open && !CANCEL_RE.test(t) && !CHANGE_RE.test(t) && !RELINK_NEWS.test(t))
-        first = m.links.find(l => { const r = byUrl.get(l); return r && r.dated && !r.open && tgv.from >= r.from && tgv.to <= r.to; });
+        first = links.find(l => { const r = byUrl.get(l); return r && r.dated && !r.open && tgv.from >= r.from && tgv.to <= r.to; });
     }
     if (first) {
       const it = byUrl.get(first); it.source = 'both'; it.tgUrl = m.url;
@@ -957,9 +991,11 @@ function prepare(now, { window = true } = {}) {
       // PROROGA o VARIAZIONE annunciata su Telegram con il link alla pagina ACTV di una notizia più vecchia (es. via Pio X: pagina di settembre,
       // messaggio di novembre «ulteriormente prorogata»): il messaggio prende il posto della notizia, che non compare più due volte.
       // Solo con riferimento esplicito (stesso link) e parole di variazione; mai per annullamenti (li gestiscono i fili) né per date senza variazione.
-      const tt = noAccents(m.text.toLowerCase()), old = m.links.map(l => byUrl.get(l)).find(r => r && r.source === 'actv' && r.published < it.published);
+      const tt = noAccents(m.text.toLowerCase()), old = links.map(l => byUrl.get(l)).find(r => r && r.source === 'actv' && r.published < it.published);
       if (old && it.dated && (CHANGE_RE.test(tt) || /\bulterior\w*/.test(tt)) && !CANCEL_RE.test(tt)) {
         old.superseded = it.key; it.url = old.url;
+        if (!it.lines.length && old.lines.length) { it.lines = old.lines; it.lk = old.lk; }            // la proroga di solito non rinomina le linee: valgono quelle della notizia
+        if (!it.stops.length && old.stops.length) { it.stops = old.stops; it.stopNames = old.stopNames; }
         it.ev ||= newEv(it); it.ev.hist.push({ at: it.published, azione: 'sostituisce la notizia ACTV (stesso link, proroga o variazione)', msg: old.key, certezza: 'esplicita' });
       }
     }
