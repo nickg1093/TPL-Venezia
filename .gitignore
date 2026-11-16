@@ -5,3 +5,8 @@ data/**/*.tmp*
 certs/
 tmp/
 metriche-giorni.csv
+# misure per giorno: restano solo sul computer
+metriche-*.csv
+tpl-metriche-*.html
+diag-token*.txt
+*.token

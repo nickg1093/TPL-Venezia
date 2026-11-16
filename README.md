@@ -846,4 +846,7 @@ corsa restano calcolati da un solo codice, senza differenze tra telefono e serve
   al massimo ~3 MB di memoria al giorno, nessuna banda in più per gli utenti.
 - I numeri vivono nella memoria del server e si perdono a ogni riavvio o deploy: per lo storico, ogni sera dal proprio computer
   `set DIAG_TOKEN=…` e `node scripts/metriche-giorno.js`, che aggiunge una riga per giorno a `metriche-giorni.csv` (apribile con Excel).
+- Su Windows basta `metriche.bat` (doppio clic): menu per aggiornare il CSV, vedere i numeri nel browser senza salvarli o cambiare il token
+  (cifrato con l'account di Windows in `%LOCALAPPDATA%\TPL-Venezia`, fuori dal progetto). Per l'esecuzione automatica: `metriche.bat csv`.
+  CSV, token e pagine temporanee sono esclusi da GitHub (`.gitignore`).
 
