@@ -4,7 +4,7 @@ Mappa in tempo reale di autobus, tram e vaporetti ACTV di Venezia, con pannelli 
 avvisi di servizio, avvisi di arrivo (notifiche), marea e preferiti. È una **PWA** (si installa come app) servita da un **server Node.js
 senza database**, che gira gratis su Render oppure su un computer di casa.
 
-Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v32** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md)
+Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v32** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md) · Stato del progetto, da leggere per primo in una nuova conversazione: [STATO.md](STATO.md)
 
 ---
 
@@ -293,6 +293,7 @@ personale resta sul dispositivo dell'utente (privacy) e ciò che è pubblico sta
 | `/api/stream?d=1&src=…` | GET (SSE) | flusso dei mezzi: elenco completo, poi differenze |
 | `/api/scheduled?src=…&secs=…&date=AAAAMMGG` | GET | posizioni da orario (modalità Programmato) |
 | `/api/metriche` | GET | **riservato (DIAG_TOKEN)**: misure aggregate dall'ultimo avvio (richieste e kB per endpoint, durata media/P95, codici, flusso, CPU, memoria) |
+| `/api/metriche/giorni` | GET | **riservato (DIAG_TOKEN)**: persone diverse stimate e operazioni riuscite di oggi e degli ultimi 60 giorni (solo numeri, in memoria) |
 | `/api/mose` | GET | stato delle barriere del MOSE (Autorità per la Laguna di Venezia), con fonte e ora; letto al massimo ogni 4-10 minuti |
 | `/api/fissi` | GET | indice dei dati fissi: impronte SHA-256 dei file della versione in uso, indirizzi del CDN, rete pedonale (ETag) |
 | `/api/fisso?src=nav&f=stops\|routes\|shapes&h=<impronta>` | GET | un file dei dati fissi (se l'impronta è quella in uso; in cache per sempre) |
