@@ -394,6 +394,8 @@ const API = new Map(Object.entries({
   '/api/gtfs': { auth: 'diag', fn: () => live.gtfsStatus() },
   // MISURE AGGREGATE (riservate, DIAG_TOKEN): richieste e byte per endpoint, durate, codici, flusso, CPU e memoria; si azzerano al riavvio (metriche.js)
   '/api/metriche': { auth: 'diag', fn: () => metriche.snapshot() },
+  // PER GIORNO (riservato, DIAG_TOKEN): persone diverse stimate e operazioni (richieste per endpoint) di oggi e degli ultimi 60 giorni, solo numeri
+  '/api/metriche/giorni': { auth: 'diag', fn: () => metriche.giorni() },
   // MODELLO DEGLI EVENTI DEGLI AVVISI (riservato, DIAG_TOKEN): archivio delle comunicazioni, eventi passati, in corso e futuri con cronologia
   '/api/avvisi-eventi': { auth: 'diag', fn: () => avvisi.eventiDiag() },
   // quale IP vede il server per chi chiama (serve a scegliere TRUST_PROXY): intestazione X-Forwarded-For grezza e IP usato per i limiti
@@ -478,7 +480,7 @@ setInterval(() => {                                                       // evi
 // ---- GESTORE RICHIESTE ----
 async function onRequest(req, res) {
   let u;
-  const mt = metriche.begin(res);
+  const mt = metriche.begin(res, sec.clientIp(req));
   if ((req.url || '').length > 2048) return text(res, 414, 'Indirizzo troppo lungo');
   try { u = new URL(req.url, 'http://localhost'); } catch { return text(res, 400, 'Richiesta non valida'); }
   sec.securityHeaders(req, res);

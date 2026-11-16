@@ -26,7 +26,8 @@ Valgono per **ogni** modifica, piccola o grande, senza bisogno di richiamarli. P
   chiede prima `memoria.libera()`; ogni cache ricostruibile si registra in `memoria.quando()`. Misurare la memoria sui file veri prima di pubblicare.
 - **Dati derivati sempre coerenti con la fonte**: file sul CDN usati solo se impronta e versione coincidono con quelle scelte dal server,
   con una riserva esatta se non coincidono; file non più necessari (versioni superate, giorni passati) eliminati sempre.
-- Misure solo aggregate e temporanee (`/api/metriche`, in memoria): nessun registro delle singole richieste, nessun dato personale.
+- Misure solo aggregate e temporanee (`/api/metriche`, `/api/metriche/giorni`, in memoria): nessun registro delle singole richieste, nessun dato
+  personale; le persone per giorno si stimano con impronte a sale giornaliero mai salvate, e a fine giorno restano solo i numeri.
 
 ## 4. Interfaccia
 - Desktop, tablet, smartphone; tema chiaro e scuro; testo ingrandito; orizzontale; tastiera aperta; aree sicure.

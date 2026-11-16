@@ -3,6 +3,11 @@
 // richieste contemporanee, CPU e memoria. Lette con /api/metriche (riservato, DIAG_TOKEN).
 //   endpoint: il percorso /api/… conosciuto (un nome fisso), «file» per i file dell'app, «pagina», «altro» (404, metodi sbagliati)
 //   riconnessioni: aperture del flusso dallo stesso IP entro 30 s dalla chiusura precedente (l'IP resta in memoria al massimo 60 s)
+//   giorni: per ogni giorno (ora di Venezia) persone diverse stimate e richieste per endpoint; lette con /api/metriche/giorni (DIAG_TOKEN).
+//     Le persone si contano con un'impronta dell'IP mescolata a un sale casuale che cambia ogni giorno e non esce mai dalla memoria:
+//     non si risale all'IP né si collegano due giorni; a fine giornata restano solo i numeri (ultimi 60 giorni). Più persone dietro lo
+//     stesso IP (wifi pubblico, rete mobile) contano come una, una persona che cambia rete conta più volte: è una stima.
+const crypto = require('crypto'), { romeYmd } = require('./calendar');
 const RING = 256;                                                        // ultime durate per endpoint (per media e P95)
 const M = { since: Date.now(), ep: new Map(), sse: { attivi: 0, aperti: 0, rifiutati: 0, riconnessioni: 0, byte: 0 }, conc: { ora: 0, max: 0 }, bloccati: 0, rinviati: 0, min: [] };
 const closes = new Map();                                                // ip -> istante dell'ultima chiusura del flusso (60 s)
@@ -21,7 +26,37 @@ function track(res) {
   res.end = function (c, ...a) { bytes += len(c); return e.call(this, c, ...a); };
   return () => bytes;
 }
-function begin(res) {
+// ---- GIORNI ----
+const MAX_IMPRONTE = 50000;                                              // tetto alla memoria (circa 3 MB): oltre, il conteggio diventa «almeno»
+const GIORNI = [];                                                       // giornate concluse, solo numeri
+let oggi = null;
+function giornata(now = Date.now()) {
+  const d = romeYmd(now);
+  if (!oggi || oggi.data !== d) {
+    if (oggi) { GIORNI.push(riassunto(oggi)); if (GIORNI.length > 60) GIORNI.shift(); }
+    oggi = { data: d, sale: crypto.randomBytes(16), viste: new Set(), oltre: false, richieste: {}, byte: 0, flussi: 0 };
+  }
+  return oggi;
+}
+// operazioni leggibili (nome -> endpoint): solo richieste andate a buon fine
+const OPERAZIONI = { 'aperture app (flusso mezzi)': '/api/stream', 'fermate consultate': '/api/stop', 'zone consultate': '/api/zone',
+  'viaggi pianificati': '/api/percorso', 'corse aperte': '/api/trip', 'avvisi di arrivo attivati': '/api/watch', 'avvisi di arrivo annullati': '/api/watch/cancel',
+  'aggiunte al calendario': '/api/ics', 'marea': '/api/tide', 'avvisi ACTV letti': '/api/avvisi', 'MOSE': '/api/mose', 'errori segnalati dai telefoni': '/api/errore' };
+function riassunto(g) {
+  const fmt = `${g.data.slice(0, 4)}-${g.data.slice(4, 6)}-${g.data.slice(6, 8)}`;
+  return { data: fmt, persone: g.viste.size, persone_almeno: g.oltre || undefined, flussi_aperti: g.flussi,
+    operazioni: Object.fromEntries(Object.entries(OPERAZIONI).map(([k, e]) => [k, g.richieste[e] || 0])), MB: +(g.byte / 1e6).toFixed(1),
+    richieste: Object.fromEntries(Object.entries(g.richieste).sort((a, b) => b[1] - a[1])) };
+}
+function visita(ip, now) {
+  if (!ip) return;
+  const g = giornata(now);
+  if (g.viste.size >= MAX_IMPRONTE) { g.oltre = true; return; }
+  g.viste.add(crypto.createHmac('sha256', g.sale).update(String(ip)).digest('base64').slice(0, 12));
+}
+function giorni() { return { nota: 'persone = dispositivi/reti diversi stimati nel giorno (ora di Venezia); i dati si perdono a ogni riavvio del server', oggi: riassunto(giornata()), giorni: GIORNI.slice().reverse() }; }
+
+function begin(res, ip) {
   M.conc.ora++; if (M.conc.ora > M.conc.max) M.conc.max = M.conc.ora;
   const t0 = performance.now(), bytes = track(res);
   let name = 'altro';
@@ -32,6 +67,7 @@ function begin(res) {
     e.n++; e.byte += b; e.codici[res.statusCode] = (e.codici[res.statusCode] || 0) + 1;
     if (name !== '/api/stream') { e.dur[e.k % RING] = d; e.k++; }
     minute(b);
+    if (name !== '/healthz' && res.statusCode < 400) { const g = giornata(); g.richieste[name] = (g.richieste[name] || 0) + 1; g.byte += b; visita(ip); }
   });
   return { name: n => { name = n; if (n === '/api/stream') { M.conc.ora--; streams.add(live); } } };   // un flusso aperto non è una richiesta «in corso»
 }
@@ -41,7 +77,7 @@ function minute(b) {
 }
 // flusso SSE: apertura (con riconoscimento delle riconnessioni) e chiusura
 function sseOpen(ip, now = Date.now()) {
-  M.sse.aperti++; M.sse.attivi++;
+  M.sse.aperti++; M.sse.attivi++; giornata(now).flussi++;
   const c = closes.get(ip); if (c && now - c < 30000) M.sse.riconnessioni++;
   closes.delete(ip);
 }
@@ -77,4 +113,4 @@ function errore({ k, m, w, v }) {
   if (!ERR.has(key) && ERR.size >= 60) return;
   ERR.set(key, (ERR.get(key) || 0) + 1);
 }
-module.exports = { begin, sseOpen, sseClose, snapshot, errore, count: k => { M[k]++; }, _M: M, _ERR: ERR };
+module.exports = { begin, giorni, _giornata: giornata, _visita: visita, sseOpen, sseClose, snapshot, errore, count: k => { M[k]++; }, _M: M, _ERR: ERR };

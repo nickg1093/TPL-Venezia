@@ -837,3 +837,13 @@ Leggerle per intero superava i 512 MB di Render: riavvii a ogni richiesta di «P
 
 **Telefono.** Gli orari di un'altra data arrivano ancora dal server (che ora li prende dal CDN): così partenze, mezzi sulla mappa e dettaglio
 corsa restano calcolati da un solo codice, senza differenze tra telefono e server.
+
+### Quante persone usano l'app (misure per giorno)
+- `/api/metriche/giorni` (riservato, `DIAG_TOKEN`): per oggi e per gli ultimi 60 giorni (ora di Venezia) le **persone diverse stimate** e le
+  **operazioni** riuscite (aperture dell'app, fermate e zone consultate, viaggi pianificati, corse aperte, avvisi di arrivo, calendario, marea, avvisi ACTV, MOSE, errori).
+- Le persone si contano con un'impronta dell'IP mescolata a un sale casuale che cambia ogni giorno e resta solo in memoria: niente IP salvati,
+  niente cookie, nessun collegamento tra giorni diversi. È una stima (più persone sullo stesso wifi contano una). Costo: un contatore per richiesta,
+  al massimo ~3 MB di memoria al giorno, nessuna banda in più per gli utenti.
+- I numeri vivono nella memoria del server e si perdono a ogni riavvio o deploy: per lo storico, ogni sera dal proprio computer
+  `set DIAG_TOKEN=…` e `node scripts/metriche-giorno.js`, che aggiunge una riga per giorno a `metriche-giorni.csv` (apribile con Excel).
+
