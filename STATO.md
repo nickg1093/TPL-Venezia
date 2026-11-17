@@ -16,7 +16,7 @@ di percorso con viaggio guidato, avvisi di arrivo (notifiche push), avvisi di se
 | Sito | https://veneziatpl.onrender.com (Render, piano gratuito, 512 MB, regione Virginia) |
 | Codice | https://github.com/nickg1093/TPL-Venezia, ramo `main` (repository pubblico) |
 | Copia sul PC dell'utente | `D:\Downloads\TPL-Venezia` (Windows, clone git, aggiornata con GitHub Desktop) |
-| Versione | **v32** (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js`; `GUIDA_VER` in `public/js/guida.js` è `v31`) |
+| Versione | **v32.1** (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v31`) |
 | Tecnologia | Node.js 22, **nessun framework, nessun database**; dipendenze: solo `leaflet` e `protobufjs` |
 
 ## 2. Regole di lavoro (non negoziabili)
@@ -78,13 +78,14 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 ## 5. Stato attuale
 
 - **Online**: v32 con le misure per giorno (verificato il 16/11/2026 alle 21:25: `/api/metriche/giorni` risponde con il token dell'utente).
-- **Prove**: `npm test` → 262 passate, 0 fallite. Prove d'interfaccia (`run.py`, `viaggio.py`, `sistema.py`) passate sulla v32, anche con `TESTO=1.3`.
+- **Prove**: `npm test` → 262 passate, 0 fallite. Prove d'interfaccia (`run.py`, `viaggio.py`, `sistema.py`, `marea.py`) passate sulla v32.1, anche con `TESTO=1.3`.
 - **Da confermare da parte dell'utente**:
   - `metriche.bat` scelta 2 dopo la correzione del commit `0842dd0` (lo script PowerShell non è eseguibile nell'ambiente dell'IA: non è stato provato);
   - che `https://paypal.me/olocing` si apra correttamente dal pulsante della donazione (l'IA non può aprire quel sito);
   - viaggio guidato e riattivazione delle notifiche su un iPhone vero.
 
 ### Ultime versioni (dettagli in README §12)
+- **v32.1**: grafico della marea con etichette senza sovrapposizioni (soglia e orario del MOSE, massimi e minimi).
 - **Dopo la v32, senza cambio di versione** (solo server e script): misure per giorno. `metriche.js` stima le persone diverse con un'impronta
   dell'IP a sale giornaliero mai salvato e conta le operazioni riuscite; `/api/metriche/giorni` (DIAG_TOKEN) dà oggi e gli ultimi 60 giorni;
   `/healthz` è escluso. Per lo storico sul PC: `metriche.bat` (menu: CSV, vista nel browser senza salvare, cambio token) con

@@ -971,6 +971,8 @@ html,body{touch-action:pan-x pan-y}
 .tide-chart svg .msl{stroke:var(--late);stroke-width:1.5;stroke-dasharray:3 4;opacity:.85}
 .tide-chart svg .msv{stroke:var(--late);stroke-width:2;opacity:.8}
 .tide-chart svg text.mst{fill:var(--late);font-size:12px;font-weight:800}
+/* alone del colore della scheda: le etichette restano leggibili anche sopra linee e griglia */
+.tide-chart svg text.mst,.tide-chart svg text.exl{paint-order:stroke;stroke:var(--surface);stroke-width:4px;stroke-linejoin:round}
 .mose{margin-top:14px;padding:12px;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface-2)}
 .mose[data-sem="rosso"]{border-color:color-mix(in srgb,var(--late) 55%,transparent);background:color-mix(in srgb,var(--late) 10%,var(--surface))}
 .mose[data-sem="lampeggia"],.mose[data-sem="giallo"]{border-color:color-mix(in srgb,#e0a800 60%,transparent);background:color-mix(in srgb,#e0a800 10%,var(--surface))}

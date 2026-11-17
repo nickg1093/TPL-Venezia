@@ -2,7 +2,7 @@
 import { $, esc, icon, hm, api } from './util.js';
 
 const btn = $('tide-btn'), card = $('tide'), body = $('tide-body');
-let data = null, err = null, timer = null, mose = null, moseOpen = false;   // dettaglio delle 4 barriere: chiuso di base, resta come lo lascia l'utente
+let data = null, err = null, timer = null, mose = null, moseOpen = false, drawnEv = null;   // dettaglio delle 4 barriere: chiuso di base, resta come lo lascia l'utente
 const fmtCm = cm => `${cm > 0 ? '+' : cm < 0 ? '−' : ''}${Math.abs(cm)}`;
 const dayTag = ms => { const a = new Date(ms), b = new Date(); return a.toDateString() === b.toDateString() ? '' : a.toLocaleDateString('it-IT', { weekday: 'short' }) + ' '; };
 // Promemoria breve: con la marea (attuale o prevista nel grafico) oltre 85 cm ACTV pubblica quali servizi di navigazione sono previsti
@@ -49,17 +49,49 @@ function chartHtml(c) {
     xt += `<line class="g" x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${T}" y2="${H - B}"/>`;
     if (left - lastX >= 8) { xt += `<text x="${x.toFixed(1)}" y="${H - 8}" text-anchor="${anchor}">${k === 0 ? 'ora' : hm(t)}</text>`; lastX = anchor === 'end' ? x : x + 18; }
   }
-  // MOSE nel grafico: soglia di 110 cm (il sollevamento si decide con previsioni oltre questo livello) se rientra nella scala, e l'orario
-  // del sollevamento programmato, se l'Autorità lo pubblica
-  let ms = '';
-  if (hi >= 100) { const y = Y(110).toFixed(1); ms += `<line class="msl" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text class="mst" x="${W - R - 3}" y="${(+y - 5).toFixed(1)}" text-anchor="end">MOSE 110</text>`; }
-  const evT = moseEventMs(); if (evT && evT >= c.from && evT <= c.to) { const x = X(evT).toFixed(1); ms += `<line class="msv" x1="${x}" x2="${x}" y1="${T}" y2="${H - B}"/><text class="mst" x="${x}" y="${T + 11}" text-anchor="${+x > W - 60 ? 'end' : 'start'}" dx="${+x > W - 60 ? -4 : 4}">MOSE ${hm(evT)}</text>`; }
-  const marks = ext.filter(e => e.ts >= c.from && e.ts <= c.to).map(e => `<circle class="ex" cx="${X(e.ts).toFixed(1)}" cy="${Y(e.cm).toFixed(1)}" r="3.5"/><text class="exl" x="${X(e.ts).toFixed(1)}" y="${(Y(e.cm) + (e.type === 'max' ? -8 : 17)).toFixed(1)}" text-anchor="middle">${fmtCm(e.cm)}</text>`).join('');
+  // ETICHETTE SENZA SOVRAPPOSIZIONI: valori dei massimi/minimi, soglia MOSE (110 cm, linea tratteggiata) e orario del sollevamento
+  // programmato (linea verticale). Per ognuna si provano più posizioni e si sceglie la prima che non tocca le etichette già messe, la curva
+  // e i bordi; se nessuna è libera, quella che ne tocca meno. Larghezza stimata del testo (cifre e maiuscole, grassetto): 0,7 × corpo,
+  // un po' abbondante perché il carattere cambia da telefono a telefono.
+  const tOf = x => c.from + (x - L) / (W - L - R) * (c.to - c.from), boxes = [];
+  const box = (x, y, txt, anchor, fs) => { const w = txt.length * fs * 0.7 + 3, x0 = anchor === 'end' ? x - w : anchor === 'middle' ? x - w / 2 : x; return { x0, x1: x0 + w, y0: y - fs * 0.78, y1: y + fs * 0.22 }; };
+  const over = (a, b) => a.x0 < b.x1 + 2 && b.x0 < a.x1 + 2 && a.y0 < b.y1 + 1 && b.y0 < a.y1 + 1;
+  const curva = b => { for (let x = Math.max(L, b.x0); x <= Math.min(W - R, b.x1); x += 2) { const v = valueAt(c, tOf(x)); if (v) { const y = Y(v.cm); if (y >= b.y0 - 3 && y <= b.y1 + 3) return 1; } } return 0; };
+  const fuori = b => (b.x0 < L + 1 || b.x1 > W - R - 1 || b.y0 < 0 || b.y1 > H - B - 1 ? 1 : 0);
+  const xn = X(c.now), extra = [b => b.x0 < xn + 2 && b.x1 > xn - 2];   // linee verticali da non coprire: «ora» e sollevamento del MOSE
+  function place(cands, txt, cls, fs, linee = true) {
+    let best = null;
+    for (const [x, y, anchor] of cands) {
+      const b = box(x, y, txt, anchor, fs);
+      const score = boxes.filter(o => over(o, b)).length * 10 + fuori(b) * 20 + (linee ? curva(b) * 4 : 0) + extra.filter(f => f(b)).length * 3;
+      if (!best || score < best.score) best = { x, y, anchor, b, score };
+      if (score === 0) break;
+    }
+    boxes.push(best.b);
+    return `<text class="${cls}" x="${best.x.toFixed(1)}" y="${best.y.toFixed(1)}" text-anchor="${best.anchor}">${txt}</text>`;
+  }
+  let ms = '', lab = '';
+  const evT = moseEventMs(); drawnEv = evT;
+  const xv = evT && evT >= c.from && evT <= c.to ? X(evT) : null;
+  if (xv != null) { ms += `<line class="msv" x1="${xv.toFixed(1)}" x2="${xv.toFixed(1)}" y1="${T}" y2="${H - B}"/>`; extra.push(b => b.x0 < xv + 2 && b.x1 > xv - 2); }
+  const y110 = hi >= 100 ? Y(110) : null;
+  if (y110 != null) ms += `<line class="msl" x1="${L}" x2="${W - R}" y1="${y110.toFixed(1)}" y2="${y110.toFixed(1)}"/>`;
+  // valori degli estremi per primi (sono i più importanti): sopra o sotto il punto, oppure di lato
+  const marks = ext.filter(e => e.ts >= c.from && e.ts <= c.to).map(e => {
+    const x = X(e.ts), y = Y(e.cm), up = e.type === 'max';
+    boxes.push({ x0: x - 5, x1: x + 5, y0: y - 5, y1: y + 5 });     // il cerchio stesso
+    const cand = up ? [[x, y - 9, 'middle'], [x + 8, y - 4, 'start'], [x - 8, y - 4, 'end'], [x, y + 19, 'middle']] : [[x, y + 19, 'middle'], [x + 8, y + 9, 'start'], [x - 8, y + 9, 'end'], [x, y - 9, 'middle']];
+    return `<circle class="ex" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5"/>` + place(cand, fmtCm(e.cm), 'exl', 13, false);
+  }).join('');
+  // soglia 110: sopra o sotto la linea, da destra a sinistra (prima dell'orario del sollevamento, che ha più posti possibili)
+  if (y110 != null) { const cand = [[W - R - 3, y110 - 5, 'end'], [W - R - 3, y110 + 15, 'end']]; for (let x = W - R - 50; x > L + 40; x -= 30) cand.push([x, y110 - 5, 'middle'], [x, y110 + 15, 'middle']); cand.push([L + 4, y110 - 5, 'start'], [L + 4, y110 + 15, 'start']); lab += place(cand, 'MOSE 110', 'mst', 12); }
+  // orario del sollevamento: accanto alla linea, a destra o a sinistra, dall'alto in basso
+  if (xv != null) { const cand = []; for (let y = T + 11; y <= H - B - 4; y += 14) cand.push([xv + 4, y, 'start'], [xv - 4, y, 'end']); lab += place(cand, `MOSE ${hm(evT)}`, 'mst', 12); }
   const desc = `Grafico del livello di marea dalle ${hm(c.from)} alle ${hm(c.to)}: fino a sei ore osservate e diciotto ore previste. Trascina sul grafico, o usa le frecce, per leggere il livello a ogni ora.`;
   return `<div class="tide-chart" data-lo="${lo}" data-hi="${hi}"><div class="tide-read" aria-live="polite"><span class="tr-time"></span><b class="tr-val"></b><span class="tr-kind"></span></div>`
     + `<svg viewBox="0 0 ${W} ${H}" role="slider" tabindex="0" aria-label="${esc(desc)}" aria-valuemin="${c.from}" aria-valuemax="${c.to}" aria-valuenow="${c.now}">${grid}${xt}${ms}`
     + `<line class="nowl" x1="${X(c.now).toFixed(1)}" x2="${X(c.now).toFixed(1)}" y1="${T}" y2="${H - B}"/>`
-    + (obs.length > 1 ? `<path class="obs" d="${path(obs)}"/>` : '') + (fc.length > 1 ? `<path class="fc" d="${path(fc)}"/>` : '') + marks
+    + (obs.length > 1 ? `<path class="obs" d="${path(obs)}"/>` : '') + (fc.length > 1 ? `<path class="fc" d="${path(fc)}"/>` : '') + marks + lab
     + `<line class="cur" y1="${T}" y2="${H - B}" x1="-10" x2="-10"/><circle class="curd" r="5" cx="-10" cy="-10"/></svg>`
     + `<p class="tide-legend" title="La curva prevista è ricavata dagli estremi di marea previsti da CPSM"><span class="lgi"><span class="lg obs"></span>osservato</span><span class="lgi"><span class="lg fc"></span>previsto</span></p></div>`;
 }
@@ -134,9 +166,14 @@ function markBtn() {
 // stato del MOSE: solo con la finestra aperta (il server legge la fonte al massimo ogni 4-10 minuti)
 async function loadMose() {
   try { mose = await api('/api/mose'); } catch { mose = mose || { error: 'non disponibile' }; }
-  // si aggiorna solo il riquadro MOSE (e il segnale sul pulsante): il grafico resta com'è, con il cursore dove l'hai messo
+  // si aggiorna solo il riquadro MOSE (e il segnale sul pulsante); il grafico si ridisegna solo se cambia l'orario del sollevamento
+  // (linea verticale), con il cursore dove l'hai messo
   const sec = body.querySelector('section.mose');
-  if (sec && data) { sec.outerHTML = moseHtml(); markBtn(); if (!card.hidden) position(); }
+  if (sec && data) {
+    sec.outerHTML = moseHtml(); markBtn();
+    const ch = body.querySelector('.tide-chart'); if (ch && data.chart && moseEventMs() !== drawnEv) { ch.outerHTML = chartHtml(data.chart); bindChart(data.chart); }
+    if (!card.hidden) position();
+  }
   else if (!card.hidden) { render(); position(); }
 }
 

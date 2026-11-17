@@ -4,7 +4,7 @@ Mappa in tempo reale di autobus, tram e vaporetti ACTV di Venezia, con pannelli 
 avvisi di servizio, avvisi di arrivo (notifiche), marea e preferiti. È una **PWA** (si installa come app) servita da un **server Node.js
 senza database**, che gira gratis su Render oppure su un computer di casa.
 
-Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v32** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md) · Stato del progetto, da leggere per primo in una nuova conversazione: [STATO.md](STATO.md)
+Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v32.1** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md) · Stato del progetto, da leggere per primo in una nuova conversazione: [STATO.md](STATO.md)
 
 ---
 
@@ -21,7 +21,7 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 9. [Prove e test: comandi da digitare](#9-prove-e-test)
 10. [Modifiche frequenti: ricette](#10-modifiche-frequenti)
 11. [Pubblicare una nuova versione e tornare indietro](#11-pubblicare-e-tornare-indietro)
-12. [Novità della v32](#12-novità-della-v32) · [v31](#novità-della-v31) · [v30](#novità-della-v30) · [v29](#novità-della-v29) · [v28](#novità-della-v28) · [v27](#novità-della-v27) · [v26](#novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
+12. [Novità della v32.1](#12-novità-della-v321) · [v32](#novità-della-v32) · [v31](#novità-della-v31) · [v30](#novità-della-v30) · [v29](#novità-della-v29) · [v28](#novità-della-v28) · [v27](#novità-della-v27) · [v26](#novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
 - Appendici tecniche: [A. GTFS statici](#a-gtfs-statici-perché-non-si-sovrascrivono-più) · [B. Regole del motore tempo reale](#b-eccezioni-e-contromisure-del-codice-elenco-dettagliato) · [C. Sicurezza](#c-sicurezza-securityjs-serverjs) · [D. Dati sul telefono e CDN](#d-dati-sul-telefono-e-cdn-ramo-dati) · [E. Orari per giorno e memoria](#e-orari-per-giorno-e-memoria-del-server-v28)
 
 ---
@@ -517,7 +517,15 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ---
 
-## 12. Novità della v32
+## 12. Novità della v32.1
+
+- **Grafico della marea, etichette senza sovrapposizioni**: i valori dei massimi e minimi, «MOSE 110» (linea tratteggiata della soglia) e
+  «MOSE hh:mm» (linea verticale del sollevamento programmato) si mettono ognuno nella prima posizione libera tra diverse possibili (sopra/sotto,
+  a destra/sinistra), senza toccarsi, senza uscire dal grafico e possibilmente senza coprire la curva e le linee verticali; un alone del colore
+  della scheda le rende leggibili anche sopra le linee. Il grafico si ridisegna quando arriva l'orario del sollevamento (prima la linea
+  verticale compariva solo al giro successivo di aggiornamento). Prova: `tests/ui/marea.py` (4 casi difficili × 3 schermi).
+
+### Novità della v32
 
 - **Donazione volontaria** (Informazioni, in cima): testo non insistente, pulsante verso `https://paypal.me/olocing` (nuova scheda, `noopener`).
   Il cuore accanto alla «i» compare solo dal 3° giorno d'uso (contati sul telefono), apre la sezione e non PayPal direttamente, si nasconde per
