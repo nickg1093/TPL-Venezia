@@ -83,7 +83,6 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 | `avvisi-ai.js` | Interpretazione AI facoltativa degli avvisi (Cloudflare Workers AI): prompt, schema, validazione. | prompt o regole di validazione |
 | `watch.js`, `push.js` | Avvisi di arrivo e del viaggio guidato (ruoli esci/cambio/scendi): regole dei messaggi, ciclo di controllo, ripristino dopo un riavvio, invio Web Push cifrato (VAPID). | testi delle notifiche, tempi |
 | `tide.js` | Marea CPSM: livello, tendenza, estremi, storia. | soglie e testi della marea |
-| `ics.js` | File per il calendario di un viaggio (`/api/ics`): dati controllati, nessun salvataggio. | testo e promemoria dell'evento |
 | `flusso.js` | Flusso SSE dei mezzi: elenco completo all'apertura, poi solo le differenze, compresso. | raramente |
 | `feedaudit.js` | Diagnosi dei feed GTFS-RT (riservata). | mai |
 | `avvia-windows.bat`, `avvia.command`, `avvia.sh` | Avvio con doppio clic in locale (Windows, macOS, Linux). | mai |
@@ -97,7 +96,7 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 | `js/app.js` | App principale: mappa e mezzi in movimento, ricerca, pannelli fermata/zona/corsa, navigazione tra pannelli e tasto «indietro», mezzi «?», collegamento di tutti i moduli. |
 | `js/nav.js` | Tasto e gesto **«indietro»** del sistema: una voce di cronologia per ogni livello aperto. |
 | `js/percorso.js` | Pianificatore lato telefono: punti di partenza/arrivo, quando, opzioni, soluzioni, dettaglio, disegno sulla mappa. |
-| `js/viaggio.js` | Viaggio guidato («In viaggio», notifiche, schermo acceso, tempo reale della corsa che conta), «I miei viaggi», testo da condividere, calendario. |
+| `js/viaggio.js` | Viaggio guidato («In viaggio», notifiche, schermo acceso, tempo reale della corsa che conta), «I miei viaggi», proposta esatta (firma, link, riapertura), testo da condividere, posizione a fasi. |
 | `js/fissi.js` | **Dati fissi sul telefono**: fermate, linee e tracciati salvati nella cache del sito (`tpl-fissi-1`), scaricati dal CDN con controllo dell'impronta, o dal server. Restituisce gli stessi dati dei vecchi `/api/stops`, `/api/routes`, `/api/shapes`. |
 | `js/pedoni.js` | **Percorsi a piedi**: rete pedonale in mattonelle caricate quando servono, aggancio dei punti alla strada, ricerca del percorso (Dijkstra/A*). Puro, senza import (provato anche con `node --test`). |
 | `js/camminata.js` | Collega `pedoni.js` al CDN e al pianificatore: distanze verso le fermate vicine e percorsi da disegnare, entro 30 minuti a passo svelto; se la rete non c'è, linea d'aria come prima. |
@@ -222,10 +221,23 @@ nell'app installata) nessuna protezione.
   - **In secondo piano** nessun browser lascia lavorare una pagina web: lì lavorano le notifiche (Web Push), anche a schermo spento. iPhone e iPad:
     con l'app installata sulla schermata Home (iOS 16.4 o successivo). Senza Web Push le indicazioni arrivano finché l'app resta aperta (detto chiaramente).
   - **Salva viaggio** (soluzioni future): «**I miei viaggi**», in cima ai suggerimenti del pianificatore, separati dai preferiti (che sono luoghi e
-    percorsi senza orario). Al massimo 10, sul telefono, cancellati da soli dopo l'arrivo; un tocco riapre la stessa soluzione (se gli orari sono
-    cambiati lo dice e mostra le alternative); vicino alla partenza compare «Inizia il viaggio».
-  - **Calendario**: evento con promemoria 10 minuti prima; il file lo prepara il server (`/api/ics`, senza salvare niente) perché su iPhone Safari apre
-    un indirizzo vero con «Aggiungi al calendario». **Condividi**: testo semplice e ordinato (giorno, orari, linee, fermate, link alla stessa soluzione).
+    percorsi senza orario). Al massimo 10, sul telefono, cancellati da soli dopo l'arrivo; vicino alla partenza compare «Inizia il viaggio».
+  - **Proposta esatta (v32.3)**: viaggio salvato e link condiviso portano la **firma della soluzione scelta** (corse in ordine, giorno, partenza e
+    arrivo, famiglia e linee: parametri `sol`, `fam`, `rotte`, `arr` oltre a `da`, `a`, `quando`, `ora`, `data`). Alla riapertura: se la partenza è
+    già passata, messaggio «già partita» e soluzioni di adesso; entro 90 minuti ricerca «Adesso» (tempo reale), più avanti all'orario della proposta;
+    la proposta si cerca tra le soluzioni e poi tra gli altri orari dello stesso percorso (`/api/percorso-simili`) e si apre **direttamente nel
+    dettaglio**; se non c'è più, messaggio chiaro sopra le soluzioni migliori (mai una schermata vuota). Il link letto è controllato campo per campo:
+    se è manomesso si apre il tragitto normale. Con una proposta aperta anche il pulsante di condivisione in alto condivide la proposta.
+  - **Percorso preferito** (stella): solo partenza e arrivo, si apre sempre con «Adesso».
+  - **Condividi** (v32.3): testo ordinato con il simbolo del mezzo (⛴️ battello, 🚌 bus, 🚊 tram, 🚝 People Mover, 🚶 a piedi), linea tra parentesi
+    quadre, orari di salita e discesa, cambi, fermate e il link «Apri questa proposta». Il **calendario è stato tolto** (v32.3: niente `/api/ics`, niente `ics.js`).
+  - **Posizione durante il viaggio** (v32.3): il GPS si accende solo a piedi verso la fermata (5 minuti prima di uscire), nei cambi a piedi e
+    negli ultimi minuti prima di scendere (distanza dalla fermata), con `maximumAge` 15 s; è spento a bordo, a fine viaggio e con l'app nascosta.
+    Si accende da solo solo se il permesso è già concesso o dal tocco su «Inizia il viaggio» / sull'interruttore; la posizione non esce dal telefono.
+    La schermata dice se è accesa o in pausa e perché, e spiega che con lo schermo spento o l'app chiusa lavorano le notifiche del server.
+  - **Alternativa più veloce** (v32.3): con l'app davanti, solo se c'è un problema vero (corsa soppressa, cambio perso con i tempi aggiornati,
+    arrivo in ritardo di 8 minuti o più), al massimo una ricerca ogni 3 minuti: se una soluzione da dove sei fa arrivare almeno 6 minuti prima (o il
+    viaggio non regge più), compare un riquadro discreto «Trovata alternativa più veloce»; il viaggio non cambia finché non lo tocchi.
 - **Scelta delle soluzioni (v32.2, 19/11/2026)**: oltre 10 minuti a piedi in tutto ogni minuto in più pesa un minuto in più; a costi equivalenti
   (meno di 1 minuto) si consiglia chi ha meno cambi, poi meno strada a piedi, e il diretto non si scarta; in tempo reale la *consigliata* resta la
   stessa famiglia agli aggiornamenti se costa al massimo 3 minuti più della migliore (memoria del server: 500 tragitti, 10 minuti). Cambi tra
@@ -236,7 +248,11 @@ nell'app installata) nessuna protezione.
     previsto (anche quando il pannello della fermata non ha la riga); niente proposte che chiederebbero di essere già partiti; una coincidenza già
     persa con i tempi aggiornati compare solo se non c'è altro.
   - *Partenza alle*: le regole sopra (prima combinazione sensata, niente attese inutili ai cambi: a parità d'arrivo vince chi parte dopo).
-  - *Arrivo entro*: una coincidenza a rischio pesa 15 minuti invece di 5; «troppo presto» si misura dall'ultima partenza **sicura**, così una
+  - *Arrivo entro* (v32.3): oltre all'ultima partenza utile con tutti i cambi, si cercano le ultime partenze **senza cambi** e **con un cambio**;
+    restano proposte le soluzioni fino a 40 minuti prima dell'ultima partenza (60 per chi ha meno cambi o 5 minuti in meno a piedi). Ogni proposta ha
+    il **margine** sull'orario chiesto (`margine`, minuti): sotto i 5 minuti o con un cambio stretto è «**al limite**» (`limite`), mostrata con
+    «Arrivo al limite (margine 2 min): un piccolo ritardo può farti arrivare dopo le HH:MM»; le altre «Arrivi N min prima delle HH:MM».
+    Una coincidenza a rischio pesa 15 minuti invece di 5; «troppo presto» si misura dall'ultima partenza **sicura**, così una
     partenza al limite non fa sparire le soluzioni sicure di poco prima.
   - *Proseguire sullo stesso mezzo al capolinea*: **rinviato** (nei GTFS ACTV `block_id` è vuoto e il tempo reale non dice la corsa successiva del mezzo).
   - **Avvisi di servizio sulla soluzione**: quelli delle sue linee e fermate **nel giorno e nelle ore del viaggio** (con periodo: se si sovrappone;
@@ -314,13 +330,12 @@ personale resta sul dispositivo dell'utente (privacy) e ciò che è pubblico sta
 | `/api/stops`, `/api/routes`, `/api/shapes?id=…`, `/api/area` | GET | fermate, linee, tracciati, area servita (per le app non aggiornate e come riserva; stops e routes con ETag) |
 | `/api/stop?id=nav:5013`, `/api/zone?ids=…` | GET | passaggi di una fermata o di una zona (`&secs=&date=` per Programmato) |
 | `/api/trip?id=nav:<corsa>[&lite=1]` | GET | dettaglio di una corsa (`lite=1`: senza tracciato, per il viaggio guidato) |
-| `/api/percorso?da=…&a=…[&secs=&date=&arrivo=1&mezzi=nav,aut&pref=…&cambi=…&piedimax=…&passo=…&margine=…&piedi=…&piedir=1]` | GET | soluzioni del pianificatore. `da`/`a`: `src:id~metri` (linea d'aria) o `src:id~metri~r` (lungo le strade, misurati dal telefono) |
-| `/api/percorso-simili?…&fam=…&rotte=…&arr=hh:mm` | GET | alternative di una soluzione |
+| `/api/percorso?da=…&a=…[&secs=&date=&arrivo=1&mezzi=nav,aut&pref=…&cambi=…&piedimax=…&passo=…&margine=…&piedi=…&piedir=1]` | GET | soluzioni del pianificatore. `da`/`a`: `src:id~metri` (linea d'aria) o `src:id~metri~r` (lungo le strade, misurati dal telefono). Con `arrivo=1` ogni soluzione ha anche `margine` (minuti prima dell'orario) e `limite` (al limite: meno di 5 minuti o cambio stretto) |
+| `/api/percorso-simili?…&fam=…&rotte=…&arr=hh:mm` | GET | alternative di una soluzione; usata anche per ritrovare una proposta salvata o condivisa tra gli altri orari |
 | `/api/dates` | GET | date coperte dai GTFS in archivio |
 | `/api/avvisi`, `/api/tide`, `/api/about`, `/api/push-key` | GET | avvisi, marea, versione e contatto, chiave pubblica VAPID |
 | `/api/watch`, `/api/watch/cancel`, `/api/watch/resub`, `/api/watch/restore` | POST | avvisi di arrivo: crea, annulla, nuova iscrizione, ripristino dopo un riavvio |
 | `/api/watch/poll?id=&token=` · `?ids=id.token,…` | GET | messaggi per i dispositivi senza Web Push (`ids`: fino a 8 avvisi con una richiesta) |
-| `/api/ics?v=…[&dl=1]` | GET | file per il calendario di un viaggio (dati dal telefono, niente salvato) |
 | `/api/errore` | POST | errore imprevisto di un telefono: solo testo tecnico, contato in memoria (`/api/metriche` → `errori_telefoni`) |
 | `/api/watch/handoff` | POST | passaggio degli avvisi dalla vecchia alla nuova istanza durante un deploy (firmato; mai da un browser) |
 | `/api/audit`, `/api/gtfs`, `/api/avvisi-eventi`, `/api/whoami`, `/api/tide?debug=1` | GET, **DIAG_TOKEN** | diagnosi |
@@ -467,7 +482,7 @@ Senza `DATI_CDN=0` l'app usa il CDN anche in locale (serve internet): così si p
 Una volta sola: `pip install playwright` e `python -m playwright install chromium`. Poi, con l'app simulata avviata (9.3) in un'altra finestra:
 ```powershell
 python tests/ui/run.py http://localhost:3111 C:\temp\ui     # atteso: «FALLITI: 0»; gli screenshot finiscono in C:\temp\ui
-python tests/ui/viaggio.py http://localhost:3111 C:\temp\ui # viaggio guidato, I miei viaggi, calendario, condividi (atteso: «Tutto ok»)
+python tests/ui/viaggio.py http://localhost:3111 C:\temp\ui # viaggio guidato, I miei viaggi, proposta esatta (link valido e scaduto), condividi (atteso: «Tutto ok»)
 python tests/ui/sistema.py http://localhost:3111 C:\temp\ui # indietro nell'app installata, testo grande, testi che scorrono, notifiche perse, errori
 $env:TESTO="1.3"; python tests/ui/run.py http://localhost:3111 C:\temp\ui13; Remove-Item Env:TESTO   # tutte le prove con il testo «Molto grande»
 ```
@@ -531,7 +546,14 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ---
 
-## 12. Novità della v32.2
+## 12. Novità della v32.3
+
+- **v32.3 (19/11/2026)**: proposta esatta in «I miei viaggi» e nei link condivisi, con riapertura sicura (dettaglio, oppure messaggio e
+  alternative); testo condiviso nuovo; calendario tolto (`ics.js`, `/api/ics`, `tests/ics.test.js`, voce delle misure); posizione a fasi nel viaggio
+  guidato e spiegazione di schermo spento / app chiusa; riquadro «Trovata alternativa più veloce»; «Arrivo entro» con più soluzioni e margine
+  («al limite»). Dettagli nella §3.4.
+
+## Novità della v32.2
 
 Avvisi e pianificatore rivisti il 19/11/2026 (stessa parte della v33.1 in prova, senza l'acqua alta).
 - **Avvisi (v32.2)**, dai casi reali del ramo `archivio-avvisi` (ottobre-novembre 2026, prove in `tests/avvisi.test.js`, «casi reali»):
@@ -603,14 +625,14 @@ Aggiornamento di consolidamento (analisi del sito vero del 15/11/2026, fonti: do
 
 ### Novità della v30
 
-- **Viaggio guidato**, **I miei viaggi**, **calendario**, **condividi come testo**, **avvisi e marea sulla soluzione** (sezione 3.4).
+- **Viaggio guidato**, **I miei viaggi**, **condividi come testo** (calendario tolto nella v32.3), **avvisi e marea sulla soluzione** (sezione 3.4).
 - **Carico sul server**: per un viaggio 2-6 avvisi (stesso meccanismo degli avvisi di arrivo, al massimo 8 per dispositivo); tempo reale solo della
   corsa che conta, ogni 30 s e solo con l'app davanti, senza tracciato (`/api/trip?lite=1`, circa un decimo dei dati); dispositivi senza Web Push:
-  una sola lettura ogni 20 s per tutti gli avvisi (`/api/watch/poll?ids=…`); calendario solo al tocco (`/api/ics`, senza stato). In secondo piano:
+  una sola lettura ogni 20 s per tutti gli avvisi (`/api/watch/poll?ids=…`). In secondo piano:
   nessun timer né richiesta dal telefono.
 - **Avvisi**: «People Mover» è la linea **PM** automobilistica anche senza «linea PM» (non negli elenchi di reti, es. scioperi).
 - Prove: `tests/viaggio.test.js` (orari di Venezia e cambio dell'ora, fasi, avvisi da attivare, testo, avvisi per data, memoria manomessa),
-  `tests/ics.test.js`, `tests/push.test.js` (testi esci/cambio/scendi), `tests/avvisi.test.js` (People Mover), `tests/ui/viaggio.py` (telefono, schermo piccolo, computer, due temi).
+  `tests/push.test.js` (testi esci/cambio/scendi), `tests/avvisi.test.js` (People Mover), `tests/ui/viaggio.py` (telefono, schermo piccolo, computer, due temi).
 
 ### Novità della v29
 

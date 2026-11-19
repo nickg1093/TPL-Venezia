@@ -180,8 +180,12 @@ export const canSave = () => !vgShown() && !!(S.from && S.to);
 // link condivisibile: codice di un punto (fermata f:, zona z:, punto della mappa p:); «la mia posizione» non si condivide mai
 const epCode = ep => (!ep ? null : ep.kind === 'stop' ? 'f:' + ep.id : ep.kind === 'zone' ? 'z:' + ep.key : ep.kind === 'point' ? `p:${(+ep.lat).toFixed(5)},${(+ep.lon).toFixed(5)}` : null);
 // con un orario scelto il link lo porta con sé (giorno, ora, «partenza»/«arrivo entro»); con «Adesso» chi lo apre vede il suo adesso
-export const shareCodes = () => ({ da: epCode(S.from), a: epCode(S.to),
-  ...(S.when !== 'now' && S.time ? { quando: S.when === 'by' ? 'arrivo' : 'partenza', ora: S.time.replace(':', ''), data: clampDate(S.date).replace(/-/g, '') } : {}) });
+// (v33.2) con una proposta aperta nel dettaglio, il link è quello della proposta (si riapre il suo dettaglio, non l'elenco)
+export const shareCodes = () => {
+  const base = { da: epCode(S.from), a: epCode(S.to) }, sn = S.det && !vgShown() ? snapOf(S.det) : null;
+  if (sn) return { ...base, ...Viaggio.linkParams(sn) };
+  return { ...base, ...(S.when !== 'now' && S.time ? { quando: S.when === 'by' ? 'arrivo' : 'partenza', ora: S.time.replace(':', ''), data: clampDate(S.date).replace(/-/g, '') } : {}) };
+};
 export const isSaved = () => Fav.hasRoute(S.from, S.to);
 export function toggleSaved() { if (!canSave()) return undefined; const r = Fav.toggleRoute(S.from, S.to); X.favChanged?.(); if (S.edit && !S.q) renderSuggest(); return r; }
 
@@ -199,6 +203,14 @@ export function show(opts = {}) {
   if (opts.from) S.from = opts.from; if (opts.to) S.to = opts.to;
   if (opts.from && opts.to && !opts.quando) S.when = 'now';        // percorso salvato, recente o link senza orario: si parte da «Adesso»
   if (opts.quando && /^\d{2}:\d{2}$/.test(opts.ora || '')) { S.when = opts.quando === 'arrivo' ? 'by' : 'at'; S.time = opts.ora; S.date = clampDate(opts.data || today()); }
+  // PROPOSTA DA RIAPRIRE (viaggio salvato o link di una proposta, v33.2): già partita -> alternative di adesso con un messaggio; entro 90 minuti ->
+  // ricerca «Adesso» (tempo reale); più avanti -> ricerca all'orario della proposta. La proposta si cerca poi tra le soluzioni e gli «altri orari».
+  S.want = null; S.notice = null;
+  if (opts.want) {
+    const mode = Viaggio.reopenMode(opts.want);
+    if (mode === 'passata') { S.when = 'now'; S.notice = { kind: 'passata', w: opts.want }; }
+    else { S.want = opts.want; if (mode === 'adesso') S.when = 'now'; else { S.when = 'at'; S.time = opts.want.parti; S.date = clampDate(opts.want.date); } }
+  }
   // percorso salvato con «la mia posizione»: quella di adesso (se non c'è ancora, si chiede)
   for (const f of ['from', 'to']) if (S[f]?.kind === 'me' && S[f].lat == null) { const me = X.me(); if (me) S[f] = meEp(me); else { S[f] = null; S.edit = f; S.asked = f; X.locate(); } }
   if (!S.from && X.me()) S.from = meEp(X.me());
@@ -249,6 +261,7 @@ function baseQs(over = null) {
 }
 async function run(quiet) {
   // nuova ricerca: i risultati vecchi spariscono subito (niente proposte di un altro orario o di un altro giorno mentre si aspetta)
+  if (!quiet && !S.want && S.notice?.used) S.notice = null; else if (S.notice) S.notice.used = true;
   if (!quiet) { S.walkShow = false; S.more = null; S.sim = null; if (S.from && S.to) { S.loading = true; S.res = null; S.err = null; S.sel = -1; S.det = null; S.alts = null; renderBody(); draw(); } }
   const my0 = ++token; await prepWalk(); if (my0 !== token) return;   // al massimo pochi secondi (la prima volta); poi linea d'aria
   const da = cands(S.from), a = cands(S.to);
@@ -265,10 +278,11 @@ async function run(quiet) {
     if (r.soluzioni.length) loadSim(r.soluzioni[0]);
     if (S.sel >= r.soluzioni.length) { S.sel = -1; S.det = null; }
     else if (S.sel >= 0) { const f = S.det?.famiglia, k = r.soluzioni.findIndex(o => o.famiglia === f); if (k >= 0) { S.sel = k; S.det = r.soluzioni[k]; } }   // stesso percorso, orari aggiornati
-    if (S.wantSol) {                                                 // viaggio riaperto da «I miei viaggi»: si apre la stessa soluzione, se c'è ancora
-      const want = S.wantSol, k = r.soluzioni.findIndex(o => snapOf(o)?.id === want); S.wantSol = null;
+    if (S.want) {                                                    // proposta da riaprire: tra le soluzioni, poi tra gli altri orari dello stesso percorso
+      const want = S.want; S.want = null;
+      const k = r.soluzioni.findIndex(o => Viaggio.solTrips(o) === want.trips);
       if (k >= 0) { S.sel = k; S.det = r.soluzioni[k]; S.formOpen = false; }
-      else X.toast?.('Questo viaggio non è più tra le soluzioni (orari cambiati): guarda quelle proposte.', 5000);
+      else findWanted(want, my);
     }
   } catch (e) {
     if (my !== token) return; S.loading = false;
@@ -280,6 +294,26 @@ async function run(quiet) {
   clearInterval(timer); timer = S.when === 'now' && S.res ? setInterval(() => { if (X.isOpen() && !S.edit && !vgShown() && !document.hidden) run(true); }, REFRESH_MS) : null;
 }
 
+// proposta non tra le soluzioni: stesso percorso ad altri orari (/api/percorso-simili, la stessa richiesta del dettaglio); se non c'è,
+// messaggio chiaro sopra le soluzioni migliori di adesso (mai una schermata vuota)
+async function findWanted(want, my) {
+  const base = baseQs(); let x = null;
+  if (base && want.fam && want.rotte?.length) {
+    try {
+      const r = await api(`/api/percorso-simili?${base}&fam=${encodeURIComponent(want.fam)}&rotte=${encodeURIComponent(want.rotte.join(','))}${want.arrivi ? `&arr=${encodeURIComponent(want.arrivi)}` : ''}`);
+      if (!r.error) x = ['stesso', 'varianti', 'altre'].flatMap(k => r[k] || []).find(o => Viaggio.solTrips(o) === want.trips) || null;
+    } catch { /* sotto: messaggio */ }
+  }
+  if (my !== token) return;
+  if (x) { S.det = x; S.sel = -1; S.formOpen = false; renderForm(); renderBody(); draw(); return; }
+  S.notice = { kind: 'cambiata', w: want, used: true }; renderBody();
+}
+const noticeHtml = () => {
+  const n = S.notice; if (!n) return '';
+  const w = n.w, what = `${w.parti}${w.arrivi ? `–${w.arrivi}` : ''}${w.linee ? ` · ${w.linee}` : ''}`;
+  const txt = n.kind === 'passata' ? `La proposta delle ${what} è già partita.` : `La proposta delle ${what} non c'è più: gli orari o il tempo reale sono cambiati.`;
+  return `<p class="pp-notice" role="status">${icon('info', 'sm')}<span><b>${esc(txt)}</b><small>Qui sotto le soluzioni migliori per lo stesso tragitto.</small></span></p>`;
+};
 // alternative della soluzione nel dettaglio: stesso percorso ad altri orari, una linea diversa, altre linee (caricate quando si apre)
 async function loadAlts(o) {
   const key = o.famiglia + '|' + (S.res?.aggiornato || ''); if (S.alts?.key === key) return;
@@ -309,7 +343,7 @@ function renderVg() {
   X.pbadge.innerHTML = `<span class="pp-hic">${icon('route')}</span>`; X.pname.innerHTML = '<span>In viaggio</span>'; X.psub.textContent = ''; X.pstatus.textContent = '';
   X.plist.innerHTML = `<div class="pp-dhead"><button type="button" class="linkback vg-plan">${icon('back', 'sm')}<span>Pianifica un altro percorso</span></button>`
     + `<button type="button" class="ibtn sm pp-tall" aria-pressed="${S.tall}" aria-label="${S.tall ? 'Abbassa il pannello e mostra di più la mappa' : 'Alza il pannello per leggere tutte le tappe'}" title="${S.tall ? 'Più mappa' : 'Più tappe'}">${icon(S.tall ? 'down' : 'up', 'sm')}</button></div>`
-    + Viaggio.viewHtml();
+    + vgAltHtml() + Viaggio.viewHtml();
   if (vgTop) { vgTop = false; X.plist.scrollTop = 0; }
 }
 function leaveVg(other = false) {
@@ -322,6 +356,7 @@ let vgEndArm = 0, vgLastId = null;
 // aggiornamenti del viaggio (conto alla rovescia ogni 15 s, tempo reale, inizio e fine)
 function onVg(j) {
   const id = j?.viaggio || null, changed = id !== vgLastId; vgLastId = id;
+  if (j) checkVgAlt(j); else vgAlt = null;
   if (!X?.isOpen()) return;
   if (S.vg && !j) { if (!vgStarting) leaveVg(); return; }                                   // viaggio terminato
   if (vgShown()) { if (changed || !Viaggio.updateView(X.plist)) { const keep = !vgTop && !changed, y = X.plist.scrollTop; renderVg(); if (keep) X.plist.scrollTop = y; else X.plist.scrollTop = 0; } return; }
@@ -428,7 +463,12 @@ function riskInfo(o) {
 const minW = m => (m < 1 ? 'meno di 1 minuto' : m === 1 ? '1 minuto' : m + ' minuti');
 const chgTitle = t => (t.persa ? 'Cambio che non riesce con i ritardi di adesso' : t.cambioMin != null ? `Cambio · ${minW(t.cambioMin)} di margine` : 'Cambio');
 const chgNote = t => (t.persa ? ' · arrivi dopo la partenza: scegli un\'altra soluzione' : t.aRischio ? ' · margine stretto: tieniti pronto, un piccolo ritardo e la perdi' : '');
-const riskLine = o => { const r = riskInfo(o); return r ? `<span class="pp-risk${r.cls ? ' ' + r.cls : ''}">${icon('warn', 'sm')}<span>${r.txt}</span></span>` : ''; };
+const riskLine = o => { const r = riskInfo(o); return (r ? `<span class="pp-risk${r.cls ? ' ' + r.cls : ''}">${icon('warn', 'sm')}<span>${r.txt}</span></span>` : '') + limitLine(o); };
+// «ARRIVO ENTRO»: margine sull'orario chiesto (v33.2). Al limite (meno di 5 minuti o cambio stretto) si dice chiaramente cosa rischi; le altre «con margine»
+const limitTxt = o => (o.margine == null || !S.res?.entro ? '' : o.limite
+  ? `Arrivo al limite (margine ${o.margine} min${o.aRischio ? ', cambio stretto' : ''}): un piccolo ritardo può farti arrivare dopo le ${S.res.entro}.`
+  : `Arrivi ${o.margine} min prima delle ${S.res.entro}.`);
+const limitLine = o => (o.margine == null || !S.res?.entro ? '' : o.limite ? `<span class="pp-limit">${esc(limitTxt(o))}</span>` : `<span class="pp-ok muted">${esc(limitTxt(o))}</span>`);
 // ALTRI ORARI dello stesso percorso come pulsanti sotto la scheda (non dentro: si toccano uno per uno)
 function poiRow(o, k) {
   if (!o.poi?.length) return '';
@@ -528,7 +568,7 @@ function tideHtml(o, sn) {
 const shareLink = sn => {
   const u = new URL('/', location.origin), c = { da: epCode(S.from), a: epCode(S.to) };
   if (c.da) u.searchParams.set('da', c.da); if (c.a) u.searchParams.set('a', c.a);
-  if (sn) { u.searchParams.set('quando', 'partenza'); u.searchParams.set('ora', sn.parti.replace(':', '')); u.searchParams.set('data', sn.date.replace(/-/g, '')); }
+  if (sn) for (const [k, v] of Object.entries(Viaggio.linkParams(sn))) u.searchParams.set(k, v);
   return c.a ? u.toString() : null;
 };
 function actsHtml(o, sn) {
@@ -542,7 +582,6 @@ function actsHtml(o, sn) {
   }
   h += '<div class="pp-acts2">'
     + (future && !cur ? `<button type="button" class="pp-act pp-svtrip" aria-pressed="${sv}">${icon('bookmark', 'sm')}<span>${sv ? 'Salvato' : 'Salva viaggio'}</span></button>` : '')
-    + (future ? `<button type="button" class="pp-act pp-cal">${icon('cal', 'sm')}<span>Calendario</span></button>` : '')
     + `<button type="button" class="pp-act pp-txt">${icon('share', 'sm')}<span>Condividi</span></button></div>`;
   if (future && !go && !cur) h += `<small class="pp-gonote muted">${sv ? 'Lo ritrovi in «I miei viaggi», all\'apertura del pianificatore.' : 'Salvalo per ritrovarlo in «I miei viaggi».'} «Inizia il viaggio» compare da 2 ore prima della partenza.</small>`;
   return h + '</div>';
@@ -580,7 +619,7 @@ function renderBody() {
   if (!r) { X.plist.innerHTML = ''; return; }
   if (S.det) return renderDetail(S.det, live);
   const nf = opzCount();
-  const head = `<p class="pp-meta muted">${live ? `In tempo reale · aggiornato alle ${new Date(r.aggiornato).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : r.entro ? `Orari programmati · arrivo entro le ${esc(r.entro)}` : `Orari programmati · partenza dalle ${esc(r.ora)}`}`
+  const head = noticeHtml() + `<p class="pp-meta muted">${live ? `In tempo reale · aggiornato alle ${new Date(r.aggiornato).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : r.entro ? `Orari programmati · arrivo entro le ${esc(r.entro)}` : `Orari programmati · partenza dalle ${esc(r.ora)}`}`
     + (mezziTxt() ? ` · ${mezziTxt()}` : '') + (nf ? ` · <button type="button" class="nlink pp-opzlink">${nf} ${nf > 1 ? 'opzioni attive' : 'opzione attiva'}</button>` : '') + '</p>';
   // «tutto a piedi» in cima all'elenco: se nessun mezzo conviene, se dura poco più del mezzo più rapido (5 minuti) o se FA ARRIVARE PRIMA di
   // qualsiasi mezzo (con «arrivo entro»: fa partire più tardi), anche quando il mezzo dura meno ma parte tra un po'
@@ -758,23 +797,53 @@ async function startVg(o) {
   if (Viaggio.active()) { S.vg = true; if (X.isOpen()) { render(); draw(); } }
 }
 // «Ricalcola da qui»: dalla posizione (se c'è) o dalla fermata dove ti trovi secondo il viaggio, fino all'arrivo, con «Adesso». Il viaggio resta attivo.
+// punto da cui ripartire: la posizione (se c'è), altrimenti la fermata dove ti trovi secondo il viaggio, altrimenti la partenza
+function vgFrom(j) {
+  if (X.me()) return meEp(X.me());
+  const ph = Viaggio.phase(j), R = j.legs.filter(l => l.t === 'r');
+  const st = ph.kind === 'cambio' ? R[ph.idx - 1]?.a : ph.kind === 'bordo' || ph.kind === 'scendi' ? R[ph.idx]?.a : null, s0 = st && X.stopById.get(st.id);
+  return s0 ? stopEp(s0[0], s0[1], s0[4]) : j.from && j.from.kind !== 'me' ? { ...j.from } : null;
+}
+// ALTERNATIVA PIÙ VELOCE durante il viaggio (v33.2): si cerca SOLO se c'è un problema vero (corsa soppressa, cambio perso, arrivo in ritardo di
+// 8 minuti o più), con l'app davanti, al massimo una volta ogni 3 minuti per viaggio (una sola richiesta al server). Si propone con un riquadro
+// discreto solo se fa arrivare almeno 6 minuti prima (o se il viaggio non regge più): il viaggio in corso non cambia finché non lo tocchi.
+let vgAlt = null, vgAltAt = 0, vgAltBusy = false;
+const ALT_EVERY = 3 * 60e3, ALT_GAIN = 6 * 60e3;
+async function checkVgAlt(j) {
+  if (!j || document.hidden || vgAltBusy) return;
+  if (vgAlt && (vgAlt.id !== j.viaggio || Date.now() - vgAlt.at > 10 * 60e3)) vgAlt = null;
+  const need = Viaggio.altNeed(j); if (!need) { if (vgAlt) { vgAlt = null; if (vgShown()) renderVg(); } return; }
+  if (Date.now() - vgAltAt < ALT_EVERY || !j.to || j.to.kind === 'me') return;
+  const from = vgFrom(j), da = cands(from), a = cands(j.to); if (!da?.length || !a?.length) return;
+  vgAltAt = Date.now(); vgAltBusy = true;
+  try {
+    const r = await api(`/api/percorso?da=${encodeURIComponent(da.join(','))}&a=${encodeURIComponent(a.join(','))}${opzQs()}`);
+    const o = r?.soluzioni?.[0]; if (!o || !Viaggio.active() || Viaggio.active().viaggio !== j.viaggio) return;
+    let arr = Viaggio.romeMs(today(), o.arrivi); if (arr < Date.now() - 6 * 3600e3) arr += 864e5;
+    if (need.arrive !== Infinity && arr > need.arrive - ALT_GAIN) return;
+    vgAlt = { id: j.viaggio, at: Date.now(), why: need.why, parti: o.parti, arrivi: o.arrivi, linee: o.tratte.filter(t => t.tipo === 'mezzo').map(t => t.line).join(' + '),
+      gain: need.arrive === Infinity ? null : Math.round((need.arrive - arr) / 60e3) };
+    if (X.isOpen() && vgShown()) renderVg();
+  } catch { /* nessun riquadro: il viaggio continua come prima */ } finally { vgAltBusy = false; }
+}
+const vgAltHtml = () => {
+  const v = vgAlt, j = Viaggio.active(); if (!v || !j || v.id !== j.viaggio) return '';
+  const head = v.why === 'soppressa' ? 'Corsa soppressa: c\'è un\'alternativa' : v.why === 'cambio' ? 'Il cambio salta: c\'è un\'alternativa' : 'Trovata alternativa più veloce';
+  return `<button type="button" class="vg-alt vg-recalc">${icon('route', 'sm')}<span><b>${esc(head)}</b><small>Linea ${esc(v.linee)} · partenza ${esc(v.parti)}, arrivo ${esc(v.arrivi)}${v.gain ? ` (${v.gain} min prima)` : ''} · tocca per vederla</small></span></button>`;
+};
 function recalcVg() {
   const j = Viaggio.active(); if (!j?.to) { X.toast?.('Arrivo del viaggio non disponibile: scegli il percorso dal pianificatore.', 4000); return; }
-  let from = X.me() ? meEp(X.me()) : null;
-  if (!from) {
-    const ph = Viaggio.phase(j), R = j.legs.filter(l => l.t === 'r');
-    const st = ph.kind === 'cambio' ? R[ph.idx - 1]?.a : ph.kind === 'bordo' || ph.kind === 'scendi' ? R[ph.idx]?.a : null, s0 = st && X.stopById.get(st.id);
-    from = s0 ? stopEp(s0[0], s0[1], s0[4]) : j.from && j.from.kind !== 'me' ? { ...j.from } : null;
-  }
+  const from = vgFrom(j); vgAlt = null;
   S.vg = false; vgEndArm = 0; if (!from) S.from = null;
   show({ ...(from ? { from } : {}), to: { ...j.to, ...(j.to.kind === 'me' ? { lat: null } : {}) } });
 }
 function onClick(e) {
   if (!X.isOpen()) return;
   const t = e.target;
-  // VIAGGIO GUIDATO, I MIEI VIAGGI, avvisi, calendario e condivisione
+  // VIAGGIO GUIDATO, I MIEI VIAGGI, avvisi e condivisione
   if (t.closest('.vg-plan')) { leaveVg(true); return; }
   const lk = t.closest('.vg-lockcb'); if (lk) { Viaggio.setLockWanted(lk.checked); return; }
+  const gp = t.closest('.vg-gpscb'); if (gp) { Viaggio.setGpsWanted(gp.checked); return; }   // nel tocco: il browser può chiedere il permesso
   const en = t.closest('.vg-end');
   if (en) {
     if (Date.now() - vgEndArm < 4000) { vgEndArm = 0; Viaggio.end(); X.toast?.('Viaggio terminato: avvisi annullati.', 3000); return; }
@@ -792,17 +861,10 @@ function onClick(e) {
     if (r.error) X.toast?.(r.error, 5000); else X.toast?.(r.saved ? 'Salvato in «I miei viaggi»: lo trovi aprendo il pianificatore.' : 'Tolto da «I miei viaggi».', 3500);
     renderBody(); return;
   }
-  if (t.closest('.pp-cal')) {
-    const sn = snapOf(S.det); if (!sn) return;
-    const r = Viaggio.addToCalendar(sn, shareLink(sn));                 // subito, dentro il tocco (su iPhone apre l'anteprima del calendario)
-    if (r === 'scaricato') X.toast?.('File del calendario scaricato: aprilo per aggiungere il viaggio (promemoria 10 minuti prima).', 6000);
-    else if (r === 'errore') X.toast?.('Non riesco ad aprire il calendario su questo dispositivo.', 4000);
-    return;
-  }
   if (t.closest('.pp-txt')) {
     const sn = snapOf(S.det); if (!sn) return;
     Viaggio.share(sn, shareLink(sn)).then(r => {
-      if (r === 'copiato') X.toast?.('Percorso copiato: incollalo in un messaggio.', 3500);
+      if (r === 'copiato') X.toast?.('Proposta copiata (con il link): incollala in un messaggio.', 3500);
       else if (r === 'errore') X.toast?.('Condivisione non riuscita su questo dispositivo.', 4000);
     });
     return;
@@ -811,9 +873,9 @@ function onClick(e) {
   const vo = t.closest('[data-vg]');
   if (vo) {
     const sv = Viaggio.savedById(vo.dataset.vg); if (!sv || !sv.to) { renderSuggest(); return; }
-    S.edit = null; S.q = ''; S.wantSol = sv.id;
+    S.edit = null; S.q = '';
     if (!sv.from) S.from = null;
-    show({ ...(sv.from ? { from: { ...sv.from, ...(sv.from.kind === 'me' ? { lat: null } : {}) } } : {}), to: { ...sv.to, ...(sv.to.kind === 'me' ? { lat: null } : {}) }, quando: 'partenza', ora: sv.parti, data: sv.date });
+    show({ ...(sv.from ? { from: { ...sv.from, ...(sv.from.kind === 'me' ? { lat: null } : {}) } } : {}), to: { ...sv.to, ...(sv.to.kind === 'me' ? { lat: null } : {}) }, want: Viaggio.wantOf(sv) });
     return;
   }
   if (t.closest('[data-s="live"]')) { S.edit = null; S.q = ''; S.vg = true; S.tall = false; vgTop = true; render(); draw(); return; }

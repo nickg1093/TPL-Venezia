@@ -60,7 +60,13 @@ const C = {
   // in tempo reale la «Consigliata» resta la stessa famiglia agli aggiornamenti successivi se costa al massimo 3 minuti più della migliore
   // (prima cambiava a ogni minuto per pochi secondi di differenza nelle previsioni). Memoria: al massimo 500 tragitti, 10 minuti.
   TIE_S: 60, STICKY_S: 180, STICKY_MS: 10 * 60e3, STICKY_MAX: 500,
-  BY_EARLY_S: 25 * 60,       // «arrivo entro»: niente proposte che fanno partire più di 25 min prima dell'ultima partenza utile (se ce ne sono altre)
+  BY_EARLY_S: 40 * 60,       // «arrivo entro»: niente proposte che fanno partire più di 40 min prima dell'ultima partenza utile (se ce ne sono altre;
+                             // v33.2: prima 25, nascondeva le alternative con meno cambi o meno strada a piedi di poco prima)
+  BY_COMODO_S: 60 * 60,      // ...fino a 60 min per chi ha meno cambi o almeno 5 minuti in meno a piedi (come le darebbe «Partenza alle»)
+  // ARRIVO AL LIMITE (v33.2): con «arrivo entro», meno di 5 minuti tra l'arrivo e l'orario chiesto (o un cambio a rischio) = «al limite»: si
+  // mostra con una dicitura chiara e pesa un po' (ogni secondo di margine mancante vale 1,5 s di partenza anticipata), così a parità di
+  // comodità si consiglia chi parte un paio di minuti prima ma arriva con margine.
+  LIMITE_S: 300, LIMITE_PESO: 1.5,
   LATE_S: 30 * 60,           // partenza «alle»: niente proposte che arrivano più di 30 min dopo la prima (50 con «meno cambi» o «camminare meno»)
   BETTER_S: 30,              // una soluzione ne rende inutile un'altra se è migliore di almeno 30 s di costo (e non chiede di partire prima)
   DETOUR: 1.3,               // linea d'aria -> percorso a piedi (terraferma, accesso alla prima fermata)
@@ -515,6 +521,13 @@ function search({ da, a, secs = null, date = null, piediM = null, piediReale = f
         }
         if (last < tF) runAt({ t: tF, acc, egr });
         runAt({ t: tF - 20 * 60, acc: short(acc), egr: short(egr), maxT: C.SHORT_WALK_S });   // meno a piedi
+        // (v33.2) l'ultima partenza utile anche SENZA cambi e con UN cambio al massimo: le soluzioni più comode che «Partenza alle» darebbe e che
+        // la sola scansione della mezz'ora prima di tF non trovava (es. il diretto che parte 35 minuti prima)
+        for (const K of [1, 2]) {
+          if (K >= pr.cambi + 1) break;
+          const tK = latest(K, { acc, egr });
+          if (tK != null && tK < tF && tF - tK <= C.BY_COMODO_S) runAt({ t: tK, acc, egr, K });
+        }
       }
     }
     // linee diverse: senza le linee della soluzione migliore, poi senza la sua prima linea (altre «famiglie» da proporre)
@@ -675,7 +688,9 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
     const leaveS = firstDep - accS, arriveS = (last ? toS(last.a.exp, T) : T) + egrS;
     return { parti: hhmm(leaveS), arrivi: hhmm(arriveS), partiMs: live ? Math.round(nowMs + (leaveS - T) * 1000) : null, minuti: Math.max(1, Math.round((arriveS - leaveS) / 60)),
       cambi: Math.max(0, rides.length - 1), piedi: Math.round(walkS / 60), rischio: risk, aRischio: nRisk, famiglia: o.fam, rotte: rides.map(l => l.P.rk), tratte: legs,
-      _arr: arriveS, _leave: leaveS, _persa: persaAny, _score: cost(D, arriveS, leaveS, Math.max(0, rides.length - 1), walkS, pr.W, nPen, brevi(times)) };
+      ...(D != null ? { margine: Math.max(0, Math.floor((D - arriveS) / 60)), limite: D - arriveS < C.LIMITE_S || nRisk > 0 } : {}),
+      _arr: arriveS, _leave: leaveS, _persa: persaAny, _score: cost(D, arriveS, leaveS, Math.max(0, rides.length - 1), walkS, pr.W, nPen, brevi(times))
+        + (D != null ? C.LIMITE_PESO * Math.max(0, C.LIMITE_S - (D - arriveS)) : 0) };
   }).filter(o => o.tratte.some(x => x.tipo === 'mezzo') && (D == null || o._arr < D + 60) && !(live && o._leave < T - C.PASSATA_S));
   // «adesso»: una coincidenza già persa con i tempi aggiornati si propone solo se non c'è altro
   if (live && out.some(o => !o._persa)) for (let k = out.length - 1; k >= 0; k--) if (out[k]._persa) out.splice(k, 1);   // «entro le 18:00»: va bene chi arriva alle 18:00 (orari al minuto)
@@ -702,7 +717,9 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
   const ref = out.some(o => !o.aRischio) ? out.filter(o => !o.aRischio) : out;
   const latestLeave = D == null || !ref.length ? 0 : Math.max(...ref.map(o => o._leave));
   const firstArr = D != null || !ref.length ? 0 : Math.min(...ref.map(o => o._arr));
-  const early = o => D != null && latestLeave - o._leave > C.BY_EARLY_S;
+  const lastRef = D == null || !ref.length ? null : ref.reduce((m, o) => (o._leave > m._leave ? o : m), ref[0]);
+  const comodo = o => lastRef && (o.cambi < lastRef.cambi || o.piedi <= lastRef.piedi - 5);
+  const early = o => D != null && latestLeave - o._leave > (comodo(o) ? C.BY_COMODO_S : C.BY_EARLY_S);
   const late = o => D == null && o._arr - firstArr > (pr.pref === 'cambi' || pr.pref === 'piedi' ? 50 * 60 : C.LATE_S);
   const stickFam = stick ? stick.get() : null;                 // la consigliata dell'aggiornamento precedente non si scarta come «inutile» (decide STICKY_S)
   const keep = out.filter(o => (o.famiglia === stickFam || !out.some(b => useless(b, o))) && !worse(o));

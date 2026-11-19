@@ -1366,11 +1366,11 @@ function shareUrl(e) {
   if (e.t === 'stop') u.searchParams.set('fermata', e.id);
   else if (e.t === 'zone') u.searchParams.set('zona', e.key);
   else if (e.t === 'trip' && e.v?.tripId) u.searchParams.set('corsa', `${e.v.src}:${e.v.tripId}`);
-  else if (e.t === 'plan') { const c = Plan.shareCodes(); if (!c.a) return null; if (c.da) u.searchParams.set('da', c.da); u.searchParams.set('a', c.a); if (c.quando) { u.searchParams.set('quando', c.quando); u.searchParams.set('ora', c.ora); u.searchParams.set('data', c.data); } }
+  else if (e.t === 'plan') { const c = Plan.shareCodes(); if (!c.a) return null; for (const [k, v] of Object.entries(c)) if (v) u.searchParams.set(k, v); }   // con una proposta aperta: la proposta (sol, fam, rotte, arr)
   else return null;
   return u.toString();
 }
-const shareTitle = e => (e.t === 'zone' ? zones.get(e.key)?.name : e.t === 'stop' ? e.name : e.t === 'trip' ? `Linea ${e.v.line}${e.v.headsign ? ' per ' + e.v.headsign : ''}` : 'Percorso') || 'Venezia TPL live';
+const shareTitle = e => (e.t === 'zone' ? zones.get(e.key)?.name : e.t === 'stop' ? e.name : e.t === 'trip' ? `Linea ${e.v.line}${e.v.headsign ? ' per ' + e.v.headsign : ''}` : Plan.shareCodes().sol ? 'Proposta di viaggio' : 'Percorso') || 'Venezia TPL live';
 function updateShare(e) { pshare.hidden = !e || !shareUrl(e); }
 pshare.onclick = async () => {
   if (!current) return;
@@ -1384,7 +1384,7 @@ pshare.onclick = async () => {
 let linkDone = false;
 function openLink() {
   if (linkDone) return; linkDone = true;
-  const P = new URLSearchParams(location.search), get = k => { const v = P.get(k); return v && v.length <= 200 ? v : null; };
+  const P = new URLSearchParams(location.search), get = k => { const v = P.get(k); return v && v.length <= (k === 'fam' || k === 'sol' ? 400 : 200) ? v : null; };
   const clean = () => Nav.replaceUrl(location.pathname);
   const keys = ['fermata', 'zona', 'corsa', 'da', 'a', 'apri'];   // (con da/a anche quando, ora, data) if (!keys.some(k => P.has(k))) return;
   clean();
@@ -1405,6 +1405,8 @@ function openLink() {
     // orario del link (se c'è): «quando» partenza|arrivo, «ora» HHMM, «data» AAAAMMGG (se è passata o non ha orari si usa il giorno più vicino)
     const q = get('quando'), hm = /^([01]\d|2[0-3])([0-5]\d)$/.exec(get('ora') || ''), dd = /^(\d{4})(\d{2})(\d{2})$/.exec(get('data') || '');
     const when = (q === 'partenza' || q === 'arrivo') && hm ? { quando: q, ora: `${hm[1]}:${hm[2]}`, data: dd ? `${dd[1]}-${dd[2]}-${dd[3]}` : null } : {};
+    const want = Viaggio.parseWant(get);                          // link di una proposta precisa (v33.2): si riapre il suo dettaglio, o si spiega perché no
+    if (want) Object.assign(when, { want });
     if (to || from) { collapseSearch(); openFromMap({ t: 'plan', opts: { ...(from ? { from } : {}), ...(to ? { to } : {}), ...when } }); }
     else toast('Il percorso del link non è più valido.', 5000);
     return;

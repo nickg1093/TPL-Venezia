@@ -319,3 +319,21 @@ test('arrivo entro: ultima partenza utile senza coincidenza irrealistica (il bat
   assert.ok(!top.aRischio);
   percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
 });
+
+test('arrivo entro (v33.2): il diretto che parte 30 minuti prima resta tra le proposte; margine e «al limite»', () => {
+  // come sopra: bus ogni 10 min + battello alle 08:14, 08:29, 08:44, 08:59; in più il bus diretto 30 delle 07:50 per Q2 (accanto a P2), arrivo 08:25
+  const A = makeG([{ route: 'A10', name: '10', stops: ['M0', 'M1', 'M2'], start: 8 * 3600 + 60, every: 600, hop: 300, n: 8 },
+    { route: 'A30', name: '30', stops: ['M0', 'Q2'], start: 7 * 3600 + 50 * 60, every: 3600, hop: 35 * 60, n: 2 }], { M0: 0, M1: 1500, M2: 3000, Q2: 7000 });
+  const N = makeG([{ route: 'N1', name: '1', stops: ['P0', 'P1', 'P2'], start: 8 * 3600 + 14 * 60, every: 900, hop: 300, n: 4 }], { P0: 3150, P1: 5000, P2: 7000 });
+  percorso.init({ G: i => (i === 'aut' ? A : N), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
+  const r = percorso.plan({ da: [['aut:M0', 0]], a: [['nav:P2', 0], ['aut:Q2', 0]], secs: 9 * 3600, date: '20261102', entro: true });
+  const lines = o => o.tratte.filter(t => t.tipo === 'mezzo').map(t => t.line).join('+');
+  assert.ok(r.soluzioni.some(o => lines(o) === '30' && o.parti === '07:50'), 'il diretto delle 07:50 (senza cambi) è proposto: ' + r.soluzioni.map(o => o.parti + ' ' + lines(o)).join(', '));
+  for (const o of r.soluzioni) { assert.equal(typeof o.margine, 'number'); assert.equal(o.limite, o.margine < 5 || o.aRischio > 0); }
+  // entro le 08:55: il battello delle 08:44 arriva alle 08:54 (margine 1: «al limite»), quello delle 08:29 alle 08:39 (margine 16)
+  const s = percorso.plan({ da: [['aut:M0', 0]], a: [['nav:P2', 0]], secs: 8 * 3600 + 55 * 60, date: '20261102', entro: true });
+  const lim = s.soluzioni.find(o => o.arrivi === '08:54'), safe = s.soluzioni.find(o => o.arrivi === '08:39') || s.soluzioni.find(o => o.poi?.some(x => x.arrivi === '08:39'));
+  assert.ok(lim && lim.limite === true && lim.margine === 1, 'al limite segnalato');
+  assert.ok(safe, 'la soluzione con margine resta disponibile');
+  percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
+});

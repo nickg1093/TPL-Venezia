@@ -34,9 +34,11 @@ export function romeMs(ymd, hm) {                                   // '2026-11-
 export const romeYmd = ms => { const t = new Date(ms + romeOff(ms)); return `${t.getUTCFullYear()}-${p2(t.getUTCMonth() + 1)}-${p2(t.getUTCDate())}`; };
 const romeHm = ms => { const t = new Date(ms + romeOff(ms)); return `${p2(t.getUTCHours())}:${p2(t.getUTCMinutes())}`; };
 const HM = /^\d{1,2}:\d{2}$/, YMD = /^\d{4}-\d{2}-\d{2}$/;
+const ROUTE = /^(nav|aut):[A-Za-z0-9_.:|\-/]{1,60}$/, TRIP = /^(nav|aut):[A-Za-z0-9_.:|\-]{1,100}$/;
 
 // ---- istantanea di una soluzione del pianificatore (quello che serve, niente di più) ----
 // o: soluzione di /api/percorso · date: 'YYYY-MM-DD' del giorno cercato · from/to: punti (come li salva il pianificatore) · nameOf: id -> nome della fermata
+const ll = x => (Number.isFinite(+x?.lat) && Number.isFinite(+x?.lon) && x.lat !== null && x.lon !== null ? { lat: +(+x.lat).toFixed(5), lon: +(+x.lon).toFixed(5) } : {});
 export function snapshot(o, { date, from, to, nameOf = null }) {
   if (!o || !Array.isArray(o.tratte) || !YMD.test(date || '')) return null;
   let day = 0, prev = null;
@@ -53,18 +55,21 @@ export function snapshot(o, { date, from, to, nameOf = null }) {
     const dm = at(t.da.sched || t.da.exp), am = at(t.a.sched || t.a.exp);
     legs.push({ t: 'r', src: t.src === 'nav' ? 'nav' : 'aut', trip: String(t.tripId).slice(0, 100), line: String(t.line || '').slice(0, 12), color: /^#[0-9a-f]{6}$/i.test(t.color || '') ? t.color : null,
       hs: String(t.headsign || '').slice(0, 80), n: Math.max(1, +t.fermate || 1), pos: Array.isArray(t.pos) ? t.pos.slice(0, 2).map(Number) : null,
-      da: { id: t.da.id, name: nm(t.da), hm: t.da.sched || '', ms: dm }, a: { id: t.a.id, name: nm(t.a), hm: t.a.sched || '', ms: am } });
+      da: { id: t.da.id, name: nm(t.da), hm: t.da.sched || '', ms: dm, ...ll(t.da) }, a: { id: t.a.id, name: nm(t.a), hm: t.a.sched || '', ms: am, ...ll(t.a) } });
   }
   const arriveMs = at(o.arrivi), rides = legs.filter(l => l.t === 'r');
   if (!rides.length) return null;
   const id = (date + '|' + rides.map(r => r.src + r.trip + '@' + r.da.id).join('>')).replace(/[^A-Za-z0-9_|>@:.-]/g, '').slice(0, 300);
-  return { v: 1, id, date, from, to, parti: o.parti, arrivi: o.arrivi, minuti: +o.minuti || 0, cambi: +o.cambi || 0, piedi: +o.piedi || 0, leaveMs, arriveMs, legs };
+  // famiglia (linee e fermate di salita/discesa) e linee: servono a ritrovare la stessa proposta tra gli «altri orari» (v33.2)
+  const fam = typeof o.famiglia === 'string' && o.famiglia.length <= 400 ? o.famiglia : null;
+  const rotte = Array.isArray(o.rotte) ? o.rotte.filter(x => typeof x === 'string' && ROUTE.test(x)).slice(0, 6) : [];
+  return { v: 1, id, date, from, to, parti: o.parti, arrivi: o.arrivi, minuti: +o.minuti || 0, cambi: +o.cambi || 0, piedi: +o.piedi || 0, leaveMs, arriveMs, legs, ...(fam ? { fam } : {}), ...(rotte.length ? { rotte } : {}) };
 }
 // ricostruzione sicura da memoria
 const sstr = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
 const sid = v => (typeof v === 'string' && /^(nav|aut):[A-Za-z0-9_.:|\-]{1,100}$/.test(v) ? v : null);
 const fin = v => (Number.isFinite(v) ? v : null);
-function cleanStop(x) { const id = sid(x?.id), ms = fin(x?.ms); return id && ms ? { id, name: sstr(x.name, 80), hm: HM.test(x.hm || '') ? x.hm : romeHm(ms), ms, live: fin(x.live) } : null; }
+function cleanStop(x) { const id = sid(x?.id), ms = fin(x?.ms); return id && ms ? { id, name: sstr(x.name, 80), hm: HM.test(x.hm || '') ? x.hm : romeHm(ms), ms, live: fin(x.live), ...ll(x) } : null; }
 function cleanEp(e) {
   if (!e || typeof e !== 'object') return null;
   const k = e.kind, lat = fin(+e.lat), lon = fin(+e.lon), label = sstr(e.label, 100);
@@ -89,12 +94,49 @@ export function clean(s) {
   if (!legs.some(l => l.t === 'r') || !leaveMs || !arriveMs || !HM.test(s.parti || '') || !HM.test(s.arrivi || '')) return null;
   return { v: 1, id: s.id.slice(0, 300), date: s.date, from: cleanEp(s.from), to: cleanEp(s.to), parti: s.parti, arrivi: s.arrivi, minuti: Math.max(0, +s.minuti || 0),
     cambi: Math.max(0, +s.cambi || 0), piedi: Math.max(0, +s.piedi || 0), leaveMs, arriveMs, legs,
+    ...(typeof s.fam === 'string' && s.fam.length <= 400 ? { fam: s.fam } : {}),
+    ...(Array.isArray(s.rotte) && s.rotte.every(x => typeof x === 'string' && ROUTE.test(x)) ? { rotte: s.rotte.slice(0, 6) } : {}),
     ...(s.started ? { started: fin(s.started), viaggio: /^[A-Za-z0-9_-]{6,40}$/.test(s.viaggio || '') ? s.viaggio : null, notif: sstr(s.notif, 300), mode: s.mode === 'push' || s.mode === 'poll' ? s.mode : null } : {}) };
 }
 const rides = s => s.legs.filter(l => l.t === 'r');
 const fromLabel = s => s.from?.label || 'Partenza', toLabel = s => s.to?.label || 'Arrivo';
 // si può iniziare adesso? (oggi, da 2 ore prima a 10 minuti dopo la partenza)
 export const startable = (s, now = Date.now()) => !!s && s.leaveMs - START_BEFORE <= now && now <= rides(s)[0].da.ms + START_AFTER && now < s.arriveMs;
+
+// ---- PROPOSTA ESATTA (v33.2): viaggio salvato e link condiviso portano la firma della soluzione scelta ----
+// firma = corse in ordine («nav:NAV_ACTV_656_86>aut:…»): una proposta è la stessa se usa le stesse corse (le fermate di salita possono cambiare
+// di poco con il ricalcolo). Con la firma vanno giorno, orari di partenza/arrivo, famiglia (linee e fermate) e linee, per cercarla anche tra
+// gli «altri orari» dello stesso percorso.
+export const solTrips = o => (o?.tratte || []).filter(t => t.tipo === 'mezzo' && t.tripId).map(t => `${t.src}:${t.tripId}`).join('>');
+export const snapTrips = s => rides(s).map(r => `${r.src}:${r.trip}`).join('>');
+export function wantOf(s) {
+  const R = rides(s);
+  return { trips: snapTrips(s), fam: s.fam || null, rotte: s.rotte || [], date: s.date, parti: s.parti, arrivi: s.arrivi, depMs: R[0].da.ms, leaveMs: s.leaveMs,
+    linee: R.map(r => r.line).join(' + ') };
+}
+// parametri del link di una proposta (oltre a «da» e «a», che mette il pianificatore)
+export function linkParams(s) {
+  const w = wantOf(s), out = { quando: 'partenza', ora: s.parti.replace(':', ''), data: s.date.replace(/-/g, ''), arr: s.arrivi.replace(':', ''), sol: w.trips };
+  if (w.fam && w.fam.length <= 300) out.fam = w.fam;
+  if (w.rotte.length) out.rotte = w.rotte.join(',');
+  return out;
+}
+// dal link (get: chiave -> valore già limitato in lunghezza) -> want | null; tutto controllato, niente che finisca nell'HTML senza esc
+export function parseWant(get) {
+  const sol = get('sol'), ora = /^([01]\d|2[0-3])([0-5]\d)$/.exec(get('ora') || ''), dd = /^(\d{4})(\d{2})(\d{2})$/.exec(get('data') || ''), arr = /^([01]\d|2[0-3])([0-5]\d)$/.exec(get('arr') || '');
+  if (!sol || !ora || !dd) return null;
+  const trips = sol.split('>'); if (!trips.length || trips.length > 6 || !trips.every(t => TRIP.test(t))) return null;
+  const fam = get('fam'), rotte = (get('rotte') || '').split(',').filter(x => ROUTE.test(x)).slice(0, 6);
+  const date = `${dd[1]}-${dd[2]}-${dd[3]}`, parti = `${ora[1]}:${ora[2]}`;
+  return { trips: trips.join('>'), fam: fam && fam.length <= 300 ? fam : null, rotte, date, parti, arrivi: arr ? `${arr[1]}:${arr[2]}` : null, depMs: null, leaveMs: romeMs(date, parti), linee: '' };
+}
+// come riaprire una proposta: 'passata' (partenza già avvenuta: alternative di adesso), 'adesso' (entro 90 minuti, oggi: ricerca in tempo reale),
+// 'orario' (più avanti: ricerca all'orario della proposta)
+export function reopenMode(w, now = Date.now()) {
+  const dep = w.depMs ?? w.leaveMs;
+  if (!Number.isFinite(dep) || dep < now - 60e3) return 'passata';
+  return w.leaveMs - now <= 90 * 60e3 ? 'adesso' : 'orario';
+}
 
 // ---- etichette di giorno e minuti ----
 export function dayLabel(ymd, now = Date.now()) {
@@ -182,12 +224,12 @@ export async function start(s, styleOf) {
       if (r.made < r.total) msg += ` (${r.total - r.made} ${r.total - r.made === 1 ? 'avviso non attivato' : 'avvisi non attivati'})`;
     } else msg = (r.msg || 'Notifiche non disponibili.') + ' Tieni l\'app aperta: le indicazioni restano qui.';
   }
-  J.notif = msg; writeJ(); emit(); refreshLive(true);
+  J.notif = msg; writeJ(); emit(); refreshLive(true); gpsSync(true);   // dentro il tocco di «Inizia il viaggio»: il permesso si può chiedere
   return { ok: true, msg };
 }
 export async function end(quiet = false) {
   if (!J) return;
-  const v = J.viaggio; J = null; writeJ(); stopTimers(); release(); emit();
+  const v = J.viaggio; J = null; writeJ(); stopTimers(); release(); gpsStop(); gpsFix = null; emit();
   if (v) await Notify.stopJourney(v, quiet);
 }
 
@@ -228,6 +270,78 @@ export function phase(s, now = Date.now()) {
   return { key: 'fine', kind: 'fine', idx: k, title: 'Sei arrivato', when: null, sub: `${toLabel(s)} · il viaggio si chiude da solo tra poco`, short: 'Arrivato' };
 }
 export const phaseNow = () => (J ? phase(J) : null);
+// ARRIVO PREVISTO con il tempo reale (Infinity se una corsa è soppressa o un cambio è già perso) e motivo per cercare un'alternativa:
+// solo ritardo grave (≥ 8 min sull'arrivo) o problema della fase (soppressa, cambio a rischio). Funzione pura, provata nei test.
+export function altNeed(s, now = Date.now()) {
+  if (!s) return null;
+  const R = rides(s), t = x => x.live ?? x.ms, ph = phase(s, now);
+  if (ph.kind === 'fine' || ph.kind === 'piedi') return null;
+  let tail = 0; for (let i = s.legs.length - 1; i >= 0 && s.legs[i].t === 'w'; i--) tail += s.legs[i].min;
+  if (R.some(r => r.cancel && now < t(r.a))) return { why: 'soppressa', arrive: Infinity };
+  for (let k = 1; k < R.length; k++) {                             // cambio già perso con gli orari di adesso
+    let i = s.legs.indexOf(R[k]) - 1, w = 0; while (i >= 0 && s.legs[i].t === 'w') w += s.legs[i--].min;
+    if (now < t(R[k].da) && t(R[k - 1].a) + w * 60e3 > t(R[k].da) + 60e3) return { why: 'cambio', arrive: Infinity };
+  }
+  const arrive = t(R[R.length - 1].a) + tail * 60e3;
+  return arrive - s.arriveMs >= 8 * 60e3 ? { why: 'ritardo', arrive } : null;
+}
+
+// ---- POSIZIONE DURANTE IL VIAGGIO (v33.2): GPS solo quando serve, mai a bordo né ad app nascosta ----
+// Serve a piedi verso la fermata di partenza (5 minuti prima di uscire), nei cambi a piedi e negli ultimi minuti prima della discesa (per dire
+// quanto manca alla fermata). A bordo e con l'app nascosta è spento: lì lavorano gli orari in tempo reale e le notifiche del server.
+// La posizione resta sul telefono (non va mai al server). Si accende da sola solo se il permesso c'è già o se l'hai attivata tu con un tocco.
+const KEY_GPS = 'tpl.viaggio.gps', GPS_OPTS = { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 };
+let gpsId = null, gpsFix = null, gpsPerm = null, gpsErr = null, gpsEmitAt = 0;
+export const gpsSupported = () => typeof navigator !== 'undefined' && 'geolocation' in navigator;
+export const gpsWanted = () => { try { return localStorage.getItem(KEY_GPS) !== '0'; } catch { return true; } };
+const distM = (a, b) => Math.hypot((a.lat - b.lat) * 111320, (a.lon - b.lon) * 111320 * Math.cos(a.lat * Math.PI / 180));
+// fermata a cui si va adesso e se il GPS serve in questa fase (funzione pura, provata nei test)
+export function gpsTarget(s, ph, now = Date.now()) {
+  if (!s || !ph) return null;
+  const R = rides(s), first = s.legs.findIndex(l => l.t === 'r'), walk0 = s.legs.slice(0, first).some(l => l.t === 'w' && l.min > 0);
+  if (ph.kind === 'esci') return ph.when - now <= 5 * 60e3 ? { stop: R[0].da, why: 'verso la fermata' } : null;
+  if (ph.kind === 'sali') return ph.idx === 0 && walk0 ? { stop: R[0].da, why: 'verso la fermata' } : null;
+  if (ph.kind === 'cambio') {
+    let i = s.legs.indexOf(R[ph.idx]) - 1, w = 0; while (i >= 0 && s.legs[i].t === 'w') w += s.legs[i--].min;
+    return w > 0 ? { stop: R[ph.idx].da, why: 'verso la fermata del cambio' } : null;
+  }
+  if (ph.kind === 'scendi') return { stop: R[ph.idx].a, why: 'per la discesa' };
+  return null;                                                       // a bordo, ultimo tratto a piedi, arrivato: spento
+}
+function gpsStop() { if (gpsId != null) { try { navigator.geolocation.clearWatch(gpsId); } catch { /* niente */ } gpsId = null; } }
+async function gpsPermState() {
+  try { const p = await navigator.permissions?.query?.({ name: 'geolocation' }); gpsPerm = p?.state || null; } catch { gpsPerm = null; }
+  return gpsPerm;
+}
+function gpsStart() {
+  if (gpsId != null || !gpsSupported()) return;
+  gpsId = navigator.geolocation.watchPosition(pos => {
+    const c = pos.coords; if (!Number.isFinite(c.latitude)) return;
+    gpsFix = { lat: c.latitude, lon: c.longitude, acc: c.accuracy || 0, at: Date.now() }; gpsErr = null;
+    if (Date.now() - gpsEmitAt > 10000) { gpsEmitAt = Date.now(); emit(); }   // al massimo un ridisegno ogni 10 s
+  }, err => { gpsErr = err.code === 1 ? 'negato' : 'assente'; if (err.code === 1) { gpsStop(); try { localStorage.setItem(KEY_GPS, '0'); } catch { /* niente */ } } emit(); }, GPS_OPTS);
+}
+// accende o spegne secondo la fase (chiamata a ogni passo del viaggio); gesto = true se viene da un tocco (può chiedere il permesso)
+async function gpsSync(gesto = false) {
+  const ph = J ? phase(J) : null, tgt = J && !document.hidden && gpsWanted() && gpsSupported() ? gpsTarget(J, ph) : null;
+  if (!tgt) { gpsStop(); return; }
+  if (!gesto && gpsPerm !== 'granted' && (await gpsPermState()) !== 'granted') return;   // senza permesso già dato si aspetta un tocco
+  gpsStart();
+}
+export function setGpsWanted(v) { try { localStorage.setItem(KEY_GPS, v ? '1' : '0'); } catch { /* facoltativo */ } gpsErr = null; if (v) gpsSync(true); else gpsStop(); emit(); }
+// riga per la schermata: stato del GPS e distanza dalla fermata
+export function gpsLine(s = J, now = Date.now()) {
+  if (!s || !gpsSupported()) return '';
+  if (!gpsWanted()) return gpsErr === 'negato' ? 'Posizione non permessa: la puoi consentire dalle impostazioni del browser.' : 'Posizione spenta per questo viaggio.';
+  const tgt = gpsTarget(s, phase(s, now), now);
+  if (!tgt) return 'Posizione in pausa: a bordo e con l\'app chiusa non serve (bastano orari in tempo reale e notifiche). Si riaccende a piedi verso la fermata e prima di scendere.';
+  if (gpsId == null) return `Posizione: si accende ${tgt.why} quando il permesso è concesso.`;
+  if (!gpsFix || now - gpsFix.at > 60e3) return `Posizione accesa ${tgt.why}: cerco il segnale…`;
+  if (!Number.isFinite(tgt.stop.lat)) return `Posizione accesa ${tgt.why}.`;
+  const d = Math.round(distM(gpsFix, tgt.stop) / 10) * 10;
+  return d <= Math.max(60, gpsFix.acc) ? `Sei a ${tgt.stop.name}.` : `Sei a circa ${d >= 1000 ? (d / 1000).toFixed(1).replace('.', ',') + ' km' : d + ' m'} da ${tgt.stop.name}.`;
+}
+export const gpsOn = () => gpsId != null;
 
 // ---- aggiornamento in tempo reale della corsa che conta adesso ----
 function currentRide(now = Date.now()) {
@@ -254,15 +368,15 @@ async function refreshLive(force = false) {
 }
 
 function tick() {
-  if (!J) return stopTimers();
+  if (!J) { gpsStop(); return stopTimers(); }
   if (Date.now() > J.arriveMs + END_AFTER) { end(true); return; }
-  emit(); refreshLive();
+  gpsSync(); emit(); refreshLive();
 }
 function startTimers() { stopTimers(); if (J && !document.hidden) tickT = setInterval(tick, TICK_MS); }
 function stopTimers() { clearInterval(tickT); tickT = null; }
 document.addEventListener('visibilitychange', () => {
   if (!J) return;
-  if (document.hidden) { stopTimers(); return; }                    // in secondo piano lavorano le notifiche: nessun timer, nessuna richiesta
+  if (document.hidden) { stopTimers(); gpsStop(); return; }         // in secondo piano lavorano le notifiche: nessun timer, nessuna richiesta, niente GPS
   tick(); startTimers(); acquire(); refreshLive(true);
 });
 // schermo acceso non concesso (alcuni browser lo danno solo dopo un tocco): si riprova al primo tocco sulla pagina
@@ -286,6 +400,10 @@ function stepsHtml(s, ph, now) {
   out.push(`<li class="vg-s end${ph.kind === 'fine' ? ' done' : ''}"><span class="vg-st">${esc(s.arrivi)}</span><span>Arrivo · ${esc(toLabel(s))}</span></li>`);
   return out.join('');
 }
+// come arrivano gli aggiornamenti con lo schermo spento o l'app chiusa (il browser ferma la pagina: lavora il server)
+const bgTxt = s => (s.mode === 'push'
+  ? 'Con lo schermo spento o l\'app chiusa il telefono ferma l\'app: «esci», «cambio», «scendi», corse soppresse e ritardi arrivano come notifiche dal server. Quando la riapri si aggiorna subito.'
+  : 'Senza notifiche, con lo schermo spento o l\'app chiusa non ricevi avvisi: tieni l\'app aperta. Quando la riapri si aggiorna subito.');
 const PH_IC = { esci: 'walk', sali: 'clock', cambio: 'swap', bordo: 'next', scendi: 'pin', piedi: 'walk', fine: 'check' };
 export function viewHtml(now = Date.now()) {
   const s = J; if (!s) return '';
@@ -299,6 +417,9 @@ export function viewHtml(now = Date.now()) {
     + (ph.warn ? `<p class="vg-warn">${icon('warn', 'sm')}<span>${esc(ph.warn)}</span></p>` : '')
     + `<ol class="vg-steps">${stepsHtml(s, ph, now)}</ol>`
     + `<p class="vg-note">${icon('bell', 'sm')}<span>${esc(s.notif || 'Attivo gli avvisi…')}${s.mode === 'push' && /android/i.test(navigator.userAgent) ? ' Se arrivano in ritardo, togli il browser dalle app in sospensione nelle impostazioni della batteria.' : ''}</span></p>`
+    + (gpsSupported() ? `<p class="vg-gps">${icon('locate', 'sm')}<span class="vg-gpst">${esc(gpsLine(s, now))}</span></p>` : '')
+    + `<p class="vg-gps">${icon('info', 'sm')}<span>${esc(bgTxt(s))}</span></p>`
+    + (gpsSupported() ? `<label class="vg-lock"><input type="checkbox" class="vg-gpscb"${gpsWanted() ? ' checked' : ''}><span><b>Usa la posizione durante il viaggio</b><small>Solo a piedi verso la fermata, nei cambi a piedi e prima di scendere; resta sul telefono.</small></span></label>` : '')
     + `<label class="vg-lock"><input type="checkbox" class="vg-lockcb"${lockWanted() ? ' checked' : ''}${lockSupported() ? '' : ' disabled'}><span><b>Schermo sempre acceso</b><small>${esc(lockTxt)} Consuma più batteria; si spegne a fine viaggio.</small></span></label>`
     + `<div class="vg-acts"><button type="button" class="btn vg-recalc">${icon('route', 'sm')}<span>Ricalcola da qui</span></button>`
     + `<button type="button" class="btn vg-end">${icon('close', 'sm')}<span>Termina viaggio</span></button></div></div>`;
@@ -308,46 +429,43 @@ export function updateView(root, now = Date.now()) {
   const v = root.querySelector('.vg'); if (!v || !J) return false;
   const ph = phase(J, now); if (v.dataset.ph !== ph.key) return false;
   const c = v.querySelector('.vg-c'); if (c && ph.when) c.textContent = inTxt(ph.when, now);
+  const g = v.querySelector('.vg-gpst'); if (g) g.textContent = gpsLine(J, now);
   return true;
 }
 export const shortText = (now = Date.now()) => (J ? phase(J, now).short : '');
 
-// ---- CONDIVIDI COME TESTO e CALENDARIO ----
+// ---- CONDIVIDI COME TESTO (v33.2: ordinato, con il simbolo del mezzo, le linee, gli orari, i cambi e il link alla proposta) ----
+const modeIc = l => (l.src === 'nav' ? '⛴️' : /^PM$/i.test(l.line) ? '🚝' : /^T\d$/i.test(l.line) ? '🚊' : '🚌');
+const durTxt = m => (m >= 60 ? `${Math.floor(m / 60)} h ${p2(m % 60)}` : `${m} min`);
 export function shareText(s, link) {
-  const L = [`Percorso: ${fromLabel(s)} → ${toLabel(s)}`,
-    `${longDay(s.date).replace(/^./, c => c.toUpperCase())} · partenza ${s.parti}, arrivo ${s.arrivi} (${s.minuti >= 60 ? `${Math.floor(s.minuti / 60)} h ${p2(s.minuti % 60)}` : `${s.minuti} min`}, ${s.cambi ? `${s.cambi} ${s.cambi > 1 ? 'cambi' : 'cambio'}` : 'senza cambi'})`, ''];
+  const R = rides(s), L = [`🧭 ${fromLabel(s)} → ${toLabel(s)}`,
+    `📅 ${longDay(s.date).replace(/^./, c => c.toUpperCase())} · ${s.parti} → ${s.arrivi} (${durTxt(s.minuti)}, ${s.cambi ? `${s.cambi} ${s.cambi > 1 ? 'cambi' : 'cambio'}` : 'senza cambi'}${s.piedi ? `, ${s.piedi} min a piedi` : ''})`, ''];
+  let k = 0, walk = 0;
+  const flushWalk = (last) => {
+    if (!walk) return;
+    if (k === 0) L.push(`🚶 ${s.parti}  a piedi ${walk} min`);
+    else if (!last) L.push(`🔁 cambio a piedi ${walk} min`);
+    walk = 0;
+  };
   for (const l of s.legs) {
-    if (l.t === 'w') { L.push(`        A piedi ${l.min} min${l.to ? ' fino a ' + l.to : ' fino all\'arrivo'}`); continue; }
-    L.push(`${(l.da.hm || romeHm(l.da.ms)).padEnd(6)}  Linea ${l.line}${l.hs ? ' direzione ' + l.hs : ''}, da ${l.da.name}`);
-    L.push(`${(l.a.hm || romeHm(l.a.ms)).padEnd(6)}  Scendi a ${l.a.name} (${l.n} ${l.n === 1 ? 'fermata' : 'fermate'})`);
+    if (l.t === 'w') { walk += l.min; continue; }
+    if (k > 0 && !walk) L.push('🔁 cambio');
+    flushWalk(false);
+    L.push(`${modeIc(l)} ${(l.da.hm || romeHm(l.da.ms))}  [${l.line}]${l.hs ? ` direzione ${l.hs}` : ''}`);
+    L.push(`      sali a ${l.da.name}`);
+    L.push(`   ${(l.a.hm || romeHm(l.a.ms))}  scendi a ${l.a.name} · ${l.n} ${l.n === 1 ? 'fermata' : 'fermate'}`);
+    k++;
   }
-  L.push(`${s.arrivi.padEnd(6)}  Arrivo: ${toLabel(s)}`, '', 'Orari programmati ACTV: prima di partire controlla il tempo reale.');
-  if (link) L.push(link);
+  if (walk) L.push(`🚶 a piedi ${walk} min fino all'arrivo`);
+  L.push(`🏁 ${s.arrivi}  ${toLabel(s)}`, '', `Linee: ${R.map(l => `${modeIc(l)} ${l.line}`).join('  ')}`, 'Orari programmati ACTV: prima di partire controlla il tempo reale.');
+  if (link) L.push('', `Apri questa proposta: ${link}`);
   return L.join('\n');
-}
-// CALENDARIO: il file lo prepara il server da questi dati (/api/ics, senza salvarli): su iPhone/iPad Safari apre un .ics da un indirizzo con
-// «Aggiungi al calendario», mentre un file creato nella pagina spesso non si apre. Promemoria 10 minuti prima dell'uscita.
-const b64url = str => { const b = new TextEncoder().encode(str); let bin = ''; for (const x of b) bin += String.fromCharCode(x); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
-export function icsUrl(s, link) {
-  const r0 = rides(s)[0], t = `${fromLabel(s)} → ${toLabel(s)} (linea ${r0.line} alle ${r0.da.hm || romeHm(r0.da.ms)})`;
-  let u; try { const x = new URL(link); u = x.pathname + x.search; } catch { u = undefined; }
-  return '/api/ics?v=' + b64url(JSON.stringify({ t: t.slice(0, 160), d: shareText(s, null).slice(0, 2000), s: s.leaveMs, e: Math.max(s.arriveMs, s.leaveMs + 60e3), u }));
-}
-const appleMobile = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-// -> 'aperto' (iPhone/iPad: anteprima del calendario) | 'scaricato' | 'errore'. Da chiamare dentro il tocco (apertura di una finestra).
-export function addToCalendar(s, link) {
-  const url = icsUrl(s, link);
-  try {
-    if (appleMobile()) { if (!window.open(url, '_blank')) location.assign(url); return 'aperto'; }
-    const a = document.createElement('a'); a.href = url + '&dl=1'; a.download = `viaggio-${s.date.replace(/-/g, '')}-${s.parti.replace(':', '')}.ics`; a.rel = 'noopener';
-    document.body.appendChild(a); a.click(); a.remove(); return 'scaricato';
-  } catch { return 'errore'; }
 }
 // -> 'condiviso' | 'copiato' | 'annullato' | 'errore'
 export async function share(s, link) {
   const text = shareText(s, link);
   if (navigator.share) {
-    try { await navigator.share({ title: `Percorso ${fromLabel(s)} → ${toLabel(s)}`, text }); return 'condiviso'; }
+    try { await navigator.share({ title: `${fromLabel(s)} → ${toLabel(s)}, ${s.parti}`, text }); return 'condiviso'; }
     catch (e) { if (e?.name === 'AbortError') return 'annullato'; }
   }
   try { await navigator.clipboard.writeText(text); return 'copiato'; } catch { /* sotto */ }

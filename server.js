@@ -197,7 +197,7 @@ const validStyle = st => {
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
-const ABOUT_VERSION = 'v32.2';
+const ABOUT_VERSION = 'v32.3';
 // DATI FISSI sul telefono e dal CDN (fissi.js): file per versione dei GTFS con impronta, indice del ramo «dati» letto da GitHub.
 // DATI_REPO: repository del ramo dati (predefinito: quello da cui Render ha preso il codice); DATI_CDN=0 spegne il CDN (tutto dal server).
 const DATI_REPO = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/.test(process.env.DATI_REPO || '') ? process.env.DATI_REPO : (process.env.RENDER_GIT_REPO_SLUG || 'nickg1093/TPL-Venezia');
@@ -291,14 +291,6 @@ const API = new Map(Object.entries({
   // informazioni sul servizio per la pagina «i»: versione e, se impostato, contatto del titolare (variabile APP_CONTACT; nessun nome)
   '/api/about': { fn: () => ({ version: ABOUT_VERSION, contact: (process.env.APP_CONTACT || '').slice(0, 160) || null }) },
   '/api/push-key': { fn: () => ({ key: watch.publicKey() }) },
-  // file per il calendario di un viaggio (ics.js): nessun dato salvato, solo trasformato; dl=1 scarica, senza si apre (iPhone/iPad)
-  '/api/ics': { raw: (u, req, res) => {
-    const d = require('./ics').parse(q(u, 'v')); if (!d) return text(res, 400, 'Dati del calendario non validi');
-    const host = String(req.headers.host || ''), origin = /^[A-Za-z0-9.-]{1,100}(:\d{1,5})?$/.test(host) ? (/^(localhost|127\.0\.0\.1)(:|$)/.test(host) ? 'http://' : 'https://') + host : null;
-    const body = require('./ics').build(d, origin);
-    res.writeHead(200, { 'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': `${q(u, 'dl') === '1' ? 'attachment' : 'inline'}; filename="${require('./ics').fileName(d.start)}"`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
-    res.end(req.method === 'HEAD' ? undefined : body);
-  } },
   '/api/watch': { method: 'POST', limit: 'watch', fn: async (u, req) => watch.create(watchArgs(await readJson(req), req)) },
   // avvisi attivi sul telefono ripresentati dopo un riavvio del server (al massimo 6 per volta): vedi watch.restore
   '/api/watch/restore': { method: 'POST', limit: 'watch', fn: async (u, req) => {

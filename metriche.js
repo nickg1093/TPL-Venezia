@@ -41,7 +41,7 @@ function giornata(now = Date.now()) {
 // operazioni leggibili (nome -> endpoint): solo richieste andate a buon fine
 const OPERAZIONI = { 'aperture app (flusso mezzi)': '/api/stream', 'fermate consultate': '/api/stop', 'zone consultate': '/api/zone',
   'viaggi pianificati': '/api/percorso', 'corse aperte': '/api/trip', 'avvisi di arrivo attivati': '/api/watch', 'avvisi di arrivo annullati': '/api/watch/cancel',
-  'aggiunte al calendario': '/api/ics', 'marea': '/api/tide', 'avvisi ACTV letti': '/api/avvisi', 'MOSE': '/api/mose', 'errori segnalati dai telefoni': '/api/errore' };
+  'marea': '/api/tide', 'avvisi ACTV letti': '/api/avvisi', 'MOSE': '/api/mose', 'errori segnalati dai telefoni': '/api/errore' };
 function riassunto(g) {
   const fmt = `${g.data.slice(0, 4)}-${g.data.slice(4, 6)}-${g.data.slice(6, 8)}`;
   return { data: fmt, persone: g.viste.size, persone_almeno: g.oltre || undefined, flussi_aperti: g.flussi,

@@ -1,5 +1,5 @@
 // VIAGGIO GUIDATO e I MIEI VIAGGI (public/js/viaggio.js): orari di Venezia, fasi del viaggio, avvisi da attivare, testo da condividere,
-// file per il calendario, viaggi salvati e memoria del dispositivo manomessa.
+// proposta esatta (salvataggio e link), viaggi salvati e memoria del dispositivo manomessa.
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -83,18 +83,41 @@ test('si può iniziare da 2 ore prima a 10 minuti dopo la partenza; avvisi per e
   assert.equal(V.watchItems(long, at('06:00'))[0].lead, 45);
 });
 
-test('testo da condividere e dati per il calendario', async () => {
+test('testo da condividere: ordinato, simbolo del mezzo, linee tra parentesi, cambi, link alla proposta', async () => {
   const { V } = await load();
-  const s = V.snapshot(SOL, { date: '2026-11-16', from: FROM, to: TO }), link = 'https://veneziatpl.onrender.com/?da=p:45.43,12.32&a=f:aut:901&quando=partenza&ora=0817&data=20261116';
+  const s = V.snapshot({ ...SOL, famiglia: 'aut:2_UL@venezia>mestre fs c4|aut:6_UL@stazione mestre fs>marghera', rotte: ['aut:2_UL', 'aut:6_UL'] }, { date: '2026-11-16', from: FROM, to: TO });
+  const link = 'https://veneziatpl.onrender.com/?da=p:45.43,12.32&a=f:aut:901&sol=aut:T_2%3Eaut:T_6';
   const t = V.shareText(s, link);
-  assert.match(t, /^Percorso: Casa → Ufficio\nLunedì 16 novembre · partenza 08:17, arrivo 08:56 \(39 min, 1 cambio\)/);
-  assert.match(t, /08:20 {3}Linea 2 direzione Mestre, da VENEZIA\n08:34 {3}Scendi a Mestre FS C4 \(8 fermate\)/);
-  assert.match(t, /A piedi 4 min fino all'arrivo\n08:56 {3}Arrivo: Ufficio/);
-  assert.ok(t.endsWith(link)); assert.doesNotMatch(t, /[\u{1F300}-\u{1FAFF}]/u);
-  // calendario: i dati vanno al server (/api/ics), che prepara il file (provato in ics.test.js)
-  const u = new URL('http://x' + V.icsUrl(s, link)), o = JSON.parse(Buffer.from(u.searchParams.get('v'), 'base64url').toString());
-  assert.deepEqual([o.s, o.e, o.u], [s.leaveMs, s.arriveMs, link.slice(link.indexOf('/?'))]);
-  assert.match(o.t, /^Casa → Ufficio \(linea 2 alle 08:20\)$/); assert.match(o.d, /^Percorso: Casa → Ufficio/);
+  assert.match(t, /^🧭 Casa → Ufficio\n📅 Lunedì 16 novembre · 08:17 → 08:56 \(39 min, 1 cambio, 9 min a piedi\)\n\n/);
+  assert.match(t, /🚶 08:17  a piedi 3 min\n🚌 08:20  \[2\] direzione Mestre\n      sali a VENEZIA\n   08:34  scendi a Mestre FS C4 · 8 fermate\n🔁 cambio a piedi 2 min\n🚌 08:40  \[6\]/);
+  assert.match(t, /🚶 a piedi 4 min fino all'arrivo\n🏁 08:56  Ufficio/);
+  assert.match(t, /Linee: 🚌 2  🚌 6/);
+  assert.ok(t.endsWith('Apri questa proposta: ' + link));
+  const nav = V.snapshot({ ...SOL, tratte: SOL.tratte.map(x => (x.tipo === 'mezzo' && x.line === '2' ? { ...x, src: 'nav', tripId: 'N_1' } : x.line === '6' ? { ...x, line: 'T1' } : x)) }, { date: '2026-11-16', from: FROM, to: TO });
+  assert.match(V.shareText(nav, null), /⛴️ 08:20  \[2\][\s\S]*🚊 08:40  \[T1\]/);
+  assert.equal(typeof V.icsUrl, 'undefined', 'calendario tolto'); assert.equal(typeof V.addToCalendar, 'undefined');
+});
+
+test('proposta esatta: firma, link, lettura sicura del link e modo di riapertura (valida, passata, più avanti)', async () => {
+  const { V } = await load();
+  const s = V.snapshot({ ...SOL, famiglia: 'aut:2_UL@venezia>mestre fs c4|aut:6_UL@stazione mestre fs>marghera', rotte: ['aut:2_UL', 'aut:6_UL'] }, { date: '2026-11-16', from: FROM, to: TO });
+  assert.equal(V.snapTrips(s), 'aut:T_2>aut:T_6'); assert.equal(V.solTrips(SOL), 'aut:T_2>aut:T_6');
+  const P = V.linkParams(s);
+  assert.deepEqual(P, { quando: 'partenza', ora: '0817', data: '20261116', arr: '0856', sol: 'aut:T_2>aut:T_6', fam: s.fam, rotte: 'aut:2_UL,aut:6_UL' });
+  const u = new URLSearchParams(P), w = V.parseWant(k => u.get(k));
+  assert.equal(w.trips, 'aut:T_2>aut:T_6'); assert.equal(w.parti, '08:17'); assert.equal(w.arrivi, '08:56'); assert.deepEqual(w.rotte, ['aut:2_UL', 'aut:6_UL']);
+  assert.equal(w.leaveMs, V.romeMs('2026-11-16', '08:17'));
+  // link manomessi o incompleti: nessuna proposta (si apre il tragitto normale), mai un errore
+  for (const bad of [{ ...P, sol: '<script>' }, { ...P, sol: 'aut:T_2>' + 'x'.repeat(5) }, { ...P, ora: '2561' }, { ...P, data: 'oggi' }, { quando: 'partenza' }]) {
+    const q = new URLSearchParams(bad); assert.equal(V.parseWant(k => q.get(k)), null, JSON.stringify(bad).slice(0, 60));
+  }
+  const w2 = V.wantOf(s), dep = s.legs.find(l => l.t === 'r').da.ms;
+  assert.equal(V.reopenMode(w2, dep + 5 * 60e3), 'passata', 'corsa già partita: alternative di adesso');
+  assert.equal(V.reopenMode(w2, dep - 30 * 60e3), 'adesso', 'entro 90 minuti: ricerca in tempo reale');
+  assert.equal(V.reopenMode(w2, dep - 5 * 3600e3), 'orario', 'più avanti: ricerca all\'orario della proposta');
+  // il viaggio salvato porta famiglia e linee anche dopo la rilettura dalla memoria
+  assert.deepEqual(V.clean(JSON.parse(JSON.stringify(s))).rotte, ['aut:2_UL', 'aut:6_UL']);
+  assert.equal(V.clean({ ...JSON.parse(JSON.stringify(s)), rotte: ['<b>'] }).rotte, undefined);
 });
 
 test('I miei viaggi: salvati in ordine, al massimo 10, via da soli dopo l\'arrivo; memoria manomessa ignorata', async () => {
@@ -137,4 +160,33 @@ test('avvisi per un viaggio: legati al giorno e alle ore del viaggio (non alla p
   assert.deepEqual(ids(day2, day2 + H), ['fermata', 'lavori-17', 'sciopero']);              // viaggio di martedì: niente lavori di lunedì né guasto di adesso
   assert.deepEqual(ids(now + H, now + 2 * H), ['fermata', 'guasto-ora']);                     // viaggio tra un'ora: il guasto in corso conta
   assert.deepEqual(ids(now + 5 * H, now + 6 * H), ['fermata']);                               // stasera: il guasto di adesso no
+});
+
+test('posizione durante il viaggio: accesa solo a piedi verso la fermata, nei cambi a piedi e prima di scendere; spenta a bordo', async () => {
+  const { V } = await load();
+  const sol = { ...SOL, tratte: SOL.tratte.map(t => (t.tipo === 'mezzo' ? { ...t, da: { ...t.da, lat: 45.44, lon: 12.32 }, a: { ...t.a, lat: 45.48, lon: 12.23 } } : t)) };
+  const s = V.snapshot(sol, { date: '2026-11-16', from: FROM, to: TO }), at = hm => V.romeMs('2026-11-16', hm);
+  assert.equal(s.legs[1].da.lat, 45.44, 'coordinate della fermata nell\'istantanea (restano sul telefono)');
+  const tg = hm => { const ph = V.phase(s, at(hm)); return { k: ph.kind, t: V.gpsTarget(s, ph, at(hm)) }; };
+  assert.equal(tg('08:00').t, null, 'esci tra 17 minuti: ancora spenta');
+  assert.equal(tg('08:13').t.stop.name, 'VENEZIA', 'esci tra 4 minuti: accesa verso la fermata');
+  assert.equal(tg('08:25').k, 'bordo'); assert.equal(tg('08:25').t, null, 'a bordo: spenta');
+  assert.equal(tg('08:32').k, 'scendi'); assert.equal(tg('08:32').t.stop.name, 'Mestre FS C4', 'prima di scendere: accesa');
+  assert.equal(tg('08:36').k, 'cambio'); assert.equal(tg('08:36').t.stop.name, 'Stazione Mestre FS', 'cambio a piedi: accesa');
+  assert.equal(tg('08:54').t, null, 'ultimo tratto a piedi: spenta');
+});
+
+test('alternativa più veloce: si cerca solo con soppressione, cambio perso o arrivo in ritardo di 8 minuti o più', async () => {
+  const { V } = await load();
+  const s = V.snapshot(SOL, { date: '2026-11-16', from: FROM, to: TO }), at = hm => V.romeMs('2026-11-16', hm);
+  assert.equal(V.altNeed(s, at('08:25')), null, 'tutto in orario');
+  const R = s.legs.filter(l => l.t === 'r');
+  R[1].a.live = R[1].a.ms + 5 * 60e3; assert.equal(V.altNeed(s, at('08:25')), null, '5 minuti di ritardo: niente');
+  R[1].a.live = R[1].a.ms + 9 * 60e3; R[1].da.live = R[1].da.ms + 9 * 60e3;
+  assert.equal(V.altNeed(s, at('08:25')).why, 'ritardo');
+  delete R[1].a.live; delete R[1].da.live; R[0].a.live = R[0].a.ms + 6 * 60e3;   // arriva 08:40, 2 min a piedi, il 6 parte alle 08:40
+  assert.equal(V.altNeed(s, at('08:30')).why, 'cambio'); assert.equal(V.altNeed(s, at('08:30')).arrive, Infinity);
+  delete R[0].a.live; R[1].cancel = true;
+  assert.equal(V.altNeed(s, at('08:30')).why, 'soppressa');
+  assert.equal(V.altNeed(s, at('09:10')), null, 'viaggio finito');
 });

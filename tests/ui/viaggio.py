@@ -1,7 +1,7 @@
 # PROVE DELL'INTERFACCIA DEL VIAGGIO GUIDATO e di «I miei viaggi» (Playwright + Chromium), con il server di prova già avviato:
 #   AVVISI_ARCHIVIO=0 DATI_CDN=0 MAREA_ARCHIVIO=0 TRUST_PROXY=1 PORT=3111 node -r ./tests/fakefeed.js server.js      poi:   python3 tests/ui/viaggio.py http://localhost:3111 /tmp/ui
 # Chromium senza servizio push: gli avvisi passano per la lettura con l'app aperta (la strada dei dispositivi senza Web Push).
-import sys, os, json, pathlib, time, math, datetime
+import re, sys, os, json, pathlib, time, math, datetime
 from playwright.sync_api import sync_playwright
 BASE = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:3111'
 OUT = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else '/tmp/ui'); OUT.mkdir(parents=True, exist_ok=True)
@@ -52,7 +52,7 @@ with sync_playwright() as p:
         page.click('.pp-top .pp-opt'); page.wait_for_selector('.pp-acts', timeout=8000); page.wait_for_timeout(500)
         check(page.inner_text('.pp-go').strip() == 'Inizia il viaggio', '«Inizia il viaggio» nel dettaglio di una soluzione che parte adesso')
         acts = page.evaluate("[...document.querySelectorAll('.pp-acts2 .pp-act')].map(b=>b.innerText.trim())")
-        check(acts == ['Salva viaggio', 'Calendario', 'Condividi'], f'azioni secondarie {acts}')
+        check(acts == ['Salva viaggio', 'Condividi'], f'azioni secondarie (niente calendario) {acts}')
         check(page.query_selector('.pp-tide') is not None and '120 cm' in page.inner_text('.pp-tide'), 'nota sulla marea (120 cm) per i tratti a piedi a Venezia')
         check('MOSE' in page.inner_text('.pp-tide'), 'nota sul MOSE programmato')
         b = rectf(page, '.pp-go'); check(b and b['h'] >= 44 and b['r'] <= w, f'pulsante principale grande e dentro lo schermo {b}')
@@ -61,12 +61,8 @@ with sync_playwright() as p:
         page.evaluate("try{delete navigator.share}catch(e){}; navigator.share=undefined")
         page.click('.pp-txt'); page.wait_for_timeout(600)
         clip = page.evaluate("navigator.clipboard.readText()")
-        check(clip.startswith('Percorso: ') and 'Linea ' in clip and '?da=f%3Anav%3A5031' in clip or 'da=f:nav:5031' in clip, 'testo del percorso negli appunti con il link')
-        # calendario: file .ics scaricato
-        with page.expect_download(timeout=8000) as dl:
-            page.click('.pp-cal')
-        d = dl.value; txt = pathlib.Path(d.path()).read_text()
-        check(d.suggested_filename.endswith('.ics') and 'BEGIN:VEVENT' in txt and 'TRIGGER:-PT10M' in txt, f'file del calendario {d.suggested_filename}')
+        check(clip.startswith('🧭 ') and '📅 ' in clip and '🏁 ' in clip and '[' in clip and 'Apri questa proposta: ' in clip and 'sol=' in clip, 'testo della proposta negli appunti, con simboli, linee e link alla proposta')
+        check(page.query_selector('.pp-cal') is None, 'niente pulsante del calendario')
         # «Programmato» con il pianificatore aperto: nessuna richiesta di partenze di una fermata, nessun errore nel pannello (difetto trovato sul sito)
         page.click('label:has(input[value=sched])'); page.wait_for_timeout(1500)
         check('parametro id' not in page.inner_text('#plist') and page.query_selector('.pp-acts') is not None, '«Programmato» con il pianificatore aperto: dettaglio intatto')
@@ -97,8 +93,12 @@ with sync_playwright() as p:
         page.click('.pp-f'); page.wait_for_timeout(300)
         check(page.query_selector('.pp-sug.vg-cur') is not None, '«Viaggio in corso» in cima ai suggerimenti del pianificatore')
         page.click('.pp-sug.vg-cur'); page.wait_for_selector('.vg-now', timeout=5000)
-        # schermo acceso: interruttore
+        # schermo acceso: interruttore; posizione a fasi e spiegazione di schermo spento / app chiusa
         check(page.query_selector('.vg-lockcb') is not None, 'interruttore «Schermo sempre acceso»')
+        check(page.query_selector('.vg-gpscb') is not None, 'interruttore «Usa la posizione durante il viaggio»')
+        gp = page.evaluate("[...document.querySelectorAll('.vg-gps')].map(x=>x.innerText).join(' | ')")
+        check('Posizione' in gp or 'Sei a' in gp, f'stato della posizione detto chiaramente ({gp[:120]})')
+        check('schermo spento' in gp, 'spiegato cosa succede con lo schermo spento o l\'app chiusa')
         # termina (due tocchi)
         page.click('.vg-end'); page.wait_for_timeout(200)
         check('di nuovo' in page.inner_text('.vg-end'), 'primo tocco su «Termina viaggio» chiede conferma')
@@ -113,6 +113,18 @@ with sync_playwright() as p:
         page.click('.pp-svtrip'); page.wait_for_timeout(300)
         check(page.get_attribute('.pp-svtrip', 'aria-pressed') == 'true', 'salvato in «I miei viaggi»')
         page.screenshot(path=str(OUT / f'vg-{name}-5-future.png'))
+        # link della proposta: si riapre il suo dettaglio (non l'elenco)
+        page.evaluate("navigator.share=undefined"); page.click('.pp-txt'); page.wait_for_timeout(500)
+        link = [l for l in page.evaluate("navigator.clipboard.readText()").split() if l.startswith('http')][0]
+        dep = page.inner_text('.pp-dsum .pp-times').split()[0]
+        page.goto(link); page.wait_for_selector('.pp-acts', timeout=90000); page.wait_for_timeout(300)
+        check(page.inner_text('.pp-dsum .pp-times').split()[0] == dep, f'il link apre il dettaglio della stessa proposta ({dep})')
+        # proposta scaduta (ieri): messaggio chiaro e soluzioni di adesso, nessuna schermata vuota
+        yday = (datetime.date.today() - datetime.timedelta(days=1)).strftime('%Y%m%d')
+        old = re.sub(r'data=\d{8}', 'data=' + yday, link)
+        page.goto(old); page.wait_for_selector('.pp-notice', timeout=90000); page.wait_for_selector('.pp-opt', timeout=90000)
+        check('già partita' in page.inner_text('.pp-notice'), 'proposta scaduta: «già partita» e alternative di adesso')
+        page.goto(BASE + f'/?da=f:nav:5031&a=f:aut:6073&quando=partenza&ora=0820&data={tomorrow}'); page.wait_for_selector('.pp-opt', timeout=90000)
         page.click('#pclose'); page.wait_for_timeout(300)
         page.evaluate("localStorage.removeItem('tpl.percorso')")
         page.goto(BASE); page.wait_for_timeout(1500); page.click('#plan-btn'); page.wait_for_timeout(800)

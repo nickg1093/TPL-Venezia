@@ -1,6 +1,6 @@
 # STATO DEL PROGETTO — da leggere per primo in ogni nuova conversazione
 
-Aggiornato il **19/11/2026** (v32.2 pronta, da pubblicare a mano), ultimo commit di codice `0842dd0`. Questo file dice dove siamo, come si lavora e dove guardare.
+Aggiornato il **19/11/2026** (v32.3 pronta, da pubblicare a mano), ultimo commit di codice `0842dd0`. Questo file dice dove siamo, come si lavora e dove guardare.
 I dettagli stanno in **README.md** (riferimento completo, con sezioni numerate) e **CRITERI.md** (regole obbligatorie): qui non si ripetono,
 si indica la sezione. Chi modifica il progetto aggiorna anche questo file (sezioni 5, 8 e 9).
 
@@ -16,7 +16,7 @@ di percorso con viaggio guidato, avvisi di arrivo (notifiche push), avvisi di se
 | Sito | https://veneziatpl.onrender.com (Render, piano gratuito, 512 MB, regione Virginia) |
 | Codice | https://github.com/nickg1093/TPL-Venezia, ramo `main` (repository pubblico) |
 | Copia sul PC dell'utente | `D:\Downloads\TPL-Venezia` (Windows, clone git, aggiornata con GitHub Desktop) |
-| Versione | **v32.2** (da pubblicare; online v32.1) (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v31`) |
+| Versione | **v32.3** (da pubblicare; online v32.1 o v32.2) (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v31`) |
 | Tecnologia | Node.js 22, **nessun framework, nessun database**; dipendenze: solo `leaflet` e `protobufjs` |
 
 ## 2. Regole di lavoro (non negoziabili)
@@ -60,7 +60,7 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 | Pianificatore (RAPTOR) | `percorso.js`, `pedonale-*.txt` |
 | Avvisi di servizio | `avvisi.js` (regole, 1082 righe), `avvisi-archivio.js`, `avvisi-ai.js` (validazione delle risposte AI) |
 | Avvisi di arrivo e viaggio guidato | `watch.js`, `push.js` (Web Push VAPID) |
-| Marea, MOSE, calendario | `tide.js`, `marea-archivio.js`, `mose.js`, `ics.js` |
+| Marea, MOSE | `tide.js`, `marea-archivio.js`, `mose.js` (il calendario `ics.js` è stato tolto nella v32.3) |
 | Dati fissi per i telefoni | `fissi.js`, `scripts/genera-dati.js` |
 | Memoria e misure | `memoria.js`, `metriche.js` |
 
@@ -77,17 +77,22 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 
 ## 5. Stato attuale
 
-- **v32.2 (19/11/2026, da pubblicare)**: avvisi (settore nav/aut, fermate toccate, date, fusioni Telegram↔ACTV, propagazione per fermata) e
+- **v32.3 (19/11/2026 sera, da pubblicare)**: v32.2 + proposta esatta in «I miei viaggi» e nei link (riapertura nel dettaglio, oppure messaggio e
+  alternative), testo condiviso nuovo, calendario tolto, posizione a fasi e spiegazioni nel viaggio guidato, riquadro «alternativa più veloce»,
+  «Arrivo entro» con più soluzioni e margine («al limite»): README §12 e §3.4. La stessa parte è nella v33.2 di prova sul PC.
+- **v32.2 (19/11/2026)**: avvisi (settore nav/aut, fermate toccate, date, fusioni Telegram↔ACTV, propagazione per fermata) e
   pianificatore (camminate lunghe, consigliata stabile, soppressioni e fermate saltate, coincidenze irrealistiche, «arrivo entro»): README §12 e §3.4.
   La stessa parte è nella v33.1 di prova sul PC (con l'acqua alta).
 - **Online**: v32.1 (grafico della marea, deploy confermato dall'utente il 19/11/2026); misure per giorno (verificato il 16/11/2026 alle 21:25: `/api/metriche/giorni` risponde con il token dell'utente).
-- **Prove (19/11/2026, v32.2)**: `npm test` → 282 passate, 0 fallite. Prove d'interfaccia (`run.py`, `viaggio.py`, `sistema.py`, `marea.py`) passate, anche con `TESTO=1.3`.
+- **Prove (19/11/2026 sera, v32.3)**: `npm test` → 284 passate, 0 fallite. `run.py`, `viaggio.py` passate anche con `TESTO=1.3`; `marea.py` passata;
+  `sistema.py` a testo normale si ferma dopo le 22:30 alla prova del pannello di una corsa (dipende dall'ora, succede anche sulla v32.2).
 - **Da confermare da parte dell'utente**:
   - `metriche.bat` scelta 2 dopo la correzione del commit `0842dd0` (lo script PowerShell non è eseguibile nell'ambiente dell'IA: non è stato provato);
   - che `https://paypal.me/olocing` si apra correttamente dal pulsante della donazione (l'IA non può aprire quel sito);
   - viaggio guidato e riattivazione delle notifiche su un iPhone vero.
 
 ### Ultime versioni (dettagli in README §12)
+- **v32.3**: proposta esatta salvata e condivisa, condivisione nuova, calendario tolto, GPS a fasi, alternativa più veloce, «Arrivo entro» con margine.
 - **v32.2**: avvisi e pianificatore rivisti sui casi reali dell'archivio e sugli orari veri (README §12, §3.4 «Scelta delle soluzioni»).
 - **v32.1**: grafico della marea con etichette senza sovrapposizioni (soglia e orario del MOSE, massimi e minimi).
 - **Dopo la v32, senza cambio di versione** (solo server e script): misure per giorno. `metriche.js` stima le persone diverse con un'impronta
@@ -149,8 +154,11 @@ intestazione e §12 del README; `GUIDA_VER` solo se si aggiungono passi alla gui
 5. **Regole degli avvisi**: rilettura periodica dei casi nuovi nell'archivio.
 6. **Proseguire sullo stesso mezzo al capolinea** (richiesto il 19/11/2026, rinviato): nei GTFS ACTV `block_id` è vuoto e il tempo reale non dice
    la corsa successiva del mezzo. Si riprende se ACTV pubblica i turni.
-7. **Parcheggi pieni** («Park … al completo») tolti dagli avvisi dal 19/11: se servono, si possono rimettere in una sezione a parte.
-8. Pulizia consigliata e non confermata: variabili `ACTV_CENTRALE*` su Render, ramo `dependabot/...adm-zip`, impostazioni di GitHub (README §7.4).
+7. **Push per una coincidenza persa**: il server avvisa di soppressioni, fermate saltate e ritardi della singola corsa; un avviso «il cambio salta»
+   calcolato sul server richiederebbe di confrontare due corse dello stesso viaggio (non fatto). Con l'app aperta lo dice già.
+8. **`sistema.py` dopo le 22:30**: la prova del pannello di una corsa dipende dall'ora; si può renderla indipendente.
+9. **Parcheggi pieni** («Park … al completo») tolti dagli avvisi dal 19/11: se servono, si possono rimettere in una sezione a parte.
+10. Pulizia consigliata e non confermata: variabili `ACTV_CENTRALE*` su Render, ramo `dependabot/...adm-zip`, impostazioni di GitHub (README §7.4).
 
 ## 9. Per iniziare una nuova conversazione
 
@@ -163,3 +171,5 @@ Per risparmiare token: non rileggere tutto il codice; partire dalla tabella dei 
 richiesta per volta; a fine lavoro aggiornare `STATO.md`.
 Per gli avvisi: provare le regole sull'archivio vero (server avviato senza `AVVISI_ARCHIVIO=0`, poi `/api/avvisi-eventi` con il token) e
 aggiungere i casi in `tests/avvisi-casi-reali.json` / `tests/avvisi.test.js`. Per il pianificatore: provare su orari reali tra gruppi di fermate.
+Per «I miei viaggi» e i link: la riapertura è in `public/js/percorso.js` (`show` con `want`, `findWanted`) e la firma in `public/js/viaggio.js`
+(`wantOf`, `linkParams`, `parseWant`, `reopenMode`); provare sempre un link valido e uno scaduto (`tests/ui/viaggio.py`).
