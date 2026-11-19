@@ -501,6 +501,31 @@ button.chip.all{min-height:30px}
 /* pulsante «Percorso»: in basso a sinistra, sopra l'attribuzione della mappa; azione principale (colore d'accento) */
 .plan-fab{position:absolute;z-index:1000;left:calc(var(--gap) + var(--safe-l));bottom:calc(var(--gap) + 26px);display:inline-flex;align-items:center;gap:8px;min-height:48px;padding:0 18px 0 14px;border:0;border-radius:99px;background:var(--accent);color:var(--on-accent);font:inherit;font-size:var(--fs-md);font-weight:800;box-shadow:0 3px 12px rgba(11,21,32,.28),0 1px 2px rgba(11,21,32,.16);cursor:pointer}
 .plan-fab:hover{filter:brightness(1.08)}
+/* SCIOPERO (v33.3): pulsante ad alta visibilità sopra «Percorso» (posizione e larghezza calcolate da app.js: segue «Percorso» e i suoi spostamenti) */
+.strike-fab{position:absolute;z-index:1000;left:calc(var(--gap) + var(--safe-l));bottom:calc(var(--gap) + 86px);display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 18px 0 14px;
+  border:2px solid #fff;border-radius:99px;background:var(--late);color:#fff;font:inherit;font-size:var(--fs-md);font-weight:800;letter-spacing:.02em;box-shadow:0 3px 12px rgba(11,21,32,.32),0 1px 2px rgba(11,21,32,.18);cursor:pointer}
+.strike-fab .ic{width:22px;height:22px}
+.strike-fab:focus-visible{outline:3px solid var(--fg);outline-offset:3px}
+.strike-fab.off{display:none}
+:root[data-theme="dark"] .strike-fab{color:#240300;border-color:#240300}
+@media (prefers-reduced-motion:no-preference){ .strike-fab{animation:strike-pulse 2.6s ease-in-out infinite} }
+@keyframes strike-pulse{0%,100%{box-shadow:0 3px 12px rgba(11,21,32,.32),0 0 0 0 color-mix(in srgb,var(--late) 55%,transparent)}50%{box-shadow:0 3px 12px rgba(11,21,32,.32),0 0 0 9px color-mix(in srgb,var(--late) 0%,transparent)}}
+.strike-bg{position:fixed;inset:0;z-index:1490;background:rgba(6,12,20,.5)}
+.card.strike-card{position:fixed;z-index:1500;left:50%;top:50%;transform:translate(-50%,-50%);width:min(460px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow:auto;border:2px solid var(--late)}
+.strike-card .card-h h2{display:flex;align-items:center;gap:8px;color:var(--late)}
+#sciopero-body{padding:4px 20px 8px;font-size:var(--fs-sm);line-height:1.5}
+#sciopero-body p{margin:8px 0}
+#sciopero-body .st-lead{font-size:var(--fs-md);font-weight:700}
+#sciopero-body .st-fasce{padding:8px 10px;border-radius:var(--r-sm);background:color-mix(in srgb,var(--late) 10%,transparent)}
+#sciopero-body ul{margin:6px 0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+#sciopero-body a{display:inline-flex;align-items:center;gap:6px;min-height:44px;font-weight:600}
+.strike-acts{display:flex;justify-content:flex-end;padding:4px 20px 16px}
+.strike-acts .btn{min-height:48px;min-width:140px}
+.strike-note{display:flex;align-items:flex-start;gap:8px;margin:8px 2px;padding:8px 10px;border-radius:var(--r-sm);font-size:var(--fs-xs);line-height:1.45;
+  background:color-mix(in srgb,var(--late) 10%,transparent);border:1px solid color-mix(in srgb,var(--late) 45%,transparent)}
+.strike-note .ic{flex:none;color:var(--late);margin-top:2px}
+.strike-note b{color:var(--late)}
+.strike-note .nlink{min-height:32px}
 .plan-fab .ic{width:22px;height:22px;stroke-width:2.2}
 body.has-panel .plan-fab{display:none}
 @media (min-width:768px){ body.has-panel:not(.panel-plan) .plan-fab{display:inline-flex;left:calc(var(--gap) + var(--safe-l) + min(420px,calc(100% - 200px)) + var(--gap))} }
@@ -917,7 +942,7 @@ button.fv-it:hover{background:var(--accent-soft)}
 html.kbd .dock{display:none}
 /* v26: con la tastiera aperta anche gli altri elementi ancorati in basso (pulsante Percorso, crediti della mappa) si tolgono invece di salire
    sopra la tastiera e coprire i risultati; i risultati della ricerca stanno nell'area visibile e scorrono. Chiusa la tastiera torna tutto com'era. */
-html.kbd .plan-fab,html.kbd #osm-attr{display:none!important}
+html.kbd .plan-fab,html.kbd #osm-attr,html.kbd .strike-fab{display:none!important}
 html.kbd #search-results{max-height:calc(var(--app-h, 100dvh) - 90px - var(--safe-t, 0px))}
 
 /* ---- v25: percorsi a piedi lungo le strade ---- */

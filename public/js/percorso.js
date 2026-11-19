@@ -308,6 +308,11 @@ async function findWanted(want, my) {
   if (x) { S.det = x; S.sel = -1; S.formOpen = false; renderForm(); renderBody(); draw(); return; }
   S.notice = { kind: 'cambiata', w: want, used: true }; renderBody();
 }
+// SCIOPERO (v33.3): avvertenza in cima alle soluzioni e nel dettaglio quando i viaggi cadono nella finestra dello sciopero
+function strikeOf(list) {
+  const sn = (list || []).map(snapOf).filter(Boolean); if (!sn.length) return '';
+  return Avvisi.strikeNoteHtml(Avvisi.strikeFor(Math.min(...sn.map(x => x.leaveMs)), Math.max(...sn.map(x => x.arriveMs))), 'viaggio');
+}
 const noticeHtml = () => {
   const n = S.notice; if (!n) return '';
   const w = n.w, what = `${w.parti}${w.arrivi ? `–${w.arrivi}` : ''}${w.linee ? ` · ${w.linee}` : ''}`;
@@ -619,7 +624,7 @@ function renderBody() {
   if (!r) { X.plist.innerHTML = ''; return; }
   if (S.det) return renderDetail(S.det, live);
   const nf = opzCount();
-  const head = noticeHtml() + `<p class="pp-meta muted">${live ? `In tempo reale · aggiornato alle ${new Date(r.aggiornato).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : r.entro ? `Orari programmati · arrivo entro le ${esc(r.entro)}` : `Orari programmati · partenza dalle ${esc(r.ora)}`}`
+  const head = noticeHtml() + strikeOf(r.soluzioni) + `<p class="pp-meta muted">${live ? `In tempo reale · aggiornato alle ${new Date(r.aggiornato).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : r.entro ? `Orari programmati · arrivo entro le ${esc(r.entro)}` : `Orari programmati · partenza dalle ${esc(r.ora)}`}`
     + (mezziTxt() ? ` · ${mezziTxt()}` : '') + (nf ? ` · <button type="button" class="nlink pp-opzlink">${nf} ${nf > 1 ? 'opzioni attive' : 'opzione attiva'}</button>` : '') + '</p>';
   // «tutto a piedi» in cima all'elenco: se nessun mezzo conviene, se dura poco più del mezzo più rapido (5 minuti) o se FA ARRIVARE PRIMA di
   // qualsiasi mezzo (con «arrivo entro»: fa partire più tardi), anche quando il mezzo dura meno ma parte tra un po'
@@ -685,7 +690,7 @@ function renderDetail(o, live) {
   X.plist.innerHTML = `<div class="pp-dhead"><button type="button" class="linkback pp-back">${icon('back', 'sm')}<span>Tutte le soluzioni</span></button>`
     + `<button type="button" class="ibtn sm pp-tall" aria-pressed="${S.tall}" aria-label="${S.tall ? 'Abbassa il pannello e mostra di più la mappa' : 'Alza il pannello per leggere tutte le tappe'}" title="${S.tall ? 'Più mappa' : 'Più tappe'}">${icon(S.tall ? 'down' : 'up', 'sm')}</button></div>`
     + `<div class="pp-dsum"><span class="pp-times"><b>${esc(o.parti)}</b>${icon('next', 'sm')}<b>${esc(o.arrivi)}</b></span><span class="muted">${minTxt(o.minuti)} · ${cambiTxt(o)}${o.piedi ? ` · ${o.piedi} min a piedi` : ''}</span>${riskLine(o)}</div>`
-    + actsHtml(o, snapOf(o)) + detAvHtml(o) + tideHtml(o, snapOf(o))
+    + strikeOf([o]) + actsHtml(o, snapOf(o)) + detAvHtml(o) + tideHtml(o, snapOf(o))
     + `<ol class="pp-steps"><li class="pp-step start"><span class="pp-sic">${S.from.kind === 'me' ? icon('locate') : icon('pin')}</span><div><b>Partenza alle ${esc(o.parti)}</b><small>${esc(epName(S.from))}</small></div></li>${steps.join('')}</ol>`
     + '<section class="pp-alts" aria-live="polite"></section>';
   renderAlts(); loadAlts(o);

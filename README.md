@@ -281,6 +281,16 @@ ripresenta da solo gli avvisi attivi (`/api/watch/restore`), all'apertura dell'a
 
 ### 3.7 Avvisi di servizio, marea, modalità Programmato, guida, link
 - **Avvisi**: sito ACTV + Telegram, collegati a linee e fermate (bordo rosso sulla mappa, «!» nei pannelli); archivio storico nel ramo `archivio-avvisi`.
+- **Sciopero** (v32.4): l'avviso di sciopero (`effect: 'strike'`) porta `sciopero: { inizio, fine, da, fino, fasce, link }` (`avvisi.js`, `strikeMeta`):
+  finestra di evidenza **da 8 ore prima dell'inizio alle 05:00 del giorno dopo** (ripresa con le prime corse del mattino, come nei comunicati
+  ACTV); in elenco resta «in corso» fino alle 05:00; **fasce garantite** lette solo dalle frasi con «garantit…» del comunicato o del messaggio
+  Telegram; **link ufficiali** (comunicato ACTV, messaggio Telegram, altre pagine o PDF ACTV citati) solo dai domini ACTV/Telegram (gli
+  indirizzi brevi come bit.ly si scartano). Sul telefono: **scheda all'accesso** (corse non regolari, orari programmati, non tutte le corse
+  garantite, fasce, link in una nuova scheda) che si chiude con «Ho capito», la X, Esc, «indietro» o un tocco fuori, e **non si ripropone**
+  (memoria `tpl.sciopero`) finché il comunicato non cambia o per 6 ore; **pulsante «Sciopero»** sopra «Percorso» (stessa larghezza e altezza,
+  segue i suoi spostamenti e si nasconde quando lui non si vede: pannello aperto sul telefono, tastiera, scelta sulla mappa), rosso ad alto
+  contrasto nei due temi, con un lampeggio discreto spento da «riduci movimento»; **avvertenza** nei pannelli fermata/corsa e nel pianificatore
+  (elenco e dettaglio) quando gli orari cadono nella finestra dello sciopero. Nessuna richiesta in più al server: i dati sono in `/api/avvisi`.
 - **Marea**: livello CPSM, tendenza, prossimi estremi, grafico con cursore.
 - **Programmato** (barra in basso): posizioni e orari di un altro giorno o di un'altra ora, con riproduzione accelerata.
 - **Guida**: alla prima apertura e, dopo un aggiornamento, solo le novità (`guida.js`, `GUIDA_VER = 'v31'`).
@@ -546,7 +556,14 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ---
 
-## 12. Novità della v32.3
+## 12. Novità della v32.4
+
+- **v32.4 (20/11/2026)**: gestione dello sciopero ad alta visibilità (§3.7): finestra da 8 ore prima alle 05:00 del giorno dopo, fasce
+  garantite e link ufficiali dal comunicato, scheda all'accesso con memoria della chiusura, pulsante «Sciopero» sopra «Percorso», avvertenze in
+  pannelli e pianificatore. File: `avvisi.js`, `public/index.html`, `public/css/app.css`, `public/js/app.js`, `public/js/avvisi.js`,
+  `public/js/percorso.js`, `public/icons/sprite.svg` (`i-strike`); prove in `tests/avvisi.test.js`, `tests/ui/run.py`, `tests/ui/sistema.py`.
+
+## Novità della v32.3
 
 - **v32.3 (19/11/2026)**: proposta esatta in «I miei viaggi» e nei link condivisi, con riapertura sicura (dettaglio, oppure messaggio e
   alternative); testo condiviso nuovo; calendario tolto (`ics.js`, `/api/ics`, `tests/ics.test.js`, voce delle misure); posizione a fasi nel viaggio

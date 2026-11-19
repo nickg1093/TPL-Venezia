@@ -1,6 +1,6 @@
 # STATO DEL PROGETTO — da leggere per primo in ogni nuova conversazione
 
-Aggiornato il **19/11/2026** (v32.3 pronta, da pubblicare a mano), ultimo commit di codice `0842dd0`. Questo file dice dove siamo, come si lavora e dove guardare.
+Aggiornato il **19/11/2026** (v32.4 pronta, da pubblicare a mano), ultimo commit di codice `0842dd0`. Questo file dice dove siamo, come si lavora e dove guardare.
 I dettagli stanno in **README.md** (riferimento completo, con sezioni numerate) e **CRITERI.md** (regole obbligatorie): qui non si ripetono,
 si indica la sezione. Chi modifica il progetto aggiorna anche questo file (sezioni 5, 8 e 9).
 
@@ -16,7 +16,7 @@ di percorso con viaggio guidato, avvisi di arrivo (notifiche push), avvisi di se
 | Sito | https://veneziatpl.onrender.com (Render, piano gratuito, 512 MB, regione Virginia) |
 | Codice | https://github.com/nickg1093/TPL-Venezia, ramo `main` (repository pubblico) |
 | Copia sul PC dell'utente | `D:\Downloads\TPL-Venezia` (Windows, clone git, aggiornata con GitHub Desktop) |
-| Versione | **v32.3** (da pubblicare; online v32.1 o v32.2) (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v31`) |
+| Versione | **v32.4** (da pubblicare) (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v31`) |
 | Tecnologia | Node.js 22, **nessun framework, nessun database**; dipendenze: solo `leaflet` e `protobufjs` |
 
 ## 2. Regole di lavoro (non negoziabili)
@@ -77,14 +77,18 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 
 ## 5. Stato attuale
 
-- **v32.3 (19/11/2026 sera, da pubblicare)**: v32.2 + proposta esatta in «I miei viaggi» e nei link (riapertura nel dettaglio, oppure messaggio e
+- **v32.4 (20/11/2026, da pubblicare)**: v32.3 + sciopero ad alta visibilità (README §3.7): scheda all'accesso, pulsante «Sciopero»,
+  avvertenze in pannelli e pianificatore, finestra da 8 ore prima alle 05:00 del giorno dopo, fasce garantite e link ufficiali.
+- **v32.3 (19/11/2026 sera)**: v32.2 + proposta esatta in «I miei viaggi» e nei link (riapertura nel dettaglio, oppure messaggio e
   alternative), testo condiviso nuovo, calendario tolto, posizione a fasi e spiegazioni nel viaggio guidato, riquadro «alternativa più veloce»,
   «Arrivo entro» con più soluzioni e margine («al limite»): README §12 e §3.4. La stessa parte è nella v33.2 di prova sul PC.
 - **v32.2 (19/11/2026)**: avvisi (settore nav/aut, fermate toccate, date, fusioni Telegram↔ACTV, propagazione per fermata) e
   pianificatore (camminate lunghe, consigliata stabile, soppressioni e fermate saltate, coincidenze irrealistiche, «arrivo entro»): README §12 e §3.4.
   La stessa parte è nella v33.1 di prova sul PC (con l'acqua alta).
 - **Online**: v32.1 (grafico della marea, deploy confermato dall'utente il 19/11/2026); misure per giorno (verificato il 16/11/2026 alle 21:25: `/api/metriche/giorni` risponde con il token dell'utente).
-- **Prove (19/11/2026 sera, v32.3)**: `npm test` → 284 passate, 0 fallite. `run.py`, `viaggio.py` passate anche con `TESTO=1.3`; `marea.py` passata;
+- **Prove (20/11/2026, v32.4)**: `npm test` → 287 passate, 0 fallite; `run.py` (con le prove dello sciopero), `viaggio.py`, `sistema.py`
+  anche con `TESTO=1.3`. `tests/memoria-giorni.test.js` usa la versione dei GTFS `20261102_189116ae.zip`, che il server toglie dopo la sua scadenza
+  (20/11/2026): se manca, la prova fallisce senza che ci siano errori nel codice. **(Prima, v32.3)**: `npm test` → 284 passate, 0 fallite. `run.py`, `viaggio.py` passate anche con `TESTO=1.3`; `marea.py` passata;
   `sistema.py` a testo normale si ferma dopo le 22:30 alla prova del pannello di una corsa (dipende dall'ora, succede anche sulla v32.2).
 - **Da confermare da parte dell'utente**:
   - `metriche.bat` scelta 2 dopo la correzione del commit `0842dd0` (lo script PowerShell non è eseguibile nell'ambiente dell'IA: non è stato provato);
@@ -92,6 +96,7 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
   - viaggio guidato e riattivazione delle notifiche su un iPhone vero.
 
 ### Ultime versioni (dettagli in README §12)
+- **v32.4**: sciopero ad alta visibilità (scheda, pulsante, avvertenze, finestra, fasce, link).
 - **v32.3**: proposta esatta salvata e condivisa, condivisione nuova, calendario tolto, GPS a fasi, alternativa più veloce, «Arrivo entro» con margine.
 - **v32.2**: avvisi e pianificatore rivisti sui casi reali dell'archivio e sugli orari veri (README §12, §3.4 «Scelta delle soluzioni»).
 - **v32.1**: grafico della marea con etichette senza sovrapposizioni (soglia e orario del MOSE, massimi e minimi).
@@ -157,8 +162,10 @@ intestazione e §12 del README; `GUIDA_VER` solo se si aggiungono passi alla gui
 7. **Push per una coincidenza persa**: il server avvisa di soppressioni, fermate saltate e ritardi della singola corsa; un avviso «il cambio salta»
    calcolato sul server richiederebbe di confrontare due corse dello stesso viaggio (non fatto). Con l'app aperta lo dice già.
 8. **`sistema.py` dopo le 22:30**: la prova del pannello di una corsa dipende dall'ora; si può renderla indipendente.
-9. **Parcheggi pieni** («Park … al completo») tolti dagli avvisi dal 19/11: se servono, si possono rimettere in una sezione a parte.
-10. Pulizia consigliata e non confermata: variabili `ACTV_CENTRALE*` su Render, ramo `dependabot/...adm-zip`, impostazioni di GitHub (README §7.4).
+9. **Sciopero**: fasce garantite dal comunicato (di solito autobus e tram); la locandina dei servizi minimi della navigazione non si legge (link).
+   `tests/memoria-giorni.test.js` dipende da una versione dei GTFS scaduta il 20/11/2026: da aggiornare.
+10. **Parcheggi pieni** («Park … al completo») tolti dagli avvisi dal 19/11: se servono, si possono rimettere in una sezione a parte.
+11. Pulizia consigliata e non confermata: variabili `ACTV_CENTRALE*` su Render, ramo `dependabot/...adm-zip`, impostazioni di GitHub (README §7.4).
 
 ## 9. Per iniziare una nuova conversazione
 
@@ -173,3 +180,5 @@ Per gli avvisi: provare le regole sull'archivio vero (server avviato senza `AVVI
 aggiungere i casi in `tests/avvisi-casi-reali.json` / `tests/avvisi.test.js`. Per il pianificatore: provare su orari reali tra gruppi di fermate.
 Per «I miei viaggi» e i link: la riapertura è in `public/js/percorso.js` (`show` con `want`, `findWanted`) e la firma in `public/js/viaggio.js`
 (`wantOf`, `linkParams`, `parseWant`, `reopenMode`); provare sempre un link valido e uno scaduto (`tests/ui/viaggio.py`).
+Per lo sciopero: metadati in `avvisi.js` (`fasceOf`, `addStrikeInfo`, `strikeMeta`), scheda e pulsante in `public/js/app.js` (`strikeUpdate`,
+`strikeLayout`) e testi in `public/js/avvisi.js` (`strikeCardHtml`, `strikeNoteHtml`); le prove d'interfaccia fingono lo sciopero intercettando `/api/avvisi`.

@@ -291,7 +291,7 @@ test('adesso: corsa soppressa e fermata saltata non si propongono; corsa in rita
   r = percorso.plan({ da: [['aut:M0', 0]], a: [['aut:M2', 0]], date: cal31.romeYmd(now) });
   const o = r.soluzioni[0], t = o.tratte.find(x => x.tipo === 'mezzo');
   assert.equal(t.tripId, 'A10_0', 'la corsa in ritardo si prende ancora');
-  assert.equal(t.da.delay, 5); assert.ok(t.da.exp > t.da.sched, 'mostra l\'orario previsto, non quello programmato');
+  assert.equal(t.da.delay, 5); assert.notEqual(t.da.exp, t.da.sched, 'mostra l\'orario previsto, non quello programmato');   // (a cavallo della mezzanotte «00:00» < «23:55»)
   percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
 });
 

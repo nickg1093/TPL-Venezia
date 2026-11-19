@@ -814,7 +814,7 @@ function thread(items) {
         joinEv(ev, B, 'ripristino in corso', certezza, `ripristino in corso: chiusura tecnica alle ${hhmm(B.to)} senza altre comunicazioni`);
         continue;
       }
-      if (A.source !== 'telegram' && B.source === 'telegram' && (ov >= 0.5 || ((ref === 'data' || ref === 'sciopero') && STRIKE_RE.test(textOf(A)) && !CANCEL_RE.test(textOf(B))))) { A.source = 'both'; A.tgUrl = A.tgUrl || B.tgUrl; B.drop = true; joinEv(ev, B, 'stessa notizia', certezza, 'stessa notizia su Telegram'); break; }   // stessa notizia del sito
+      if (A.source !== 'telegram' && B.source === 'telegram' && (ov >= 0.5 || ((ref === 'data' || ref === 'sciopero') && STRIKE_RE.test(textOf(A)) && !CANCEL_RE.test(textOf(B))))) { A.source = 'both'; A.tgUrl = A.tgUrl || B.tgUrl; B.drop = true; if (!A.fasce?.length && B.fasce?.length) A.fasce = B.fasce; if (B.xl) A.xl = [...new Set([...(A.xl || []), ...B.xl])].slice(0, 4); joinEv(ev, B, 'stessa notizia', certezza, 'stessa notizia su Telegram'); break; }   // stessa notizia del sito
       // aggiornamento: B sostituisce A
       if (!B.dated && A.dated) { B.from = Math.min(A.from, B.from); B.to = Math.max(A.to, B.to); B.dated = true; B.open = A.open; B.untilEnd = A.untilEnd; }
       if (!B.lines.length && A.lines.length) { B.lines = A.lines; B.lk = A.lk; }
@@ -1034,7 +1034,7 @@ function prepare(now, { window = true } = {}) {
       ...(corpo !== body ? { fx: short(corpo.replace(r.title, '').trim(), 700) } : {}),   // effetto senza i promemoria («Si ricorda che … è sospesa la fermata di S. Maria del Giglio»)
       ...interp(ctx, 'rss', r.key, full + '|' + r.pubMs, () => ({ ...strikeDay(r.title, r.pubMs, parseValidity(full, r.pubMs, 'rss', ctx)), ...analyze(r.title, corpo, ctx) })) };
     if (!keep(it)) continue;
-    applyAi(it, r, ctx);
+    applyAi(it, r, ctx); addStrikeInfo(it, body);
     items.push(it); byUrl.set(r.url, it);
   }
   const reposts = new Map();   // testo normalizzato -> avviso: lo stesso messaggio ripubblicato giorni dopo (Madonna della Salute, 16 e 19/11/2026) non è un avviso nuovo
@@ -1060,7 +1060,7 @@ function prepare(now, { window = true } = {}) {
         first = links.find(l => { const r = byUrl.get(l); return r && r.dated && !r.open && tgv.from >= r.from && tgv.to <= r.to; });
     }
     if (first) {
-      const it = byUrl.get(first); it.source = 'both'; it.tgUrl = m.url; if (nt.length >= 40) reposts.set(nt, it);
+      const it = byUrl.get(first); it.source = 'both'; it.tgUrl = m.url; if (nt.length >= 40) reposts.set(nt, it); addStrikeInfo(it, m.text, m.links);
       it.ev ||= newEv(it); it.ev.keys.add(m.key); it.ev.msgs.push({ key: m.key, url: m.url, fonte: 'telegram', pub: m.pubMs, ruolo: 'stessa notizia', certezza: 'esplicita' });
       it.ev.hist.push({ at: m.pubMs, azione: 'stessa notizia su Telegram (link alla pagina ACTV)', msg: m.key, certezza: 'esplicita' });
       continue;
@@ -1075,7 +1075,7 @@ function prepare(now, { window = true } = {}) {
       published: m.pubMs, ...(m.replyTo ? { replyTo: m.replyTo } : {}),
       ...interp(ctx, 'tg', m.key, m.text + '|' + m.pubMs, () => ({ ...parseValidity(soloModifica(m.text), m.pubMs, 'tg', ctx), ...analyze(title, m.text, ctx) })) };
     if (keep(it)) {
-      applyAi(it, m, ctx); items.push(it); if (nt.length >= 40) reposts.set(nt, it);
+      applyAi(it, m, ctx); addStrikeInfo(it, m.text, m.links); items.push(it); if (nt.length >= 40) reposts.set(nt, it);
       // PROROGA o VARIAZIONE annunciata su Telegram con il link alla pagina ACTV di una notizia più vecchia (es. via Pio X: pagina di settembre,
       // messaggio di novembre «ulteriormente prorogata»): il messaggio prende il posto della notizia, che non compare più due volte.
       // Solo con riferimento esplicito (stesso link) e parole di variazione; mai per annullamenti (li gestiscono i fili) né per date senza variazione.
@@ -1091,6 +1091,46 @@ function prepare(now, { window = true } = {}) {
   for (let i = items.length - 1; i >= 0; i--) if (items[i].superseded) items.splice(i, 1);
   thread(items);
   return { items, ctx, ver: src.ver };
+}
+
+// SCIOPERO: FINESTRA DI ESPOSIZIONE, FASCE GARANTITE E LINK UFFICIALI (v33.3, dall'archivio: comunicati ACTV del 19/10 e del 6/11/2026,
+// messaggi Telegram 11833, 11855, 11907, 11920). ACTV annuncia lo sciopero per un giorno intero («24 ore per venerdì 20 novembre»); le fasce
+// garantite sono scritte nel testo («garantite tutte le corse in partenza dal capolinea a partire dalle ore 06:00 e fino alle ore 08:59 e a
+// partire dalle ore 16:30 fino alle ore 19:29»); il servizio torna regolare con le prime corse del mattino dopo (navigazione: «Il giorno 21
+// novembre le corse delle 5.00…»). Quindi:
+//  · finestra in cui l'app lo mette in evidenza (scheda iniziale e pulsante «Sciopero»): da 8 ore prima dell'inizio alle 05:00 del giorno dopo;
+//  · fasce garantite ricavate solo dalle frasi con «garantit…» (non dagli orari delle singole corse);
+//  · link: la pagina ACTV, il messaggio Telegram e gli altri indirizzi ACTV citati (es. un PDF), solo domini ACTV/Telegram (safeUrl), al massimo 4.
+const STRIKE_PRE_MS = 8 * 3600e3, STRIKE_POST_H = 5;
+const FASCIA_RE = /(?:dalle?|a partire dalle?)\s*(?:ore\s*)?(\d{1,2})[.:](\d{2})\s*(?:e\s*)?(?:(?:e\s*)?fino alle|sino alle|alle|-|–)\s*(?:ore\s*)?(\d{1,2})[.:](\d{2})/gi;
+function fasceOf(text) {
+  const out = [];
+  for (const sent of String(text).split(/[\n;]+|\.(?=\s+[A-ZÀ-Ý])/)) {
+    if (!/garantit/i.test(sent)) continue;
+    for (const m of sent.matchAll(FASCIA_RE)) {
+      const a = `${m[1].padStart(2, '0')}:${m[2]}`, b = `${m[3].padStart(2, '0')}:${m[4]}`;
+      if (+m[1] < 24 && +m[3] < 24 && !out.some(x => x[0] === a && x[1] === b)) out.push([a, b]);
+    }
+    if (out.length) break;                                           // la prima frase con le fasce (le altre di solito le ripetono)
+  }
+  return out.slice(0, 4);
+}
+function addStrikeInfo(it, text, links = []) {
+  if (!STRIKE_RE.test(noAccents((it.title + ' ' + text).toLowerCase()))) return;
+  if (!it.fasce?.length) { const f = fasceOf(text); if (f.length) it.fasce = f; }
+  const xl = new Set(it.xl || []);
+  for (const l of links) { const u = safeUrl(l); if (u && !/\/\/(?:t|telegram)\.me\//.test(u)) xl.add(u); }
+  if (xl.size) it.xl = [...xl].slice(0, 4);
+}
+function strikeMeta(it) {
+  const d1 = cal.romeYmd(Math.max(it.from, it.to - 1000)), nd = new Date(Date.UTC(+d1.slice(0, 4), +d1.slice(4, 6) - 1, +d1.slice(6, 8) + 1));
+  const fino = Math.max(it.to, romeMs(nd.getUTCFullYear(), nd.getUTCMonth() + 1, nd.getUTCDate(), STRIKE_POST_H * 3600));
+  const link = [];
+  if (safeUrl(it.url) && !/\/\/(?:t|telegram)\.me\//.test(it.url) && !/\.pdf(?:$|[?#])/i.test(it.url)) link.push({ url: it.url, label: 'Comunicato ACTV' });
+  for (const u of it.xl || []) if (!link.some(l => l.url === u)) link.push({ url: u, label: /\.pdf(?:$|[?#])/i.test(u) ? 'Documento ACTV (PDF)' : 'Pagina ACTV' });
+  const tg = safeUrl(it.tgUrl || (/\/\/(?:t|telegram)\.me\//.test(it.url) ? it.url : ''));
+  if (tg) link.push({ url: tg, label: 'Messaggio sul canale Telegram ACTV' });
+  return { inizio: it.from, fine: it.to, da: it.from - STRIKE_PRE_MS, fino, fasce: it.fasce || [], link: link.slice(0, 5) };
 }
 
 // SCIOPERO CON IL GIORNO NEL TITOLO («sciopero generale nazionale 24h - 20 novembre 2026», avvisi del 30/10 e del 20/11/2026): la pagina cita anche
@@ -1111,14 +1151,15 @@ function build(now = Date.now(), { interni = false } = {}) {   // interni: solo 
   if (aw.item) items.push(aw.item);
   const out = [];
   for (const it of items) {
-    if (it.drop || it.to < now - KEEP_EXPIRED_MS) continue;                 // unito a un altro, sostituito, chiuso o scaduto
+    const strike = !it.drop && !it.resolved && it.dated && classify(it).effect === 'strike' ? strikeMeta(it) : null;
+    if (it.drop || (strike ? strike.fino : it.to) < now - KEEP_EXPIRED_MS) continue;   // unito a un altro, sostituito, chiuso o scaduto (sciopero: fino alle 05:00 del giorno dopo)
     const state = it.from <= now ? 'active' : it.from - now <= UPCOMING_MS ? 'upcoming' : null;
     if (!state) continue;                                                   // troppo lontano nel tempo
     const cl = classify(it);
     const head = noAccents((it.title + ' ' + String(it.text).slice(0, 300)).toLowerCase());
     if (cl.effect === 'other' && ((!it.lines.length && !it.stops.length && NOT_SERVICE.test(head)) || PRESS.test(head))) continue;   // notizie aziendali e di cronaca: non sono avvisi
-    const { drop, words, restoring, closure, key, ev, replyTo, dir, seg, ai, aiInfo, aiEffect, superseded, fx, ...pub } = it; const ambito = ambitoOf(it, cl);
-    out.push({ ...pub, title: titoloLeggibile(pub.title, ctx), text: testoLeggibile(pub.text), ...(interni ? { closure, eventId: ev?.id } : {}), ...cl, ...(ambito ? { ambito } : {}), state });
+    const { drop, words, restoring, closure, key, ev, replyTo, dir, seg, ai, aiInfo, aiEffect, superseded, fx, fasce, xl, ...pub } = it; const ambito = ambitoOf(it, cl);
+    out.push({ ...pub, title: titoloLeggibile(pub.title, ctx), text: testoLeggibile(pub.text), ...(interni ? { closure, eventId: ev?.id } : {}), ...cl, ...(ambito ? { ambito } : {}), ...(strike ? { sciopero: strike } : {}), state });
   }
   out.sort((a, b) => (a.state === b.state ? 0 : a.state === 'active' ? -1 : 1) || SEV[a.severity] - SEV[b.severity] || b.published - a.published);
   return out.slice(0, 40);

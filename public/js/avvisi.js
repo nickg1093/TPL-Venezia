@@ -10,7 +10,9 @@ const now = () => Date.now();
 // giorni: avviso valido solo in giorni separati («mercoledì 18 e 25 novembre»): [[inizio, fine], …]; tra un giorno e l'altro non è in corso
 const okGiorni = g => Array.isArray(g) && g.length >= 2 && g.length <= 40 && g.every(x => Array.isArray(x) && Number.isFinite(x[0]) && Number.isFinite(x[1]));
 const overlaps = (a, x, y) => (okGiorni(a.giorni) ? a.giorni.some(([p, q]) => p <= y && q >= x) : a.from <= y && a.to >= x);
-const isActive = a => a.from <= now() && a.to >= now() && overlaps(a, now(), now());
+// sciopero (v33.3): «in corso» dall'inizio alle 05:00 del giorno dopo (prime corse del mattino), come lo espone il server
+const okSc = a => a.sciopero && Number.isFinite(a.sciopero.inizio) && Number.isFinite(a.sciopero.fino) && Number.isFinite(a.sciopero.da);
+const isActive = a => (okSc(a) ? a.from <= now() && a.sciopero.fino >= now() : a.from <= now() && a.to >= now() && overlaps(a, now(), now()));
 // avviso che "pesa" su fermate e mezzi: in corso, non risolto, non generale (es. nuovi orari di tutta la rete)
 const isWarn = a => isActive(a) && !a.resolved && !a.general;
 const two = n => String(n).padStart(2, '0');
@@ -32,6 +34,7 @@ function validity(a) {
   const f = midnight(a.from) ? dayOf(a.from) : fmt(a.from), t = endOfDay(a.to) ? dayOf(a.to) : fmt(a.to);
   if (a.open) return `Dal ${f}${up}`;
   if (a.untilEnd) return `${midnight(a.from) ? dayOf(a.from) : `${dayOf(a.from)} dalle ${hmOf(a.from)}`} fino al termine${up}`;
+  if (okSc(a)) return `${dayOf(a.sciopero.inizio)}${sameDay(a.sciopero.inizio, a.sciopero.fine) ? '' : ` – ${dayOf(a.sciopero.fine)}`} · effetti fino alle ${hmOf(a.sciopero.fino)} del giorno dopo${up}`;
   if (okGiorni(a.giorni)) {                                          // «mer 18 e mer 25 nov, 9:00–17:00»
     const g = a.giorni, ds = g.map(([p]) => dayOf(p)), list = ds.length > 1 ? `${ds.slice(0, -1).join(', ')} e ${ds[ds.length - 1]}` : ds[0];
     const [p0, q0] = g[0], same = g.every(([p, q]) => hmOf(p) === hmOf(p0) && hmOf(q) === hmOf(q0));
@@ -99,6 +102,49 @@ export const rowHtml = (a, only = null) => {
   return `<button type="button" class="alert-row" data-av="${esc(a.id)}" data-sev="${esc(a.severity || 'warning')}">${sevIcon(a)}<span>${effTag(a)}<b>${esc(a.title)}</b><small>${esc(ln + validity(a))} · tocca per leggere</small></span></button>`;
 };
 export const keyOf = lineKey;
+
+// ---- SCIOPERO (v33.3): scheda iniziale, pulsante sulla mappa, note nei pannelli e nel pianificatore ----
+const KEY_SC = 'tpl.sciopero', SC_REPEAT_MS = 6 * 3600e3;
+const strikes = () => (data?.items || []).filter(okSc);
+// sciopero da mettere in evidenza adesso (da 8 ore prima dell'inizio alle 05:00 del giorno dopo)
+export const strikeNow = (t = now()) => strikes().find(a => t >= a.sciopero.da && t <= a.sciopero.fino) || null;
+// sciopero che tocca un intervallo (un viaggio, le partenze di una fermata)
+export const strikeFor = (x, y) => strikes().find(a => a.sciopero.inizio <= y && a.sciopero.fino >= x) || null;
+const scSig = a => [a.id, a.updated || 0, a.sciopero.inizio, (a.sciopero.fasce || []).join(','), (a.sciopero.link || []).map(l => l.url).join(',')].join('|');
+// la scheda si apre da sola una volta per comunicato; di nuovo se il comunicato cambia o dopo 6 ore
+export function strikeShouldOpen(a, t = now()) {
+  let s = null; try { s = JSON.parse(localStorage.getItem(KEY_SC) || 'null'); } catch { s = null; }
+  return !s || s.sig !== scSig(a) || !(t - s.at < SC_REPEAT_MS);
+}
+export function strikeSeen(a, t = now()) { try { localStorage.setItem(KEY_SC, JSON.stringify({ sig: scSig(a), at: t })); } catch { /* facoltativo */ } }
+const longDay = ms => new Date(ms).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+const scPhase = (a, t = now()) => (t < a.sciopero.inizio ? 'prima' : t <= a.sciopero.fine ? 'durante' : 'dopo');
+export function strikeTitle(a, t = now()) {
+  const p = scPhase(a, t), d = longDay(a.sciopero.inizio);
+  return p === 'prima' ? `Sciopero ${sameDay(a.sciopero.inizio, t + 864e5) && !sameDay(a.sciopero.inizio, t) ? 'domani' : d}` : p === 'durante' ? 'Sciopero in corso' : 'Sciopero appena terminato';
+}
+const scLinks = a => (a.sciopero.link || []).filter(l => safeUrl(l.url))
+  .map(l => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${icon('ext', 'sm')}<span>${esc(l.label || 'Avviso ACTV')}</span></a></li>`).join('');
+// contenuto della scheda (tutto il testo passa da esc; link solo ACTV/Telegram)
+export function strikeCardHtml(a, t = now()) {
+  const x = a.sciopero, p = scPhase(a, t), f = x.fasce || [];
+  const quando = `${longDay(x.inizio).replace(/^./, c => c.toUpperCase())}${sameDay(x.inizio, x.fine) ? '' : ` – ${longDay(x.fine)}`}`;
+  const lead = p === 'dopo' ? `Lo sciopero è terminato: il servizio torna regolare con le prime corse del mattino. Fino alle ${hmOf(x.fino)} alcune corse notturne o del primo mattino possono mancare.`
+    : 'A causa dello sciopero le corse non sono regolari.';
+  return `<p class="st-when"><b>${esc(quando)}</b>${p === 'prima' ? ` · inizia ${esc(hmOf(x.inizio) === '0:00' ? 'a inizio giornata' : 'alle ' + hmOf(x.inizio))}` : ''}</p>`
+    + `<p class="st-lead">${esc(lead)}</p>`
+    + `<p>Gli orari che vedi nell'app sono quelli <b>programmati</b> (o previsti dal tempo reale, dove i mezzi trasmettono la posizione): <b>non tutte le corse sono garantite o effettuate</b>.</p>`
+    + (f.length ? `<p class="st-fasce">Fasce garantite indicate da ACTV: <b>${f.map(([s, e]) => `${esc(s)}–${esc(e)}`).join(' · ')}</b>. Controlla nel comunicato a quali servizi si riferiscono (autobus, tram, navigazione).</p>` : '')
+    + `<p>Per le fasce di garanzia e gli aggiornamenti fa fede ACTV:</p><ul>${scLinks(a) || '<li>Comunicato non disponibile: controlla il sito ACTV.</li>'}</ul>`
+    + `<p class="muted">Puoi riaprire questa scheda dal pulsante «Sciopero» sulla mappa.</p>`;
+}
+// nota per i pannelli fermata/corsa e per il pianificatore (data-sciopero apre la scheda)
+export function strikeNoteHtml(a, ctx = 'orari') {
+  if (!a) return '';
+  const day = dayOf(a.sciopero.inizio);
+  const txt = ctx === 'viaggio' ? 'il viaggio cade durante lo sciopero: le corse indicate possono non essere effettuate.' : 'gli orari mostrati sono programmati e alcune corse possono essere soppresse.';
+  return `<p class="strike-note" role="note">${icon('strike', 'sm')}<span><b>Sciopero ${esc(day)}</b>: ${esc(txt)} <button type="button" class="nlink" data-sciopero>Dettagli e fasce garantite</button></span></p>`;
+}
 
 function render() {
   const items = data?.items || [], act = items.filter(isActive), up = items.filter(a => !isActive(a));

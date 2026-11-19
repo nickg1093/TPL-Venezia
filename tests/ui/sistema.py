@@ -155,6 +155,27 @@ with sync_playwright() as p:
     check(page.evaluate("!document.getElementById('sysbar').hidden && /Ricarica/.test(document.getElementById('sysbar').innerText)"), 'dopo 3 errori: barra con «Ricarica»')
     check(len(sent) >= 1 and 'prova di errore' in sent[0] and 'http' not in sent[0], f'al server solo la segnalazione tecnica ({sent[0][:90] if sent else "nessuna"})')
     ctx.close()
+
+    print('== sciopero: quando la scheda si ripropone')
+    NOW0 = int(time.time() * 1000); sc_id = ['sc-a']
+    def strike_route(route):
+        resp = route.fetch(); d = resp.json(); now = NOW0
+        d['items'].insert(0, {'id': sc_id[0], 'source': 'actv', 'title': 'Sciopero generale nazionale 24h', 'text': 'Prova', 'url': 'https://actv.avmspa.it/it/content/sciopero-prova',
+            'published': now - 864e5, 'from': now + 3600e3, 'to': now + 25 * 3600e3, 'open': False, 'dated': True, 'lines': [], 'stops': [], 'stopNames': [], 'effect': 'strike', 'effectLabel': 'Sciopero',
+            'severity': 'warning', 'state': 'upcoming', 'sciopero': {'inizio': now + 3600e3, 'fine': now + 25 * 3600e3, 'da': now - 7 * 3600e3, 'fino': now + 30 * 3600e3, 'fasce': [], 'link': [{'url': 'https://actv.avmspa.it/it/content/sciopero-prova', 'label': 'Comunicato ACTV'}]}})
+        route.fulfill(response=resp, json=d)
+    ctx = br.new_context(viewport={'width': 390, 'height': 844}); setup(ctx)
+    page = ctx.new_page(); page.route('**/api/avvisi', strike_route)
+    page.goto(BASE + '/'); page.wait_for_selector('#sciopero:not([hidden])', timeout=30000)
+    check('inizia' in page.inner_text('#sciopero') or 'domani' in page.inner_text('#sciopero-title').lower() or 'Sciopero' in page.inner_text('#sciopero-title'), 'sciopero in arrivo (8 ore prima): scheda all\'accesso')
+    page.click('#sciopero-close'); page.wait_for_timeout(300)
+    page.reload(); page.wait_for_selector('#sciopero-btn:not([hidden])', timeout=30000); page.wait_for_timeout(1500)
+    check(page.evaluate("document.getElementById('sciopero').hidden"), 'chiusa con la X: non si ripropone alla riapertura')
+    page.evaluate("const s=JSON.parse(localStorage.getItem('tpl.sciopero'));s.at-=7*3600e3;localStorage.setItem('tpl.sciopero',JSON.stringify(s))")
+    page.reload(); page.wait_for_selector('#sciopero:not([hidden])', timeout=30000); check(True, 'dopo 6 ore si ripropone')
+    page.click('#sciopero-ok'); page.wait_for_timeout(200); sc_id[0] = 'sc-b'
+    page.reload(); page.wait_for_selector('#sciopero:not([hidden])', timeout=30000); check(True, 'comunicato nuovo: si ripropone subito')
+    page.click('#sciopero-ok'); ctx.close()
     br.close()
 print('\nFALLITI:' if fails else '\nTutto ok', *fails, sep='\n  ')
 sys.exit(1 if fails else 0)

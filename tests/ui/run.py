@@ -448,6 +448,58 @@ with sync_playwright() as p:
     page.wait_for_selector('.tg .tg-card', timeout=5000); check(rect(page, '#info') is None, '«Rivedi la guida» dalle Informazioni')
     page.click('.tg-x'); page.wait_for_timeout(350); check(page.query_selector('.tg') is None, 'X chiude la guida')
     check(not errs, 'guida: nessun errore ' + str(errs[:2]))
+
+    # ---- SCIOPERO (v33.3): scheda all'accesso, memoria della chiusura, pulsante «Sciopero» senza sovrapposizioni (6 schermi, anche TESTO=1.3) ----
+    import time
+    NOW0 = int(time.time() * 1000)                                       # orari fissi: lo stesso comunicato a ogni richiesta
+    def strike_route(route):
+        resp = route.fetch(); d = resp.json(); now = NOW0
+        d['items'].insert(0, {'id': 'sc-prova', 'source': 'actv', 'title': 'Sciopero generale nazionale 24h', 'text': 'Prova', 'url': 'https://actv.avmspa.it/it/content/sciopero-prova',
+            'tgUrl': 'https://t.me/muoversivenezia/1', 'published': now - 864e5, 'from': now - 3600e3, 'to': now + 6 * 3600e3, 'open': False, 'dated': True, 'lines': [], 'stops': [], 'stopNames': [],
+            'effect': 'strike', 'effectLabel': 'Sciopero', 'severity': 'warning', 'state': 'active',
+            'sciopero': {'inizio': now - 3600e3, 'fine': now + 6 * 3600e3, 'da': now - 9 * 3600e3, 'fino': now + 12 * 3600e3, 'fasce': [['06:00', '08:59'], ['16:30', '19:29']],
+                         'link': [{'url': 'https://actv.avmspa.it/it/content/sciopero-prova', 'label': 'Comunicato ACTV'}, {'url': 'https://t.me/muoversivenezia/1', 'label': 'Messaggio sul canale Telegram ACTV'}]}})
+        route.fulfill(response=resp, json=d)
+    for name, w, h in SIZES:
+        print(f'== sciopero {name} {w}x{h}')
+        ctx = br.new_context(viewport={'width': w, 'height': h}, has_touch=name.startswith('phone'), device_scale_factor=1, extra_http_headers={'X-Forwarded-For': f'10.8.{w % 250}.{h % 250}'},
+                             reduced_motion='reduce' if name == 'phone-small' else 'no-preference')
+        ctx.add_init_script(GUIDE_OFF); ctx.add_init_script(TESTO_JS); page = ctx.new_page(); errs = []
+        page.on('pageerror', lambda e: errs.append(str(e)))
+        page.route('**/vendor/leaflet/leaflet.js', lambda r: r.fulfill(body=STUB, content_type='application/javascript'))
+        page.route('**/vendor/leaflet/leaflet.css', lambda r: r.fulfill(body='', content_type='text/css'))
+        page.route('https://tile.openstreetmap.org/**', lambda r: r.abort())
+        page.route('**/api/avvisi', strike_route)
+        page.goto(BASE); page.wait_for_selector('#sciopero:not([hidden])', timeout=30000); page.wait_for_timeout(400)
+        c = rectf(page, '#sciopero'); check(c and c['l'] >= 0 and c['t'] >= 0 and c['r'] <= w + 1 and c['b'] <= h + 1, f'scheda dello sciopero all\'accesso, dentro lo schermo {c}')
+        txt = page.inner_text('#sciopero')
+        check('non sono regolari' in txt and 'programmati' in txt and 'non tutte le corse sono garantite' in txt and '06:00–08:59' in txt, 'scheda: corse non regolari, orari programmati, fasce garantite')
+        ls = page.evaluate("[...document.querySelectorAll('#sciopero a')].map(a=>[a.href,a.target,a.rel])")
+        check(len(ls) == 2 and all(t == '_blank' and 'noopener' in r and 'noreferrer' in r for _, t, r in ls), f'link ufficiali in una nuova scheda, noopener noreferrer {ls}')
+        check(page.evaluate("document.activeElement && document.activeElement.id") == 'sciopero-ok', 'fuoco su «Ho capito»')
+        page.screenshot(path=str(OUT / f'sciopero-{name}-1-scheda.png'))
+        page.click('#sciopero-ok'); page.wait_for_timeout(300)
+        check(rectf(page, '#sciopero') is None and page.evaluate("!!localStorage.getItem('tpl.sciopero')"), '«Ho capito» chiude e lo ricorda')
+        b, pb = rect(page, '#sciopero-btn'), rect(page, '#plan-btn')
+        check(b and pb and b['h'] >= pb['h'] - 1 and b['w'] >= pb['w'] - 1 and b['l'] >= 0 and b['t'] >= 0, f'pulsante «Sciopero» visibile, grande come «Percorso» {b} {pb}')
+        others = ['#plan-btn', '#osm-attr', '#bottom-bar', '#topleft', '#controls .group', '#search-container']
+        cov = page.evaluate("([b,sels])=>sels.flatMap(s=>[...document.querySelectorAll(s)].filter(e=>e.offsetParent!==null).map(e=>{const r=e.getBoundingClientRect();return (r.left<b.r&&r.right>b.l&&r.top<b.b&&r.bottom>b.t)?s:null})).filter(Boolean)", [b, others]) if b else ['?']
+        check(not cov, f'«Sciopero» non si sovrappone a {cov}')
+        anim = page.evaluate("getComputedStyle(document.getElementById('sciopero-btn')).animationName")
+        check(anim == ('none' if name == 'phone-small' else 'strike-pulse'), f'lampeggio discreto, spento con «riduci movimento» ({anim})')
+        page.screenshot(path=str(OUT / f'sciopero-{name}-2-pulsante.png'))
+        page.reload(); page.wait_for_selector('#sciopero-btn:not([hidden])', timeout=30000); page.wait_for_timeout(1500)
+        check(rectf(page, '#sciopero') is None, 'riaperta l\'app: la scheda non si ripropone')
+        page.click('#sciopero-btn'); page.wait_for_selector('#sciopero:not([hidden])', timeout=5000)
+        page.keyboard.press('Escape'); page.wait_for_timeout(300); check(rectf(page, '#sciopero') is None, 'il pulsante la riapre, Esc la chiude')
+        page.click('#sciopero-btn'); page.wait_for_selector('#sciopero:not([hidden])', timeout=5000); page.wait_for_timeout(200)
+        page.go_back(); page.wait_for_timeout(500); check(rectf(page, '#sciopero') is None and BASE in page.url, '«indietro» chiude la scheda (e resta nell\'app)')
+        page.goto(BASE + '/?fermata=nav:5031'); page.wait_for_selector('#plist .strike-note', timeout=30000)
+        check('programmati' in page.inner_text('#plist .strike-note'), 'pannello fermata: avvertenza dello sciopero')
+        pb2, b2, pn = rect(page, '#plan-btn'), rect(page, '#sciopero-btn'), rect(page, '#panel')
+        check(not overlap(b2, pn) and (b2 is None) == (pb2 is None), f'con il pannello aperto «Sciopero» segue «Percorso» e non copre il pannello ({b2})')
+        check(not errs, 'sciopero: nessun errore ' + str(errs[:2]))
+        ctx.close()
     br.close()
 print('\nFALLITI:', len(fails)); [print(' -', f) for f in fails]
 sys.exit(1 if fails else 0)

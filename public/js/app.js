@@ -763,7 +763,7 @@ function renderDepartures() {
   requestAnimationFrame(() => { marquee(plist); ticker(plist); });
   // chi usa la tastiera non perde il punto in cui era (titolo «Partiti da poco», gruppo, interruttore della vista) a ogni aggiornamento
   const fa = document.activeElement, fsel = fa && plist.contains(fa) ? (fa.matches('[data-past]') ? '[data-past]' : fa.dataset.g ? `.grp[data-g="${CSS.escape(fa.dataset.g)}"]` : fa.dataset.view ? `[data-view="${CSS.escape(fa.dataset.view)}"]` : null) : null;
-  plist.innerHTML = al.list.map(a => Avvisi.rowHtml(a, al.keys)).join('') + depListHtml(rows, z, live);
+  plist.innerHTML = Avvisi.strikeNoteHtml(Avvisi.strikeFor(Date.now(), Date.now() + 3 * 3600e3)) + al.list.map(a => Avvisi.rowHtml(a, al.keys)).join('') + depListHtml(rows, z, live);
   if (fsel) plist.querySelector(fsel)?.focus({ preventScroll: true });
   if (live && !guidePanelWait && !Guida.active() && plist.querySelector('.dep.d3')) {   // prima fermata aperta: guida del pannello (una volta)
     guidePanelWait = setTimeout(() => { guidePanelWait = null; if (!panel.hidden && current && (current.t === 'stop' || current.t === 'zone') && mode === 'live') Guida.panelReady(); }, 800);
@@ -927,7 +927,7 @@ function renderTrip(first) {
   const key = Avvisi.keyOf(d.trip.src, d.trip.line), only = new Set([key]);
   const tal = [...Avvisi.forLines([{ s: d.trip.src, n: d.trip.line }]), ...Avvisi.forStops(d.stops.map(s => s.id)).filter(a => !a.lines?.length || a.lines.some(l => Avvisi.keyOf(l.s, l.n) === key))]
     .filter((a, i, l) => l.findIndex(b => b.id === a.id) === i);
-  plist.innerHTML = tal.map(a => Avvisi.rowHtml(a, only)).join('') + (d.cancelled ? '<div class="banner">Corsa soppressa</div>' : '') + tripHtml(d)
+  plist.innerHTML = Avvisi.strikeNoteHtml(Avvisi.strikeFor(Date.now(), Date.now() + 3 * 3600e3)) + tal.map(a => Avvisi.rowHtml(a, only)).join('') + (d.cancelled ? '<div class="banner">Corsa soppressa</div>' : '') + tripHtml(d)
     + (d.live && d.historyKnown ? '<p class="muted note-hist">Fermate passate: ultima stima.</p>' : '');
   placeVehicle(d, first);
   if (!first) return;
@@ -1145,7 +1145,7 @@ window.addEventListener('tpl:water-alert', () => { Tide.close(); const id = Avvi
 const hideAttr = Info.init(() => { Tide.close(); Avvisi.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
 map.on('movestart', hideAttr); map.on('zoomstart', hideAttr); map.on('click', hideAttr);
 Tide.init(() => { Avvisi.close(); Info.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
-Avvisi.init(() => { Tide.close(); Info.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); }, () => { drawStops(); if (current && current.t !== 'trip') renderDepartures(); else if (current?.t === 'trip' && lastTrip) renderTrip(false); });   // quando arrivano avvisi nuovi si aggiornano mappa e pannello fermata
+Avvisi.init(() => { Tide.close(); Info.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); }, () => { drawStops(); if (current && current.t !== 'trip') renderDepartures(); else if (current?.t === 'trip' && lastTrip) renderTrip(false); strikeUpdate(); });   // quando arrivano avvisi nuovi (anche sciopero: scheda e pulsante) si aggiornano mappa e pannello fermata
 Pwa.init(); Sistema.init(); Scorri.watch(plist, pname, chipsArea, $('favs-body'), $('search-results'), $('pstatus'));
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1268,9 +1268,60 @@ if (new URLSearchParams(location.search).has('trip')) setTimeout(() => openFromU
 
 // INDIETRO: tasto Esc, tasto o gesto «indietro» del telefono (nav.js). Chiude il livello più in alto: scelta sul mappa, informazioni,
 // preferiti, avvisi, marea, ricerca, pagine del pianificatore, pannello precedente (fermata ↔ corsa), infine il pannello.
+// ---------------------------------------------------------------------------------------------------------------------
+// SCIOPERO (v33.3): scheda all'accesso (una volta per comunicato, o dopo 6 ore), pulsante «Sciopero» sopra «Percorso» per tutta la finestra
+// (da 8 ore prima alle 05:00 del giorno dopo), note nei pannelli. Dati da /api/avvisi (nessuna richiesta in più).
+// ---------------------------------------------------------------------------------------------------------------------
+const strikeBtn = $('sciopero-btn'), strikeCard = $('sciopero'), strikeBg = $('sciopero-bg');
+let strikeCur = null;
+const strikeIsOpen = () => !strikeCard.hidden;
+function strikeOpen(a = Avvisi.strikeNow()) {
+  if (!a) return;
+  strikeCur = a;
+  $('sciopero-title').innerHTML = `<svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-strike"/></svg>${esc(Avvisi.strikeTitle(a))}`;
+  $('sciopero-body').innerHTML = Avvisi.strikeCardHtml(a);
+  strikeBg.hidden = false; strikeCard.hidden = false; strikeBtn.setAttribute('aria-expanded', 'true');
+  $('sciopero-ok').focus({ preventScroll: true });
+}
+function strikeClose() {
+  if (strikeCard.hidden) return;
+  if (strikeCur) Avvisi.strikeSeen(strikeCur);                    // letta: non si ripropone da sola (salvo comunicato nuovo o dopo 6 ore)
+  const inside = strikeCard.contains(document.activeElement);
+  strikeCard.hidden = true; strikeBg.hidden = true; strikeBtn.setAttribute('aria-expanded', 'false');
+  if (inside && !strikeBtn.hidden && !strikeBtn.classList.contains('off')) strikeBtn.focus();
+}
+// posizione: sopra «Percorso», larga almeno quanto lui; se «Percorso» non si vede (pannello aperto sul telefono, tastiera, scelta sulla mappa)
+// non si vede neanche «Sciopero»: così non copre mai pannelli, crediti, barra in basso o tastiera
+function strikeLayout() {
+  if (strikeBtn.hidden) return;
+  const pb = $('plan-btn'), cs = getComputedStyle(pb), vis = cs.display !== 'none' && cs.visibility !== 'hidden' && pb.offsetParent !== null && !document.documentElement.classList.contains('kbd');
+  strikeBtn.classList.toggle('off', !vis); if (!vis) return;
+  const w = $('wrap').getBoundingClientRect(), r = pb.getBoundingClientRect(), gap = 10;
+  strikeBtn.style.left = Math.round(r.left - w.left) + 'px';
+  strikeBtn.style.bottom = Math.round(w.bottom - r.top + gap) + 'px';
+  strikeBtn.style.minWidth = Math.round(r.width) + 'px'; strikeBtn.style.minHeight = Math.round(r.height) + 'px';
+}
+function strikeUpdate() {
+  const a = Avvisi.strikeNow();
+  strikeBtn.hidden = !a; strikeLayout();
+  if (!a) { if (strikeIsOpen()) { strikeCard.hidden = true; strikeBg.hidden = true; } return; }
+  if (strikeIsOpen()) { if (strikeCur?.id === a.id) $('sciopero-body').innerHTML = Avvisi.strikeCardHtml(a); return; }
+  if (!document.hidden && !Guida.active() && Avvisi.strikeShouldOpen(a)) strikeOpen(a);
+}
+strikeBtn.onclick = () => (strikeIsOpen() ? strikeClose() : strikeOpen());
+$('sciopero-close').onclick = strikeClose; $('sciopero-ok').onclick = strikeClose; strikeBg.onclick = strikeClose;
+document.addEventListener('click', e => { if (e.target.closest?.('[data-sciopero]')) { e.preventDefault(); strikeOpen(); } });
+strikeCard.addEventListener('keydown', e => {                       // il fuoco resta nella scheda (Tab e Maiusc+Tab girano)
+  if (e.key !== 'Tab') return;
+  const f = [...strikeCard.querySelectorAll('a[href],button:not([disabled])')]; if (!f.length) return;
+  if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); } else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+});
+setInterval(() => { if (!document.hidden) strikeUpdate(); }, 60000);
+window.addEventListener('resize', strikeLayout);
 const closeCard = (isOpen, close, id, btnId) => { if (!isOpen()) return false; const inside = $(id).contains(document.activeElement); close(); if (inside) $(btnId).focus(); return true; };
 function backOne() {
   if (Guida.active()) return;
+  if (strikeIsOpen()) { strikeClose(); return; }
   if (Plan.isPicking()) { Plan.pick(null); setPlanPick(false); return; }
   if (closeCard(Info.isOpen, Info.close, 'info', 'info-btn') || closeCard(Favs.isOpen, Favs.close, 'favs', 'favs-btn')
     || closeCard(Avvisi.isOpen, Avvisi.close, 'avvisi', 'avvisi-btn') || closeCard(Tide.isOpen, Tide.close, 'tide', 'tide-btn')) return;
@@ -1279,12 +1330,19 @@ function backOne() {
   if (current?.t === 'plan' && Plan.back()) return;
   if (navStack.length) goBack(); else closePanel();
 }
-const levels = () => (Plan.isPicking() ? 1 : 0) + [Info.isOpen(), Favs.isOpen(), Avvisi.isOpen(), Tide.isOpen(), searchOpen()].filter(Boolean).length
+const levels = () => (Plan.isPicking() ? 1 : 0) + [strikeIsOpen(), Info.isOpen(), Favs.isOpen(), Avvisi.isOpen(), Tide.isOpen(), searchOpen()].filter(Boolean).length
   + (panel.hidden ? 0 : 1 + navStack.length + (current?.t === 'plan' ? Plan.depth() : 0));
 Nav.init({ levels, back: backOne, hint: () => toast('Premi di nuovo «indietro» per uscire dall\'app', 2500) });
 { // ogni livello che si apre o si chiude (anche da un modulo: marea, avvisi, informazioni, preferiti) aggiorna la cronologia
   const mo = new MutationObserver(() => Nav.sync());
-  for (const id of ['panel', 'tide', 'avvisi', 'info', 'favs']) mo.observe($(id), { attributes: true, attributeFilter: ['hidden'] });
+  for (const id of ['panel', 'tide', 'avvisi', 'info', 'favs', 'sciopero']) mo.observe($(id), { attributes: true, attributeFilter: ['hidden'] });
+  // «Sciopero» segue «Percorso»: pannelli, tastiera, crediti ridotti, viaggio in corso
+  const lo = new MutationObserver(() => requestAnimationFrame(strikeLayout));
+  lo.observe(document.body, { attributes: true, attributeFilter: ['class'] }); lo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  const pb = $('plan-btn');                                          // (planBtn è dichiarato più sotto)
+  lo.observe(pb, { attributes: true, attributeFilter: ['class', 'style', 'hidden'], childList: true, subtree: true, characterData: true });
+  lo.observe($('panel'), { attributes: true, attributeFilter: ['hidden'] });
+  new ResizeObserver(() => strikeLayout()).observe(pb); pb.addEventListener('transitionend', strikeLayout);
   mo.observe(searchContainer, { attributes: true, attributeFilter: ['class'] });
   mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 }

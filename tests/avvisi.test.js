@@ -381,3 +381,38 @@ test('promemoria di un altro avviso («Si ricorda che…») non dà date, linee 
     assert.equal(sb.ambito, 'fermate'); assert.deepEqual(sb.stopNames.map(x => x.n), ['S. Basilio']);
   });
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// SCIOPERO (v33.3): testi reali dello sciopero del 20/11/2026 (tests/avvisi-1911.json: comunicato ACTV del 6/11 e messaggi Telegram 11907, 11920)
+// ---------------------------------------------------------------------------------------------------------------------
+{
+  const J = require('./avvisi-1911.json');
+  const ctx = { known: new Map(), byName: new Map(), lineStops: new Map(), nameOf: id => id };
+  const at = s => Date.parse(s);
+  const run = (now, extraTg = []) => { A.setContext(() => ctx); A.setTideSource(() => null); A._load({ rss: J.rss, tg: [...J.tg, ...extraTg], pages: J.pages }); return A.build(now).filter(o => o.effect === 'strike'); };
+
+  test('sciopero · riconosciuto, un solo avviso, fasce garantite dal testo e link ufficiali (solo ACTV e Telegram)', () => {
+    const s = run(at('2026-11-19T20:00:00+01:00'));
+    assert.equal(s.length, 1);
+    const x = s[0].sciopero;
+    assert.equal(x.inizio, at('2026-11-20T00:00:00+01:00')); assert.equal(x.fine, at('2026-11-20T23:59:59+01:00'));
+    assert.deepEqual(x.fasce, [['06:00', '08:59'], ['16:30', '19:29']]);
+    assert.deepEqual(x.link.map(l => l.label), ['Comunicato ACTV', 'Messaggio sul canale Telegram ACTV']);
+    assert.ok(x.link.every(l => /^https:\/\/(actv\.avmspa\.it|t\.me)\//.test(l.url)), 'nessun link esterno (bit.ly scartato)');
+  });
+  test('sciopero · finestra di esposizione: da 8 ore prima alle 05:00 del giorno dopo', () => {
+    const x = run(at('2026-11-19T20:00:00+01:00'))[0].sciopero;
+    assert.equal(x.da, at('2026-11-19T16:00:00+01:00')); assert.equal(x.fino, at('2026-11-21T05:00:00+01:00'));
+    assert.equal(run(at('2026-11-21T04:30:00+01:00')).length, 1, 'alle 4:30 del giorno dopo è ancora tra gli avvisi');
+    assert.equal(run(at('2026-11-21T04:30:00+01:00'))[0].state, 'active');
+    assert.equal(run(at('2026-11-21T05:30:00+01:00')).length, 0, 'alle 5:30 non più');
+  });
+  test('sciopero · un PDF ACTV citato in un messaggio diventa un link «Documento ACTV (PDF)»', () => {
+    const extra = { key: 'tg:99001', id: 99001, pubMs: at('2026-11-19T12:00:00+01:00'), url: 'https://t.me/muoversivenezia/99001',
+      text: '⚠️ #muoversivenezia | SCIOPERO GENERALE NAZIONALE 24H\n\n🗓 venerdì 20 novembre 2026\n\nlocandina dei servizi minimi garantiti 👉 https://actv.avmspa.it/sites/default/files/sciopero-20-11.pdf',
+      links: ['https://actv.avmspa.it/sites/default/files/sciopero-20-11.pdf', 'https://bit.ly/abc'] };
+    const x = run(at('2026-11-19T20:00:00+01:00'), [extra])[0].sciopero;
+    assert.ok(x.link.some(l => l.label === 'Documento ACTV (PDF)' && /sciopero-20-11\.pdf$/.test(l.url)), JSON.stringify(x.link));
+    assert.ok(!x.link.some(l => /bit\.ly/.test(l.url)));
+  });
+}

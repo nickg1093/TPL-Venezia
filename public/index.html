@@ -30,6 +30,8 @@
   <!-- PIANIFICA PERCORSO: pulsante principale in basso a sinistra (sul telefono si nasconde con un pannello aperto: dal pannello di una
        fermata si usa «Percorso da qui» accanto alla stella) -->
   <button id="plan-btn" class="plan-fab" type="button" aria-expanded="false" aria-controls="panel" title="Pianifica percorso"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-route"/></svg><span>Percorso</span></button>
+  <!-- SCIOPERO (v33.3): sopra «Percorso», solo nella finestra dello sciopero (da 8 ore prima alle 05:00 del giorno dopo); riapre la scheda -->
+  <button id="sciopero-btn" class="strike-fab" type="button" aria-haspopup="dialog" aria-controls="sciopero" aria-expanded="false" hidden><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-strike"/></svg><span>Sciopero</span></button>
   <!-- attribuzione obbligatoria della mappa (ODbL): visibile all'apertura, poi si riduce; crediti completi in Informazioni -->
   <div id="osm-attr" class="osm-attr">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> · dati ACTV elaborati: stime</div>
 
@@ -76,6 +78,14 @@
   </section>
 
   <!-- FINESTRA AVVISI DI INFOMOBILITÀ (sito ACTV + canale Telegram) -->
+  <!-- SCHEDA SCIOPERO (v33.3): all'accesso una volta per comunicato (o dopo 6 ore), poi dal pulsante «Sciopero». Esc e «indietro» la chiudono -->
+  <div id="sciopero-bg" class="strike-bg" hidden></div>
+  <section id="sciopero" class="card strike-card" role="dialog" aria-modal="true" aria-labelledby="sciopero-title" aria-describedby="sciopero-body" tabindex="-1" hidden>
+    <header class="card-h"><h2 id="sciopero-title">Sciopero</h2><button id="sciopero-close" class="ibtn sm" type="button" aria-label="Chiudi la scheda dello sciopero"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-close"/></svg></button></header>
+    <div id="sciopero-body"></div>
+    <div class="strike-acts"><button id="sciopero-ok" class="btn primary" type="button">Ho capito</button></div>
+  </section>
+
   <section id="avvisi" class="card" role="dialog" aria-modal="false" aria-labelledby="avvisi-title" tabindex="-1" hidden>
     <header class="card-h"><h2 id="avvisi-title">Avvisi di servizio</h2><button id="avvisi-close" class="ibtn sm" type="button" aria-label="Chiudi avvisi"><svg class="ic" aria-hidden="true"><use href="/icons/sprite.svg#i-close"/></svg></button></header>
     <div id="avvisi-body" aria-live="polite">Caricamento…</div>
