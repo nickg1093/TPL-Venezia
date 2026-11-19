@@ -212,6 +212,12 @@ function validate(ai, rec, ctx = null, candidati = []) {
     if (new RegExp(`"\\s*${n.toLowerCase()}\\s*"`).test(pc) && n.length <= 2 && /^[A-Z]+$/.test(n)) { scarti.push(`linea ${n}: lettera di pontile tra virgolette`); continue; }
     const kn = ctx?.known?.get(n);
     if (ctx?.known && !(kn || []).some(x => x.s === s)) { scarti.push(`linea ${n}: non esiste nel servizio ${l.servizio}`); continue; }
+    // SERVIZIO DIVERSO da quello dell'avviso senza un indizio nella citazione («servizio di navigazione: orari invernali … Viene inoltre sospesa la
+    // linea 7» dato come bus 7 di Mestre, 30/10/2026): la linea si scarta (è la 7 stagionale dei battelli, assente dal GTFS)
+    const sAvv = ai.servizio === 'navigazione' ? 'nav' : ai.servizio === 'automobilistico' ? 'aut' : null;
+    if (sAvv && s !== sAvv && !(s === 'aut' ? /\b(?:bus|autobus|automobilistic\w*|tram|tranvi\w*|extraurban\w*|urban[oa])\b/ : /\b(?:navigazione|vaporett\w*|battell\w*|motonav\w*|pontil\w*|approd\w*|ferry|traghett\w*)\b/).test(pc)) {
+      scarti.push(`linea ${n}: servizio ${l.servizio} diverso da quello dell'avviso, senza indizi nella citazione`); continue;
+    }
     if (seen.has(s + ':' + n)) continue; seen.add(s + ':' + n);
     out.linee.push({ n: kn?.find(x => x.s === s)?.n || n, s, c: kn?.find(x => x.s === s)?.c || null });
   }

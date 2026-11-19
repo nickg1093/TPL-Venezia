@@ -1,6 +1,6 @@
 # STATO DEL PROGETTO — da leggere per primo in ogni nuova conversazione
 
-Aggiornato il **19/11/2026** (v33 in prova in locale, non pubblicata; correzioni di avvisi e pianificatore del 19/11), ultimo commit di codice `0842dd0`. Questo file dice dove siamo, come si lavora e dove guardare.
+Aggiornato il **19/11/2026** (v32.2 pronta, da pubblicare a mano), ultimo commit di codice `0842dd0`. Questo file dice dove siamo, come si lavora e dove guardare.
 I dettagli stanno in **README.md** (riferimento completo, con sezioni numerate) e **CRITERI.md** (regole obbligatorie): qui non si ripetono,
 si indica la sezione. Chi modifica il progetto aggiorna anche questo file (sezioni 5, 8 e 9).
 
@@ -16,7 +16,7 @@ di percorso con viaggio guidato, avvisi di arrivo (notifiche push), avvisi di se
 | Sito | https://veneziatpl.onrender.com (Render, piano gratuito, 512 MB, regione Virginia) |
 | Codice | https://github.com/nickg1093/TPL-Venezia, ramo `main` (repository pubblico) |
 | Copia sul PC dell'utente | `D:\Downloads\TPL-Venezia` (Windows, clone git, aggiornata con GitHub Desktop) |
-| Versione | **v33 in locale** / v32.1 online (grafico marea, da pubblicare a mano) (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v33`) |
+| Versione | **v32.2** (da pubblicare; online v32.1) (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v31`) |
 | Tecnologia | Node.js 22, **nessun framework, nessun database**; dipendenze: solo `leaflet` e `protobufjs` |
 
 ## 2. Regole di lavoro (non negoziabili)
@@ -61,7 +61,6 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 | Avvisi di servizio | `avvisi.js` (regole, 1082 righe), `avvisi-archivio.js`, `avvisi-ai.js` (validazione delle risposte AI) |
 | Avvisi di arrivo e viaggio guidato | `watch.js`, `push.js` (Web Push VAPID) |
 | Marea, MOSE, calendario | `tide.js`, `marea-archivio.js`, `mose.js`, `ics.js` |
-| Acqua alta (dati) | `scripts/genera-acqua.js`, `scripts/acqua-core.js`, `data/acqua/` → `public/acqua/` |
 | Dati fissi per i telefoni | `fissi.js`, `scripts/genera-dati.js` |
 | Memoria e misure | `memoria.js`, `metriche.js` |
 
@@ -70,7 +69,6 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 |---|---|
 | Mappa, pannelli, navigazione | `app.js` (1460 righe), `nav.js` (tasto «indietro»), `zones.js`, `locate.js`, `util.js` |
 | Pianificatore e viaggio guidato | `percorso.js`, `viaggio.js`, `pedoni.js`, `camminata.js`, `scegli.js` |
-| Filtri e acqua alta sulla mappa | `livelli.js` (menu Mezzi e Livelli, disegno), `acqua.js` (regole pure) |
 | Notifiche | `notify.js`, `../sw.js` |
 | Preferiti | `fav.js`, `favs.js` |
 | Finestre | `avvisi.js`, `tide.js`, `info.js` (anche donazione), `guida.js` |
@@ -79,35 +77,19 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 
 ## 5. Stato attuale
 
-- **In locale (17/11/2026)**: v33, acqua alta (allagamento stimato, passerelle, pianificatore) e pulsanti dei filtri ridisegnati — README §12,
-  appendice D «Acqua alta». **Non pubblicata**: da provare sul PC dell'utente prima di decidere.
-- **Correzioni del 19/11/2026 (solo server, valgono sia per la v33 sia per la v32.1; non pubblicate)**: `avvisi.js`, `avvisi-ai.js`, `percorso.js`,
-  prove `tests/avvisi-1911.test.js` (testi reali dell'archivio) e `tests/percorso-v331.test.js`. Vedi «Ultime versioni». Nessun cambio di versione.
+- **v32.2 (19/11/2026, da pubblicare)**: avvisi (settore nav/aut, fermate toccate, date, fusioni Telegram↔ACTV, propagazione per fermata) e
+  pianificatore (camminate lunghe, consigliata stabile, soppressioni e fermate saltate, coincidenze irrealistiche, «arrivo entro»): README §12 e §3.4.
+  La stessa parte è nella v33.1 di prova sul PC (con l'acqua alta).
 - **Online**: v32.1 (grafico della marea, deploy confermato dall'utente il 19/11/2026); misure per giorno (verificato il 16/11/2026 alle 21:25: `/api/metriche/giorni` risponde con il token dell'utente).
-- **Prove**: `npm test` → 269 passate, 0 fallite (v33 del 17/11); con le correzioni del 19/11 sulla base v32.1: 270 passate, 0 fallite
-  (8 prove nuove; sulla v33 attese 277). `run.py` e `viaggio.py` ripassate il 19/11. Prove d'interfaccia (`run.py`, `viaggio.py`, `sistema.py`, `acqua.py`, `marea.py`) passate sulla v33, anche con `TESTO=1.3`.
+- **Prove (19/11/2026, v32.2)**: `npm test` → 282 passate, 0 fallite. Prove d'interfaccia (`run.py`, `viaggio.py`, `sistema.py`, `marea.py`) passate, anche con `TESTO=1.3`.
 - **Da confermare da parte dell'utente**:
   - `metriche.bat` scelta 2 dopo la correzione del commit `0842dd0` (lo script PowerShell non è eseguibile nell'ambiente dell'IA: non è stato provato);
   - che `https://paypal.me/olocing` si apra correttamente dal pulsante della donazione (l'IA non può aprire quel sito);
   - viaggio guidato e riattivazione delle notifiche su un iPhone vero.
 
 ### Ultime versioni (dettagli in README §12)
-- **Correzioni del 19/11 (server)**, dal confronto tra l'archivio degli avvisi e il sito pubblicato:
-  - avvisi: «giovedì 19 e venerdì 20, dalle 8 alle 17» = due giorni separati (non un periodo continuo); sciopero con il giorno nel titolo = quel
-    giorno (le date accessorie della pagina lo allungavano dal 19 al 21); messaggi Telegram uniti alla notizia ACTV anche con «per aggiornamenti 👉»,
-    con lo stesso sciopero (anche senza data leggibile) e quando lo stesso messaggio viene ripubblicato; «sino a fine servizi di lunedì 23» letto
-    come fine; ora di fine scritta rispettata anche con «comunque fino al termine dei lavori»; «rimarrà chiuso» = sospeso; effetto calcolato senza i
-    promemoria («Si ricorda che…»); esclusi i messaggi di soli hashtag, i parcheggi pieni e le notizie di cronaca; titoli lunghi con la frase intera
-    nel testo; «?» delle emoji perse tolti. Sull'archivio del 19/11: da 12 a 8 avvisi, senza doppioni.
-  - pianificatore: oltre 10 minuti a piedi in tutto ogni minuto pesa un minuto in più (`C.WALK_OK_S`, `C.WALK_EXTRA`); a costi equivalenti
-    (meno di 1 minuto, `C.TIE_S`) si consiglia chi ha meno cambi, poi meno strada a piedi, e il diretto non viene scartato; in tempo reale la
-    «Consigliata» resta la stessa famiglia agli aggiornamenti se costa al massimo 3 minuti più della migliore (`C.STICKY_S`; memoria del server:
-    massimo 500 tragitti per 10 minuti, nessun dato personale).
-- **v33 (solo in locale)**: menu «Mezzi sulla mappa» e «Livelli della mappa»; allagamento stimato e passerelle dell'Atlante del Comune, automatici
-  da +80 cm e con il MOSE; percorsi a piedi che evitano l'acqua e usano le passerelle; segno «ponte» nelle mattonelle della rete pedonale.
-  Correzioni del 17/11: allagamento disegnato solo su calli e campi (niente acqua su case e canali; mappa lontana: nessun disegno); le schede
-  del pianificatore dicono asciutto / passerella / acqua e le fermate raggiungibili solo con l'acqua pesano di più; 72 passerelle su 72 tracciate.
-- **v32.1 (online e locale)**: grafico della marea senza scritte sovrapposte (massimi/minimi, «MOSE 110», orario di sollevamento).
+- **v32.2**: avvisi e pianificatore rivisti sui casi reali dell'archivio e sugli orari veri (README §12, §3.4 «Scelta delle soluzioni»).
+- **v32.1**: grafico della marea con etichette senza sovrapposizioni (soglia e orario del MOSE, massimi e minimi).
 - **Dopo la v32, senza cambio di versione** (solo server e script): misure per giorno. `metriche.js` stima le persone diverse con un'impronta
   dell'IP a sale giornaliero mai salvato e conta le operazioni riuscite; `/api/metriche/giorni` (DIAG_TOKEN) dà oggi e gli ultimi 60 giorni;
   `/healthz` è escluso. Per lo storico sul PC: `metriche.bat` (menu: CSV, vista nel browser senza salvare, cambio token) con
@@ -165,11 +147,10 @@ intestazione e §12 del README; `GUIDA_VER` solo se si aggiungono passi alla gui
 3. **Misure per giorno**: si perdono a ogni riavvio; lo storico dipende dallo script lanciato dall'utente (anche con l'Utilità di pianificazione).
 4. **Regione di Render** (Virginia → Francoforte): richiede un servizio nuovo e cambierebbe l'indirizzo. Non deciso.
 5. **Regole degli avvisi**: rilettura periodica dei casi nuovi nell'archivio.
-6. **Acqua alta, prima di pubblicare**: (a) provare in locale; (b) aggiungere `genera-acqua.js` a `dati.yml` e pubblicare i file sul ramo `dati`
-   (CDN) invece che da `public/acqua`; (c) facoltativo: chiedere al Centro Maree/Insula il rilievo delle pavimentazioni come dato aperto (sostituirebbe la
-   stima senza cambiare l'app); (d) i capi delle passerelle sono rivisti a mano (`data/acqua/passerelle-atlante.json`):
-   controllarli a occhio sulla mappa; (e) i cambi a piedi tra fermate calcolati dal server non considerano ancora l'acqua.
-7. Pulizia consigliata e non confermata: variabili `ACTV_CENTRALE*` su Render, ramo `dependabot/...adm-zip`, impostazioni di GitHub (README §7.4).
+6. **Proseguire sullo stesso mezzo al capolinea** (richiesto il 19/11/2026, rinviato): nei GTFS ACTV `block_id` è vuoto e il tempo reale non dice
+   la corsa successiva del mezzo. Si riprende se ACTV pubblica i turni.
+7. **Parcheggi pieni** («Park … al completo») tolti dagli avvisi dal 19/11: se servono, si possono rimettere in una sezione a parte.
+8. Pulizia consigliata e non confermata: variabili `ACTV_CENTRALE*` su Render, ramo `dependabot/...adm-zip`, impostazioni di GitHub (README §7.4).
 
 ## 9. Per iniziare una nuova conversazione
 
@@ -180,3 +161,5 @@ Messaggio da incollare:
 
 Per risparmiare token: non rileggere tutto il codice; partire dalla tabella dei file (§4) e dalla sezione del README indicata; fare una sola
 richiesta per volta; a fine lavoro aggiornare `STATO.md`.
+Per gli avvisi: provare le regole sull'archivio vero (server avviato senza `AVVISI_ARCHIVIO=0`, poi `/api/avvisi-eventi` con il token) e
+aggiungere i casi in `tests/avvisi-casi-reali.json` / `tests/avvisi.test.js`. Per il pianificatore: provare su orari reali tra gruppi di fermate.

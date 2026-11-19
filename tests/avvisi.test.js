@@ -323,3 +323,61 @@ test('promemoria di un altro avviso («Si ricorda che…») non dà date, linee 
   assert.ok(!r[0].stops.includes('nav:9'), 'S. Maria del Giglio (promemoria) non è una fermata di questo avviso');
   A._load({});
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// CASI REALI (v33.1, tests/avvisi-casi-reali.json: testi del ramo archivio-avvisi, ottobre-novembre 2026, con fermate e linee vere dei GTFS)
+// ---------------------------------------------------------------------------------------------------------------------
+{
+  const R = require('./avvisi-casi-reali.json'), aiv = require('../avvisi-ai');
+  const known = new Map();
+  for (const s of ['nav', 'aut']) for (const n of R.ctx.lines[s]) (known.get(n.toUpperCase()) || known.set(n.toUpperCase(), []).get(n.toUpperCase())).push({ n, s, c: null });
+  const byName = new Map(), add = (k, id) => { if (k) (byName.get(k) || byName.set(k, []).get(k)).push(id); };
+  for (const [id, nm] of Object.entries(R.ctx.stops)) { const k1 = A.norm(nm), k2 = A.norm(nm.replace(/\s*"[A-Z0-9]+"\s*$/, '')); add(k1, id); if (k2 !== k1) add(k2, id); }
+  const lineStops = new Map(Object.entries(R.ctx.lineStops).map(([k, v]) => [k, new Set(v)]));
+  const ctx = { known, byName, lineStops, nameOf: id => R.ctx.stops[id] };
+  const load = () => { A.setContext(() => ctx); A.setTideSource(() => null); A._load({ rss: R.rss, tg: R.tg, pages: R.pages }); };
+  const evs = () => { load(); return A.eventi(Date.parse('2026-11-19T20:00:00+01:00')); };
+  const ev = re => evs().filter(e => re.test(e.titolo));
+  const at = s => Date.parse(s);
+
+  test('casi reali · pontile sospeso: «San Basilio» = S. Basilio del GTFS; le fermate «in direzione P.le Roma» non sono toccate', () => {
+    const e = ev(/sospensione fermata San Basilio/)[0];
+    assert.deepEqual(e.fermate, ['S. Basilio']); assert.deepEqual(e.linee.sort(), ['nav:2', 'nav:6']);
+  });
+  test('casi reali · fermata sostitutiva: «utilizzeranno il vicino impianto di Zattere "A"» resta fuori', () => {
+    assert.deepEqual(ev(/Zattere/)[0].fermate, ['Zattere "B"']);
+  });
+  test('casi reali · «San Marco Giardinetti» trovata (prima: solo le fermate di Rialto dell\'alternativa)', () => {
+    assert.deepEqual(ev(/Giardinetti/)[0].fermate, ['S. Marco Giardinetti "A"']);
+  });
+  test('casi reali · settore: «i bus della linea 9» non è il battello 9; capilinea nel nome della linea non sono fermate', () => {
+    assert.deepEqual(ev(/^Marcon/)[0].linee, []);
+    const m = ev(/Maerne: chiusura/)[0];
+    assert.deepEqual(m.linee.sort(), ['aut:48H', 'aut:5E', 'aut:HE']); assert.deepEqual(m.fermate, []);
+  });
+  test('casi reali · settore dall\'AI: in un avviso di navigazione la «linea 7» senza indizi non diventa il bus 7', () => {
+    const { ai, rec } = R.ai['rss:10658'], v = aiv.validate(ai, { ...rec, id: rec.id }, ctx, []);
+    assert.ok(!v.linee.some(l => l.n === '7')); assert.ok(v.linee.some(l => l.s === 'nav' && l.n === '6'));
+    assert.ok(!ev(/orari invernali/)[0].linee.includes('aut:7'));
+  });
+  test('casi reali · date: giorno senza mese, elenco con i nomi dei giorni e fascia giornaliera, «dalle 8.00 di martedì 10»', () => {
+    const c = ev(/^Mestre$/).find(e => e.fermate.includes('Ca\' Solaro'));
+    assert.equal(c.periodo.inizio, at('2026-10-19T00:00:00+02:00'), '«di lunedì 19 e … di martedì 20 ottobre»');
+    load(); const ch = A.build(at('2026-11-05T12:00:00+01:00')).find(o => /Chioggia/.test(o.title));
+    assert.deepEqual(ch.giorni, [4, 5, 6].map(d => [at(`2026-11-0${d}T08:30:00+01:00`), at(`2026-11-0${d}T18:30:00+01:00`)]));
+    assert.equal(ev(/Lido San Nicol/)[0].periodo.inizio, at('2026-11-10T08:00:00+01:00'));
+  });
+  test('casi reali · fusioni: aggiornamento Telegram della stessa pagina ACTV (cantiere Mestre FS) e «ripristino ora solare»', () => {
+    const c = ev(/Cantiere Stazione Mestre FS|avvio lavori nuova stazione/);
+    assert.equal(c.length, 1, 'un solo evento');
+    assert.equal(c[0].periodo.fine, at('2026-11-09T00:00:00+01:00'), 'finisce quando il messaggio dice «viene ristabilito»');
+    assert.equal(ev(/ora solare/).length, 1);
+  });
+  test('casi reali · propagazione: sospensione di un pontile = ambito «fermate» (non su tutte le fermate della linea)', () => {
+    load();
+    const crea = A.build(at('2026-11-19T10:00:00+01:00')).find(o => /Crea/.test(o.title));
+    assert.equal(crea.ambito, 'fermate');
+    const sb = A.build(at('2026-11-24T10:00:00+01:00')).find(o => /San Basilio/.test(o.title));
+    assert.equal(sb.ambito, 'fermate'); assert.deepEqual(sb.stopNames.map(x => x.n), ['S. Basilio']);
+  });
+}

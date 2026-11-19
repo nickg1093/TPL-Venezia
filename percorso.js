@@ -29,6 +29,19 @@ const C = {
   // COINCIDENZA A RISCHIO (v28): nessun tempo fisso per salire (conta solo l'andatura); un cambio con meno di 2 minuti di margine (oltre a
   // quello dell'andatura) si propone lo stesso, segnato «coincidenza a rischio», e costa 5 minuti in più: vince solo se fa guadagnare tempo.
   RISCHIO_S: 120, RISCHIO_PEN_S: 300,
+  // INTERSCAMBI TRA SERVIZI (v33.1: P.le Roma, Ferrovia, Lido, Tronchetto, Mestre): da bus/tram/People Mover a battello o viceversa serve
+  // 1 minuto in più di margine per non essere «a rischio» (biglietterie, varchi, pontili lontani dal capolinea): 3 minuti in tutto.
+  RISCHIO_MODALE_S: 60,
+  // COINCIDENZA IRREALISTICA: tra servizi diversi con meno di 1 minuto di margine (bus che arriva alle 8:41, 3 minuti a piedi, battello alle 8:45):
+  // vale come 4 coincidenze a rischio. Resta tra le proposte (segnata), ma non è più la consigliata se c'è altro.
+  IRREALE_S: 60, IRREALE_PESO: 4,
+  // «ARRIVO ENTRO»: una coincidenza a rischio, se salta, fa arrivare tardi: pesa 15 minuti invece di 5 (vince solo se fa partire molto più tardi).
+  RISCHIO_PEN_ENTRO_S: 900,
+  // CORSA BREVISSIMA in una soluzione con cambi (meno di 3 minuti, es. una fermata di tram per prendere un altro bus): 2 minuti in più di costo.
+  BREVE_S: 180, BREVE_PEN_S: 120,
+  // «ADESSO»: niente proposte che chiederebbero di essere già partiti (partenza da casa più di 30 s fa) né, se ce ne sono altre, con una
+  // coincidenza già persa secondo i tempi aggiornati.
+  PASSATA_S: 30,
   // COSTO PERCEPITO di una soluzione (in secondi), come ragiona una persona:
   //   partenza «alle» / adesso:  arrivo + A × durata + TP × cambi + (WW − 1) × secondi a piedi
   //   «arrivo entro»:          − partenza + A × durata + TP × cambi + (WW − 1) × secondi a piedi
@@ -176,8 +189,11 @@ function liveFn(q, si, n) {
   const i = SRC[si], G = IX.Gs[si], tid = G.tripIds[n], ps = ctx.state(i)?.[tid], lv = ctx.live(i)?.[tid];
   let f = null;
   // f(p, orario programmato) -> orario previsto (s), null = orario programmato, NaN = fermata già passata dal mezzo
-  if (ps && ps.dayOff === 0 && ps.etaMs) f = p => (p < ps.cur ? NaN : Number.isFinite(ps.etaMs[p]) ? q.T + (ps.etaMs[p] - q.nowMs) / 1000 : null);
+  // (v33.1) corsa soppressa o fermata saltata nel feed: non si sale né si scende lì (prima la soluzione la proponeva e la segnava solo «soppressa»)
+  if (lv?.cancelled) { f = () => NaN; f.off = () => true; }
+  else if (ps && ps.dayOff === 0 && ps.etaMs) f = p => (p < ps.cur ? NaN : Number.isFinite(ps.etaMs[p]) ? q.T + (ps.etaMs[p] - q.nowMs) / 1000 : null);
   else if (lv && lv.delays) f = (p, sched) => (lv.delays[p] != null ? sched + lv.delays[p] : null);
+  if (f && !f.off && lv?.skipped?.size) { const g = f; f = (p, sched) => (lv.skipped.has(p) ? NaN : g(p, sched)); f.off = p => lv.skipped.has(p); }
   q.lc.set(key, f); return f;
 }
 // orario (s del giorno della ricerca) di partenza (dep) o arrivo dalla posizione p della corsa j del percorso P, nello strato L
@@ -186,7 +202,7 @@ function timeAt(q, P, j, p, L, dep) {
   if (!q.live || L.off !== 0) return sched;
   const f = liveFn(q, P.si, P.n[j]); if (!f) return sched;
   const v = f(p, sched); if (v == null) return sched;
-  if (Number.isNaN(v)) return dep ? INF : sched;
+  if (Number.isNaN(v)) return dep || f.off?.(p) ? INF : sched;
   return dep && p === 0 ? Math.max(v, sched) : v;              // dal capolinea non si parte prima dell'orario
 }
 // prima corsa del percorso P che parte dalla posizione p non prima di t -> { j, L, dep } | null
@@ -200,7 +216,7 @@ function earliest(q, P, p, t) {
       const sched = P.st[j].d[p] + L.off; if (best && sched - (q.live ? 120 : 0) > best.dep) break;
       if (sched > t + C.HORIZON_S) break;
       if (!act(P.n[j])) continue;
-      const dep = timeAt(q, P, j, p, L, true); if (dep < t) continue;
+      const dep = timeAt(q, P, j, p, L, true); if (dep < t || dep >= INF) continue;   // già passata, soppressa o fermata saltata
       if (!best || dep < best.dep) best = { j, L, dep };
       if (!q.live || L.off !== 0) break;                       // senza tempo reale la prima valida è la migliore (niente sorpassi)
     }
@@ -341,6 +357,9 @@ function refine(q, legs, egr, W) {
 // ---------------------------------------------------------------------------------------------------------------------
 // RICERCA
 // ---------------------------------------------------------------------------------------------------------------------
+// orario previsto dalla ricerca (s del giorno) al posto di quello programmato, se diverso di almeno 1 minuto (solo in tempo reale)
+const liveAt = (x, sched, s) => (x.expMs != null && Number.isFinite(s) && s < INF && Math.abs(s - sched) >= 60
+  ? { ...x, exp: hhmm(s), delay: Math.round((s - sched) / 60), expMs: x.expMs + (s - sched) * 1000 } : x);
 const hhmm = s => { s = ((Math.round(s) % 86400) + 86400) % 86400; return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}`; };
 // candidati di partenza/arrivo: [[ "src:sid", metri in linea d'aria ]] -> Map(g -> secondi a piedi). In laguna: dal più vicino, lungo le calli.
 // Candidati [[ "src:sid", metri, 1 ]]: metri GIÀ lungo le strade (calcolati dal telefono sulla rete pedonale): usati così come sono.
@@ -389,13 +408,21 @@ function normPref(o = {}) {
     pref, W: C.PREF[pref], escludi: o.escludi?.size ? o.escludi : null, solo: o.solo?.size ? o.solo : null };
 }
 // costo percepito (vedi C.PREF): D = orario di «arrivo entro» (null = partenza «alle» / adesso)
-const cost = (D, arr, leave, cambi, walkS, W, risky = 0) => (D == null ? arr : -leave) + W.A * (arr - leave) + W.TP * cambi + (W.WW - 1) * walkS
-  + C.WALK_EXTRA * Math.max(0, walkS - C.WALK_OK_S) + C.RISCHIO_PEN_S * risky;
+const cost = (D, arr, leave, cambi, walkS, W, risky = 0, brevi = 0) => (D == null ? arr : -leave) + W.A * (arr - leave) + W.TP * cambi + (W.WW - 1) * walkS
+  + C.WALK_EXTRA * Math.max(0, walkS - C.WALK_OK_S) + (D == null ? C.RISCHIO_PEN_S : C.RISCHIO_PEN_ENTRO_S) * risky + C.BREVE_PEN_S * brevi;
+// margine minimo di un cambio dalla corsa A alla corsa B (indici dei servizi: 0 = aut, 1 = nav)
+const marginOf = (siA, siB) => C.RISCHIO_S + (siA !== siB ? C.RISCHIO_MODALE_S : 0);
+// corse brevissime di una soluzione con almeno un cambio
+const brevi = list => (list.length > 1 ? list.filter(([d, a]) => a - d < C.BREVE_S).length : 0);
 // cambi «a rischio» di una soluzione (orari programmati o aggiornati della ricerca): margine sotto C.RISCHIO_S oltre a quello dell'andatura
 function risky(legs, extra = 0) {
   let n = 0, prev = null, walk = 0;
   for (const l of legs) {
-    if (l.t === 'ride') { if (prev && l.dep - (prev.arr + walk) - extra < C.RISCHIO_S) n++; prev = l; walk = 0; } else if (prev) walk += l.s || 0;
+    if (l.t === 'ride') {
+      const slack = prev ? l.dep - (prev.arr + walk) - extra : INF;
+      if (slack < marginOf(prev?.P.si, l.P.si)) n += prev.P.si !== l.P.si && slack < C.IRREALE_S ? C.IRREALE_PESO : 1;
+      prev = l; walk = 0;
+    } else if (prev) walk += l.s || 0;
   }
   return n;
 }
@@ -421,7 +448,7 @@ function search({ da, a, secs = null, date = null, piediM = null, piediReale = f
   const layers = L, opts = [], seen = new Set();
   const allowOf = ex => P => (!pr.mezzi || pr.mezzi.has(P.mode)) && (!pr.escludi || !pr.escludi.has(P.rk)) && (!pr.solo || pr.solo.has(P.rk)) && (!ex || !ex.has(P.rk));
   const short = m => { if (!m.size) return m; const mn = Math.min(...m.values()); return new Map([...m].filter(([, v]) => v <= Math.max(C.SHORT_WALK_S, mn))); };
-  const scoreOf = o => cost(D, o.arr, o.leave, o.rides - 1, o.walkS, pr.W, o.risky);
+  const scoreOf = o => cost(D, o.arr, o.leave, o.rides - 1, o.walkS, pr.W, o.risky, brevi(o.legs.filter(l => l.t === 'ride').map(l => [l.dep, l.arr])));
   const leaveOf = o => { const r0 = o.legs.find(l => l.t === 'ride'); return r0.dep - o.legs.slice(0, o.legs.indexOf(r0)).reduce((s, l) => s + (l.s || 0), 0); };
   // una ricerca all'orario ps.t: aggiunge le soluzioni nuove a opts e restituisce la più veloce di questa ricerca (o null)
   const runAt = ps => {
@@ -591,7 +618,8 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
   const rowsCache = new Map();
   const out = opts.map(o => {
     const legs = [], rides = o.legs.filter(l => l.t === 'ride');
-    let walkS = 0, prevArr = null, risk = false, walkSince = 0, nRisk = 0;
+    let walkS = 0, prevArr = null, risk = false, walkSince = 0, nRisk = 0, nPen = 0, prevSi = null, persaAny = false;
+    const times = [];
     for (const l of o.legs) {
       if (l.t !== 'ride' && prevArr != null) walkSince += Math.round(l.s || 0);
       const prevLeg = legs[legs.length - 1];
@@ -615,17 +643,18 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
       const r0 = live && l.L.off === 0 ? row(g0) : null, r1 = live && l.L.off === 0 ? row(g1) : null;
       const at = (x, sched) => x && x.live ? { sched: hhmm(sched), exp: x.exp, delay: x.delay, live: true, expMs: x.expMs ? Math.round(x.expMs) : null, phase: x.phase || null, cancel: x.cancel || null }
         : { sched: hhmm(sched), exp: hhmm(sched), delay: null, live: false, expMs: live ? nowMs + (sched - T) * 1000 : null, cancel: x?.cancel || null };
-      const dep = at(r0, sched0), arr = at(r1, sched1);
+      // (v33.1) senza la riga del pannello fermata valgono i tempi usati dalla ricerca (ritardi e anticipi del feed), non l'orario programmato
+      const dep = r0?.live ? at(r0, sched0) : liveAt(at(r0, sched0), sched0, l.dep), arr = r1?.live ? at(r1, sched1) : liveAt(at(r1, sched1), sched1, l.arr);
       const depS = dep.live && dep.expMs ? T + (dep.expMs - nowMs) / 1000 : sched0 + (dep.delay || 0) * 60;
       const arrS = arr.live && arr.expMs ? T + (arr.expMs - nowMs) / 1000 : sched1 + (arr.delay || 0) * 60;
       let cambioMin = null, aRischio = false, persa = false;
       if (prevArr != null) {                                  // margine del cambio: partenza di questa corsa − (arrivo della precedente + strada a piedi)
         const slack = depS - (prevArr + walkSince) - (pr.extra || 0);
-        cambioMin = Math.max(0, Math.floor((depS - prevArr - walkSince) / 60)); aRischio = slack < C.RISCHIO_S;
-        if (slack < 0) { risk = true; persa = true; }        // con i tempi aggiornati (ritardi) si arriva dopo la partenza: coincidenza persa
-        if (aRischio) nRisk++;
+        cambioMin = Math.max(0, Math.floor((depS - prevArr - walkSince) / 60)); aRischio = slack < marginOf(prevSi, P.si);
+        if (slack < 0) { risk = true; persa = true; persaAny = true; }        // con i tempi aggiornati (ritardi) si arriva dopo la partenza: coincidenza persa
+        if (aRischio) { nRisk++; nPen += prevSi !== P.si && slack < C.IRREALE_S ? C.IRREALE_PESO : 1; }
       }
-      prevArr = arrS; walkSince = 0;
+      prevArr = arrS; walkSince = 0; prevSi = P.si; times.push([depS, arrS]);
       // tracciato della tratta (solo il pezzo percorso)
       let shape = null;
       try {
@@ -646,9 +675,11 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
     const leaveS = firstDep - accS, arriveS = (last ? toS(last.a.exp, T) : T) + egrS;
     return { parti: hhmm(leaveS), arrivi: hhmm(arriveS), partiMs: live ? Math.round(nowMs + (leaveS - T) * 1000) : null, minuti: Math.max(1, Math.round((arriveS - leaveS) / 60)),
       cambi: Math.max(0, rides.length - 1), piedi: Math.round(walkS / 60), rischio: risk, aRischio: nRisk, famiglia: o.fam, rotte: rides.map(l => l.P.rk), tratte: legs,
-      _arr: arriveS, _leave: leaveS, _score: cost(D, arriveS, leaveS, Math.max(0, rides.length - 1), walkS, pr.W, nRisk) };
-  }).filter(o => o.tratte.some(x => x.tipo === 'mezzo') && (D == null || o._arr < D + 60));   // «entro le 18:00»: va bene chi arriva alle 18:00 (orari al minuto)
-  const clean = o => { delete o._arr; delete o._leave; delete o._score; return o; };
+      _arr: arriveS, _leave: leaveS, _persa: persaAny, _score: cost(D, arriveS, leaveS, Math.max(0, rides.length - 1), walkS, pr.W, nPen, brevi(times)) };
+  }).filter(o => o.tratte.some(x => x.tipo === 'mezzo') && (D == null || o._arr < D + 60) && !(live && o._leave < T - C.PASSATA_S));
+  // «adesso»: una coincidenza già persa con i tempi aggiornati si propone solo se non c'è altro
+  if (live && out.some(o => !o._persa)) for (let k = out.length - 1; k >= 0; k--) if (out[k]._persa) out.splice(k, 1);   // «entro le 18:00»: va bene chi arriva alle 18:00 (orari al minuto)
+  const clean = o => { delete o._arr; delete o._leave; delete o._score; delete o._persa; return o; };
   const head = { aggiornato: nowMs, live, ora: hhmm(T), data: ymd, entro: D != null ? hhmm(D) : null,
     piedi: walkOnly != null && walkOnly < INF && walkOnly <= 40 * 60 ? Math.max(1, Math.round(walkOnly / 60)) : null, senzaFermate: noStops };
   if (all) {                                                     // stesso percorso, altri orari: in ordine di partenza, una per orario
@@ -667,8 +698,10 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
   const worse = o => wo != null && (D == null ? o._arr > T + wo : o._leave < D - wo) && (o.cambi > 0 || o.piedi * 60 >= wo / 2);   // con «arrivo entro»: a piedi si parte più tardi
   // «arrivo entro»: niente proposte che fanno partire molto prima dell'ultima partenza utile (come le app di trasporto);
   // partenza «alle»: niente proposte che arrivano molto dopo la prima. Restano tra gli «altri orari» delle proposte tenute; mai tutte.
-  const latestLeave = D == null || !out.length ? 0 : Math.max(...out.map(o => o._leave));
-  const firstArr = D != null || !out.length ? 0 : Math.min(...out.map(o => o._arr));
+  // (v33.1) riferimento senza coincidenze a rischio, se ce ne sono: una partenza «al limite» non deve far scartare le soluzioni sicure di poco prima
+  const ref = out.some(o => !o.aRischio) ? out.filter(o => !o.aRischio) : out;
+  const latestLeave = D == null || !ref.length ? 0 : Math.max(...ref.map(o => o._leave));
+  const firstArr = D != null || !ref.length ? 0 : Math.min(...ref.map(o => o._arr));
   const early = o => D != null && latestLeave - o._leave > C.BY_EARLY_S;
   const late = o => D == null && o._arr - firstArr > (pr.pref === 'cambi' || pr.pref === 'piedi' ? 50 * 60 : C.LATE_S);
   const stickFam = stick ? stick.get() : null;                 // la consigliata dell'aggiornamento precedente non si scarta come «inutile» (decide STICKY_S)

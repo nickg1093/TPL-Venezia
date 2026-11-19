@@ -52,6 +52,7 @@ function reindex() {
   for (const a of data?.items || []) {
     if (!isWarn(a)) continue;
     for (const id of a.stops || []) (byStop.get(id) || byStop.set(id, []).get(id)).push(a);
+    if (a.ambito === 'fermate') continue;                          // solo pontili/fermate citati: non su tutte le fermate e i mezzi della linea
     for (const l of a.lines || []) { const k = lineKey(l.s, l.n); (byLine.get(k) || byLine.set(k, []).get(k)).push(a); }
   }
 }
@@ -73,7 +74,8 @@ export function forJourney({ lines = [], stops = [], fromMs, toMs }, t = now()) 
     if (a.resolved || a.effect === 'resolved') continue;
     const strike = a.effect === 'strike';
     if (a.general && !strike) continue;
-    if (!(strike ? a.dated : (a.lines || []).some(l => lk.has(lineKey(l.s, l.n))) || (a.stops || []).some(id => sk.has(id)))) continue;
+    const byL = a.ambito !== 'fermate' && (a.lines || []).some(l => lk.has(lineKey(l.s, l.n)));   // avviso di fermata: solo se la soluzione usa quella fermata
+    if (!(strike ? a.dated : byL || (a.stops || []).some(id => sk.has(id)))) continue;
     if (a.dated || a.source === 'auto') { if (!overlaps(a, fromMs, toMs)) continue; }
     else if (!(a.from <= t && a.to >= t && fromMs <= t + 3 * 3600e3 && a.to >= fromMs)) continue;
     out.push(a);

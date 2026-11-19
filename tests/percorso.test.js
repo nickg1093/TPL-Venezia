@@ -264,3 +264,58 @@ test('v27: preferenze come le app di trasporto: un cambio vale 8 minuti (Miglior
   assert.strictEqual(percorso.C.PREF.cambi.TP, 1200);
   assert.ok(percorso.C.PREF.piedi.WW > percorso.C.PREF.equilibrata.WW);
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// v33.1: «Adesso», «Partenza alle», «Arrivo entro» (soppressioni, ritardi, coincidenze irrealistiche)
+// ---------------------------------------------------------------------------------------------------------------------
+const cal31 = require('../calendar');
+function nowNet(minFrom8) {   // orari sintetici spostati: «adesso» = 08:00 + minFrom8 minuti
+  const now = Date.now(), T = cal31.romeParts(now).secs, shift = T - (8 * 3600 + minFrom8 * 60);
+  const A = makeG([{ route: 'A10', name: '10', stops: ['M0', 'M1', 'M2'], start: 8 * 3600 + shift, every: 600, hop: 300, n: 6 }], { M0: 0, M1: 1500, M2: 3000 });
+  const N = makeG([], {});
+  return { A, N, now };
+}
+const tripsOf = o => o.tratte.filter(t => t.tipo === 'mezzo').map(t => t.tripId);
+
+test('adesso: corsa soppressa e fermata saltata non si propongono; corsa in ritardo ancora raggiungibile sì', () => {
+  let { A, N, now } = nowNet(-1);                                            // la A10_0 parte fra 1 minuto
+  let live = { A10_0: { delays: [0, 0, 0], cancelled: true, skipped: new Set(), firstJ: 0 }, A10_1: { delays: [0, 0, 0], cancelled: false, skipped: new Set([2]), firstJ: 0 } };
+  percorso.init({ G: i => (i === 'aut' ? A : N), state: () => ({}), live: i => (i === 'aut' ? live : {}), serviceActive: () => true, rows: () => [] });
+  let r = percorso.plan({ da: [['aut:M0', 0]], a: [['aut:M2', 0]], date: cal31.romeYmd(now) });
+  assert.ok(r.soluzioni.length);
+  for (const o of r.soluzioni) { assert.ok(!tripsOf(o).includes('A10_0'), 'soppressa'); assert.ok(!tripsOf(o).includes('A10_1'), 'salta la fermata di discesa'); }
+  assert.equal(tripsOf(r.soluzioni[0])[0], 'A10_2');
+  ({ A, N, now } = nowNet(3));                                               // adesso 08:03: la A10_0 delle 08:00 è in ritardo di 5 minuti
+  live = { A10_0: { delays: [300, 300, 300], cancelled: false, skipped: new Set(), firstJ: 0 } };
+  percorso.init({ G: i => (i === 'aut' ? A : N), state: () => ({}), live: i => (i === 'aut' ? live : {}), serviceActive: () => true, rows: () => [] });
+  r = percorso.plan({ da: [['aut:M0', 0]], a: [['aut:M2', 0]], date: cal31.romeYmd(now) });
+  const o = r.soluzioni[0], t = o.tratte.find(x => x.tipo === 'mezzo');
+  assert.equal(t.tripId, 'A10_0', 'la corsa in ritardo si prende ancora');
+  assert.equal(t.da.delay, 5); assert.ok(t.da.exp > t.da.sched, 'mostra l\'orario previsto, non quello programmato');
+  percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
+});
+
+test('partenza alle: coincidenza bus → battello con meno di 1 minuto di margine non è la consigliata, ma resta proposta', () => {
+  // bus M0 08:00 → M2 08:10, 200 m a piedi fino a P0, battello alle 08:14 (margine < 1 min); in alternativa il bus diretto 30 delle 08:02 per P2
+  const A = makeG([{ route: 'A10', name: '10', stops: ['M0', 'M1', 'M2'], start: 8 * 3600, every: 3600, hop: 300, n: 1 },
+    { route: 'A30', name: '30', stops: ['M0', 'Q2'], start: 8 * 3600 + 120, every: 3600, hop: 48 * 60, n: 1 }], { M0: 0, M1: 1500, M2: 3000, Q2: 7000 });
+  const N = makeG([{ route: 'N1', name: '1', stops: ['P0', 'P1', 'P2'], start: 8 * 3600 + 14 * 60, every: 3600, hop: 600, n: 1 }], { P0: 3200, P1: 5000, P2: 7000 });
+  percorso.init({ G: i => (i === 'aut' ? A : N), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
+  const r = percorso.plan({ da: [['aut:M0', 0]], a: [['nav:P2', 0], ['aut:Q2', 0]], secs: 8 * 3600, date: '20261102' });
+  assert.deepEqual(r.soluzioni[0].tratte.filter(t => t.tipo === 'mezzo').map(t => t.line), ['30'], 'consigliato il diretto');
+  const risk = r.soluzioni.find(o => o.cambi === 1);
+  assert.ok(risk && risk.aRischio === 1, 'la coincidenza stretta resta, segnata a rischio');
+  percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
+});
+
+test('arrivo entro: ultima partenza utile senza coincidenza irrealistica (il battello è lo stesso, si prende il bus prima)', () => {
+  // bus ogni 10 minuti dalle 08:01 (10 min fino a M2), 150 m a piedi fino a P0, battelli alle 08:14, 08:29, 08:44, 08:59 (10 min fino a P2); entro le 09:00
+  const A = makeG([{ route: 'A10', name: '10', stops: ['M0', 'M1', 'M2'], start: 8 * 3600 + 60, every: 600, hop: 300, n: 8 }], { M0: 0, M1: 1500, M2: 3000 });
+  const N = makeG([{ route: 'N1', name: '1', stops: ['P0', 'P1', 'P2'], start: 8 * 3600 + 14 * 60, every: 900, hop: 300, n: 4 }], { P0: 3150, P1: 5000, P2: 7000 });
+  percorso.init({ G: i => (i === 'aut' ? A : N), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
+  const r = percorso.plan({ da: [['aut:M0', 0]], a: [['nav:P2', 0]], secs: 9 * 3600, date: '20261102', entro: true });
+  const top = r.soluzioni[0], b = top.tratte.filter(t => t.tipo === 'mezzo');
+  assert.equal(b[1].da.sched, '08:44'); assert.equal(b[0].da.sched, '08:21', 'il bus delle 08:31 lascerebbe 30 secondi per il battello');
+  assert.ok(!top.aRischio);
+  percorso.init({ G: i => (i === 'aut' ? aut : nav), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
+});

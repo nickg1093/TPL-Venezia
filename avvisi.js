@@ -101,7 +101,7 @@ function findDates(text, pubMs, ctx = null) {
   // elenchi e intervalli compatti "10, 11 e 12 novembre" / "1-2 novembre [2026]" / "1 e 2 novembre" / "dal 2 al 4 gennaio": dal primo all'ultimo giorno.
   // I numeri devono essere parole a sé: in «9E 27 ottobre» la E del codice di linea non è la congiunzione «e».
   const used = [];
-  for (const r of t.matchAll(new RegExp(`(?<![\\w.,/])(\\d{1,2})((?:\\s*,\\s*\\d{1,2})*)\\s*(?:-|–|—|\\s+e\\s+|\\s+al\\s+|\\s+ed\\s+)\\s*(?:${WD}\\s+)?(\\d{1,2})\\s+${MON_RE}(?:\\s+(\\d{4}))?(?![\\w])`, 'g'))) {
+  for (const r of t.matchAll(new RegExp(`(?<![\\w.,/])(\\d{1,2})((?:\\s*,\\s*(?:${WD}\\s+)?\\d{1,2})*)\\s*(?:-|–|—|\\s+e\\s+|\\s+al\\s+|\\s+ed\\s+)\\s*(?:${WD}\\s+)?(\\d{1,2})\\s+${MON_RE}(?:\\s+(\\d{4}))?(?![\\w])`, 'g'))) {
     const end = r.index + r[0].length; if (place(r.index, end)) { used.push([r.index, end]); continue; }
     // ELENCO di giorni non consecutivi («mercoledì 18 e 25 novembre», «7, 14 e 21 dicembre»): giorni separati, non un periodo continuo
     const nums = [r[1], ...(r[2].match(/\d{1,2}/g) || []), r[3]].map(Number), elenco = /\s(?:e|ed)\s/.test(r[0].slice(r[1].length)) || /,/.test(r[2]);
@@ -118,6 +118,16 @@ function findDates(text, pubMs, ctx = null) {
     if (place(r.index, r.index + r[0].length)) continue;
     push(r[1], r[2], r[3], r.index, r.index + r[0].length);
   }
+  // GIORNO SENZA MESE (archivio del 19-24/10/2026: «dalle 8.30 … di lunedì 19 e dalle 8.30 … di martedì 20 ottobre», «dal pomeriggio di oggi sabato
+  // 24 ottobre a lunedì 26»): con il nome del giorno davanti è una data; il mese è il primo citato dopo (stessa frase) o, se non c'è, l'ultimo prima.
+  if (out.length) for (const r of t.matchAll(new RegExp(`\\b${WD}\\s+(\\d{1,2})(?![\\d.:,]?\\d)(?!\\s*(?:°|º)?\\s*${MON_RE})`, 'g'))) {
+    const at = r.index + r[0].length - r[1].length;
+    if (used.some(([a, b]) => at >= a && at < b) || out.some(d => d.idx === at)) continue;
+    const after = t.slice(at, at + 140).split(/[.;\n](?:\s|$)/)[0], am = new RegExp(`\\b\\d{1,2}\\s+${MON_RE}(?:\\s+(\\d{4}))?`).exec(after);
+    const prev = out.filter(d => d.idx < at && at - d.idx < 200).pop();
+    if (am) push(r[1], am[1], am[2], at, r.index + r[0].length);
+    else if (prev) push(r[1], prev.m, String(prev.y), at, r.index + r[0].length);
+  }
   // giorni relativi alla pubblicazione: solo se il testo non ha date esplicite (altrimenti "oggi 30 ottobre" la conterebbe due volte)
   if (!out.length) for (const r of t.matchAll(/\b(oggi|stamattina|stamane|stasera|stanotte|questa (?:mattina|sera|notte)|domani|domattina|dopodomani)\b/g)) {
     const add = r[1] === 'dopodomani' ? 2 : /domani|domattina/.test(r[1]) ? 1 : 0, p = cal.romeYmd(pubMs), dt = new Date(Date.UTC(+p.slice(0, 4), +p.slice(4, 6) - 1, +p.slice(6, 8) + add));
@@ -133,7 +143,7 @@ function findDates(text, pubMs, ctx = null) {
     if ((m = new RegExp(`^\\s*(?:\\d{4})?\\s*,?\\s*(?:\\(?${WD}\\)?\\s*,?\\s*)?(?:dalle ore|dalle|a partire dalle|dall'|alle ore|ore|alle)\\s*(?:ore\\s*)?${TM}(?:\\s*(?:alle|-|–|fino alle)\\s*(?:ore\\s*)?${TM})?`).exec(after))) {
       if (dt.s == null) dt.s = tsec(m[1], m[2]); if (m[3] != null) dt.e = tsec(m[3], m[4]);
     } else if ((m = new RegExp(`^\\s*(?:\\d{4})?\\s*,?\\s*(?:fino|sino) alle\\s*(?:ore\\s*)?${TM}`).exec(after))) dt.e = tsec(m[1], m[2]);
-    if (!dt.role) dt.role = dt.pair || (new RegExp(`(?:\\bal|\\bfino al|\\bsino al|\\bentro il|\\bfino a|\\bentro|\\b(?:fino|sino) a(?:l(?:la)?)? (?:termine|fine) (?:dei servizi|del servizio|della giornata|servizi?o?)(?: di| del)?|\\ba fine servizi?o?(?: di| del)?)\\s+(?:${WD}\\s+)?$`).test(before) ? 'to' : 'from');   // anche "fino al termine dei servizi di sabato 30 novembre", «sino a fine servizi di lunedì 23 novembre"
+    if (!dt.role) dt.role = dt.pair || (new RegExp(`(?:\\bal|\\ba(?=\\s+${WD})|\\bfino al|\\bsino al|\\bentro il|\\bfino a|\\bentro|\\b(?:fino|sino) a(?:l(?:la)?)? (?:termine|fine) (?:dei servizi|del servizio|della giornata|servizi?o?)(?: di| del)?|\\ba fine servizi?o?(?: di| del)?)\\s+(?:${WD}\\s+)?$`).test(before) ? 'to' : 'from');   // anche "fino al termine dei servizi di sabato 30 novembre", «sino a fine servizi di lunedì 23 novembre"
     dt.dal = new RegExp(`(?:\\bdal|\\bda|a partire dal|a partire da|a decorrere dal)\\s+(?:inizio servizi[oa]? (?:di\\s+)?)?(?:${WD}\\s+)?$`).test(before);
   }
   return out;
@@ -193,7 +203,7 @@ function parseValidity(text, pubMs, kind = 'rss', ctx = null) {
   const lista = !open && !tos.length && distinct >= 2 && all.every(d => d.lista) ? [...new Map(all.map(d => [key(d), d])).values()] : null;
   let giorni = lista ? lista.map(d => [romeMs(d.y, d.m, d.d, d.s ?? g0 ?? 0), romeMs(d.y, d.m, d.d, d.e ?? g1 ?? 86399)]).filter(([a, b]) => b > a) : null;
   const g = !lista && !open && all.length && all.every(d => d.grp && d.grp === all[0].grp) ? all[0] : null;
-  if (g) { const s = first?.s ?? g0, e = last.e ?? g1; if (s != null && e != null && e > s) giorni = g.grp.map(n => [romeMs(g.y, g.m, n, s), romeMs(g.y, g.m, n, e)]); }
+  if (g) { const s = first?.s ?? g0, e = last.e ?? g1; if (s != null && e != null && e > s) { giorni = g.grp.map(n => [romeMs(g.y, g.m, n, s), romeMs(g.y, g.m, n, e)]); to = giorni[giorni.length - 1][1]; } }
   return { from, to, open, dated: true, untilEnd: (untilEvent && sameDayEnd && last.e == null && !tos.some(d => d.e != null)) || undefined, ...(giorni?.length >= 2 ? { giorni } : {}) };
 }
 
@@ -232,18 +242,35 @@ const count = (re, t) => (t.match(re) || []).length;
 // Ritorna Map(nome normalizzato -> { ids, strong }): "strong" = nome sicuro (più parole, tra virgolette, dopo "fermata/pontile/capolinea", o in un percorso "A – B – C").
 const STREET = /(?:\b(?:via|viale|v\.le|piazza|p\.za|piazzale|p\.le|corso|largo|calle|strada|ponte|rio|riva|campo|fondamenta|salizada)\s+)$/i;   // "via Torino", "rio Terà": una strada, non la fermata omonima
 const CUE = /(?:fermat\w*|pontil\w*|capolinea|capilinea|stazione|[“«"'‘])\s*(?:di\s+|del\s+|della\s+|dello\s+|dei\s+|a\s+)?$/i;
+// FERMATE CHE NON SONO TOCCATE DALL'AVVISO (archivio ottobre-novembre 2026):
+//  · direzione della corsa: «Linea 6 in direzione P.le Roma», «per Lido S.M.E.» (San Basilio: l'avviso finiva su tutti i pontili di P.le Roma);
+//  · fermata sostitutiva: «utilizzeranno il vicino impianto di Zattere "A"», «fermata sostitutiva al vicino impianto di Tre Archi»;
+//  · capilinea nel nome della linea: «linea 5E Noale/Maerne Fs – Venezia/Mestre» (non sono fermate del disservizio).
+const NOT_AFFECTED = /(?:\b(?:direzion[ei]|verso|provenient\w* da)\s+(?:di\s+)?|\bper\s+|\b(?:vicin[oa]|sostitutiv[oa]|alternativ[oa]|provvisori[oa])\s+(?:impianto|approdo|pontile|fermata)\s+(?:di\s+|del\s+|della\s+|a\s+|al\s+)?|\b(?:impianto|approdo|pontile|fermata)\s+(?:sostitutiv[oa]|alternativ[oa])\s+(?:al\s+|alla\s+|a\s+|di\s+)?(?:vicin[oa]\s+)?(?:impianto|approdo|pontile|fermata)?\s*(?:di\s+)?)$/i;
+function lineDescRanges(text) {
+  const out = [];
+  for (const m of text.matchAll(/\b(?:linea|linee)\s+[A-Z0-9][A-Z0-9.]{0,5}\s+([A-ZÀ-Ý][^,.;:\n()]{2,80}?)(?=\s+(?:sono|subisc\w*|effettu\w*|vien\w*|vengono|è|devia\w*|in direzione|direzione|dalle|da|nel|nei|per)\b|[,.;:\n(]|$)/g))
+    if (/[–—\-\/]/.test(m[1])) out.push([m.index + m[0].length - m[1].length, m.index + m[0].length]);
+  // elenco «Linee 48H Martellago – Mestre, 5E Noale – Mestre», «Linea Extraurbana HE Martellago – Noale»
+  for (const m of text.matchAll(/(?:,|\s(?:e|ed)|\b(?:Linea|Linee)|\b(?:[Ll]inea|[Ll]inee)\s+(?:[Ee]xtraurban[ae]|[Uu]rban[ae])|\b(?:linea|linee))\s+([A-Z]{0,3}\d{0,3}(?:\.\d)?[A-Z]{0,2})\s+([A-ZÀ-Ý][^,.;:\n()]{2,60}?)(?=\s+(?:sono|subisc\w*|effettu\w*|vien\w*|vengono|è|devia\w*|provenient\w*|in direzione|direzione|dalle|da|nel|nei|per)\b|[,.;:\n(]|$)/g))
+    if (m[1] && /[–—]|\s-\s/.test(m[2])) out.push([m.index + m[0].length - m[2].length, m.index + m[0].length]);
+  return out;
+}
 function stopMentions(text, byName, skip = null) {
   const found = new Map(), hits = []; if (!byName?.size) return found;
   const toks = [...text.matchAll(/[A-Za-zÀ-ÿ0-9][A-Za-zÀ-ÿ0-9.'’]*/g)].map(m => ({ w: m[0], at: m.index, end: m.index + m[0].length }));
   for (let i = 0; i < toks.length;) {
     let hit = null;
     if (/^[A-ZÀ-Ý]/.test(toks[i].w)) for (let n = Math.min(5, toks.length - i); n >= 1; n--) {
-      const k = norm(toks.slice(i, i + n).map(t => t.w).join(' ')); if (k.length < 4) continue;
+      const k0 = norm(toks.slice(i, i + n).map(t => t.w).join(' ')); if (k0.length < 4) continue;
+      // «San Basilio», «San Marco Giardinetti», «Sant'Elena»: nei GTFS «S. Basilio», «S. Marco Giardinetti», «S.Elena» (avvisi del 3/11 e del 6/10/2026)
+      const k = byName.has(k0) ? k0 : k0.replace(/\b(?:san|santa|santo|sant|ss)\b/g, 's');
       if (byName.has(k)) { hit = { k, n }; break; }
     }
     if (hit) {
       const first = toks[i], last = toks[i + hit.n - 1], before = text.slice(Math.max(0, first.at - 40), first.at);
       if (hit.n === 1 && STREET.test(before)) { i++; continue; }
+      if (NOT_AFFECTED.test(text.slice(Math.max(0, first.at - 60), first.at))) { i += hit.n; continue; }
       if (skip && skip(first.at)) { i += hit.n; continue; }                   // citata nella frase dell'alternativa
       hits.push({ k: hit.k, n: hit.n, at: first.at, end: last.end, cue: CUE.test(before) }); i += hit.n;
     } else i++;
@@ -272,7 +299,8 @@ function analyzeBase(title, text, ctx) {
   const full = title + '\n' + text, empty = { lines: [], stops: [], stopNames: [] };
   if (/sciopero/i.test(title) || /^\s*[^\n]{0,80}\bsciopero\b/i.test(text)) return empty;
   const altFull = altRanges(full);
-  const known = ctx.known, mentions = stopMentions(full, ctx.byName, at => inAlt(altFull, at)), strongIds = new Set(), mSrc = new Set();
+  const descs = lineDescRanges(full);
+  const known = ctx.known, mentions = stopMentions(full, ctx.byName, at => inAlt(altFull, at) || descs.some(([a, b]) => at >= a && at < b)), strongIds = new Set(), mSrc = new Set();
   for (const v of mentions.values()) if (v.strong) for (const id of v.ids) { strongIds.add(id); mSrc.add(id.split(':')[0]); }
   const gAut = count(AUT_WORDS, full) + 2 * count(AUT_EMO, full), gNav = count(NAV_WORDS, full) + 2 * count(NAV_EMO, full);
   const served = x => ctx.lineStops?.get(x.s + ':' + String(x.n).toUpperCase());
@@ -281,8 +309,20 @@ function analyzeBase(title, text, ctx) {
   const clean = full.replace(new RegExp(`(?<![\\w.,/])\\d{1,2}(?:\\s*,\\s*\\d{1,2})*(?:\\s*[-–]\\s*\\d{1,2}|\\s+(?:e|ed|al)\\s+\\d{1,2})?\\s+${MON_RE}(?:\\s+\\d{4})?`, 'gi'), ' ')   // date (anche «10, 11 e 12 novembre»), ma non «9E 27 Ottobre».replace(/\b\d{1,2}[.:]\d{2}\b/g, ' ')
     .replace(/[“"]\s*[A-Z]\s*[”"]/g, ' ');                      // "B", "D" tra virgolette doppie = lettera del pontile, non una linea
   const kn = tok => known?.get(String(tok).replace(/[./]+$/, '').toUpperCase());
-  const decide = (tok, around, hint) => {
+  const titleSvc = /navigazione|vaporett|battell|motonav/i.test(title) && !/automobilistic|autobus|\bbus\b|\btram\b/i.test(title) ? 'nav'
+    : /automobilistic|autobus|\bbus\b|\btram\b/i.test(title) && !/navigazione|vaporett|battell/i.test(title) ? 'aut' : null;
+  const decide = (tok, around, hint, strong = false) => {
     let c = kn(tok); if (!c) return;
+    // SERVIZIO DETTO ESPLICITAMENTE («i bus della linea 9», «vaporetto 2», intestazione «SERVIZIO DI NAVIGAZIONE» confermata dal lessico del testo)
+    // e linea che esiste solo nell'altro servizio: è un'altra linea (o una linea non nel GTFS), non si mette sul servizio sbagliato (Marcon, 11/10/2026)
+    if (hint && strong && !c.some(x => x.s === hint)) return;
+    // AVVISO DI UN SOLO SERVIZIO NEL TITOLO («servizio di navigazione: orari invernali», «Viene inoltre sospesa la linea 7»: la 7 stagionale dei
+    // battelli, non il bus 7 di Mestre): una linea che esiste solo nell'altro servizio, senza indizi di quel servizio vicino, non si attribuisce
+    if ((!hint || !strong) && titleSvc && c.every(x => x.s !== titleSvc)) {
+      const near = around.slice(70, 240);                       // ≈ 80 caratteri prima e dopo la linea (around parte 150 caratteri prima)
+      const cue = titleSvc === 'nav' ? count(AUT_WORDS, near) + count(AUT_EMO, near) : count(NAV_WORDS, near) + count(NAV_EMO, near);
+      if (!cue) return;
+    }
     if (hint && c.length > 1 && c.some(x => x.s === hint)) c = c.filter(x => x.s === hint);     // "bus 2", "vaporetto 2": il servizio è detto
     let pick = c;
     if (c.length > 1) {
@@ -310,7 +350,9 @@ function analyzeBase(title, text, ctx) {
     const around = clean.slice(Math.max(0, m.index - 150), m.index + 250);
     // servizio dell'elenco: detto dalla parola («bus 2»); altrimenti dalle linee dell'elenco che esistono in un solo servizio («linee 2, 4L, 6, 6L e 7»:
     // 4L, 6L e 7 sono solo bus, quindi anche 2 e 6); altrimenti dall'intestazione di servizio più vicina prima dell'elenco («SERVIZIO AUTOMOBILISTICO URBANO - …»)
-    let hint = hintOf(m[0]);
+    // «i bus della linea 9», «gli autobus delle linee…», «il tram della linea…»: il mezzo detto subito prima vale come «bus 9»
+    const pre = /\b(autobus|bus|tram|vaporett[oi]|battell[oi]|motonav[ie]|nav[ei] traghetto|ferry)\s+(?:della|delle|di|del|dei)\s*$/i.exec(clean.slice(Math.max(0, m.index - 30), m.index));
+    let hint = hintOf(m[0]) || (pre ? (/autobus|bus|tram/i.test(pre[1]) ? 'aut' : 'nav') : null), strong = !!hint;
     if (!hint) {
       const one = new Set(toks.map(kn).filter(c => c && new Set(c.map(x => x.s)).size === 1).map(c => c[0].s));
       if (one.size === 1) hint = [...one][0];
@@ -319,14 +361,14 @@ function analyzeBase(title, text, ctx) {
       const back = clean.slice(Math.max(0, m.index - 300), m.index);
       const ia = Math.max(...[...back.matchAll(/automobilistic\w*|\bautobus\b|\bbus\b|\btram\b/gi)].map(x => x.index), -1);
       const iv = Math.max(...[...back.matchAll(/\bnavigazione\b|vaporett\w*|battell\w*|motonav\w*/gi)].map(x => x.index), -1);
-      if (ia !== iv) hint = ia > iv ? 'aut' : 'nav';
+      if (ia !== iv) { hint = ia > iv ? 'aut' : 'nav'; strong = hint === 'nav' ? gNav > gAut : gAut > gNav; }   // intestazione confermata dal lessico del testo
     }
     toks.forEach((tok, j) => {
       // una lettera sola che è anche una parola italiana («linea 13 e A partire…», «E inoltre»): linea solo se prima dell'elenco e non seguita da una
       // parola minuscola; le altre lettere (N) sono codici di linea anche in fondo a un elenco («linee 1, 2 e N provenienti…»)
       if (/^[AEIO]$/.test(tok) && (j > 0 || /^\s*[a-zà-ÿ]/.test(after))) return;
       if (/^[A-Z]$/.test(tok) && j === 0 && toks.length === 1 && /^\s*[a-zà-ÿ]/.test(after) && !/\blinea\s*$/i.test(m[0].trim())) return;
-      decide(tok, around, hint);
+      decide(tok, around, hint, strong);
     });
   }
   for (const m of clean.matchAll(/(?<![A-Za-z0-9])(T[1-9])(?![A-Za-z0-9])/g)) { if (!inAlt(altClean, m.index)) decide(m[1], clean.slice(Math.max(0, m.index - 150), m.index + 250), 'aut'); }   // tram
@@ -585,7 +627,7 @@ const STOPW = new Set(('alla alle allo agli dalla dalle della delle degli nella 
   + 'previsto prevista previsti previste sono sara saranno potranno potrebbe essere stato stata questo questa quella dopo prima circa').split(' '));
 const KINDS = [/acqua alta|marea/, /manifestazion|corteo|presidio|sfilata|maratona|regata|concerto|partita|processione/, /nebbia|visibilit/, /sciopero/,
   /\bvento\b|bora|maltempo|temporal|neve|ghiaccio|mareggiat/, /guast|avari|incident|soccorso|malore/, /lavori|cantiere|asfaltatur|chiusura (?:strad|ponte|rotatoria)/, /people mover/];
-const CLOSE_RE = /\b(?:ripristinat\w*|riattivat\w*|ripres[oaie]\b|riprend(?:e|ono)\b|tornat[oaie] (?:regolar\w*|in servizio|attiv\w*)|torna(?:no)? regolar\w*|regolarmente in servizio|(?:servizio|circolazione|transito) (?:e |sono )?(?:regolare|ripristinat\w*)|terminat[oaie]|conclus[oaie]|cessat[oaie]|revocat[oaie]|fine (?:dell[ae] )?(?:manifestazione|evento|emergenza|allerta)|riapert[oaie]|diradat[oaie]|dissolt[oaie]|rientrat[oaie]|di nuovo (?:attiv\w*|in servizio|regolar\w*)|(?:revoca|annullamento|differimento|rinvio) dello sciopero|sciopero (?:e |è )?(?:stato )?(?:revocato|annullato|differito|rinviato))\b/;
+const CLOSE_RE = /\b(?:ripristinat\w*|ristabilit\w*|riattivat\w*|ripres[oaie]\b|riprend(?:e|ono)\b|tornat[oaie] (?:regolar\w*|in servizio|attiv\w*)|torna(?:no)? regolar\w*|regolarmente in servizio|(?:servizio|circolazione|transito) (?:e |sono )?(?:regolare|ripristinat\w*)|terminat[oaie]|conclus[oaie]|cessat[oaie]|revocat[oaie]|fine (?:dell[ae] )?(?:manifestazione|evento|emergenza|allerta)|riapert[oaie]|diradat[oaie]|dissolt[oaie]|rientrat[oaie]|di nuovo (?:attiv\w*|in servizio|regolar\w*)|(?:revoca|annullamento|differimento|rinvio) dello sciopero|sciopero (?:e |è )?(?:stato )?(?:revocato|annullato|differito|rinviato))\b/;
 const wordsOf = it => new Set(norm(it.title + ' ' + String(it.text || '').slice(0, 260)).split(' ').filter(w => w.length >= 4 && !STOPW.has(w) && !/\d/.test(w)));
 const kindsOf = it => { const s = noAccents((it.title + ' ' + it.text).toLowerCase()); return new Set(KINDS.map((re, i) => (re.test(s) ? i : -1)).filter(i => i >= 0)); };
 const overlap = (a, b) => { if (a.size < 2 || b.size < 2) return 0; let n = 0; for (const w of a) if (b.has(w)) n++; return n / Math.min(a.size, b.size); };
@@ -695,7 +737,7 @@ function thread(items) {
       if (ref === 'risposta') { cands.push({ A, ov: overlap(A.words, B.words), ref }); continue; }
       const ov = overlap(A.words, B.words), sameKind = [...A.kinds].some(k => B.kinds.has(k)), common = shares(A.lk, B.lk) || shares(A.stops, B.stops);
       const longA = A.dated && A.to - A.from > DAY;
-      const related = ov >= 0.6 || (!longA && ((sameKind && (common || ov >= 0.3)) || (common && ov >= 0.3))) || (ref === 'data' && sameKind && CANCEL_RE.test(textOf(B))) || ((ref === 'data' || ref === 'sciopero') && STRIKE_RE.test(textOf(A)) && STRIKE_RE.test(textOf(B)));   // annullamento dello stesso tipo di evento per lo stesso giorno («sciopero del 30 ottobre … servizi regolari»)
+      const related = ref === 'pagina' || ov >= 0.6 || (!longA && ((sameKind && (common || ov >= 0.3)) || (common && ov >= 0.3))) || (ref === 'data' && sameKind && CANCEL_RE.test(textOf(B))) || ((ref === 'data' || ref === 'sciopero') && STRIKE_RE.test(textOf(A)) && STRIKE_RE.test(textOf(B)));   // annullamento dello stesso tipo di evento per lo stesso giorno («sciopero del 30 ottobre … servizi regolari»)
       if (!related) continue;
       if (ref !== 'pagina' && B.ai?.relazioni.some(r => r.tipo === 'indipendente' && A.ev.keys.has(r.id))) { B.aiInfo?.campi.push('evento indipendente da ' + A.key); continue; }   // somiglianza di parole, ma per l'AI è un altro evento
       if (startsLater(A, B) && !ref) continue;                               // un evento programmato futuro non si tocca senza riferimento esplicito
@@ -822,6 +864,15 @@ function classify(it) {
   return { effect: e[0], effectLabel: e[1], severity: it.general && e[2] !== 'severe' ? 'info' : e[2] };
 }
 const SEV = { severe: 0, warning: 1, info: 2 };
+// AMBITO «fermate» (propagazione, v33.1): sospensione o spostamento di uno o più pontili/fermate senza che la linea sia sospesa («sospesa la fermata di
+// Crea», «l'approdo di San Basilio sarà sospeso»): l'avviso vale su quelle fermate e sulle corse e soluzioni che le usano, non su tutte le fermate della linea.
+const STOP_OFF = /\b(?:sospes\w*|soppress\w*|chius[oaie]|spostat\w*|anticipat\w*|posticipat\w*|trasferit\w*)\s+(?:la |il |l['’] ?|i |le )?(?:fermat\w*|approd\w*|pontil\w*|impiant\w*|capolinea)|\b(?:fermat\w*|approd\w*|pontil\w*|impiant\w*|capolinea)\b[^.;\n]{0,60}?\b(?:sospes\w*|soppress\w*|spostat\w*|anticipat\w*|posticipat\w*|chius[oaie]|trasferit\w*)/;
+const LINE_OFF = /\b(?:sospes[oaie]|soppress[oaie]|interrott[oaie])\s+(?:la|le|il|i)\s+(?:linea|linee|servizio|servizi|corsa|corse|tram|collegament\w*)|\b(?:linea|linee|tram)\s+[A-Z0-9.]{1,6}\s+(?:è |e |sono |viene |vengono )?(?:sospes|soppress|interrott)/;
+function ambitoOf(it, cl) {
+  if (!it.stops?.length || !['no_service', 'stop_moved'].includes(cl.effect)) return null;
+  const s = noAccents((it.title + ' ' + String(it.fx ?? it.text).slice(0, 600)).toLowerCase());
+  return (cl.effect === 'stop_moved' || STOP_OFF.test(s)) && !LINE_OFF.test(s) ? 'fermate' : null;
+}
 
 // DATA DI PUBBLICAZIONE IN TESTA ALLA PAGINA (avvisi del 6/11/2026): le pagine ACTV hanno, sotto il titolo, la data della notizia
 // («Tram: servizio sostitutivo linea T1 · 6 Novembre 2026 · AVM/Actv informa che, lunedì 9 novembre…»). Non è una data dell'evento: letta
@@ -950,6 +1001,17 @@ const testoLeggibile = t => String(t).replace(EMOJI, ' ').replace(/\s*(?:(?:per\
 // PROMEMORIA DI UN ALTRO AVVISO («Si ricorda che dal 17 al 30 novembre è sospesa la fermata di S. Maria del Giglio»): date, linee e fermate
 // di quella frase sono di un'altra comunicazione (che ha il suo avviso). Tolta per le date e le linee, se resta almeno una data.
 const PROM_RE = /(^|\n|[.!?;]\s+)((?:si (?:ricorda|rammenta)|(?:vi )?ricordiamo)\b[^\n]*?)(?=[.!?](?:\s|$)|\n|$)/gi;
+// DATE SOLO DALLE FRASI CHE DESCRIVONO LA MODIFICA: senza promemoria («si ricorda che…», «🚏 da martedì 17 (fino al 30) è sospeso…» ripetuto in un
+// avviso di un altro evento) né frasi di alternativa («in alternativa…», «sarà possibile utilizzare…»), se resta almeno una data.
+const DATE_RE = new RegExp(`\\d{1,2}\\s+${MON_RE}`, 'i');
+const RICORDA_TG = /(^|\n)[^\S\n]*(?:\u{1F68F}|si ricorda|ricordiamo)[^\n]*\(\s*fino al[^\n]*\n?/giu;
+function soloModifica(t) {
+  let out = senzaPromemoria(String(t));
+  const tg = out.replace(RICORDA_TG, '$1'); if (tg !== out && DATE_RE.test(tg)) out = tg;
+  const rs = altRanges(out); if (!rs.length) return out;
+  let cut = '', k = 0; for (const [a, b] of rs) { cut += out.slice(k, a); k = b; } cut += out.slice(k);
+  return DATE_RE.test(cut) ? cut : out;
+}
 function senzaPromemoria(t) {
   const out = String(t).replace(PROM_RE, '$1');
   return out !== t && new RegExp(`\\d{1,2}\\s+${MON_RE}`, 'i').test(out) ? out : t;
@@ -967,7 +1029,7 @@ function prepare(now, { window = true } = {}) {
   const ctx = ST.ctx() || {}, items = [], byUrl = new Map(), src = sources();
   const keep = it => !window || it.published >= now - WINDOW_MS || it.to >= now - 7 * DAY;
   for (const r of src.rss) {
-    const body = dropPubDate(src.pages.get(r.url) || r.text, r.title, r.pubMs), corpo = senzaPromemoria(body), full = r.title + '\n' + corpo;
+    const body = dropPubDate(src.pages.get(r.url) || r.text, r.title, r.pubMs), corpo = senzaPromemoria(body), full = r.title + '\n' + soloModifica(corpo);
     const it = { key: r.key, id: idOf(r.key), source: 'actv', title: r.title, text: short(body.replace(r.title, '').trim() || r.text, 700), url: r.url, published: r.pubMs,
       ...(corpo !== body ? { fx: short(corpo.replace(r.title, '').trim(), 700) } : {}),   // effetto senza i promemoria («Si ricorda che … è sospesa la fermata di S. Maria del Giglio»)
       ...interp(ctx, 'rss', r.key, full + '|' + r.pubMs, () => ({ ...strikeDay(r.title, r.pubMs, parseValidity(full, r.pubMs, 'rss', ctx)), ...analyze(r.title, corpo, ctx) })) };
@@ -994,7 +1056,7 @@ function prepare(now, { window = true } = {}) {
     if (!first && links.some(l => byUrl.has(l)) && !SERVICE_MSG.test(m.text)) {
       tgv = interp(ctx, 'tgv', m.key, m.text + '|' + m.pubMs, () => parseValidity(m.text, m.pubMs, 'tg', ctx));
       const t = noAccents(m.text.toLowerCase());
-      if (tgv.dated && !tgv.open && !CANCEL_RE.test(t) && !CHANGE_RE.test(t) && !RELINK_NEWS.test(t.replace(POINTER_RE, ' ')))
+      if (tgv.dated && !tgv.open && !CANCEL_RE.test(t) && !CHANGE_RE.test(t) && !RELINK_NEWS.test(t.replace(POINTER_RE, ' ').replace(/\bripristino (?:dell['’ ]\s*)?ora (?:solare|legale)/g, ' ')))
         first = links.find(l => { const r = byUrl.get(l); return r && r.dated && !r.open && tgv.from >= r.from && tgv.to <= r.to; });
     }
     if (first) {
@@ -1011,7 +1073,7 @@ function prepare(now, { window = true } = {}) {
     const title = short(row || 'Avviso', 110), body = (lungo ? [row, ...rows.slice(k + 1)] : rows.slice(k + 1)).join(' ');
     const it = { key: m.key, id: idOf(m.key), source: 'telegram', title, text: short(body || title, 700), url: m.links.find(l => /actv|avm/.test(l)) || m.url, tgUrl: m.url,
       published: m.pubMs, ...(m.replyTo ? { replyTo: m.replyTo } : {}),
-      ...interp(ctx, 'tg', m.key, m.text + '|' + m.pubMs, () => ({ ...parseValidity(m.text, m.pubMs, 'tg', ctx), ...analyze(title, m.text, ctx) })) };
+      ...interp(ctx, 'tg', m.key, m.text + '|' + m.pubMs, () => ({ ...parseValidity(soloModifica(m.text), m.pubMs, 'tg', ctx), ...analyze(title, m.text, ctx) })) };
     if (keep(it)) {
       applyAi(it, m, ctx); items.push(it); if (nt.length >= 40) reposts.set(nt, it);
       // PROROGA o VARIAZIONE annunciata su Telegram con il link alla pagina ACTV di una notizia più vecchia (es. via Pio X: pagina di settembre,
@@ -1055,7 +1117,8 @@ function build(now = Date.now(), { interni = false } = {}) {   // interni: solo 
     const cl = classify(it);
     const head = noAccents((it.title + ' ' + String(it.text).slice(0, 300)).toLowerCase());
     if (cl.effect === 'other' && ((!it.lines.length && !it.stops.length && NOT_SERVICE.test(head)) || PRESS.test(head))) continue;   // notizie aziendali e di cronaca: non sono avvisi
-    const { drop, words, restoring, closure, key, ev, replyTo, dir, seg, ai, aiInfo, aiEffect, superseded, fx, ...pub } = it; out.push({ ...pub, title: titoloLeggibile(pub.title, ctx), text: testoLeggibile(pub.text), ...(interni ? { closure, eventId: ev?.id } : {}), ...cl, state });
+    const { drop, words, restoring, closure, key, ev, replyTo, dir, seg, ai, aiInfo, aiEffect, superseded, fx, ...pub } = it; const ambito = ambitoOf(it, cl);
+    out.push({ ...pub, title: titoloLeggibile(pub.title, ctx), text: testoLeggibile(pub.text), ...(interni ? { closure, eventId: ev?.id } : {}), ...cl, ...(ambito ? { ambito } : {}), state });
   }
   out.sort((a, b) => (a.state === b.state ? 0 : a.state === 'active' ? -1 : 1) || SEV[a.severity] - SEV[b.severity] || b.published - a.published);
   return out.slice(0, 40);

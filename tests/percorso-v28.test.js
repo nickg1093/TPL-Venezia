@@ -67,3 +67,14 @@ test('v28: nessun tempo fisso per salire: chi è già alla fermata alle 08:00 pr
   const r = percorso.plan({ da: [['aut:M0', 0]], a: [['aut:M3', 0]], secs: 8 * 3600, date: '20261117' });
   assert.equal(r.soluzioni[0].parti, '08:00');
 });
+
+// v33.1 · ANDATURE con un cambio a piedi tra bus e battello: «Svelta» prende la coincidenza stretta, «Con calma» (passo lento + 2 minuti) no
+test('andature: Svelta, Normale e Con calma con un cambio bus → battello', () => {
+  const A = makeG([{ route: 'B1', name: '1', stops: ['S0', 'S1'], start: 8 * 3600, every: 3600, hop: 600, n: 2 }], { S0: 0, S1: 3000 });
+  const N = makeG([{ route: 'V1', name: '1', stops: ['W0', 'W1'], start: 8 * 3600 + 14 * 60, every: 900, hop: 600, n: 6 }], { W0: 3150, W1: 6000 });
+  percorso.init({ G: i => (i === 'aut' ? A : N), state: () => ({}), live: () => ({}), serviceActive: () => true, rows: () => [] });
+  const boatOf = p => { const r = percorso.plan({ da: [['aut:S0', 0]], a: [['nav:W1', 0]], secs: 8 * 3600, date: '20261102', prefs: p }); return r.soluzioni[0].tratte.filter(t => t.tipo === 'mezzo')[1].da.sched; };
+  assert.equal(boatOf({ passo: 'veloce' }), '08:14');
+  assert.equal(boatOf({}), '08:14');
+  assert.equal(boatOf({ passo: 'lento', margine: 'largo' }), '08:29', 'con calma: il battello dopo');
+});

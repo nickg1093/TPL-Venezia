@@ -226,9 +226,23 @@ nell'app installata) nessuna protezione.
     cambiati lo dice e mostra le alternative); vicino alla partenza compare «Inizia il viaggio».
   - **Calendario**: evento con promemoria 10 minuti prima; il file lo prepara il server (`/api/ics`, senza salvare niente) perché su iPhone Safari apre
     un indirizzo vero con «Aggiungi al calendario». **Condividi**: testo semplice e ordinato (giorno, orari, linee, fermate, link alla stessa soluzione).
+- **Scelta delle soluzioni (v32.2, 19/11/2026)**: oltre 10 minuti a piedi in tutto ogni minuto in più pesa un minuto in più; a costi equivalenti
+  (meno di 1 minuto) si consiglia chi ha meno cambi, poi meno strada a piedi, e il diretto non si scarta; in tempo reale la *consigliata* resta la
+  stessa famiglia agli aggiornamenti se costa al massimo 3 minuti più della migliore (memoria del server: 500 tragitti, 10 minuti). Cambi tra
+  servizi diversi (bus/tram/People Mover ↔ battello: P.le Roma, Ferrovia, Lido, Tronchetto) «a rischio» sotto i 3 minuti di margine e
+  **irrealistici** sotto 1 minuto (pesano come 4 coincidenze a rischio: restano tra le proposte, segnati, ma non sono la consigliata se c'è altro);
+  una corsa di meno di 3 minuti in una soluzione con cambi costa 2 minuti in più.
+  - *Adesso*: corse **soppresse** e **fermate saltate** del feed non si propongono; le corse in ritardo ancora raggiungibili sì, con l'orario
+    previsto (anche quando il pannello della fermata non ha la riga); niente proposte che chiederebbero di essere già partiti; una coincidenza già
+    persa con i tempi aggiornati compare solo se non c'è altro.
+  - *Partenza alle*: le regole sopra (prima combinazione sensata, niente attese inutili ai cambi: a parità d'arrivo vince chi parte dopo).
+  - *Arrivo entro*: una coincidenza a rischio pesa 15 minuti invece di 5; «troppo presto» si misura dall'ultima partenza **sicura**, così una
+    partenza al limite non fa sparire le soluzioni sicure di poco prima.
+  - *Proseguire sullo stesso mezzo al capolinea*: **rinviato** (nei GTFS ACTV `block_id` è vuoto e il tempo reale non dice la corsa successiva del mezzo).
   - **Avvisi di servizio sulla soluzione**: quelli delle sue linee e fermate **nel giorno e nelle ore del viaggio** (con periodo: se si sovrappone;
     senza periodo, es. guasti: solo se in corso e il viaggio parte entro 3 ore; sciopero: tutti i viaggi del periodo). Una riga sulla scheda, l'elenco
-    nel dettaglio. Il server pubblica gli avvisi in corso e quelli dei prossimi 3 giorni.
+    nel dettaglio. Un avviso che riguarda solo un pontile o una fermata (`ambito: 'fermate'`, es. «sospesa la fermata di Crea») vale solo se la
+    soluzione sale o scende lì, non per tutte le soluzioni con quella linea. Il server pubblica gli avvisi in corso e quelli dei prossimi 3 giorni.
   - **Marea**: con tratti a piedi nella città storica (Giudecca e Murano comprese) e marea prevista o misurata di almeno 100 cm nelle ore del viaggio,
     una nota con il livello e lo stato del MOSE. Usa i dati della marea già sul telefono (previsione fino a circa 18 ore): nessuna richiesta in più.
 
@@ -517,7 +531,27 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ---
 
-## 12. Novità della v32.1
+## 12. Novità della v32.2
+
+Avvisi e pianificatore rivisti il 19/11/2026 (stessa parte della v33.1 in prova, senza l'acqua alta).
+- **Avvisi (v32.2)**, dai casi reali del ramo `archivio-avvisi` (ottobre-novembre 2026, prove in `tests/avvisi.test.js`, «casi reali»):
+  - *settore nav/aut*: «i bus della linea 9» e «vaporetto 2» decidono il servizio; una linea che esiste solo nell'altro servizio non vi si attribuisce;
+    in un avviso con un solo servizio nel titolo («servizio di navigazione…») la linea senza indizi dell'altro servizio non passa all'altro (anche
+    se lo dice l'interpretazione AI: `avvisi-ai.js` la scarta);
+  - *fermate toccate*: «San/Santa/Sant'» = «S.» dei GTFS (San Basilio, San Marco Giardinetti); escluse le fermate di direzione («in direzione
+    P.le Roma», «per Lido»), quelle sostitutive («il vicino impianto di Zattere "A"») e i capilinea nel nome della linea («5E Noale – Mestre»);
+  - *date*: giorno con il nome ma senza mese («di lunedì 19 e … di martedì 20 ottobre», «a lunedì 26»), elenchi con i nomi dei giorni e la stessa
+    fascia oraria («mercoledì 4, giovedì 5 e venerdì 6, dalle 8.30 alle 18.30» = tre giorni separati), date prese solo dalle frasi che descrivono la
+    modifica (non dai promemoria né dalle alternative, anche su Telegram);
+  - *fusioni*: un messaggio con il link alla stessa pagina ACTV è lo stesso evento (il cantiere di Mestre FS chiuso da «viene ristabilito»);
+    «ripristino ora solare» non è un ripristino di servizio;
+  - *propagazione*: `ambito: 'fermate'` per le sospensioni e gli spostamenti di pontili/fermate: l'avviso compare su quelle fermate, sulle corse che
+    ci passano e sulle soluzioni che le usano, non su tutte le fermate e i mezzi della linea (`public/js/avvisi.js`).
+- **Pianificatore (v32.2)**: vedi §3.4, «Scelta delle soluzioni».
+- **Correzioni del 19/11 (prima consegna)**: Crea su due giorni, sciopero nel giorno del titolo, doppioni Telegram (People Mover, sciopero,
+  Madonna della Salute ripubblicata), fine «sino a fine servizi», ora di fine scritta rispettata, messaggi vuoti e notizie di cronaca esclusi.
+
+## Novità della v32.1
 
 - **Grafico della marea, etichette senza sovrapposizioni**: i valori dei massimi e minimi, «MOSE 110» (linea tratteggiata della soglia) e
   «MOSE hh:mm» (linea verticale del sollevamento programmato) si mettono ognuno nella prima posizione libera tra diverse possibili (sopra/sotto,
