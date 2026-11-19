@@ -1,0 +1,147 @@
+{
+ "nota": "Testi reali dal ramo archivio-avvisi (avvisi/comunicazioni/2026-11.jsonl), letti il 19/11/2026: casi Crea, People Mover, sciopero del 20/11, Madonna della Salute, Zattere B, messaggi vuoti, notizia stampa, parcheggio pieno.",
+ "rss": [
+  {
+   "key": "rss:10306 at https://actv.avmspa.it",
+   "title": "Venezia: sospensione approdo Crea",
+   "url": "https://actv.avmspa.it/it/content/venezia-sospensione-approdo-crea",
+   "text": "giovedì 19 e venerdì 20 novembre 2026, dalle ore 08:00 alle ore 17:00",
+   "pubMs": 1794926799000
+  },
+  {
+   "key": "rss:10334 at https://actv.avmspa.it",
+   "title": "People Mover chiusura temporanea impianto per manutenzione",
+   "url": "https://actv.avmspa.it/it/content/people-mover-chiusura-temporanea-impianto-manutenzione-0",
+   "text": "mercoledì 18 e 25 novembre 2026 dalle 9:00 alle 17:00",
+   "pubMs": 1794232324000
+  },
+  {
+   "key": "rss:10676 at https://actv.avmspa.it",
+   "title": "AVM/Actv informa: sciopero generale nazionale 24h - 20 novembre 2026",
+   "url": "https://actv.avmspa.it/it/content/avmactv-informa-sciopero-generale-nazionale-24h-20-novembre-2026",
+   "text": "venerdì 20 novembre 2026",
+   "pubMs": 1793972419000
+  },
+  {
+   "key": "rss:7526 at https://actv.avmspa.it",
+   "title": "Madonna della Salute: servizi di trasporto pubblico e mobilità",
+   "url": "https://actv.avmspa.it/it/content/madonna-della-salute-servizi-di-trasporto-pubblico",
+   "text": "sabato 21 e domenica 22 novembre 2026",
+   "pubMs": 1794818220000
+  },
+  {
+   "key": "rss:8519 at https://actv.avmspa.it",
+   "title": "Venezia: sospensione Zattere \"B\"",
+   "url": "https://actv.avmspa.it/it/content/venezia-sospensione-zattere-b-1",
+   "text": "dalle ore 09:00 alle 12:30 di lunedì 23 novembre 2026",
+   "pubMs": 1795087042000
+  },
+  {
+   "key": "rss:10680 at https://actv.avmspa.it",
+   "title": "Aggressione a un conducente ACTV a Mestre",
+   "url": "https://actv.avmspa.it/it/content/aggressione-un-conducente-actv-mestre",
+   "text": "AVM condanna con fermezza il gesto vile",
+   "pubMs": 1794948902000
+  }
+ ],
+ "tg": [
+  {
+   "key": "tg:11919",
+   "id": 11919,
+   "text": "⚠ #muoversivenezia | Venezia Crea ⛴\n\n🗓 giovedì 19 e venerdì 20 novembre 2026, dalle ore 08:00 alle ore 17:00\n\n❌ per consentire l’esecuzione di lavori in prossimità degli impianti, come previsto dall’ordinanza comunale n° 924 del 17/11/2026\n\ninfo e ultimi transiti regolari 👉 https://actv.avmspa.it/it/content/venezia-sospensione-approdo-crea",
+   "links": [
+    "https://actv.avmspa.it/it/content/venezia-sospensione-approdo-crea"
+   ],
+   "pubMs": 1794927000000,
+   "url": "https://t.me/muoversivenezia/11919"
+  },
+  {
+   "key": "tg:11916",
+   "id": 11916,
+   "text": "#muoversivenezia 🚝 People Mover\n\n📆 mercoledì 18 e 25 novembre 2026\n\n⚠️ Dalle 9:00 alle 17:00 c.a. il servizio di collegamento People Mover tra P.le Roma e Tronchetto viene sospeso per consentire attività di manutenzione programmata.\n\n⛴️ Collegamento assicurato tramite linea 2 accessibile alla tariffa urbana da € 1,50 nella tratta Tronchetto-Tronchetto Mercato-P.le Roma\n\nper aggiornamenti 👉 https://actv.avmspa.it/it/content/people-mover-chiusura-temporanea-impianto-manutenzione-0",
+   "links": [
+    "https://actv.avmspa.it/it/content/people-mover-chiusura-temporanea-impianto-manutenzione-0"
+   ],
+   "pubMs": 1794838809000,
+   "url": "https://t.me/muoversivenezia/11916"
+  },
+  {
+   "key": "tg:11907",
+   "id": 11907,
+   "text": "⚠️ #muoversivenezia | SCIOPERO GENERALE NAZIONALE 24H 🚍 🚊 ⛴\n\n🗓 venerdì 20 novembre 2026\n\n⏰ 🚍 garantite tutte le corse in partenza dal capolinea a partire dalle ore 06:00 e fino alle ore 08:59 e a partire dalle ore 16:30 fino alle ore 19:29.\n\n🔍 ⛴ nel servizio navigazione verranno garantiti i servizi minimi di collegamento e alcune corse di nave traghetto (linea 17) per fasce orarie e riservate ai possessori di tessera IMOB su prenotazione obbligatoria.\n\n🔍 🚈 il servizio People Mover di collegamento tra Tronchetto-Stazione Marittima-P.le Roma verrà garantito a fasce orarie\n\n🅿️ per i parcheggi in struttura gestiti da AVM (Autorimessa Comunale, Sant’Andrea, Park Costa e Park Candiani) vengono garantiti gli ingressi e le uscite di abbonati, titolari di tagliandi disabili e prenotati, ove presenti.\n\n🎟 nella news saranno indicati i punti vendita Venezia Unica aperti\nNella news in continuo aggiornamento info sui servizi di NAVIGAZIONE, AUTOMOBILISTICO e TRANVIARIO 👉 https://bit.ly/4j1NeQ8",
+   "links": [],
+   "pubMs": 1794481263000,
+   "url": "https://t.me/muoversivenezia/11907"
+  },
+  {
+   "key": "tg:11920",
+   "id": 11920,
+   "text": "⚠️ #muoversivenezia | SCIOPERO GENERALE NAZIONALE 24H 🚍 🚊 ⛴\n\n🗓 venerdì 202026\n\n⏰ 🚍 garantite tutte le corse in partenza dal capolinea a partire dalle ore 06:00 e fino alle ore 08:59 e a partire dalle ore 16:30 fino alle ore 19:29.\n\n🔍 ⛴ nel servizio navigazione verranno garantiti i servizi minimi di collegamento e alcune corse di nave traghetto (linea 17) per fasce orarie e riservate ai possessori di tessera IMOB su prenotazione obbligatoria.\n\n🔍 🚈 il servizio People Mover di collegamento tra Tronchetto-Stazione Marittima-P.le Roma verrà garantito a fasce orarie\n\n🅿️ per i parcheggi in struttura gestiti da AVM (Autorimessa Comunale, Sant’Andrea, Park Costa e Park Candiani) vengono garantiti gli ingressi e le uscite di abbonati, titolari di tagliandi disabili e prenotati, ove presenti.\n\n🎟 nella news saranno indicati i punti vendita Venezia Unica aperti\nNella news in continuo aggiornamento info sui servizi di NAVIGAZIONE, AUTOMOBILISTICO e TRANVIARIO 👉 https://bit.ly/4j1NeQ8",
+   "links": [],
+   "pubMs": 1794945009000,
+   "url": "https://t.me/muoversivenezia/11920"
+  },
+  {
+   "key": "tg:11914",
+   "id": 11914,
+   "text": "🙏 #muoversivenezia | Madonna della Salute\n\n📆 sabato 21 e domenica 22 novembre 2026\n\n✅ ⛴ sono effettuati collegamenti aggiuntivi linea 1 nel tratto San Tomà-Lido SME e viceversa\n🚏 da martedì 17 novembre (fino al 30 novembre 2026) è sospeso approdo S. Maria del Giglio per presenza ponte votivo\n🆕 21 e 22 novembre la linea 2 effettuerà straordinariamente la fermata di Salute, dalle 9:50 alle 17:02 in direzione S. Marco e dalle 9:57 alle 17:09 in direzione P.le Roma.\n\n🚌 I servizi di trasporto pubblico urbano (autobus, tram, navigazione e people mover) seguiranno il normale orario feriale. Per la chiusura degli istituti scolastici (21/11) non sono operati i servizi scolastici in area urbano Mestre.\n\n📰 Nella news linee e orari del servizi aggiuntivi https://actv.avmspa.it/it/content/madonna-della-salute-servizi-di-trasporto-pubblico-e-mobilita",
+   "links": [
+    "https://actv.avmspa.it/it/content/madonna-della-salute-servizi-di-trasporto-pubblico-e-mobilita"
+   ],
+   "pubMs": 1794818589000,
+   "url": "https://t.me/muoversivenezia/11914"
+  },
+  {
+   "key": "tg:11929",
+   "id": 11929,
+   "text": "🙏 #muoversivenezia | Madonna della Salute\n\n📆 sabato 21 e domenica 22 novembre 2026\n\n✅ ⛴ sono effettuati collegamenti aggiuntivi linea 1 nel tratto San Tomà-Lido SME e viceversa\n🚏 da martedì 17 novembre (fino al 30 novembre 2026) è sospeso approdo S. Maria del Giglio per presenza ponte votivo\n🆕 21 e 22 novembre la linea 2 effettuerà straordinariamente la fermata di Salute, dalle 9:50 alle 17:02 in direzione S. Marco e dalle 9:57 alle 17:09 in direzione P.le Roma.\n\n🚌 I servizi di trasporto pubblico urbano (autobus, tram, navigazione e people mover) seguiranno il normale orario feriale. Per la chiusura degli istituti scolastici (21/11) non sono operati i servizi scolastici in area urbano Mestre.\n\n📰 Nella news linee e orari del servizi aggiuntivi https://actv.avmspa.it/it/content/madonna-della-salute-servizi-di-trasporto-pubblico-e-mobilita",
+   "links": [
+    "https://actv.avmspa.it/it/content/madonna-della-salute-servizi-di-trasporto-pubblico-e-mobilita"
+   ],
+   "pubMs": 1795110619000,
+   "url": "https://t.me/muoversivenezia/11929"
+  },
+  {
+   "key": "tg:11903",
+   "id": 11903,
+   "text": "#MUOVERSIVENEZIA",
+   "links": [],
+   "pubMs": 1794471961000,
+   "url": "https://t.me/muoversivenezia/11903"
+  },
+  {
+   "key": "tg:11930",
+   "id": 11930,
+   "text": "⚠️ #muoversivenezia ⛴️\n\nCausa incidente sulla Strada Statale Romea e conseguenti difficoltà a raggiungere Venezia da parte dei nostri equipaggi, potrebbero verificarsi saltuari salti corsa nel servizio di navigazione\n\nCi scusiamo per il disagio",
+   "links": [],
+   "pubMs": 1795112869000,
+   "url": "https://t.me/muoversivenezia/11930"
+  },
+  {
+   "key": "tg:11921",
+   "id": 11921,
+   "text": "#muoversivenezia | nota stampa\n\n📢 Conducente Actv aggredito a Mestre sulla linea 8E\n\n🔴 AVM condanna con fermezza il gesto vile\n\nL'azienda esprime piena vicinanza e solidarietà al proprio dipendente e farà quanto in suo potere per assisterlo, sia sul piano personale sia su quello professionale, approfondisci 🔗 https://actv.avmspa.it/it/content/aggressione-un-conducente-actv-mestre",
+   "links": [
+    "https://actv.avmspa.it/it/content/aggressione-un-conducente-actv-mestre"
+   ],
+   "pubMs": 1794949633000,
+   "url": "https://t.me/muoversivenezia/11921"
+  },
+  {
+   "key": "tg:11898",
+   "id": 11898,
+   "text": "🅿️ Park Candiani temporaneamente al completo 🔴\n\n🚗 Posti disponibili al Park Costa e nei piazzali con tariffa strisce blu del Comune di Venezia 🟢\n\n📱 Mappa degli stalli liberi su AVM Venezia Official App\n\n🚲 scelta sostenibile: è possibile raggiungere il centro di Mestre anche in bicicletta con stalli al coperto presso il BiciPark Mestre Candiani\n\n🔗 https://maps.app.goo.gl/sRSV7yTxqxEsfacv6?g_st=ic\n\nBici Park Mestre Candiani · 3.5★(14) · Parking area for bicycles\n\nP.le Luigi Candiani, 34, 30174 Venezia VE, Italy\n\n❤ 1",
+   "links": [],
+   "pubMs": 1794150544000,
+   "url": "https://t.me/muoversivenezia/11898"
+  }
+ ],
+ "pages": {
+  "https://actv.avmspa.it/it/content/venezia-sospensione-approdo-crea": "Venezia: sospensione approdo Crea\n\n17 Novembre 2026\n\nAVM/Actv informa la gentile clientela che, per consentire l’esecuzione di lavori in prossimità degli impianti, come previsto dall’ordinanza comunale n°924 del 17/11/2026 , giovedì 19 e venerdì 20 novembre 2026, dalle ore 08:00 alle ore 17:00 di entrambi i giorni e, comunque, fino al termine dei lavori, verrà sospesa la fermata di Crea.\n\nDurante la sospensione le linee 4.1 e 4.2 effettueranno fermata sostitutiva al vicino impianto di Tre Archi .\n\nUltime partenze da Crea prima della sospensione (entrambi i giorni):\n\n• linea 4.1 alle ore 07:47;\n\n• linea 4.2 alle ore 07:48;\n\nPrime partenze da Crea dopo la sospensione (entrambi i giorni):\n\n• linea 4.1 alle ore 17:07;\n\n• linea 4.2 alle ore 17:08.",
+  "https://actv.avmspa.it/it/content/people-mover-chiusura-temporanea-impianto-manutenzione-0": "People Mover chiusura temporanea impianto per manutenzione\n\n9 Novembre 2026\n\nAVM/Actv informa che mercoledì 18 e 25 novembre 2026 dalle 9:00 alle 17:00 c.a. , l’impianto People Mover rimarrà chiuso per interventi di manutenzione programmata.\n\nDurante tutta la durata della sospensione, sarà possibile accedere al servizio di navigazione di linea 2 e linea N , esclusivamente negli approdi di P.le Roma G, Tronchetto Mercato e Tronchetto e limitatamente alla percorrenza inclusa tra tali fermate, anche con il biglietto automobilistico da € 1,50 .",
+  "https://actv.avmspa.it/it/content/avmactv-informa-sciopero-generale-nazionale-24h-20-novembre-2026": "AVM/Actv informa: sciopero generale nazionale 24h - 20 novembre 2026\n\n6 Novembre 2026\n\nÈ pervenuta alle società AVM, Actv e VeLa da parte della sigla sindacale FILT CGIL - Federazione Italiana Lavoratori Trasporti comunicazione di adesione allo sciopero generale nazionale di tutte le categorie pubbliche e private di 24 ore per venerdì 20 novembre 2026 .\n\nLo sciopero avrà durata di 24 ore e potrà interessare il personale Actv dei servizi di trasporto di navigazione, tranviario e automobilistico, il personale AVM dei parcheggi in struttura e people mover, il personale VeLa della rete vendita Venezia Unica , nonché i servizi ausiliari e di supporto gestiti dalle tre società.\n\nNel servizio navigazione verranno garantiti i servizi minimi di collegamento e alcune corse di nave traghetto (linea 17) per fasce orarie e riservate ai possessori di tessera IMOB su prenotazione obbligatoria .\n\nNAVIGAZIONE\n\nNel servizio navigazione verranno garantiti i servizi minimi di collegamento [ LOCANDINA SERVIZI ] e alcune corse di nave traghetto (linea 17) per fasce orarie e riservate ai possessori di tessera IMOB su prenotazione obbligatoria .\n\nLa linea 17 sarà garantita all’interno dei servizi minimi con le seguenti corse:\n\npartenze da Lido San Nicolò per Tronchetto alle ore 06:40, 08:20, 10:00, 16:40, 18:20 e 20:00\n\npartenze da Tronchetto per Lido S. Nicolò alle ore 07:30, 09:10, 10:50, 15:50, 17:30 e 19:10.\n\nPrenotazione riservata alle sole autovetture (esclusi i mezzi pesanti) di proprietà dei residenti delle isole di Lido e Pellestrina in possesso di Pass IMOB. Le corse sono comunque ad accesso libero, salvo il contingente prenotato, per le altre autovetture secondo l’ordine di arrivo. La prenotazione è obbligatoria, anche per la clientela diversamente abile, per poter accedere al servizio di trasporto nella giornata di sciopero e va effettuata entro e non oltre le ore 23:59 di giovedì 19 novembre tramite i siti www.avmspa.it e www.actv.it (Servizi al cliente//Prenotazioni// Prenota il Servizio Ferryboat Tronchetto Lido) o tramite call center Dime 041041.\n\nNella notte tra il giorno che precede lo sciopero e il giorno di sciopero ultime corse: da Lido S. Nicolò alle 00.20; da Tronchetto alle 00.20. Il servizio riprende regolarmente. Il giorno 21 novembre le corse delle 5.00 da Lido S. Nicolò e da Tronchetto.\n\nServizi aggiuntivi ai servizi minimi\n\nLinea notturna N:\n\nNella notte tra il 19 e il 20 novembre corse da Lido S.M.E. “D” per P.le Roma alle 23.23 e 23.43 (limitata S. Zaccaria), da Rialto “C” per Tronchetto alle 23.54 e da P.le Roma “G” per Tronchetto, Zattere, Giudecca, S. Zaccaria alle 0.10.\n\nLinea 5.1/5.2: collegamento serale Lido S.M.E. - F.te Nove e viceversa:\n\nda Lido S.M.E. “A” corse alle ore 20.36, 21.36, 22.36 e 23.36;\n\nda F.te Nove “D” corse alle ore 21.00, 22.00, 23.00 e 00.00.\n\nLinea 9 : (servizio regolare)\n\n- da Burano “A ” per Torcello corse dalle 9.30 alle 17.45 ai minuti 00-15-30-45;\n\n- da Torcello per Burano corse dalle 9.40 alle 17.55 ai minuti 10-25-40-55.\n\nLinea 13:\n\nda F.te Nove “D” per Treporti corse alle ore 4.25(A), 5.15(A), 8.45, 19.40, 20.40, 21.40, 22.40;\n\nda S. Erasmo Capannone per Treporti corse alle 4.53(A), 5.43(A), 9.13, dalle 9.55 alle 15.55 ai minuti 55 e alle 20.08, 21.08, 22.08, 23.08;\n\nda S. Erasmo Chiesa per Treporti corse alle 6.05, 6.45(B), 7.15, 8.05, 8.45, 9.25, dalle 10.05 alle 16.05 ai minuti 05 e alle ore 16.45, 17.25, 18.05, 20.18, 21.18, 22.18, 23.18;\n\nda S. Erasmo Chiesa per Capannone corse alle 5.10(C), 5.55(C), dalle 9.45 alle 15.45 ai minuti 45 e alle 18.45(C), 21.00(C), 22.00(C), 23.00(C), 00.00(C).\n\nda Treporti per S. Erasmo Capannone corse alle 4.50(C), 6.25(D), 7.08(E), 7.45(D), 8.25(D), dalle 9.25 alle 15.25 ai minuti 25 e alle 16.25(D), 17.05(D), 17.45(D), 18.25(C), 20.40(C), 21.40(C), 22.40(C), 23.40(C).\n\n(A) = corsa limitata a S. Erasmo Chiesa. (B) = corsa limitata a S. Erasmo Punta Vela | (C) = prosegue per F.te Nove. (D) = corsa limitata a S. Erasmo Chiesa | (E) = partenza da S. Erasmo Vela e limitata a S. Erasmo Chiesa\n\nLinea 22: (servizio regolare)\n\nda Punta Sabbioni per San Giobbe corse alle ore 7.00 e 7.30 limitata a F.te Nove;\n\nda San Giobbe per Punta Sabbioni corsa alle ore 13.18.\n\nNel servizio automobilistico e tranviario verranno garantite tutte le corse in partenza dal capolinea a partire dalle ore 06:00 e fino alle ore 08:59 e a partire dalle ore 16:30 fino alle ore 19:29 , non potranno dunque essere garantite le corse di rientro a fine mattinata dagli Istituti Secondari Superiori del territorio.\n\nIl servizio People Mover di collegamento tra Tronchetto-Stazione Marittima-P.le Roma verrà garantito a fasce orarie.\n\nPer i parcheggi in struttura gestiti da AVM (Autorimessa Comunale, Park Sant’Andrea, Park Costa e Park Candiani) vengono garantiti gli ingressi e le uscite di abbonati, titolari di tagliandi disabili e prenotati, ove presenti.\n\nPer la rete vendita Venezia Unica , si ricordano i canali alternativi per l’emissione della tessera Venezia Unica in formato virtuale da utilizzare solo su smartphone tramite AVM Venezia Official App, l’acquisto dei titoli di viaggio tramite canale di pagamento contactless Tap to pay, le applicazioni mobile, il servizio Chat&Go, le emettitrici automatiche, i rivenditori autorizzati, il portale veneziaunica.it e la sperimentazione relativa al nuovo hub digitale mobilità https://avm.avmspa.it/it/content/hub-digitale-mobilit%C3%A0 per l’acquisto di abbonamenti rete urbana.\n\nEventuali servizi aggiuntivi potranno essere predisposti in base all’effettiva adesione da parte del personale in servizio.\n\nPer maggiori informazioni e aggiornamenti consultare nei prossimi giorni i siti actv.it e avmspa.it , i canali social istituzionali @muoversivenezia e il call center Dime 041 041 .\n\nCome da normativa si riportano di seguito le motivazioni dello sciopero generale nazionale e le percentuali di adesione in occasione dell’ultima astensione proclamata dalla medesima sigla sindacale:\n\n“riteniamo inaccettabile la co",
+  "https://actv.avmspa.it/it/content/madonna-della-salute-servizi-di-trasporto-pubblico": "Madonna della Salute: servizi di trasporto pubblico e mobilità\n\n16 Novembre 2026\n\nAVM/Actv informa che in occasione della festa della Madonna della Salute, da inizio servizi di venerdì 20 novembre 2026 sino a fine servizi di lunedì 23 novembre 2026 , l’utilizzo degli impianti della Salute viene modificato come segue:\n\nLinea 1\n\nin direzione P. Roma approderà alla fermata di Salute sussidiario “B”\n\nin direzione Lido approderà alla fermata di Salute principale ”A”\n\nSi ricorda che da dalle ore 07:00 di martedì 17 novembre fino alle ore 17:00 di lunedì 30 novembre 2026 viene sospesa la fermata di S. Maria del Giglio per la presenza del ponte votivo.\n\nInoltre, sabato 21 e domenica 22 novembre 2026, viene effettuato un servizio aggiuntivo di linea 1 limitatamente al tratto S. Tomà – Lido e viceversa con il seguente orario:\n\nPartenze da S. Tomà “A” per Lido S.M.E.:\n\nalle ore 9:33, 9:57, 10:21, 10:45, 10:57, 11:21, 11:45, 12:09, 12:21, 12:45, 13:09, 13:33, 13:45, 14:09, 14:33, 14:57, 15:09, 15:33, 15:57, 16:21, 16:33, 16:57, 17:21, 17:45, 17:57, 18:21.\n\nPartenze da Lido S.M.E. “D” per S. Tomà:\n\nalle ore 9:38, 10:02, 10:14, 10:38, 11:02, 11:26, 11:38, 12:02, 12:26, 12:50, 13:02, 13:26, 13:50, 14:14, 14:26, 14:50, 15:14, 15:38, 15:50, 16:14, 16:38, 17:02, 17:14, 17:38, 18:02, 18:26, 18:38, 19:02.\n\nNelle stessa giornate, la linea 2 effettuerà straordinariamente la fermata di Salute , dalle 9:50 alle 17:02 in direzione S. Marco e dalle 9:57 alle 17:09 in direzione P.le Roma.\n\nMentre i servizi di trasporto pubblico urbano (autobus, tram, navigazione e people mover) seguiranno il normale orario feriale .\n\nPer chiusura delle attività scolastiche vengono sospese le corse da e per gli Istituti Secondari Superiori dei distretti di Mestre Nord e Mestre Sud, restando invece operativi tutti i collegamenti da e per i distretti dell’ambito extraurbano (qualora aperti il sabato) .\n\nInoltre, sabato 21 novembre la sosta su stalli strisce blu di Mestre, Marghera e Lido sarà gratuita . Resta a pagamento la sosta a P.le Roma, San Giuliano e zona VEGA .",
+  "https://actv.avmspa.it/it/content/venezia-sospensione-zattere-b-1": "Venezia: sospensione Zattere \"B\"\n\n19 Novembre 2026\n\nAVM/Actv informa che, per lavori di manutenzione, dalle ore 09:00 alle 12:30 di lunedì 23 novembre 2026 (e comunque fino al termine dei lavori) l’ approdo di Zattere “B” sarà sospeso .\n\nDurante tutto il periodo della sospensione le linee 6, 5.1 e 2 in direzione S.Zaccaria - Lido , utilizzeranno il vicino impianto di Zattere \"A” .\n\nUltimi transiti regolari :\n\nLinea 6 in direzione Lido alle ore 08:53;\n\nLinea 5.1 in direzione Lido alle ore 09:01;\n\nLinea 2 in direzione San Zaccaria alle ore 08:52;",
+  "https://actv.avmspa.it/it/content/aggressione-un-conducente-actv-mestre": "Aggressione a un conducente ACTV a Mestre\n\n17 Novembre 2026\n\nVenezia, 17 novembre 2026 – Ieri pomeriggio, a Mestre Centro, un conducente di ACTV è stato aggredito senza alcun motivo da un passeggero a bordo della linea 8E.\n\nIl mezzo, proveniente da Treviso, era arrivato al capolinea di piazzale Cialdini, dove l'operatore ha comunicato ai passeggeri il termine della corsa, come previsto dal programma di esercizio. Un utente straniero, diretto a Treviso e resosi conto di aver scelto la corsa sbagliata, ha prima alzato la voce contro l'autista e poi lo ha aggredito fisicamente con una bottiglia, che si è infranta sul vetro di protezione danneggiandolo. L'aggressore si è quindi dileguato, salendo su un mezzo MOM diretto nella Marca.\n\nAl momento dell'arrivo della Polizia di Stato l'uomo era ormai lontano. Il conducente è stato affidato alle cure del pronto soccorso.\n\n«Un lavoratore che svolge con serietà e professionalità un servizio essenziale per la collettività è stato colpito per aver fatto semplicemente il proprio dovere. Si tratta di gesti vili, che condanniamo con la massima fermezza e senza alcun distinguo. Nessuna tensione, nessuna incomprensione, nessun disagio può giustificare la violenza contro chi lavora ogni giorno al servizio dei cittadini», dichiara Gruppo AVM.\n\nL'azienda esprime piena vicinanza e solidarietà al proprio dipendente e farà quanto in suo potere per assisterlo, sia sul piano personale sia su quello professionale. Le immagini del sistema di videosorveglianza di bordo saranno messe a disposizione dell'autorità giudiziaria, con l'auspicio che le forze dell'ordine possano individuare rapidamente il responsabile e che questi risponda delle proprie azioni nelle sedi competenti.\n\nAVM ribadisce che la sicurezza del personale viaggiante è una priorità assoluta e che nessuna aggressione contro i propri operatori sarà mai tollerata o sottovalutata."
+ }
+}

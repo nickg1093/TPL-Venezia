@@ -108,7 +108,10 @@ function findDates(text, pubMs, ctx = null) {
     if (elenco && !/[-–—]|\sal\s/.test(r[0]) && nums.some((n, k) => k && n !== nums[k - 1] + 1)) {
       nums.forEach((n, k) => push(String(n), r[4], r[5], r.index + k, end, { lista: true })); used.push([r.index, end]); continue;
     }
-    push(r[1], r[4], r[5], r.index, end, { pair: 'from' }); push(r[3], r[4], r[5], r.index + 1, end, { pair: 'to' }); used.push([r.index, end]);
+    // «giovedì 19 e venerdì 20 novembre, dalle 08:00 alle 17:00 di entrambi i giorni»: giorni consecutivi in elenco (e/virgola, non «-» né «al»).
+    // Si ricorda il gruppo: con una fascia oraria giornaliera parseValidity ne fa giorni separati, senza fascia resta un periodo continuo.
+    const grp = elenco && !/[-–—]|\sal\s/.test(r[0]) && nums.length <= 10 ? nums : undefined;
+    push(r[1], r[4], r[5], r.index, end, { pair: 'from', grp }); push(r[3], r[4], r[5], r.index + 1, end, { pair: 'to', grp }); used.push([r.index, end]);
   }
   for (const r of t.matchAll(new RegExp(`(?<![\\w.,/])(\\d{1,2})\\s*(?:°|º)?\\s+${MON_RE}(?:\\s+(\\d{4}))?(?![\\w])`, 'g'))) {
     if (used.some(([a, b]) => r.index >= a && r.index < b)) continue;
@@ -130,7 +133,7 @@ function findDates(text, pubMs, ctx = null) {
     if ((m = new RegExp(`^\\s*(?:\\d{4})?\\s*,?\\s*(?:\\(?${WD}\\)?\\s*,?\\s*)?(?:dalle ore|dalle|a partire dalle|dall'|alle ore|ore|alle)\\s*(?:ore\\s*)?${TM}(?:\\s*(?:alle|-|–|fino alle)\\s*(?:ore\\s*)?${TM})?`).exec(after))) {
       if (dt.s == null) dt.s = tsec(m[1], m[2]); if (m[3] != null) dt.e = tsec(m[3], m[4]);
     } else if ((m = new RegExp(`^\\s*(?:\\d{4})?\\s*,?\\s*(?:fino|sino) alle\\s*(?:ore\\s*)?${TM}`).exec(after))) dt.e = tsec(m[1], m[2]);
-    if (!dt.role) dt.role = dt.pair || (new RegExp(`(?:\\bal|\\bfino al|\\bsino al|\\bentro il|\\bfino a|\\bentro|\\b(?:fino|sino) al(?:la)? (?:termine|fine) (?:dei servizi|del servizio|della giornata)(?: di| del)?)\\s+(?:${WD}\\s+)?$`).test(before) ? 'to' : 'from');   // anche "fino al termine dei servizi di sabato 30 novembre"
+    if (!dt.role) dt.role = dt.pair || (new RegExp(`(?:\\bal|\\bfino al|\\bsino al|\\bentro il|\\bfino a|\\bentro|\\b(?:fino|sino) a(?:l(?:la)?)? (?:termine|fine) (?:dei servizi|del servizio|della giornata|servizi?o?)(?: di| del)?|\\ba fine servizi?o?(?: di| del)?)\\s+(?:${WD}\\s+)?$`).test(before) ? 'to' : 'from');   // anche "fino al termine dei servizi di sabato 30 novembre", «sino a fine servizi di lunedì 23 novembre"
     dt.dal = new RegExp(`(?:\\bdal|\\bda|a partire dal|a partire da|a decorrere dal)\\s+(?:inizio servizi[oa]? (?:di\\s+)?)?(?:${WD}\\s+)?$`).test(before);
   }
   return out;
@@ -173,7 +176,7 @@ function parseValidity(text, pubMs, kind = 'rss', ctx = null) {
   if (tos.length) to = romeMs(last.y, last.m, last.d, last.e ?? (key(last) === key(first || last) ? g1 : null) ?? 86399);
   else if (untilNotice || (first?.dal && !untilEvent && distinct === 1 && first.e == null && g1 == null)) { to = Math.max(from, romeMs(last.y, last.m, last.d, 0)) + OPEN_ENDED_MS; open = true; }
   else to = romeMs(last.y, last.m, last.d, last.e ?? g1 ?? 86399);
-  if (untilEvent && !open) to = Math.max(to, from + 4 * 3600e3);              // evento senza ora di fine: almeno 4 ore
+  if (untilEvent && !open && last.e == null && g1 == null) to = Math.max(to, from + 4 * 3600e3);   // evento senza ora di fine: almeno 4 ore (con l'ora di fine dichiarata vale quella: «alle 12:30 … e comunque fino al termine dei lavori»)
   if (to <= from) to = Math.max(romeMs(last.y, last.m, last.d, 86399), from + 3600e3);
   // UNA SOLA CORSA in un solo giorno («la corsa di linea 17 delle ore 15:20 … posticipata di un'ora circa», «soppressa la partenza delle 7.10»):
   // l'avviso riguarda quella partenza, non la giornata. Vale fino a 2 ore dopo l'orario della corsa, più il ritardo annunciato.
@@ -188,7 +191,9 @@ function parseValidity(text, pubMs, kind = 'rss', ctx = null) {
   const sameDayEnd = cal.romeYmd(from) === cal.romeYmd(romeMs(last.y, last.m, last.d, 43200));
   // solo giorni di un elenco (nessun «dal… al…»): l'avviso vale in quei giorni, con la stessa fascia oraria se indicata
   const lista = !open && !tos.length && distinct >= 2 && all.every(d => d.lista) ? [...new Map(all.map(d => [key(d), d])).values()] : null;
-  const giorni = lista ? lista.map(d => [romeMs(d.y, d.m, d.d, d.s ?? g0 ?? 0), romeMs(d.y, d.m, d.d, d.e ?? g1 ?? 86399)]).filter(([a, b]) => b > a) : null;
+  let giorni = lista ? lista.map(d => [romeMs(d.y, d.m, d.d, d.s ?? g0 ?? 0), romeMs(d.y, d.m, d.d, d.e ?? g1 ?? 86399)]).filter(([a, b]) => b > a) : null;
+  const g = !lista && !open && all.length && all.every(d => d.grp && d.grp === all[0].grp) ? all[0] : null;
+  if (g) { const s = first?.s ?? g0, e = last.e ?? g1; if (s != null && e != null && e > s) giorni = g.grp.map(n => [romeMs(g.y, g.m, n, s), romeMs(g.y, g.m, n, e)]); }
   return { from, to, open, dated: true, untilEnd: (untilEvent && sameDayEnd && last.e == null && !tos.some(d => d.e != null)) || undefined, ...(giorni?.length >= 2 ? { giorni } : {}) };
 }
 
@@ -559,6 +564,8 @@ async function refreshTg() {
 }
 
 const RELINK_NEWS = /\b(?:ripristin\w*|riattiv\w*|ulterior\w*|aggiornament\w*)\b/;   // messaggio con novità rispetto alla pagina: non si unisce oltre i 2 giorni
+// «per aggiornamenti 👉 <link>», «aggiornamenti 👉», «news in continuo aggiornamento»: rimandi alla pagina, non novità (caso People Mover del 16/11/2026)
+const POINTER_RE = /\b(?:per |info e |info ed |ed? )?(?:in continuo |in costante )?aggiornament\w*(?=[^a-z0-9]*(?:https?:\/\/|sui canali|sul sito|nella news|$))/gm;
 const RELINK_MS = 2 * DAY;   // un messaggio Telegram si unisce alla notizia ACTV che cita solo se pubblicato entro 2 giorni da essa
 const short = (s, n) => { s = String(s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s\S*$/, '') + '…' : s; };
 
@@ -627,8 +634,11 @@ function refOf(A, B) {
   if (B.replyTo && A.ev?.keys.has('tg:' + B.replyTo)) return 'risposta';
   if (A.url && A.url === B.url && !/\/\/(?:t|telegram)\.me\//.test(A.url)) return 'pagina';
   if (B.dated && B.from > B.published + FUTURE_MARGIN_MS && cal.romeYmd(B.from) === cal.romeYmd(A.from)) return 'data';
+  // SCIOPERO annunciato con un messaggio senza data leggibile («🗓 venerdì 202026», 17/11/2026) prima di uno sciopero già noto entro 15 giorni
+  if (!B.dated && A.dated && A.from > B.published && A.from - B.published < 15 * DAY && STRIKE_RE.test(textOf(A)) && STRIKE_RE.test(textOf(B))) return 'sciopero';
   return null;
 }
+const STRIKE_RE = /\bsciopero\b/;
 const explicitRef = (A, B) => !!refOf(A, B);
 // COSA RIPRISTINA il messaggio rispetto all'evento: si guardano solo le frasi di ripristino («la linea 4l riprende regolare. … le linee 9E, 15 deviate»)
 //  'tutte' = l'intero evento · 'parte' = solo alcune delle sue linee (lk) · 'altre' = linee che l'evento non ha (collegamento incerto: nessuna modifica)
@@ -685,7 +695,7 @@ function thread(items) {
       if (ref === 'risposta') { cands.push({ A, ov: overlap(A.words, B.words), ref }); continue; }
       const ov = overlap(A.words, B.words), sameKind = [...A.kinds].some(k => B.kinds.has(k)), common = shares(A.lk, B.lk) || shares(A.stops, B.stops);
       const longA = A.dated && A.to - A.from > DAY;
-      const related = ov >= 0.6 || (!longA && ((sameKind && (common || ov >= 0.3)) || (common && ov >= 0.3))) || (ref === 'data' && sameKind && CANCEL_RE.test(textOf(B)));   // annullamento dello stesso tipo di evento per lo stesso giorno («sciopero del 30 ottobre … servizi regolari»)
+      const related = ov >= 0.6 || (!longA && ((sameKind && (common || ov >= 0.3)) || (common && ov >= 0.3))) || (ref === 'data' && sameKind && CANCEL_RE.test(textOf(B))) || ((ref === 'data' || ref === 'sciopero') && STRIKE_RE.test(textOf(A)) && STRIKE_RE.test(textOf(B)));   // annullamento dello stesso tipo di evento per lo stesso giorno («sciopero del 30 ottobre … servizi regolari»)
       if (!related) continue;
       if (ref !== 'pagina' && B.ai?.relazioni.some(r => r.tipo === 'indipendente' && A.ev.keys.has(r.id))) { B.aiInfo?.campi.push('evento indipendente da ' + A.key); continue; }   // somiglianza di parole, ma per l'AI è un altro evento
       if (startsLater(A, B) && !ref) continue;                               // un evento programmato futuro non si tocca senza riferimento esplicito
@@ -762,7 +772,7 @@ function thread(items) {
         joinEv(ev, B, 'ripristino in corso', certezza, `ripristino in corso: chiusura tecnica alle ${hhmm(B.to)} senza altre comunicazioni`);
         continue;
       }
-      if (A.source !== 'telegram' && B.source === 'telegram' && ov >= 0.5) { A.source = 'both'; A.tgUrl = A.tgUrl || B.tgUrl; B.drop = true; joinEv(ev, B, 'stessa notizia', certezza, 'stessa notizia su Telegram'); break; }   // stessa notizia del sito
+      if (A.source !== 'telegram' && B.source === 'telegram' && (ov >= 0.5 || ((ref === 'data' || ref === 'sciopero') && STRIKE_RE.test(textOf(A)) && !CANCEL_RE.test(textOf(B))))) { A.source = 'both'; A.tgUrl = A.tgUrl || B.tgUrl; B.drop = true; joinEv(ev, B, 'stessa notizia', certezza, 'stessa notizia su Telegram'); break; }   // stessa notizia del sito
       // aggiornamento: B sostituisce A
       if (!B.dated && A.dated) { B.from = Math.min(A.from, B.from); B.to = Math.max(A.to, B.to); B.dated = true; B.open = A.open; B.untilEnd = A.untilEnd; }
       if (!B.lines.length && A.lines.length) { B.lines = A.lines; B.lk = A.lk; }
@@ -783,7 +793,7 @@ function thread(items) {
 const EFFECTS = [
   ['strike', 'Sciopero', 'warning', /\bsciopero\b/],
   ['water', 'Acqua alta', 'warning', /acqua alta|alta marea/],
-  ['no_service', 'Sospeso', 'severe', /\b(?:sospes[oaie]|soppress[oaie]|interrott[oaie]|non (?:effettua|ferma|fermano|transita|transitano|svolge|attiv[oaie])|chius[oaie] (?:al transito|la fermata|il pontile))\b/],
+  ['no_service', 'Sospeso', 'severe', /\b(?:sospes[oaie]|soppress[oaie]|interrott[oaie]|non (?:effettua|ferma|fermano|transita|transitano|svolge|attiv[oaie])|chius[oaie] (?:al transito|la fermata|il pontile)|(?:rimarr\w*|rest\w*|sar[aà]|verr[aà]) chius[oaie])\b/],
   ['detour', 'Deviazione', 'warning', /\b(?:deviat[oaie]|deviazion\w*|percorso alternativo|percors[oi] modificat[oi])\b/],
   ['stop_moved', 'Fermata spostata', 'warning', /\b(?:fermat[ae]|pontil[ei]|capolinea) (?:provvisori[oae]|spostat[oae]|trasferit[oae])|(?:spostat[oae]|trasferit[oae]) (?:la|il|i|le) (?:fermat|pontil|capolinea)/],
   ['delays', 'Ritardi', 'warning', /\b(?:ritard\w*|rallentament\w*|traffico intenso|code)\b/],
@@ -794,7 +804,7 @@ const EFFECTS = [
 function classify(it) {
   if (it.resolved) return { effect: 'resolved', effectLabel: 'Risolto', severity: 'info' };
   if (it.restoring) return { effect: 'restoring', effectLabel: 'Ripristino in corso', severity: 'warning' };   // ripristino progressivo: non ancora regolare
-  const s = noAccents((it.title + ' ' + String(it.text).slice(0, 600)).toLowerCase());
+  const s = noAccents((it.title + ' ' + String(it.fx ?? it.text).slice(0, 600)).toLowerCase());
   if (it.water) { const lv = it.water.level; return { effect: 'water', effectLabel: 'Acqua alta', severity: lv > 140 ? 'severe' : 'warning' }; }
   // SINGOLE CORSE («la corsa delle 7:26 da Altinia per Gritti è soppressa», «la corsa delle 15:20 … posticipata»): riguardano quella partenza, non
   // la linea. Un elenco di modifiche d'orario con una corsa soppressa non è una linea «Sospesa» (avvisi del 6/11/2026: «Automobilistico: modifiche ai servizi»).
@@ -830,6 +840,9 @@ function dropPubDate(body, title, pubMs) {
 
 // NOTIZIE CHE NON SONO AVVISI DI SERVIZIO (avvisi del 6/11/2026: «Actv, chiusa la prima fase delle selezioni per il personale» mostrata tra
 // gli avvisi attivi per un mese): selezioni, bandi, concorsi, bilanci, nomine, premi. Escluse solo se non citano linee né fermate né effetti sul servizio.
+const PARK_FULL = /\b(?:park|parcheggio|autorimessa)\b[^\n]{0,40}\b(?:temporaneamente )?al completo\b/;
+// NOTIZIE STAMPA (aggressioni, solidarietà, report): non sono avvisi anche se citano la linea su cui è successo il fatto (8E, 17/11/2026)
+const PRESS = /\b(?:aggredit\w*|aggression\w*|solidariet\w*|condann\w*|nota stampa|report di sostenibilit\w*|videosorveglianza|customer satisfaction|lavora con noi)\b/;
 const NOT_SERVICE = /\b(?:selezion[ei]|bando|bandi|concors[oi]|candidat[oi]|assunzion[ei]|curricul\w*|bilancio|nomin[ae]|premi(?:o|azione)|intervista|convegno|conferenza stampa|comunicato stampa)\b/;
 
 // COMUNICAZIONI IN USO: archivio (avvisi-archivio.js) + fonti in diretta. Per lo stesso id vale la lettura in diretta (più recente); l'archivio
@@ -956,12 +969,22 @@ function prepare(now, { window = true } = {}) {
   for (const r of src.rss) {
     const body = dropPubDate(src.pages.get(r.url) || r.text, r.title, r.pubMs), corpo = senzaPromemoria(body), full = r.title + '\n' + corpo;
     const it = { key: r.key, id: idOf(r.key), source: 'actv', title: r.title, text: short(body.replace(r.title, '').trim() || r.text, 700), url: r.url, published: r.pubMs,
-      ...interp(ctx, 'rss', r.key, full + '|' + r.pubMs, () => ({ ...parseValidity(full, r.pubMs, 'rss', ctx), ...analyze(r.title, corpo, ctx) })) };
+      ...(corpo !== body ? { fx: short(corpo.replace(r.title, '').trim(), 700) } : {}),   // effetto senza i promemoria («Si ricorda che … è sospesa la fermata di S. Maria del Giglio»)
+      ...interp(ctx, 'rss', r.key, full + '|' + r.pubMs, () => ({ ...strikeDay(r.title, r.pubMs, parseValidity(full, r.pubMs, 'rss', ctx)), ...analyze(r.title, corpo, ctx) })) };
     if (!keep(it)) continue;
     applyAi(it, r, ctx);
     items.push(it); byUrl.set(r.url, it);
   }
-  for (const m of src.tg) {
+  const reposts = new Map();   // testo normalizzato -> avviso: lo stesso messaggio ripubblicato giorni dopo (Madonna della Salute, 16 e 19/11/2026) non è un avviso nuovo
+  for (const m0 of src.tg) {
+    const m = { ...m0, text: String(m0.text || '').replace(/(^|\s)\?{1,4}(?=\s|$)/g, '$1') };   // emoji perse dal canale («? ? SERVIZIO INFOMOBILITÀ ?? ?»)
+    const nt = norm(m.text.replace(/https?:\/\/\S+/g, ' ')), rp = nt.length >= 40 ? reposts.get(nt) : null;
+    // solo per messaggi con una data scritta e un avviso ancora valido: i testi fissi ripetuti («Attivato servizio sostitutivo TRAM…») sono eventi nuovi
+    if (rp && m.pubMs - rp.published <= 14 * DAY && rp.to > m.pubMs && new RegExp(`\\d{1,2}\\s+${MON_RE}`, 'i').test(m.text)) {
+      rp.ev ||= newEv(rp); rp.ev.keys.add(m.key); rp.ev.msgs.push({ key: m.key, url: m.url, fonte: 'telegram', pub: m.pubMs, ruolo: 'stessa notizia', certezza: 'esplicita' });
+      rp.ev.hist.push({ at: m.pubMs, azione: 'stesso messaggio ripubblicato su Telegram', msg: m.key, certezza: 'esplicita' });
+      continue;
+    }
     const links = (m.links || []).map(l => byUrl.has(l) ? l : [...byUrl.keys()].find(u => stessaPagina(u, l)) || l);   // indirizzi allungati -> quello dell'RSS
     // già presente dal sito ACTV: si unisce. MA se il messaggio è molto più recente della notizia a cui rimanda (ACTV aggiorna spesso la stessa
     // pagina, es. "chiusura di via Pio X: ulteriore proroga" datata settembre e riannunciata a novembre), vale il messaggio: date e testo nuovi.
@@ -971,23 +994,26 @@ function prepare(now, { window = true } = {}) {
     if (!first && links.some(l => byUrl.has(l)) && !SERVICE_MSG.test(m.text)) {
       tgv = interp(ctx, 'tgv', m.key, m.text + '|' + m.pubMs, () => parseValidity(m.text, m.pubMs, 'tg', ctx));
       const t = noAccents(m.text.toLowerCase());
-      if (tgv.dated && !tgv.open && !CANCEL_RE.test(t) && !CHANGE_RE.test(t) && !RELINK_NEWS.test(t))
+      if (tgv.dated && !tgv.open && !CANCEL_RE.test(t) && !CHANGE_RE.test(t) && !RELINK_NEWS.test(t.replace(POINTER_RE, ' ')))
         first = links.find(l => { const r = byUrl.get(l); return r && r.dated && !r.open && tgv.from >= r.from && tgv.to <= r.to; });
     }
     if (first) {
-      const it = byUrl.get(first); it.source = 'both'; it.tgUrl = m.url;
+      const it = byUrl.get(first); it.source = 'both'; it.tgUrl = m.url; if (nt.length >= 40) reposts.set(nt, it);
       it.ev ||= newEv(it); it.ev.keys.add(m.key); it.ev.msgs.push({ key: m.key, url: m.url, fonte: 'telegram', pub: m.pubMs, ruolo: 'stessa notizia', certezza: 'esplicita' });
       it.ev.hist.push({ at: m.pubMs, azione: 'stessa notizia su Telegram (link alla pagina ACTV)', msg: m.key, certezza: 'esplicita' });
       continue;
     }
     if (SERVICE_MSG.test(m.text) || !m.text.trim()) continue;                // "… pinned a photo": messaggi di servizio del canale
+    if (cleanTitle(m.text.replace(/#[\p{L}\p{N}_]+/gu, ' ')).replace(/[^\p{L}\p{N}]/gu, '').length < 3) continue;   // solo «#MUOVERSIVENEZIA» (foto senza testo): niente «Avviso» vuoto
+    if (PARK_FULL.test(noAccents(m.text.toLowerCase())) && !/\b(?:linea|linee|fermata|bus|tram|vaporett)/i.test(m.text)) continue;   // «Park Candiani temporaneamente al completo»: parcheggi, non servizio
     const rows = m.text.split('\n').map(s => s.trim()).filter(Boolean), k = rows.findIndex(r => cleanTitle(r).length >= 3);
-    const title = short(cleanTitle(rows[k] ?? '') || 'Avviso', 110), body = rows.slice(k + 1).join(' ');
+    const row = cleanTitle(rows[k] ?? ''), lungo = row.length > 110;            // titolo tagliato: la frase intera resta nel testo («Causa incidente sulla Strada Statale Romea…»)
+    const title = short(row || 'Avviso', 110), body = (lungo ? [row, ...rows.slice(k + 1)] : rows.slice(k + 1)).join(' ');
     const it = { key: m.key, id: idOf(m.key), source: 'telegram', title, text: short(body || title, 700), url: m.links.find(l => /actv|avm/.test(l)) || m.url, tgUrl: m.url,
       published: m.pubMs, ...(m.replyTo ? { replyTo: m.replyTo } : {}),
       ...interp(ctx, 'tg', m.key, m.text + '|' + m.pubMs, () => ({ ...parseValidity(m.text, m.pubMs, 'tg', ctx), ...analyze(title, m.text, ctx) })) };
     if (keep(it)) {
-      applyAi(it, m, ctx); items.push(it);
+      applyAi(it, m, ctx); items.push(it); if (nt.length >= 40) reposts.set(nt, it);
       // PROROGA o VARIAZIONE annunciata su Telegram con il link alla pagina ACTV di una notizia più vecchia (es. via Pio X: pagina di settembre,
       // messaggio di novembre «ulteriormente prorogata»): il messaggio prende il posto della notizia, che non compare più due volte.
       // Solo con riferimento esplicito (stesso link) e parole di variazione; mai per annullamenti (li gestiscono i fili) né per date senza variazione.
@@ -1005,6 +1031,17 @@ function prepare(now, { window = true } = {}) {
   return { items, ctx, ver: src.ver };
 }
 
+// SCIOPERO CON IL GIORNO NEL TITOLO («sciopero generale nazionale 24h - 20 novembre 2026», avvisi del 30/10 e del 20/11/2026): la pagina cita anche
+// date accessorie (prenotazioni «entro le 23:59 di giovedì 19», corse «del giorno 21» dopo la ripresa) che allungavano lo sciopero a tre giorni.
+// Se il titolo nomina un solo giorno, senza orari, l'avviso vale quel giorno.
+function strikeDay(title, pubMs, v) {
+  if (!/\bsciopero\b/i.test(title) || /\d{1,2}[.:]\d{2}/.test(title)) return v;
+  const ds = findDates(title, pubMs); if (ds.length !== 1) return v;
+  const d = ds[0], from = romeMs(d.y, d.m, d.d, 0), to = romeMs(d.y, d.m, d.d, 86399);
+  const { giorni, untilEnd, ...rest } = v;
+  return { ...rest, from, to, open: false, dated: true };
+}
+
 // Elenco finale (API /api/avvisi): avvisi in corso o in arrivo entro 3 giorni, con lo stesso formato della v23
 function build(now = Date.now(), { interni = false } = {}) {   // interni: solo per i test (dati interni dell'evento, es. closure)
   const { items, ctx } = prepare(now);
@@ -1016,8 +1053,9 @@ function build(now = Date.now(), { interni = false } = {}) {   // interni: solo 
     const state = it.from <= now ? 'active' : it.from - now <= UPCOMING_MS ? 'upcoming' : null;
     if (!state) continue;                                                   // troppo lontano nel tempo
     const cl = classify(it);
-    if (cl.effect === 'other' && !it.lines.length && !it.stops.length && NOT_SERVICE.test(noAccents((it.title + ' ' + String(it.text).slice(0, 300)).toLowerCase()))) continue;   // notizie aziendali: non sono avvisi
-    const { drop, words, restoring, closure, key, ev, replyTo, dir, seg, ai, aiInfo, aiEffect, superseded, ...pub } = it; out.push({ ...pub, title: titoloLeggibile(pub.title, ctx), text: testoLeggibile(pub.text), ...(interni ? { closure, eventId: ev?.id } : {}), ...cl, state });
+    const head = noAccents((it.title + ' ' + String(it.text).slice(0, 300)).toLowerCase());
+    if (cl.effect === 'other' && ((!it.lines.length && !it.stops.length && NOT_SERVICE.test(head)) || PRESS.test(head))) continue;   // notizie aziendali e di cronaca: non sono avvisi
+    const { drop, words, restoring, closure, key, ev, replyTo, dir, seg, ai, aiInfo, aiEffect, superseded, fx, ...pub } = it; out.push({ ...pub, title: titoloLeggibile(pub.title, ctx), text: testoLeggibile(pub.text), ...(interni ? { closure, eventId: ev?.id } : {}), ...cl, state });
   }
   out.sort((a, b) => (a.state === b.state ? 0 : a.state === 'active' ? -1 : 1) || SEV[a.severity] - SEV[b.severity] || b.published - a.published);
   return out.slice(0, 40);

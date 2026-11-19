@@ -39,6 +39,14 @@ const C = {
   //   cambi        «Meno cambi»:     un cambio = 20 minuti (meglio aspettare il diretto)
   // «veloce» (prima della v27) vale come «equilibrata».
   PREF: { equilibrata: { TP: 480, WW: 1.5, A: 0.25 }, veloce: { TP: 480, WW: 1.5, A: 0.25 }, cambi: { TP: 1200, WW: 1.5, A: 0.25 }, piedi: { TP: 480, WW: 3, A: 0.25, maxT: 600 } },
+  // CAMMINATE LUNGHE (v33.1, prove sugli orari reali del 19/11/2026): oltre 10 minuti a piedi in tutto, ogni minuto in più pesa un minuto in più
+  // (con «Arrivare prima» 2,5 invece di 1,5). Prima vinceva chi arrivava 5 minuti prima camminando mezz'ora: Mestre → S. Marco con il bus, 13 minuti
+  // a piedi fino a S. Tomà, una sola fermata di battello e altri 16 minuti a piedi, invece del battello fino a S. Marco.
+  WALK_OK_S: 600, WALK_EXTRA: 1,
+  // STABILITÀ (v33.1): due soluzioni con costi a meno di 1 minuto sono equivalenti: si consiglia quella con meno cambi, poi meno strada a piedi;
+  // in tempo reale la «Consigliata» resta la stessa famiglia agli aggiornamenti successivi se costa al massimo 3 minuti più della migliore
+  // (prima cambiava a ogni minuto per pochi secondi di differenza nelle previsioni). Memoria: al massimo 500 tragitti, 10 minuti.
+  TIE_S: 60, STICKY_S: 180, STICKY_MS: 10 * 60e3, STICKY_MAX: 500,
   BY_EARLY_S: 25 * 60,       // «arrivo entro»: niente proposte che fanno partire più di 25 min prima dell'ultima partenza utile (se ce ne sono altre)
   LATE_S: 30 * 60,           // partenza «alle»: niente proposte che arrivano più di 30 min dopo la prima (50 con «meno cambi» o «camminare meno»)
   BETTER_S: 30,              // una soluzione ne rende inutile un'altra se è migliore di almeno 30 s di costo (e non chiede di partire prima)
@@ -62,7 +70,7 @@ const INF = 1e9;
 const SRC = ['aut', 'nav'];
 
 let ctx = null;              // { G(i), state(i), live(i), serviceActive, rows(i, sid, tid, when) }
-const init = c => { ctx = c; IX = null; IXS.clear(); cache.clear(); };   // c.walkDir (facoltativo, per le prove): cartella dei file pedonale-*.txt
+const init = c => { ctx = c; IX = null; IXS.clear(); cache.clear(); STICK.clear(); };   // c.walkDir (facoltativo, per le prove): cartella dei file pedonale-*.txt
 
 // ---------------------------------------------------------------------------------------------------------------------
 // INDICE (una volta per versione dei GTFS)
@@ -381,7 +389,8 @@ function normPref(o = {}) {
     pref, W: C.PREF[pref], escludi: o.escludi?.size ? o.escludi : null, solo: o.solo?.size ? o.solo : null };
 }
 // costo percepito (vedi C.PREF): D = orario di «arrivo entro» (null = partenza «alle» / adesso)
-const cost = (D, arr, leave, cambi, walkS, W, risky = 0) => (D == null ? arr : -leave) + W.A * (arr - leave) + W.TP * cambi + (W.WW - 1) * walkS + C.RISCHIO_PEN_S * risky;
+const cost = (D, arr, leave, cambi, walkS, W, risky = 0) => (D == null ? arr : -leave) + W.A * (arr - leave) + W.TP * cambi + (W.WW - 1) * walkS
+  + C.WALK_EXTRA * Math.max(0, walkS - C.WALK_OK_S) + C.RISCHIO_PEN_S * risky;
 // cambi «a rischio» di una soluzione (orari programmati o aggiornati della ricerca): margine sotto C.RISCHIO_S oltre a quello dell'andatura
 function risky(legs, extra = 0) {
   let n = 0, prev = null, walk = 0;
@@ -516,6 +525,14 @@ function search({ da, a, secs = null, date = null, piediM = null, piediReale = f
 
 const cache = new Map();
 const cached = (key, nowMs, fn) => { const hit = cache.get(key); if (hit && nowMs - hit.at < C.CACHE_MS) return hit.v; const v = fn(); if (cache.size > C.CACHE_MAX) cache.clear(); cache.set(key, { at: nowMs, v }); return v; };
+// famiglia consigliata per tragitto (solo in memoria, nessun dato personale: fermate vicine e preferenze, come la cache), vedi C.STICKY_S
+const STICK = new Map();
+function stickOf(key, nowMs) {
+  return {
+    get: () => { const v = STICK.get(key); return v && nowMs - v.at < C.STICKY_MS ? v.fam : null; },
+    set: fam => { if (STICK.size >= C.STICKY_MAX) { for (const [k, v] of STICK) if (nowMs - v.at >= C.STICKY_MS) STICK.delete(k); if (STICK.size >= C.STICKY_MAX) STICK.clear(); } STICK.delete(key); STICK.set(key, { fam, at: nowMs }); }
+  };
+}
 const timeKey = (secs, nowMs) => (secs == null ? 'now' + Math.floor(nowMs / C.CACHE_MS) : secs);
 
 // da / a: [[ "src:sid", metri ]]; secs/date: orario scelto (null = adesso, tempo reale); piediM: distanza in linea d'aria tra i due punti (facoltativa)
@@ -525,9 +542,10 @@ function plan({ da, a, secs = null, date = null, piediM = null, piediReale = fal
   if (!ctx) throw new Error('pianificatore non inizializzato');
   build(Gs || undefined);
   const nowMs = Date.now(), pr = normPref(prefs);
+  const stick = secs == null ? stickOf(JSON.stringify([IX.key, da, a, piediM, piediReale, prefKey(pr)]), nowMs) : null;   // solo «adesso»
   return cached(JSON.stringify(['p', IX.key, da, a, timeKey(secs, nowMs), date, piediM, piediReale, entro, prefKey(pr)]), nowMs, () => {
     const r = search({ da, a, secs, date, piediM, piediReale, entro, pr, nowMs });
-    return present({ ...r, nowMs, pr });
+    return present({ ...r, nowMs, pr, stick });
   });
 }
 
@@ -569,7 +587,7 @@ function stopInfo(g) {
   return { id, name: G.stops[sid] || sid, lat: Number.isFinite(IX.lat[g]) ? +IX.lat[g].toFixed(5) : null, lon: Number.isFinite(IX.lon[g]) ? +IX.lon[g].toFixed(5) : null };
 }
 // all: tutte le soluzioni in ordine di partenza (alternative «stesso percorso»), senza scegliere tra le famiglie
-function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = normPref(), all = false }) {
+function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = normPref(), all = false, stick = null }) {
   const rowsCache = new Map();
   const out = opts.map(o => {
     const legs = [], rides = o.legs.filter(l => l.t === 'ride');
@@ -641,7 +659,8 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
   //    strada a piedi con i pesi della preferenza (es. scendere per prendere un'altra linea che arriva 30 s prima: costa un cambio, si scarta)
   //    Si toglie solo se l'altra è almeno altrettanto buona sia nella partenza sia nell'arrivo (2 minuti di tolleranza): chi arriva prima resta
   //    proposto anche se la consigliata è un diretto che parte più tardi.
-  const useless = (b, o) => b !== o && b._score <= o._score - C.BETTER_S && b._leave >= o._leave - 120 && b._arr <= o._arr + 120;
+  // (v33.1) chi ha meno cambi si toglie solo se l'altra è migliore di almeno TIE_S + BETTER_S: a costi quasi uguali resta il diretto
+  const useless = (b, o) => b !== o && b._score <= o._score - (o.cambi < b.cambi ? C.TIE_S + C.BETTER_S : C.BETTER_S) && b._leave >= o._leave - 120 && b._arr <= o._arr + 120;
   // ...e rispetto all'andare a piedi: chi arriva dopo chi parte adesso a piedi ha senso solo se diretto e senza lunghe camminate
   // (per chi non vuole camminare), non con cambi o con metà strada comunque a piedi
   const wo = walkOnly != null && walkOnly < INF ? walkOnly : null;
@@ -652,7 +671,8 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
   const firstArr = D != null || !out.length ? 0 : Math.min(...out.map(o => o._arr));
   const early = o => D != null && latestLeave - o._leave > C.BY_EARLY_S;
   const late = o => D == null && o._arr - firstArr > (pr.pref === 'cambi' || pr.pref === 'piedi' ? 50 * 60 : C.LATE_S);
-  const keep = out.filter(o => !out.some(b => useless(b, o)) && !worse(o));
+  const stickFam = stick ? stick.get() : null;                 // la consigliata dell'aggiornamento precedente non si scarta come «inutile» (decide STICKY_S)
+  const keep = out.filter(o => (o.famiglia === stickFam || !out.some(b => useless(b, o))) && !worse(o));
   // 2) famiglie (stesse linee, stesse fermate di salita e discesa): se ne propone una per tipo, la migliore, con gli altri orari della stessa
   const fams = new Map();
   for (const o of keep) (fams.get(o.famiglia) || fams.set(o.famiglia, []).get(o.famiglia)).push(o);
@@ -665,7 +685,19 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
   reps.sort((x, y) => x._score - y._score || x._leave - y._leave);
   // le proposte che fanno arrivare troppo presto si tolgono (restano tra gli «altri orari» di quelle tenute); mai tutte
   const near = reps.filter(o => !early(o) && !late(o));
-  const pick = (near.length ? near : reps).slice(0, C.OPTIONS);
+  const pool = near.length ? near : reps;
+  // costi equivalenti (meno di TIE_S): prima meno cambi, poi meno a piedi
+  if (pool.length > 1) {
+    const b0 = pool[0]._score, eq = pool.filter(o => o._score - b0 < C.TIE_S).sort((x, y) => x.cambi - y.cambi || x.piedi - y.piedi || x._score - y._score);
+    if (eq[0] !== pool[0]) { pool.splice(pool.indexOf(eq[0]), 1); pool.unshift(eq[0]); }
+  }
+  // in tempo reale resta consigliata la famiglia dell'aggiornamento precedente, se è ancora valida e quasi buona come la migliore
+  if (stick && pool.length > 1) {
+    const o = stickFam && pool.find(x => x.famiglia === stickFam && !x.rischio);
+    if (o && o !== pool[0] && o._score - pool[0]._score <= C.STICKY_S) { pool.splice(pool.indexOf(o), 1); pool.unshift(o); }
+  }
+  if (stick && pool.length) stick.set(pool[0].famiglia);
+  const pick = pool.slice(0, C.OPTIONS);
   // 3) etichette: la consigliata (costo più basso con la preferenza scelta), poi chi arriva prima / parte più tardi, meno cambi, meno a piedi
   if (pick.length > 1) {
     const top = pick[0], by = f => pick.reduce((m, o) => (f(o) < f(m) ? o : m), pick[0]);
@@ -679,4 +711,4 @@ function present({ opts, T, live, ymd, nowMs, walkOnly, noStops, D = null, pr = 
 }
 const toS = (hm, T) => { const [h, m] = String(hm).split(':').map(Number); let s = h * 3600 + m * 60; while (s < T - 43200) s += 86400; while (s > T + 43200) s -= 86400; return s; };
 
-module.exports = { init, plan, simili, build, C, _t: { walkTo, raptor, get IX() { return IX; } } };
+module.exports = { init, plan, simili, build, C, _t: { walkTo, raptor, get IX() { return IX; }, clearCache: () => cache.clear() } };

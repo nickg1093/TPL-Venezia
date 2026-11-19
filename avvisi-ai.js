@@ -168,7 +168,7 @@ function romeLocalMs(s) {
 // FRASI CHE OFFRONO UN'ALTERNATIVA («sarà possibile accedere/utilizzare…», «in alternativa…», «i passeggeri potranno utilizzare…»):
 // le linee e le fermate citate lì sono il ripiego consigliato, non il servizio colpito (es. People Mover chiuso -> «linea 2 e linea N» negli
 // approdi di P.le Roma: l'avviso non riguarda i vaporetti 2 e N). Il confine di frase non cade dentro «P.le» o «c.a.» (punto + maiuscola).
-const ALT_RE = /(?:sar[aà]|saranno|e|è|resta|rimane)?\s*possibile\s+(?:accedere|utilizzare|usufruire|servirsi|raggiungere)|in alternativa|si (?:consiglia|invita|suggerisce)\b|potr(?:a|à|anno)\s+(?:essere\s+utilizzat|utilizzare|servirsi)|possono\s+(?:essere\s+utilizzat|utilizzare)/i;
+const ALT_RE = /(?:sar[aà]|saranno|e|è|resta|rimane)?\s*possibile\s+(?:accedere|utilizzare|usufruire|servirsi|raggiungere)|in alternativa|collegament\w*\s+(?:assicurat|garantit)\w*\s+(?:tramite|con|da|dalla|dalle|mediante)|si (?:consiglia|invita|suggerisce)\b|potr(?:a|à|anno)\s+(?:essere\s+utilizzat|utilizzare|servirsi)|possono\s+(?:essere\s+utilizzat|utilizzare)/i;
 function altRanges(s) {
   const out = []; let start = 0;
   for (const m of [...s.matchAll(/\n|[.;!?](?=\s+[A-ZÀ-Ý«"(\d])/g), { index: s.length }]) {
