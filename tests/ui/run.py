@@ -458,7 +458,8 @@ with sync_playwright() as p:
             'tgUrl': 'https://t.me/muoversivenezia/1', 'published': now - 864e5, 'from': now - 3600e3, 'to': now + 6 * 3600e3, 'open': False, 'dated': True, 'lines': [], 'stops': [], 'stopNames': [],
             'effect': 'strike', 'effectLabel': 'Sciopero', 'severity': 'warning', 'state': 'active',
             'sciopero': {'inizio': now - 3600e3, 'fine': now + 6 * 3600e3, 'da': now - 9 * 3600e3, 'fino': now + 12 * 3600e3, 'fasce': [['06:00', '08:59'], ['16:30', '19:29']],
-                         'link': [{'url': 'https://actv.avmspa.it/it/content/sciopero-prova', 'label': 'Comunicato ACTV'}, {'url': 'https://t.me/muoversivenezia/1', 'label': 'Messaggio sul canale Telegram ACTV'}]}})
+                         'link': [{'url': 'https://actv.avmspa.it/it/content/sciopero-prova', 'label': 'Comunicato ACTV'}, {'url': 'https://t.me/muoversivenezia/1', 'label': 'Messaggio sul canale Telegram ACTV'}],
+                         'aggiornamenti': [{'at': now - 600e3, 'testo': 'In linea 2 si aggiungono P.le Roma - Rialto 11:19-11:30', 'url': 'https://t.me/muoversivenezia/2'}]}})
         route.fulfill(response=resp, json=d)
     for name, w, h in SIZES:
         print(f'== sciopero {name} {w}x{h}')
@@ -475,8 +476,14 @@ with sync_playwright() as p:
         txt = page.inner_text('#sciopero')
         check('non sono regolari' in txt and 'programmati' in txt and 'non tutte le corse sono garantite' in txt and '06:00–08:59' in txt, 'scheda: corse non regolari, orari programmati, fasce garantite')
         ls = page.evaluate("[...document.querySelectorAll('#sciopero a')].map(a=>[a.href,a.target,a.rel])")
-        check(len(ls) == 2 and all(t == '_blank' and 'noopener' in r and 'noreferrer' in r for _, t, r in ls), f'link ufficiali in una nuova scheda, noopener noreferrer {ls}')
+        check(len(ls) == 3 and 'actv.avmspa.it' in ls[0][0] and all(t == '_blank' and 'noopener' in r and 'noreferrer' in r for _, t, r in ls), f'link ufficiali (primo: comunicato ACTV) in una nuova scheda, noopener noreferrer {ls}')
         check(page.evaluate("document.activeElement && document.activeElement.id") == 'sciopero-ok', 'fuoco su «Ho capito»')
+        check('In linea 2 si aggiungono' in txt and 'Aggiornamenti ACTV' in txt, 'scheda: aggiornamenti Telegram sulle corse')
+        # v33.4: simboli visibili (un sprite.svg non valido li rendeva tutti vuoti): file XML valido e disegno con area > 0
+        sp = page.evaluate("""fetch('/icons/sprite.svg').then(r=>r.text()).then(t=>{const d=new DOMParser().parseFromString(t,'image/svg+xml');return {err:!!d.querySelector('parsererror'),strike:!!d.getElementById('i-strike')}})""")
+        check(sp['err'] is False and sp['strike'], f'sprite.svg valido con il simbolo dello sciopero {sp}')
+        ic = page.evaluate("""(()=>{const u=document.querySelector('#sciopero-btn use');const b=u&&u.getBBox();return b?[b.width,b.height]:null})()""")
+        check(ic and ic[0] > 0 and ic[1] > 0, f'icona del pulsante «Sciopero» disegnata {ic}')
         page.screenshot(path=str(OUT / f'sciopero-{name}-1-scheda.png'))
         page.click('#sciopero-ok'); page.wait_for_timeout(300)
         check(rectf(page, '#sciopero') is None and page.evaluate("!!localStorage.getItem('tpl.sciopero')"), '«Ho capito» chiude e lo ricorda')
@@ -496,6 +503,9 @@ with sync_playwright() as p:
         page.go_back(); page.wait_for_timeout(500); check(rectf(page, '#sciopero') is None and BASE in page.url, '«indietro» chiude la scheda (e resta nell\'app)')
         page.goto(BASE + '/?fermata=nav:5031'); page.wait_for_selector('#plist .strike-note', timeout=30000)
         check('programmati' in page.inner_text('#plist .strike-note'), 'pannello fermata: avvertenza dello sciopero')
+        page.wait_for_timeout(300)
+        ni = page.evaluate("""(()=>{const u=document.querySelector('#plist .strike-note use');const b=u&&u.getBBox();const s=u&&u.closest('svg').getBoundingClientRect();return b?[b.width,b.height,s.width,s.height]:null})()""")
+        check(ni and min(ni) > 0, f'icona nella nota dello sciopero disegnata {ni}')
         pb2, b2, pn = rect(page, '#plan-btn'), rect(page, '#sciopero-btn'), rect(page, '#panel')
         check(not overlap(b2, pn) and (b2 is None) == (pb2 is None), f'con il pannello aperto «Sciopero» segue «Percorso» e non copre il pannello ({b2})')
         check(not errs, 'sciopero: nessun errore ' + str(errs[:2]))

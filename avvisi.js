@@ -678,9 +678,29 @@ function refOf(A, B) {
   if (B.dated && B.from > B.published + FUTURE_MARGIN_MS && cal.romeYmd(B.from) === cal.romeYmd(A.from)) return 'data';
   // SCIOPERO annunciato con un messaggio senza data leggibile («🗓 venerdì 202026», 17/11/2026) prima di uno sciopero già noto entro 15 giorni
   if (!B.dated && A.dated && A.from > B.published && A.from - B.published < 15 * DAY && STRIKE_RE.test(textOf(A)) && STRIKE_RE.test(textOf(B))) return 'sciopero';
+  // ... e i messaggi sullo sciopero nel giorno stesso (aggiornamenti «+++ aggiornamento 20/11 +++», corse aggiuntive) fino alla fine degli effetti
+  if (A.dated && B.published >= A.from - 15 * DAY && B.published < A.to + 6 * 3600e3 && (!B.dated || cal.romeYmd(B.from) === cal.romeYmd(A.from))
+    && STRIKE_RE.test(textOf(A)) && STRIKE_RE.test(textOf(B))) return 'sciopero';
   return null;
 }
 const STRIKE_RE = /\bsciopero\b/;
+// fine dello sciopero prima del previsto: solo parole esplicite di revoca, annullamento, differimento, rinvio o precettazione
+const STRIKE_STOP_RE = /\b(?:revoc\w*|annullat\w*|annullament\w*|differit\w*|differiment\w*|rinviat\w*|rinvio dello sciopero|precettat\w*|precettazion\w*|sospensione dello sciopero|sciopero (?:e |è )?(?:stato )?sospeso|confermat\w* come regolar\w*)\b/;
+const STRIKE_UPD_RE = /\b(?:aggiornament\w*|aggiuntiv\w*|si aggiung\w*|effettuat\w*|soppress\w*|non garantit\w*|variazion\w*)\b/;
+const isStrikeIt = it => !it.resolved && STRIKE_RE.test(textOf(it)) && classify(it).effect === 'strike';
+// testo dell'aggiornamento Telegram senza l'intestazione ripetuta («⚠️ #muoversivenezia | SCIOPERO … 🗓 venerdì 20 novembre +++ aggiornamento +++»)
+function strikeUpdText(A, B) {
+  let t = String(B.text || '').replace(/\s+/g, ' ').trim();
+  const title = String(B.title || '').trim();
+  if (title && !STRIKE_RE.test(noAccents(title.toLowerCase())) && !GENERIC_TITLE.test(norm(title)) && title !== A.title) t = title + ' ' + t;
+  t = t.replace(/^.*?\+{2,}\s*aggiornamento[^+]*\+{2,}\s*/i, '')
+    .replace(/^(?:[#⚠️🗓📆🚍🚊⛴\s|]|muoversivenezia)*(?:sciopero[^🗓\n]{0,80})?/iu, '')
+    .replace(/^🗓?\s*(?:luned|marted|mercoled|gioved|venerd|sabato|domenica)\w*\s+\d{1,2}\s+\w+\s+\d{4}\s*/iu, '').trim();
+  if (t.length < 12) return null;
+  const same = overlap(wordsOf({ title: '', text: t }), wordsOf(A));
+  if (same >= 0.6) return null;                                            // stessa notizia ripetuta: nessun aggiornamento nuovo
+  return { at: B.published, testo: t.length > 700 ? t.slice(0, 697) + '…' : t, url: safeUrl(B.tgUrl || B.url) || null };
+}
 const explicitRef = (A, B) => !!refOf(A, B);
 // COSA RIPRISTINA il messaggio rispetto all'evento: si guardano solo le frasi di ripristino («la linea 4l riprende regolare. … le linee 9E, 15 deviate»)
 //  'tutte' = l'intero evento · 'parte' = solo alcune delle sue linee (lk) · 'altre' = linee che l'evento non ha (collegamento incerto: nessuna modifica)
@@ -787,6 +807,27 @@ function thread(items) {
         B.resolved = true; B.to = B.published + 3600e3; B.from = Math.min(B.from, B.published); B.stops = []; B.stopNames = []; if (!B.lines.length) B.lines = A.lines;
         continue;
       }
+      // SCIOPERO: i messaggi Telegram successivi (aggiornamenti sulle corse effettuate o soppresse, risposte, ripetizioni) restano DENTRO l'evento:
+      // l'avviso principale (pagina ACTV, fasce garantite, link) non viene mai sostituito; si nasconde solo per revoca o differimento espliciti.
+      if (B.source === 'telegram' && isStrikeIt(A)) {
+        if (STRIKE_STOP_RE.test(textOf(B))) {
+          A.to = Math.max(Math.min(A.to, B.published), A.from); A.closure = 'esplicita'; ev.chiusura = 'revocato'; A.drop = true;
+          B.resolved = true; B.to = B.published + 3600e3; B.from = Math.min(B.from, B.published); B.stops = []; B.stopNames = []; if (!B.lines.length) B.lines = A.lines;
+          joinEv(ev, B, 'revoca', certezza, 'sciopero revocato o differito');
+          continue;
+        }
+        if (A.source !== 'telegram') A.source = 'both';
+        A.tgUrl = B.tgUrl || A.tgUrl;
+        if (!A.fasce?.length && B.fasce?.length) A.fasce = B.fasce;
+        if (B.xl) A.xl = [...new Set([...(A.xl || []), ...B.xl])].slice(0, 4);
+        // annuncio ripetuto prima del giorno (fasce garantite) = stessa notizia; dal giorno dello sciopero, o con parole di aggiornamento, è un aggiornamento
+        const isUpd = ref === 'risposta' || B.published >= A.from - STRIKE_PRE_MS || STRIKE_UPD_RE.test(textOf(B));
+        const upd = isUpd ? strikeUpdText(A, B) : null;
+        if (upd) { A.upd = [...(A.upd || []).filter(u => u.url !== upd.url), upd].slice(-6); A.updated = (A.updated || 0) + 1; }
+        B.drop = true; B.resolved = undefined;
+        joinEv(ev, B, upd ? 'aggiornamento' : 'stessa notizia', certezza, upd ? 'aggiornamento dello sciopero' : 'stessa notizia su Telegram');
+        break;
+      }
       if (closing || restoring) {
         // ripristino PARZIALE: una direzione o un tratto che l'avviso non dichiara (l'avviso resta invariato) ...
         if ((B.dir && !A.dir) || (B.seg && !A.seg) || (closing && B.aiPartial)) { B.partial = true; joinEv(ev, B, 'ripristino parziale', certezza, 'ripristino parziale (direzione o tratto): evento ancora aperto'); continue; }
@@ -820,6 +861,10 @@ function thread(items) {
       if (!B.lines.length && A.lines.length) { B.lines = A.lines; B.lk = A.lk; }
       if (!B.stops.length && A.stops.length) { B.stops = A.stops; B.stopNames = A.stopNames; }
       if (!B.water && A.water) B.water = A.water;
+      if (A.upd) B.upd = [...A.upd, ...(B.upd || [])].slice(-6);
+      if (!B.fasce?.length && A.fasce?.length) B.fasce = A.fasce;
+      if (A.xl) B.xl = [...new Set([...(B.xl || []), ...A.xl])].slice(0, 4);
+      if (!B.tgUrl && A.tgUrl) B.tgUrl = A.tgUrl;
       B.updated = (B.updated || 0) + 1 + (A.updated || 0); A.drop = true; ev.head = B; ev.chiusura = null;
       joinEv(ev, B, 'aggiornamento', certezza, 'aggiornato');
     }
@@ -1130,7 +1175,7 @@ function strikeMeta(it) {
   for (const u of it.xl || []) if (!link.some(l => l.url === u)) link.push({ url: u, label: /\.pdf(?:$|[?#])/i.test(u) ? 'Documento ACTV (PDF)' : 'Pagina ACTV' });
   const tg = safeUrl(it.tgUrl || (/\/\/(?:t|telegram)\.me\//.test(it.url) ? it.url : ''));
   if (tg) link.push({ url: tg, label: 'Messaggio sul canale Telegram ACTV' });
-  return { inizio: it.from, fine: it.to, da: it.from - STRIKE_PRE_MS, fino, fasce: it.fasce || [], link: link.slice(0, 5) };
+  return { inizio: it.from, fine: it.to, da: it.from - STRIKE_PRE_MS, fino, fasce: it.fasce || [], link: link.slice(0, 5), aggiornamenti: (it.upd || []).slice().reverse() };
 }
 
 // SCIOPERO CON IL GIORNO NEL TITOLO («sciopero generale nazionale 24h - 20 novembre 2026», avvisi del 30/10 e del 20/11/2026): la pagina cita anche
@@ -1158,7 +1203,7 @@ function build(now = Date.now(), { interni = false } = {}) {   // interni: solo 
     const cl = classify(it);
     const head = noAccents((it.title + ' ' + String(it.text).slice(0, 300)).toLowerCase());
     if (cl.effect === 'other' && ((!it.lines.length && !it.stops.length && NOT_SERVICE.test(head)) || PRESS.test(head))) continue;   // notizie aziendali e di cronaca: non sono avvisi
-    const { drop, words, restoring, closure, key, ev, replyTo, dir, seg, ai, aiInfo, aiEffect, superseded, fx, fasce, xl, ...pub } = it; const ambito = ambitoOf(it, cl);
+    const { drop, words, restoring, closure, key, ev, replyTo, dir, seg, ai, aiInfo, aiEffect, superseded, fx, fasce, xl, upd, ...pub } = it; const ambito = ambitoOf(it, cl);
     out.push({ ...pub, title: titoloLeggibile(pub.title, ctx), text: testoLeggibile(pub.text), ...(interni ? { closure, eventId: ev?.id } : {}), ...cl, ...(ambito ? { ambito } : {}), ...(strike ? { sciopero: strike } : {}), state });
   }
   out.sort((a, b) => (a.state === b.state ? 0 : a.state === 'active' ? -1 : 1) || SEV[a.severity] - SEV[b.severity] || b.published - a.published);

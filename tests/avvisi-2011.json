@@ -1,0 +1,46 @@
+{
+ "nota": "Messaggi Telegram ACTV del 20/11/2026 (giorno dello sciopero), dall archivio archivio-avvisi (f5986c5): 11931/11933 tram T2, 11932/11934 aggiornamenti dello sciopero. 11936 (risposta a 11934) ricostruito dal testo mostrato da /api/avvisi online alle 11:10: con la v32.4 sostituiva l avviso dello sciopero.",
+ "tg": [
+  {
+   "key": "tg:11931",
+   "id": 11931,
+   "text": "🚌 🚊 SERVIZIO INFOMOBILITÀ ⚠\n\nAttivato servizio automobilistico sostitutivo TRAM Linea T2 nel tratto MESTRE CENTRO - MARGHERA direzione Marghera.\n\n🔗 http://bit.ly/ServiziSostitutiviTram",
+   "links": [],
+   "pubMs": 1795158339000,
+   "url": "https://t.me/muoversivenezia/11931"
+  },
+  {
+   "key": "tg:11932",
+   "id": 11932,
+   "text": "⚠️ #muoversivenezia | SCIOPERO GENERALE NAZIONALE 24H 🚍 🚊 ⛴\n🗓 venerdì 20 novembre 2026\n\n+++++ aggiornamento 20/11/2026++++++++\nQuesti i servizi aggiuntivi effettuati con personale non scioperante\n\nNAVIGAZIONE\nLinea 3\n\nPartenze da Piazzale Roma: 07:20 – 07:50 – 08:20 – 08:50 – 09:20 – 09:50\nPartenze da M. Museo: 07:48 – 08:18 – 08:48 – 09:18 – 09:48 – 10:18\n\nPUNTI VENDITA VENEZIA UNICA\n• P. Roma automobilistico 6.00 - 21.00\n• Ferrovia Scalzi 8.00 - 19.00\n• Rialto (linea 2) 7.00 - 20.00\n• San Zaccaria Danieli 8.30 - 18.50\n• Lido SME 7.30 - 19.00\n• F.tE Nove 8.00 - 19.00\n• P.ta Sabbioni 7.00 - 17.00\n• Mestre Cialdini 8.30 - 19.00\n• Aeroporto 8.30 - 15.20\n• Tronchetto M/Z 5.40 - 12.30 / 13.40 - 20.30\n• Lido M/Z 5.50 - 12.40 / 13.20 - 20.10",
+   "links": [],
+   "pubMs": 1795158617000,
+   "url": "https://t.me/muoversivenezia/11932"
+  },
+  {
+   "key": "tg:11933",
+   "id": 11933,
+   "text": "🚌 🚊 SERVIZIO INFOMOBILITÀ ⚠\n\nAttivato servizio automobilistico sostitutivo TRAM Linea T2 nel tratto MARGHERA - MESTRE CENTRO direzione Mestre.\n\n🔗 http://bit.ly/ServiziSostitutiviTram",
+   "links": [],
+   "pubMs": 1795159480000,
+   "url": "https://t.me/muoversivenezia/11933"
+  },
+  {
+   "key": "tg:11934",
+   "id": 11934,
+   "text": "⚠️ #muoversivenezia | SCIOPERO GENERALE NAZIONALE 24H 🚍 🚊 ⛴\n🗓 venerdì 20 novembre 2026\n\n+++++ aggiornamento 20/11/2026++++++++\nQuesti i servizi aggiuntivi effettuati con personale non scioperante\n\n-Linea 2\nFerrovia - Rialto: 8:40\nP.le Roma – Rialto: dalle 09:09 alle 11:09, ogni 10 minuti;\nRialto – P.le Roma: dalle 09:30 alle 11:30, ogni 10 minuti.",
+   "links": [],
+   "pubMs": 1795159725000,
+   "url": "https://t.me/muoversivenezia/11934"
+  },
+  {
+   "key": "tg:11936",
+   "id": 11936,
+   "text": "In linea 2 si aggiungono\nP.le Roma - Rialto 11:19-11:30\nRialto - P.le Roma 11:40-12:00",
+   "links": [],
+   "pubMs": 1795168070000,
+   "url": "https://t.me/muoversivenezia/11936",
+   "replyTo": 11934
+  }
+ ]
+}

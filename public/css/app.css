@@ -519,6 +519,13 @@ button.chip.all{min-height:30px}
 #sciopero-body .st-fasce{padding:8px 10px;border-radius:var(--r-sm);background:color-mix(in srgb,var(--late) 10%,transparent)}
 #sciopero-body ul{margin:6px 0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:6px}
 #sciopero-body a{display:inline-flex;align-items:center;gap:6px;min-height:44px;font-weight:600}
+.st-upd{margin:10px 0;padding:8px 10px;border-left:3px solid var(--late);border-radius:var(--r-sm);background:color-mix(in srgb,var(--late) 6%,transparent);overflow-wrap:anywhere}   /* aggiornamenti Telegram dello sciopero (v33.4) */
+.st-upd p{margin:0 0 4px}
+.st-upd ul{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+.st-upd li small{color:var(--muted);font-weight:600;margin-right:4px}
+.st-upd a,#sciopero-body .st-upd a{display:inline-flex;align-items:center;gap:4px;min-height:32px;font-weight:600}
+.av .st-links{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:4px 14px}
+.av .st-links a{display:inline-flex;align-items:center;gap:6px;min-height:44px;font-weight:600}
 .strike-acts{display:flex;justify-content:flex-end;padding:4px 20px 16px}
 .strike-acts .btn{min-height:48px;min-width:140px}
 .strike-note{display:flex;align-items:flex-start;gap:8px;margin:8px 2px;padding:8px 10px;border-radius:var(--r-sm);font-size:var(--fs-xs);line-height:1.45;

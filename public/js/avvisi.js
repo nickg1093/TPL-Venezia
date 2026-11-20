@@ -125,6 +125,9 @@ export function strikeTitle(a, t = now()) {
 }
 const scLinks = a => (a.sciopero.link || []).filter(l => safeUrl(l.url))
   .map(l => `<li><a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${icon('ext', 'sm')}<span>${esc(l.label || 'Avviso ACTV')}</span></a></li>`).join('');
+// aggiornamenti del giorno dal canale Telegram ACTV (corse aggiuntive, effettuate o soppresse): sempre dentro la scheda dello sciopero
+const scUpd = a => (a.sciopero.aggiornamenti || []).filter(u => u && u.testo).slice(0, 4);
+const scUpdHtml = a => { const u = scUpd(a); return u.length ? `<div class="st-upd"><p><b>Aggiornamenti ACTV sulle corse</b></p><ul>${u.map(x => `<li><small>${esc(Number.isFinite(x.at) ? `${dayOf(x.at)}, ${hmOf(x.at)}` : '')}</small> ${esc(x.testo)}${safeUrl(x.url) ? ` <a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${icon('ext', 'sm')}<span>messaggio</span></a>` : ''}</li>`).join('')}</ul></div>` : ''; };
 // contenuto della scheda (tutto il testo passa da esc; link solo ACTV/Telegram)
 export function strikeCardHtml(a, t = now()) {
   const x = a.sciopero, p = scPhase(a, t), f = x.fasce || [];
@@ -136,14 +139,16 @@ export function strikeCardHtml(a, t = now()) {
     + `<p>Gli orari che vedi nell'app sono quelli <b>programmati</b> (o previsti dal tempo reale, dove i mezzi trasmettono la posizione): <b>non tutte le corse sono garantite o effettuate</b>.</p>`
     + (f.length ? `<p class="st-fasce">Fasce garantite indicate da ACTV: <b>${f.map(([s, e]) => `${esc(s)}–${esc(e)}`).join(' · ')}</b>. Controlla nel comunicato a quali servizi si riferiscono (autobus, tram, navigazione).</p>` : '')
     + `<p>Per le fasce di garanzia e gli aggiornamenti fa fede ACTV:</p><ul>${scLinks(a) || '<li>Comunicato non disponibile: controlla il sito ACTV.</li>'}</ul>`
+    + scUpdHtml(a)
     + `<p class="muted">Puoi riaprire questa scheda dal pulsante «Sciopero» sulla mappa.</p>`;
 }
 // nota per i pannelli fermata/corsa e per il pianificatore (data-sciopero apre la scheda)
 export function strikeNoteHtml(a, ctx = 'orari') {
   if (!a) return '';
   const day = dayOf(a.sciopero.inizio);
+  const u = scUpd(a)[0], agg = u && Number.isFinite(u.at) ? ` Ultimo aggiornamento ACTV alle ${hmOf(u.at)}.` : '';
   const txt = ctx === 'viaggio' ? 'il viaggio cade durante lo sciopero: le corse indicate possono non essere effettuate.' : 'gli orari mostrati sono programmati e alcune corse possono essere soppresse.';
-  return `<p class="strike-note" role="note">${icon('strike', 'sm')}<span><b>Sciopero ${esc(day)}</b>: ${esc(txt)} <button type="button" class="nlink" data-sciopero>Dettagli e fasce garantite</button></span></p>`;
+  return `<p class="strike-note" role="note">${icon('strike', 'sm')}<span><b>Sciopero ${esc(day)}</b>: ${esc(txt + agg)} <button type="button" class="nlink" data-sciopero>Dettagli e fasce garantite</button></span></p>`;
 }
 
 function render() {
@@ -161,7 +166,8 @@ function render() {
       + (a.water ? `<div class="av-plan"><strong>Piano acqua alta ACTV per +${esc(a.water.level)} cm</strong>${waterSrc(a.water)}<ul>${(a.water.plan || []).map(x => `<li>${esc(x)}</li>`).join('')}</ul><a href="${esc(a.water.url)}" target="_blank" rel="noopener noreferrer">Servizi di navigazione previsti</a> · verifica sempre l'avviso ufficiale.</div>` : '')
       + ((a.lines || []).length ? `<div class="av-lines"><span class="muted">Linee</span>${a.lines.map(l => badge(l.n, l.c, l.s)).join('')}</div>` : '')
       + ((a.stopNames || []).length ? `<div class="av-stops"><span class="muted">${a.stopNames.length === 1 ? 'Fermata' : 'Fermate'} ${icon('warn', 'sm')}</span>${a.stopNames.map(s => `<span class="av-stop">${srcIcon(s.s, 'sm')}${esc(s.n)}</span>`).join('')}</div>` : '')
-      + (links ? `<div class="av-links">${links}</div>` : '') + '</article>';
+      + (okSc(a) ? (scLinks(a) ? `<ul class="st-links">${scLinks(a)}</ul>` : '') + scUpdHtml(a) : '')
+      + (links && !okSc(a) ? `<div class="av-links">${links}</div>` : '') + '</article>';
   };
   body.innerHTML = (data.stale ? '<p class="av-note" role="status">Gli avvisi non si aggiornano da un po\': potrebbero non essere completi.</p>' : '')
     + (act.length ? `<h2 class="av-h">In corso</h2>${act.map(item).join('')}` : '<p class="muted pad">Nessun avviso in corso.</p>')

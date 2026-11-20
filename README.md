@@ -291,6 +291,10 @@ ripresenta da solo gli avvisi attivi (`/api/watch/restore`), all'apertura dell'a
   segue i suoi spostamenti e si nasconde quando lui non si vede: pannello aperto sul telefono, tastiera, scelta sulla mappa), rosso ad alto
   contrasto nei due temi, con un lampeggio discreto spento da «riduci movimento»; **avvertenza** nei pannelli fermata/corsa e nel pianificatore
   (elenco e dettaglio) quando gli orari cadono nella finestra dello sciopero. Nessuna richiesta in più al server: i dati sono in `/api/avvisi`.
+  **Giorno dello sciopero (v32.5)**: i messaggi Telegram successivi al comunicato (aggiornamenti «+++ aggiornamento +++», corse aggiuntive,
+  effettuate o soppresse, risposte a un messaggio dello sciopero) **restano dentro l'avviso** (`sciopero.aggiornamenti`, dal più recente) e
+  non lo sostituiscono più: titolo, fasce e **link al comunicato ACTV** (sempre il primo) restano quelli dell'avviso principale. L'avviso si
+  toglie solo per **revoca, annullamento, differimento, rinvio o precettazione** scritti nel messaggio (`STRIKE_STOP_RE`).
 - **Marea**: livello CPSM, tendenza, prossimi estremi, grafico con cursore.
 - **Programmato** (barra in basso): posizioni e orari di un altro giorno o di un'altra ora, con riproduzione accelerata.
 - **Guida**: alla prima apertura e, dopo un aggiornamento, solo le novità (`guida.js`, `GUIDA_VER = 'v31'`).
@@ -556,7 +560,20 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ---
 
-## 12. Novità della v32.4
+## 12. Novità della v32.5
+
+- **v32.5 (20/11/2026)**: correzioni dello sciopero. (1) Con la v32.4 online, la mattina del 20/11 gli aggiornamenti
+  Telegram (11932, 11934 e la risposta 11936 «In linea 2 si aggiungono») sostituivano l'avviso dello sciopero: l'avviso diventava un «Avviso»
+  qualsiasi, senza link ACTV, e scheda, pulsante e avvertenze sparivano. Ora gli aggiornamenti restano dentro l'avviso (scheda dello sciopero,
+  elenco Avvisi, «Ultimo aggiornamento ACTV alle …» nelle avvertenze) e l'avviso si toglie solo per revoca o differimento espliciti; anche i
+  messaggi del giorno stesso si collegano allo sciopero. (2) Il link al comunicato ACTV resta sempre il primo (scheda, elenco Avvisi).
+  (3) Icone: nella v32.4 il simbolo `i-strike` era finito **dopo** la chiusura `</svg>` di `public/icons/sprite.svg`: il file non era più
+  XML valido e **tutte** le icone dell'app risultavano vuote. Simbolo rimesso dentro; nuova prova `tests/icone.test.js` (file valido, ogni
+  icona usata esiste) e controllo in `tests/ui/run.py` (icone del pulsante e delle avvertenze con area > 0). File: `avvisi.js`,
+  `public/js/avvisi.js`, `public/css/app.css`, `public/icons/sprite.svg`; prove in `tests/avvisi.test.js` (+ `tests/avvisi-2011.json`),
+  `tests/icone.test.js`, `tests/ui/run.py`.
+
+## Novità della v32.4
 
 - **v32.4 (20/11/2026)**: gestione dello sciopero ad alta visibilità (§3.7): finestra da 8 ore prima alle 05:00 del giorno dopo, fasce
   garantite e link ufficiali dal comunicato, scheda all'accesso con memoria della chiusura, pulsante «Sciopero» sopra «Percorso», avvertenze in

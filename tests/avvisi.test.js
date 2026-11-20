@@ -415,4 +415,45 @@ test('promemoria di un altro avviso («Si ricorda che…») non dà date, linee 
     assert.ok(x.link.some(l => l.label === 'Documento ACTV (PDF)' && /sciopero-20-11\.pdf$/.test(l.url)), JSON.stringify(x.link));
     assert.ok(!x.link.some(l => /bit\.ly/.test(l.url)));
   });
+
+  // v33.4 — GIORNO DELLO SCIOPERO (tests/avvisi-2011.json): con la v32.4 gli aggiornamenti Telegram sostituivano l'avviso dello sciopero
+  // (la risposta 11936 «In linea 2 si aggiungono» diventava un avviso «Avviso» qualsiasi, senza link ACTV, e lo sciopero spariva dall'app)
+  const D = require('./avvisi-2011.json');
+  const day = (now, extra = []) => { A.setContext(() => ctx); A.setTideSource(() => null); A._load({ rss: J.rss, tg: [...J.tg, ...D.tg.filter(m => m.pubMs <= now), ...extra], pages: J.pages }); return A.build(now); };   // solo i messaggi già pubblicati
+  test('sciopero · resta visibile tutto il giorno anche dopo gli aggiornamenti Telegram (11932, 11934, risposta 11936)', () => {
+    for (const t of ['2026-11-20T08:30:00+01:00', '2026-11-20T11:15:00+01:00', '2026-11-20T23:00:00+01:00', '2026-11-21T04:30:00+01:00']) {
+      const s = day(at(t)).filter(o => o.effect === 'strike');
+      assert.equal(s.length, 1, t); assert.equal(s[0].state, 'active', t);
+    }
+    const all = day(at('2026-11-20T11:15:00+01:00'));
+    assert.ok(!all.some(o => /si aggiungono|servizi aggiuntivi/i.test(o.title) && o.effect !== 'strike'), 'nessun aggiornamento come avviso separato');
+  });
+  test('sciopero · gli aggiornamenti sulle corse sono dentro l\'avviso, dal più recente', () => {
+    const x = day(at('2026-11-20T11:15:00+01:00')).find(o => o.effect === 'strike').sciopero;
+    assert.deepEqual(x.aggiornamenti.map(u => u.url.split('/').pop()), ['11936', '11934', '11932']);
+    assert.match(x.aggiornamenti[0].testo, /linea 2 si aggiungono.*11:19-11:30/i);
+    assert.match(x.aggiornamenti[1].testo, /^Questi i servizi aggiuntivi.*Linea 2/);
+    assert.doesNotMatch(x.aggiornamenti[1].testo, /muoversivenezia|\+\+\+/, 'senza intestazione ripetuta');
+    assert.deepEqual(x.fasce, [['06:00', '08:59'], ['16:30', '19:29']], 'le fasce del comunicato restano');
+  });
+  test('sciopero · il link al comunicato principale ACTV resta sempre il primo', () => {
+    for (const t of ['2026-11-20T08:15:00+01:00', '2026-11-20T11:15:00+01:00']) {
+      const o = day(at(t)).find(i => i.effect === 'strike');
+      assert.match(o.url, /^https:\/\/actv\.avmspa\.it\/it\/content\/avmactv-informa-sciopero-generale/, t);
+      assert.equal(o.sciopero.link[0].label, 'Comunicato ACTV'); assert.equal(o.sciopero.link[0].url, o.url);
+      assert.ok(o.sciopero.link.some(l => /^https:\/\/t\.me\/muoversivenezia\/119\d\d$/.test(l.url)));
+    }
+  });
+  test('sciopero · sparisce solo con revoca o differimento espliciti', () => {
+    const msg = (n, h, text, extra = {}) => ({ key: 'tg:' + n, id: n, text, links: [], pubMs: at(`2026-11-${h}+01:00`), url: 'https://t.me/muoversivenezia/' + n, ...extra });
+    // aggiornamento con «regolare» (non è una fine dello sciopero): resta
+    const reg = day(at('2026-11-20T12:30:00+01:00'), [msg(99101, '20T12:00:00', '⚠️ #muoversivenezia | SCIOPERO GENERALE NAZIONALE 24H\n🗓 venerdì 20 novembre 2026\n\nLa linea 1 è regolarmente in servizio fino alle 13:00')]);
+    assert.equal(reg.filter(o => o.effect === 'strike').length, 1);
+    // revoca prima del giorno: sparisce
+    const rev = day(at('2026-11-19T22:00:00+01:00'), [msg(99102, '19T21:00:00', '⚠️ #muoversivenezia | SCIOPERO GENERALE NAZIONALE 24H\n🗓 venerdì 20 novembre 2026\n\nlo sciopero è stato revocato: tutti i servizi saranno regolari')]);
+    assert.equal(rev.filter(o => o.effect === 'strike').length, 0, JSON.stringify(rev.map(o => o.title)));
+    // differimento comunicato in risposta durante il giorno: sparisce
+    const dif = day(at('2026-11-20T11:30:00+01:00'), [msg(99103, '20T11:20:00', 'Sciopero differito a data da destinarsi: dalle 12:00 il servizio torna regolare', { replyTo: 11934 })]);
+    assert.equal(dif.filter(o => o.effect === 'strike' && o.state === 'active').length, 0);
+  });
 }
