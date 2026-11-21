@@ -76,7 +76,7 @@ jobs:
         if: steps.ped.outputs.go == '1'
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
-          curl -fsSL --retry 3 -o ne.osm.pbf https://download.geofabrik.de/europe/italy/nord-est-latest.osm.pbf
+          curl -fsSL --retry 3 -o ne.osm.pbf https://download.geofabrik.de/europe/italy/nord-est/nord-est-latest.osm.pbf || curl -fsSL --retry 3 -o ne.osm.pbf https://download.geofabrik.de/europe/italy/nord-est/nord-est-latest.osm.pbf || curl -fsSL --retry 3 -o ne.osm.pbf https://download.geofabrik.de/europe/italy/nord-est-latest.osm.pbf
           # zona servita con margine (fermate 45,02-45,68 N, 11,85-12,48 E, più 3 mattonelle)
           osmium extract -b 11.75,44.95,12.60,45.75 ne.osm.pbf -o zona.osm.pbf --overwrite
           osmium tags-filter zona.osm.pbf w/highway=footway,pedestrian,path,steps,living_street,residential,service,unclassified,tertiary,secondary,primary,track,cycleway,corridor,platform,road,tertiary_link,secondary_link,primary_link -o rete.osm.pbf --overwrite
