@@ -600,7 +600,9 @@ async function loadDepartures() {
     const mine = lastDeps && lastDeps._e === e;
     // orari di un altro giorno in caricamento: le partenze vecchie spariscono (sono di un altro giorno) e resta l'attesa, ben visibile
     if ((err.loading || (err.busy && !mine)) && ritenta('stop', () => { if (current === e) loadDepartures(); })) {
-      plist.innerHTML = `<div class="pp-wait${err.loading ? ' big' : ''}" role="status" aria-live="polite"><span class="spin" aria-hidden="true"></span><span><b>${err.loading ? `Carico gli orari di ${(l => (l === 'Oggi' || l === 'Domani' ? l.toLowerCase() : l))(Scegli.dayLabel(dateEl.value))}…` : 'Server occupato'}</b><small>${err.loading ? 'Le partenze compaiono appena gli orari sono pronti: la prima volta può volerci fino a un minuto.' : 'Riprovo tra pochi secondi.'}</small></span></div>`;
+      const loadingDay = Scegli.dayLabel(dateEl.value);
+      const safeLoadingDay = esc(loadingDay);
+      plist.innerHTML = `<div class="pp-wait${err.loading ? ' big' : ''}" role="status" aria-live="polite"><span class="spin" aria-hidden="true"></span><span><b>${err.loading ? `Carico gli orari di ${(l => (l === 'Oggi' || l === 'Domani' ? l.toLowerCase() : l))(safeLoadingDay)}…` : 'Server occupato'}</b><small>${err.loading ? 'Le partenze compaiono appena gli orari sono pronti: la prima volta può volerci fino a un minuto.' : 'Riprovo tra pochi secondi.'}</small></span></div>`;
       if (err.loading) lastDeps = null;
       return;
     }
