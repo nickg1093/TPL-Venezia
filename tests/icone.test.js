@@ -7,8 +7,18 @@ const path = require('path');
 const pub = path.join(__dirname, '..', 'public');
 const sprite = fs.readFileSync(path.join(pub, 'icons', 'sprite.svg'), 'utf8');
 
+function stripHtmlComments(input) {
+  let previous;
+  let current = input;
+  do {
+    previous = current;
+    current = current.replace(/<!--[\s\S]*?-->/g, '');
+  } while (current !== previous);
+  return current;
+}
+
 test('sprite.svg: un solo documento, tutti i simboli dentro <svg>', () => {
-  const body = sprite.replace(/<!--[\s\S]*?-->/g, '').trim();
+  const body = stripHtmlComments(sprite).trim();
   assert.match(body, /^<svg\b[^>]*>/);
   assert.ok(body.endsWith('</svg>'), 'dopo </svg> non deve esserci nulla');
   assert.strictEqual((body.match(/<\/svg>/g) || []).length, 1);
@@ -24,7 +34,7 @@ test('ogni icona usata in pagine e script esiste in sprite.svg', () => {
   const files = ['index.html', ...fs.readdirSync(path.join(pub, 'js')).filter(f => f.endsWith('.js')).map(f => 'js/' + f)];
   const missing = [];
   for (const f of files) {
-    const s = fs.readFileSync(path.join(pub, f), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+    const s = stripHtmlComments(fs.readFileSync(path.join(pub, f), 'utf8'));
     for (const m of s.matchAll(/sprite\.svg#i-([\w-]+)/g)) if (!ids.has(m[1])) missing.push(f + ': ' + m[1]);
     for (const m of s.matchAll(/\bicon\('([\w-]+)'/g)) if (!ids.has(m[1])) missing.push(f + ': ' + m[1]);
   }
