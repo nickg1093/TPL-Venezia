@@ -1,6 +1,6 @@
 {
  "formato": 1,
- "aggiornato": 1795263850337,
+ "aggiornato": 1795289560992,
  "file": [
   {
    "nome": "2026-05.jsonl",
@@ -14,8 +14,8 @@
   },
   {
    "nome": "2026-08.jsonl",
-   "righe": 1,
-   "sha": "55cf401422954bf4"
+   "righe": 2,
+   "sha": "6b3cd5c4a823ff49"
   },
   {
    "nome": "2026-09.jsonl",
@@ -29,8 +29,8 @@
   },
   {
    "nome": "2026-11.jsonl",
-   "righe": 94,
-   "sha": "f97d383d614b15d0"
+   "righe": 95,
+   "sha": "a913edb50efacdbd"
   }
  ]
 }
