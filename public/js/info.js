@@ -35,30 +35,6 @@ export function open() {
 export function close() {
   if (card.hidden) return; card.hidden = true; btn.setAttribute('aria-expanded', 'false');
 }
-// DONAZIONE VOLONTARIA (sezione in cima alle Informazioni, sempre visibile; cuore accanto alla «i» solo dal 3° giorno d'uso).
-// Discreta per scelta: il cuore apre le Informazioni sulla sezione (mai PayPal direttamente, niente tocchi per sbaglio verso un pagamento);
-// si nasconde per sempre con «Non mostrare il cuore» e per 6 mesi dopo aver aperto PayPal. Giorni d'uso contati solo su questo dispositivo.
-const LS = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* facoltativo */ } } };
-function initDona() {
-  const hb = $('dona-btn'), go = $('dona-go'), hide = $('dona-hide'); if (!hb) return;
-  const oggi = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
-  let g; try { g = JSON.parse(LS.get('tpl.giorni') || '{}'); } catch { g = {}; }
-  if (g.d !== oggi) { g = { d: oggi, n: Math.min(999, (Number.isInteger(g.n) ? g.n : 0) + 1) }; LS.set('tpl.giorni', JSON.stringify(g)); }
-  const show = () => {
-    const no = LS.get('tpl.dona.no') === '1', grazie = Number(LS.get('tpl.dona.aperto')) || 0;
-    hb.hidden = no || g.n < 3 || Date.now() - grazie < 180 * 864e5;
-    hide.hidden = no || g.n < 3;
-  };
-  show();
-  hb.onclick = () => {
-    if (card.hidden) open();
-    const s = $('ip-dona'), top = s.getBoundingClientRect().top - card.getBoundingClientRect().top + card.scrollTop - card.querySelector('.fp-h').offsetHeight - 12;
-    card.scrollTop = Math.max(0, top);
-    const h = s.querySelector('h3'); h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true });
-  };
-  go.addEventListener('click', () => { LS.set('tpl.dona.aperto', String(Date.now())); show(); });
-  hide.onclick = () => { LS.set('tpl.dona.no', '1'); show(); };
-}
 export function init(beforeOpen) {
   before = beforeOpen || before;
   btn.onclick = () => (card.hidden ? open() : close());
@@ -70,7 +46,7 @@ export function init(beforeOpen) {
     const h = list.querySelector('h3'); if (h) { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: true }); }
   };
   updateWatchButton();
-  initDona();
+  try { for (const k of ['tpl.giorni', 'tpl.dona.no', 'tpl.dona.aperto']) localStorage.removeItem(k); } catch { /* facoltativo */ }   // v33.9: donazioni tolte
   $('info-close').onclick = () => { close(); btn.focus(); };
   // indice della pagina: scorrimento alla sezione senza toccare l'indirizzo
   card.querySelector('.ip-toc').addEventListener('click', e => {
@@ -104,8 +80,12 @@ export function init(beforeOpen) {
     }
     $('info-version').textContent = `Versione ${d?.version || ''}`;
   }).catch(() => {});
-  // attribuzione della mappa: visibile all'apertura, poi si riduce dopo 5 s o alla prima interazione (crediti completi qui)
-  const at = $('osm-attr'), hide = () => { at.classList.add('off'); document.body.classList.add('attr-off'); };   // il pulsante «Percorso» scende al posto dei crediti
-  setTimeout(hide, 5000);
+  // crediti della mappa: visibili all'apertura, poi spariscono dopo 5 s o alla prima interazione (linee guida OSMF); crediti completi e
+  // diciture obbligatorie sempre qui, in «Fonti e licenze». Quando sulla mappa compaiono per la prima volta le quote misurate (livelli.js,
+  // evento «tpl:crediti») tornano visibili per altri 5 s con «Fonte informativa: Insula spa».
+  const at = $('osm-attr'); let t = 0;
+  const hide = () => { clearTimeout(t); at.classList.add('off'); document.body.classList.add('attr-off'); };   // il pulsante «Percorso» scende al posto dei crediti
+  document.addEventListener('tpl:crediti', () => { at.classList.remove('off'); document.body.classList.remove('attr-off'); clearTimeout(t); t = setTimeout(hide, 5000); });
+  t = setTimeout(hide, 5000);
   return hide;
 }

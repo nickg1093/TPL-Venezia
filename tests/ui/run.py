@@ -15,7 +15,7 @@ TESTO_JS = f"try{{localStorage.setItem('tpl.testo','{TESTO}')}}catch(e){{}}" if 
 fails = []
 ES_LOG = "try{const E=window.EventSource;if(E)window.EventSource=class extends E{constructor(u,o){super(u,o);(window.__es||(window.__es=[])).push(String(u));}}}catch(e){}"   # indirizzi dei flussi aperti (un flusso aperto non compare tra le richieste concluse)
 FAV_ONE = "try{if(!localStorage.getItem('tpl.favorites'))localStorage.setItem('tpl.favorites', JSON.stringify({v:1,items:[{k:'nav:5032',name:'Fermata preferita di prova',src:'nav',at:1}]}))}catch(e){}"   # un preferito: la ricerca non deve mostrarlo
-GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v31', mappa:true, pannello:true}))}catch(e){}"   # guida già vista: le prove non la incontrano (ha una prova sua)
+GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v33', mappa:true, pannello:true}))}catch(e){}"   # guida già vista: le prove non la incontrano (ha una prova sua)
 def check(ok, msg):
     print(('  ok   ' if ok else '  FAIL ') + msg)
     if not ok: fails.append(msg)
@@ -32,6 +32,7 @@ with sync_playwright() as p:
         ctx = br.new_context(viewport={'width': w, 'height': h}, has_touch=name.startswith('phone'), device_scale_factor=1, permissions=['geolocation'], geolocation={'latitude': 45.4375, 'longitude': 12.3358}, extra_http_headers={'X-Forwarded-For': f'10.9.{w % 250}.{h % 250}'})   # IP diverso per schermo: i limiti di frequenza non falsano la prova (server con TRUST_PROXY=1)
         ctx.add_init_script(GUIDE_OFF); ctx.add_init_script(FAV_ONE); ctx.add_init_script(ES_LOG); ctx.add_init_script(TESTO_JS); page = ctx.new_page(); errs = []
         page.on('pageerror', lambda e: errs.append(str(e)))
+        acq = []; page.on('request', lambda r: acq.append(r.url) if '/acqua/' in r.url else None)   # dati dell'acqua alta: solo quando servono
         page.on('console', lambda m: errs.append(m.text) if m.type == 'error' and 'tile' not in m.text else None)
         page.route('**/vendor/leaflet/leaflet.js', lambda r: r.fulfill(body=STUB, content_type='application/javascript'))
         page.route('**/vendor/leaflet/leaflet.css', lambda r: r.fulfill(body='', content_type='text/css'))
@@ -360,6 +361,24 @@ with sync_playwright() as p:
         # --- ordine dei blocchi di controllo
         gr = page.evaluate("[...document.querySelectorAll('#controls .group')].map(g=>[...g.querySelectorAll('button,input')].map(b=>b.id||b.name))")
         check(gr[1] == ['search-toggle-btn', 'locate', 'theme-btn'] and gr[2][:2] == ['avvisi-btn', 'tide-btn'], 'blocchi: servizi | cerca+posizione+tema | avvisi+marea ' + str(gr))
+        check(gr[0] == ['mezzi-btn', 'livelli-btn'], 'primo blocco: Mezzi e Livelli ' + str(gr[0]))
+        # --- menu «Mezzi sulla mappa» e «Livelli della mappa» (livelli.js)
+        if rect(page, '#panel'): page.click('#pclose')
+        page.click('#mezzi-btn'); page.wait_for_selector('#mezzi:not([hidden])', timeout=3000)
+        mz = rectf(page, '#mezzi'); check(mz and mz['l'] >= -1 and mz['r'] <= w + 1 and mz['t'] >= -1 and mz['b'] <= h + 1, 'menu Mezzi dentro lo schermo')
+        hs = page.evaluate("[...document.querySelectorAll('#mezzi .sw-row')].map(e=>Math.round(e.getBoundingClientRect().height))"); check(len(hs) == 3 and min(hs) >= 44, f'menu Mezzi: tre interruttori alti almeno 44 px {hs}')
+        check(page.evaluate("document.getElementById('mezzi').scrollWidth<=document.getElementById('mezzi').clientWidth+1"), 'menu Mezzi: nessuno scorrimento orizzontale')
+        page.click('#mezzi .sw-row:nth-child(2)'); page.wait_for_timeout(300)
+        check(page.evaluate("!document.querySelector('input[name=src][value=aut]').checked && !document.querySelector('#mezzi-btn .fbadge').hidden"), 'autobus nascosti: punto sul pulsante Mezzi')
+        page.click('#mezzi .sw-row:nth-child(2)'); page.wait_for_timeout(300)
+        check(page.evaluate("document.querySelector('#mezzi-btn .fbadge').hidden"), 'filtri come al solito: niente punto')
+        page.keyboard.press('Escape'); page.wait_for_timeout(200); check(rect(page, '#mezzi') is None, 'Esc chiude il menu Mezzi')
+        page.click('#livelli-btn'); page.wait_for_selector('#livelli:not([hidden])', timeout=3000)
+        lv = rectf(page, '#livelli'); check(lv and lv['l'] >= -1 and lv['r'] <= w + 1 and lv['t'] >= -1 and lv['b'] <= h + 1, 'menu Livelli dentro lo schermo')
+        check(page.evaluate("document.getElementById('livelli').scrollWidth<=document.getElementById('livelli').clientWidth+1"), 'menu Livelli: nessuno scorrimento orizzontale')
+        check(page.evaluate("!window.__acquaImg && ![...__map._polys].some(p=>/pass-l/.test(p.o?.className||''))"), 'marea normale: niente allagamento né passerelle')
+        check(not acq, f'marea normale: nessun dato dell\'acqua alta scaricato {acq}')
+        page.go_back(); page.wait_for_timeout(400); check(rect(page, '#livelli') is None, '«indietro» chiude il menu Livelli')
 
         # --- modalità pianificato
         page.evaluate("document.querySelector('input[name=mode][value=sched]').click()"); page.wait_for_timeout(1200)

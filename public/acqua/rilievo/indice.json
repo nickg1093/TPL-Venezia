@@ -1,0 +1,88 @@
+{
+ "formato": 1,
+ "v": "83fa45f7afa3",
+ "creato": "2026-11-21T14:52:47.422Z",
+ "rilievo": {
+  "nome": "RAMSES",
+  "fonte": "Insula S.p.A. per il Comune di Venezia, progetto RAMSES: curve di livello della pavimentazione della città storica (equidistanza 1 cm, quote LIVELLO_PS in cm sullo Zero Mareografico di Punta della Salute; file del 21/06/2011). https://www.comune.venezia.it/it/content/curve-livello · https://www.comune.venezia.it/it/content/quote-altimetriche-venezia (Comune di Venezia, Centro Maree: progetto del Comune attuato da Insula nel 2011, precisione centimetrica, quote su ZMPS)",
+  "attribuzione": "Fonte informativa: Insula spa",
+  "data": "2011 (file); data dei rilievi non dichiarata",
+  "riferimento": "ZMPS",
+  "licenza": "condizioni d'uso del sito di Insula (smu.insula.it): uso, riproduzione ed elaborazione, anche parziale, dei contenuti con la fonte «Fonte informativa: Insula spa»; titolarità di Insula; vietate vendita e cessione a terzi dei dati; vietato commercializzare gli elaborati; nessuna garanzia.",
+  "pubblicabile": true,
+  "nota": "Quote MISURATE (rilievo RAMSES delle pavimentazioni, Fonte informativa: Insula spa) nella città storica e alla Giudecca: per ogni cella di ~10 m la quota mediana delle calli, arrotondata a 2 cm (i punti più bassi della cella si bagnano qualche cm prima). Altrove resta la STIMA indicativa. Una quota sotto la marea indica una zona POTENZIALMENTE allagabile, non un allagamento certo: l'acqua arriva dai tombini e dalle rive, e lavori successivi al rilievo (rialzi, difese locali) non sono considerati."
+ },
+ "g": {
+  "lat0": 45.418,
+  "lon0": 12.298,
+  "dlat": 0.0108,
+  "dlon": 0.0156
+ },
+ "files": {
+  "0_0": {
+   "sha": "898beaa344bd05d37def3f96d21c207f753b92537cdbfba8d7a9eae2323b545a",
+   "bytes": 430,
+   "celle": 82
+  },
+  "0_1": {
+   "sha": "8167a6df5a29c95ed541ec5199541cf831e3464ac37b783f3837447d73d09c22",
+   "bytes": 3414,
+   "celle": 1151
+  },
+  "0_2": {
+   "sha": "73f6a602a5a0c739340f749e1a7a455a7c1a15b26c11c1cc92f25258bc3f9146",
+   "bytes": 2513,
+   "celle": 607
+  },
+  "0_3": {
+   "sha": "0ccd2ab58b4b4d26ed5373b4917383cd346197f7394abafe32f36eec409f5c66",
+   "bytes": 960,
+   "celle": 162
+  },
+  "0_4": {
+   "sha": "bc24a65daf06e26df08a8cbc07529d8a106ca6c518249abd6fcbfa67f74b9843",
+   "bytes": 1429,
+   "celle": 437
+  },
+  "1_0": {
+   "sha": "a370e85d7f53184424426f26e4c57d3d4fd0bfe8e58fae01c9f5c6f3598e465d",
+   "bytes": 514,
+   "celle": 181
+  },
+  "1_1": {
+   "sha": "afe6d82110d031deb8ae9504ad0f244b3a9d085079912fefc959ec38d08e89bd",
+   "bytes": 10764,
+   "celle": 4066
+  },
+  "1_2": {
+   "sha": "2192868a15bc63e010dc3b26d37c29e595f6f272649f89100b816e6f11431621",
+   "bytes": 11396,
+   "celle": 5151
+  },
+  "1_3": {
+   "sha": "800e9147174d694b33ed2ab9cfae37e3056bdc874228328125c244a80973637c",
+   "bytes": 6821,
+   "celle": 2804
+  },
+  "1_4": {
+   "sha": "3a35274e6f7413243f99a6925583cdbe1435bc1dcb67ceadbe95ca2c9f75f812",
+   "bytes": 646,
+   "celle": 182
+  },
+  "2_1": {
+   "sha": "87e5fb49f8b55fba9e5567db910ee6de5e0feffd277229a3f4520b1bce8e6536",
+   "bytes": 6990,
+   "celle": 2775
+  },
+  "2_2": {
+   "sha": "afc5f07470aa5ca5dc32da6b5ae5c8bda3470531792e88cb596530477fd1b67a",
+   "bytes": 6666,
+   "celle": 2613
+  },
+  "2_3": {
+   "sha": "fd1f6f8c625a723c4bdcee64700260b2d81c2730c597fc33eca2bc9f1ff02924",
+   "bytes": 252,
+   "celle": 23
+  }
+ }
+}

@@ -74,6 +74,26 @@ export function toggleRoute(from, to) {
   return ok ? true : null;
 }
 export const routeByKey = k => routes.find(x => x.k === k) || null;
+// MODIFICA E CREAZIONE dal pianificatore (v33.5). Risposte: 'ok' | 'dup' (partenza e arrivo coincidono con un ALTRO percorso salvato: non si
+// crea un doppione e non si sovrascrive nulla) | 'same' (partenza = arrivo) | 'missing' (percorso non più presente) | null (memoria non disponibile).
+// La modifica tiene posizione nell'elenco, data e (se non cambiato) il nome; la creazione aggiunge in cima, come la stella.
+export function updateRoute(k, from, to, name) {
+  const i = routes.findIndex(x => x.k === k); if (i < 0) return 'missing';
+  if (!epOk(from) || !epOk(to)) return null;
+  const nk = routeKey(from, to); if (epKey(from) === epKey(to)) return 'same';
+  if (nk !== k && routes.some(x => x.k === nk)) return 'dup';
+  const n = name === undefined ? routes[i].name || '' : nameClean(name);
+  routes[i] = { k: nk, from: epClean(from), to: epClean(to), at: routes[i].at, ...(n ? { name: n } : {}) };
+  return saveR() ? 'ok' : null;
+}
+export function addRoute(from, to, name) {
+  if (!epOk(from) || !epOk(to)) return null;
+  const k = routeKey(from, to); if (epKey(from) === epKey(to)) return 'same';
+  if (routes.some(x => x.k === k)) return 'dup';
+  const n = nameClean(name);
+  routes.unshift({ k, from: epClean(from), to: epClean(to), at: Date.now(), ...(n ? { name: n } : {}) }); routes = routes.slice(0, 30);
+  return saveR() ? 'ok' : null;
+}
 window.addEventListener('storage', ev => { if (ev.key === KEY_R) routes = loadR(); });
 
 // COPIA DI SICUREZZA (pannello Preferiti): file JSON con fermate e percorsi preferiti. Il ripristino UNISCE (non cancella nulla) e ricontrolla

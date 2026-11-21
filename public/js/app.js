@@ -1,12 +1,14 @@
 // APP PRINCIPALE: mappa, mezzi in movimento, ricerca, pannelli (fermata · zona · corsa) con navigazione e inseguimento.
 // Moduli: util.js (testo, icone, nomi, colori, etichette) · zones.js (zone di fermate) · tide.js (marea) · pwa.js (installazione).
 import * as Sistema from './sistema.js';   // per primo: i controlli sugli errori imprevisti valgono anche durante l'avvio
-import { $, esc, p2, nowSecs, fmtSecs, localDate, icon, srcIcon, vehIcon, vehName, lum, colorInfo, badge, ptHtml, etaText, tickEta, delayInfo, api, onBusy, ritenta, riuscito, NON_ORA } from './util.js';
+import { hm, $, esc, p2, nowSecs, fmtSecs, localDate, icon, srcIcon, vehIcon, vehName, lum, colorInfo, badge, ptHtml, etaText, tickEta, delayInfo, api, onBusy, ritenta, riuscito, NON_ORA } from './util.js';
 import { zones, zoneOf, snorm, buildZones, norm, unitOf, mergeDuplicates, groups, aliasOf } from './zones.js';
 import * as Tide from './tide.js';
+import * as Livelli from './livelli.js';
 import * as Scegli from './scegli.js';
 import * as Avvisi from './avvisi.js';
 import * as Pwa from './pwa.js';
+import * as Schermo from './schermo.js';
 import { createLocator } from './locate.js';
 import * as Fav from './fav.js';
 import * as Notify from './notify.js';
@@ -428,7 +430,7 @@ function collapseSearch() { searchContainer.classList.remove('expanded'); search
 function clearSearchState(force = false) { if (lineFilter && !force) return; setLineFilter(null); filterEl.value = ''; $('search-clear').hidden = true; resultsEl.classList.remove('active'); resultsEl.innerHTML = ''; clearRoutes(); }
 function setSearch(on) {
   searchContainer.classList.toggle('expanded', on); searchToggleBtn.setAttribute('aria-expanded', String(on));
-  if (on) { Tide.close(); Avvisi.close(); Info.close(); Favs.close(); filterEl.focus(); if (!filterEl.value) emptySearch(); } else clearSearchState(true);
+  if (on) { Tide.close(); Livelli.close(); Avvisi.close(); Info.close(); Favs.close(); filterEl.focus(); if (!filterEl.value) emptySearch(); } else clearSearchState(true);
 }
 searchToggleBtn.onclick = e => { e.stopPropagation(); setSearch(!searchOpen()); };
 document.addEventListener('click', e => { if (searchOpen() && !searchContainer.contains(e.target) && !searchToggleBtn.contains(e.target)) collapseSearch(); });
@@ -473,7 +475,7 @@ resultsEl.addEventListener('click', e => {
   else setLineFilter({ src: it.dataset.src, name: it.dataset.name, ids: it.dataset.ids.split('\u0001') });
 });
 // un tocco sulla mappa vuota chiude i percorsi della ricerca (se nessun pannello è aperto) e le finestre troppo grandi
-map.on('click', e => { if (Plan.isPicking()) { Plan.pick(e.latlng); return; } if (!current && !searchOpen()) clearSearchState(); if (narrow()) { Tide.close(); Avvisi.close(); Info.close(); Favs.close(); } });
+map.on('click', e => { if (Plan.isPicking()) { Plan.pick(e.latlng); return; } if (!current && !searchOpen()) clearSearchState(); if (narrow()) { Tide.close(); Livelli.close(); Avvisi.close(); Info.close(); Favs.close(); } });
 
 // ---------------------------------------------------------------------------------------------------------------------
 // NAVIGAZIONE TRA PANNELLI
@@ -513,7 +515,7 @@ function show(e) {
   tripLayer.clearLayers(); setFollow(false); locator.release();          // aprire un pannello ferma l'inseguimento della mia posizione
   if (e.t !== 'trip') { selVeh = null; render(); }
   if (e.t !== 'plan') planLayer.clearLayers();
-  current = e; panel.hidden = false; document.body.classList.add('has-panel'); if (narrow()) { Tide.close(); Avvisi.close(); Info.close(); Favs.close(); }
+  current = e; panel.hidden = false; document.body.classList.add('has-panel'); if (narrow()) { Tide.close(); Livelli.close(); Avvisi.close(); Info.close(); Favs.close(); }
   chipsArea.innerHTML = ''; pstatus.textContent = ''; psub.textContent = ''; pbadge.innerHTML = '';
   pfollow.hidden = e.t !== 'trip';
   pfav.hidden = e.t === 'trip' || (e.t === 'plan' && !Plan.canSave()); pnotify.hidden = !(e.t === 'trip' && e.stop); notifyPick = false; rowPick = null;
@@ -902,6 +904,21 @@ function placeVehicle(d, first) {
   veh.style.top = y + 'px'; trav.style.height = Math.max(0, y - firstCenter.y) + 'px';
   vehMemo = { trip: current.v.tripId, y };
 }
+// ULTIMO RILEVAMENTO DEL MEZZO (v33.5): l'ora della posizione trasmessa DAL MEZZO nel feed ACTV (vehicle.timestamp), non quella del feed
+// o della richiesta. Se il mezzo non la trasmette (noTs), se i dati sono da orario o simulati, non si mostra nulla.
+const panelVeh = d => (current?.t === 'trip' && (vehicles.find(x => x.id === current.v.id)
+  || vehicles.find(c => c.src === d.trip.src && c.tripId === current.v.tripId && !c.co))) || null;
+function vehUpdHtml(d) {
+  if (mode !== 'live' || !d?.live || d.detected === false) return '';
+  const v = panelVeh(d); if (!v || v.sim || v.noTs || !Number.isFinite(v.ts) || v.ts > Date.now() + 60e3) return '';
+  const age = Math.max(0, Math.floor((Date.now() - v.ts) / 60000)), old = !!v.old || age >= 3;
+  return `<span class="vupd${old ? ' old' : ''}" title="Ora dell'ultima posizione trasmessa dal mezzo">${icon(old ? 'warn' : 'live', 'sm')}<span>Posizione aggiornata alle ${esc(hm(v.ts))} · ${age < 1 ? 'meno di 1 min fa' : minTxt(age) + ' fa'}${old ? ' · dato non recente' : ''}</span></span>`;
+}
+setInterval(() => {                                                   // «N min fa» resta vero anche senza nuovi dati
+  if (document.hidden || !lastTrip || current?.t !== 'trip') return;
+  const e = psub.querySelector('.vupd'), h = vehUpdHtml(lastTrip);
+  if (e) { if (h) e.outerHTML = h; else e.remove(); } else if (h) psub.insertAdjacentHTML('beforeend', h);
+}, 15000);
 function renderTrip(first) {
   const d = lastTrip; if (!d || !current || current.t !== 'trip') return;
   if (!current.v.line) { current.v.line = d.trip.line; current.v.color = d.trip.color; current.v.headsign = d.trip.headsign; pbadge.innerHTML = badge(d.trip.line, d.trip.color, d.trip.src); }
@@ -919,6 +936,7 @@ function renderTrip(first) {
   // corsa verificata (assign.js): il mezzo trasmetteva un'altra corsa; lo si dice, in modo trasparente
   if (d.reassigned?.why === 'tu') psub.innerHTML +=   // turni.js ('turno'): il mezzo è già sulla corsa che fa davvero, nessuna nota
     `<span class="reassign">${icon('info', 'sm')} Corsa indicata dalle previsioni ACTV: la posizione del mezzo riportava la corsa delle ${esc(d.reassigned.from || '?')}.</span>`;
+  psub.innerHTML += vehUpdHtml(d);
   // UNA riga: stato · mezzo (con "insieme a…", accorciato se serve) · velocità stimata (etichetta che non va mai a capo)
   const vtxt = vehName(d.trip.src, d.trip.vehicle || current.v.label) + (d.others?.length ? ` · insieme a ${d.others.join(', ')}` : '');
   const spd = d.live && d.detected !== false && !d.ended && !uncOf(d) && d.speedKmh != null ? `<span class="spd" title="Velocità stimata dalle posizioni GPS: il feed ACTV non trasmette la velocità reale" aria-label="velocità stimata circa ${+d.speedKmh} chilometri orari">≈ ${+d.speedKmh} km/h · stima</span>` : '';
@@ -1141,11 +1159,12 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', e => {  
   applyTheme(e.matches ? 'dark' : 'light');
 });
 // dal pannello della marea (triangolo accanto a una marea oltre le soglie del piano ACTV) all'avviso di acqua alta
-window.addEventListener('tpl:water-alert', () => { Tide.close(); const id = Avvisi.waterAlertId(); Avvisi.openAlert(id); });
-const hideAttr = Info.init(() => { Tide.close(); Avvisi.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
+window.addEventListener('tpl:water-alert', () => { Tide.close(); Livelli.close(); const id = Avvisi.waterAlertId(); Avvisi.openAlert(id); });
+const hideAttr = Info.init(() => { Tide.close(); Livelli.close(); Avvisi.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
 map.on('movestart', hideAttr); map.on('zoomstart', hideAttr); map.on('click', hideAttr);
-Tide.init(() => { Avvisi.close(); Info.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
-Avvisi.init(() => { Tide.close(); Info.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); }, () => { drawStops(); if (current && current.t !== 'trip') renderDepartures(); else if (current?.t === 'trip' && lastTrip) renderTrip(false); strikeUpdate(); });   // quando arrivano avvisi nuovi (anche sciopero: scheda e pulsante) si aggiornano mappa e pannello fermata
+Tide.init(() => { Livelli.close(); Avvisi.close(); Info.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); });
+Livelli.init({ map, toast, beforeOpen: () => { Tide.close(); Avvisi.close(); Info.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); } });   // filtri dei mezzi e livelli dell'acqua alta
+Avvisi.init(() => { Tide.close(); Livelli.close(); Info.close(); Favs.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); }, () => { drawStops(); if (current && current.t !== 'trip') renderDepartures(); else if (current?.t === 'trip' && lastTrip) renderTrip(false); strikeUpdate(); });   // quando arrivano avvisi nuovi (anche sciopero: scheda e pulsante) si aggiornano mappa e pannello fermata
 Pwa.init(); Sistema.init(); Scorri.watch(plist, pname, chipsArea, $('favs-body'), $('search-results'), $('pstatus'));
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -1179,8 +1198,8 @@ pfav.onclick = () => {
 // ricerca vuota: solo il campo (i preferiti stanno nel loro pannello, stella in basso a destra: qui sarebbero un elenco in più da scorrere)
 function emptySearch() { resultsEl.innerHTML = ''; resultsEl.classList.remove('active'); }
 // PANNELLO PREFERITI (stella in basso a destra): fermate e percorsi, con modifica e copia di sicurezza (favs.js)
-const openSavedRoute = k => { const r = Fav.routeByKey(k); if (r) { collapseSearch(); Tide.close(); Avvisi.close(); Info.close(); openFromMap({ t: 'plan', opts: { from: { ...r.from }, to: { ...r.to } } }); } };
-Favs.init(() => { Tide.close(); Avvisi.close(); Info.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); },
+const openSavedRoute = k => { const r = Fav.routeByKey(k); if (r) { collapseSearch(); Tide.close(); Livelli.close(); Avvisi.close(); Info.close(); openFromMap({ t: 'plan', opts: { from: { ...r.from }, to: { ...r.to } } }); } };
+Favs.init(() => { Tide.close(); Livelli.close(); Avvisi.close(); Info.close(); if (narrow() && !panel.hidden) closePanel(); collapseSearch(); },
   { openStop: k => openFav(k), openRoute: openSavedRoute, toast, changed: () => { updateFav(); } });
 function openFav(k) {
   if (k.startsWith('zone:')) { const z = zones.get(k.slice(5)); if (z) { openFromMap({ t: 'zone', key: z.key, pick: '*' }); focusOn(L.latLng(z.center), 16); return; } }
@@ -1325,17 +1344,20 @@ function backOne() {
   if (Plan.isPicking()) { Plan.pick(null); setPlanPick(false); return; }
   if (closeCard(Info.isOpen, Info.close, 'info', 'info-btn') || closeCard(Favs.isOpen, Favs.close, 'favs', 'favs-btn')
     || closeCard(Avvisi.isOpen, Avvisi.close, 'avvisi', 'avvisi-btn') || closeCard(Tide.isOpen, Tide.close, 'tide', 'tide-btn')) return;
+  { const id = Livelli.isOpen(); if (id) { const inside = $(id).contains(document.activeElement), b = Livelli.close(id); if (inside && b) $(b).focus(); return; } }
   if (searchOpen()) { setSearch(false); searchToggleBtn.focus(); return; }
   if (panel.hidden) return;
   if (current?.t === 'plan' && Plan.back()) return;
   if (navStack.length) goBack(); else closePanel();
 }
-const levels = () => (Plan.isPicking() ? 1 : 0) + [strikeIsOpen(), Info.isOpen(), Favs.isOpen(), Avvisi.isOpen(), Tide.isOpen(), searchOpen()].filter(Boolean).length
+const levels = () => (Plan.isPicking() ? 1 : 0) + [strikeIsOpen(), Info.isOpen(), Favs.isOpen(), Avvisi.isOpen(), Tide.isOpen(), !!Livelli.isOpen(), searchOpen()].filter(Boolean).length
   + (panel.hidden ? 0 : 1 + navStack.length + (current?.t === 'plan' ? Plan.depth() : 0));
 Nav.init({ levels, back: backOne, hint: () => toast('Premi di nuovo «indietro» per uscire dall\'app', 2500) });
 { // ogni livello che si apre o si chiude (anche da un modulo: marea, avvisi, informazioni, preferiti) aggiorna la cronologia
   const mo = new MutationObserver(() => Nav.sync());
-  for (const id of ['panel', 'tide', 'avvisi', 'info', 'favs', 'sciopero']) mo.observe($(id), { attributes: true, attributeFilter: ['hidden'] });
+  for (const id of ['panel', 'tide', 'avvisi', 'info', 'favs', 'mezzi', 'livelli', 'sciopero']) mo.observe($(id), { attributes: true, attributeFilter: ['hidden'] });
+  mo.observe(searchContainer, { attributes: true, attributeFilter: ['class'] });
+  mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
   // «Sciopero» segue «Percorso»: pannelli, tastiera, crediti ridotti, viaggio in corso
   const lo = new MutationObserver(() => requestAnimationFrame(strikeLayout));
   lo.observe(document.body, { attributes: true, attributeFilter: ['class'] }); lo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
@@ -1343,8 +1365,6 @@ Nav.init({ levels, back: backOne, hint: () => toast('Premi di nuovo «indietro»
   lo.observe(pb, { attributes: true, attributeFilter: ['class', 'style', 'hidden'], childList: true, subtree: true, characterData: true });
   lo.observe($('panel'), { attributes: true, attributeFilter: ['hidden'] });
   new ResizeObserver(() => strikeLayout()).observe(pb); pb.addEventListener('transitionend', strikeLayout);
-  mo.observe(searchContainer, { attributes: true, attributeFilter: ['class'] });
-  mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 }
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') backOne();
@@ -1381,7 +1401,7 @@ Plan.init({
   }
 });
 function openPlan() {
-  collapseSearch(); Tide.close(); Avvisi.close(); Info.close(); Favs.close();
+  collapseSearch(); Tide.close(); Livelli.close(); Avvisi.close(); Info.close(); Favs.close();
   // dal pannello di una fermata: si parte da lì
   const from = current && (current.t === 'stop' || current.t === 'zone') ? (current.t === 'zone' ? { kind: 'zone', key: current.key, label: zones.get(current.key)?.name, src: zones.get(current.key)?.src, lat: zones.get(current.key)?.center[0], lon: zones.get(current.key)?.center[1] }
     : { kind: 'stop', id: current.id, label: current.name, src: current.src, lat: +(stopById.get(current.id)?.[2] ?? NaN), lon: +(stopById.get(current.id)?.[3] ?? NaN) }) : null;
@@ -1389,7 +1409,7 @@ function openPlan() {
 }
 function openJourney() {
   if (!Viaggio.active()) { openPlan(); return; }
-  collapseSearch(); Tide.close(); Avvisi.close(); Info.close(); Favs.close();
+  collapseSearch(); Tide.close(); Livelli.close(); Avvisi.close(); Info.close(); Favs.close();
   if (current?.t === 'plan' && !panel.hidden) Plan.show({ viaggio: true }); else openFromMap({ t: 'plan', opts: { viaggio: true } });
 }
 planBtn.onclick = e => {
@@ -1507,6 +1527,18 @@ function guideBoot(tries = 0) {
       if (current && (current.t === 'stop' || current.t === 'zone')) renderDepartures();
     }, 60);
   });
+}
+// SCHERMO INTERO (Informazioni, schermo.js): scelta reversibile, solo dove il sistema lo permette
+{
+  const box = $('ip-fs'), note = $('ip-fs-note');
+  const r = Schermo.init({ onChange: () => { mark(); map.invalidateSize(); } });
+  const mark = () => box.querySelectorAll('[data-fs]').forEach(b => b.setAttribute('aria-checked', String(b.dataset.fs === (Schermo.wanted() ? '1' : '0'))));
+  if (r.supported) {
+    box.hidden = false; mark();
+    note.textContent = 'Nasconde le barre del sistema (ora, batteria, tasti o barra dei gesti). Per rivederle scorri dal bordo dello schermo; «indietro» le fa ricomparire, e al tocco successivo l\'app torna a schermo intero.';
+    note.hidden = false;
+    box.addEventListener('click', e => { const b = e.target.closest('[data-fs]'); if (b) { Schermo.set(b.dataset.fs === '1'); mark(); } });
+  } else if (r.iPhone) { note.textContent = 'Su iPhone il sistema non permette alle app web di nascondere la barra in alto e la barra dei gesti: l\'app usa già tutto lo schermo disponibile.'; note.hidden = false; }
 }
 $('info-guide').addEventListener('click', () => { Info.close(); setTimeout(() => { if (!Guida.active()) Guida.restart(); }, 300); });
 let nearOnFix = false;                                                  // scorciatoia «Fermate vicine»: alla prima posizione si apre l'elenco

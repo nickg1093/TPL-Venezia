@@ -26,7 +26,8 @@ function build(src, name) {
         if (prev) { tripDesc = { tripId: swap(prev), routeId: t.route, startTime: schedule.hhmm(G.stopTimes.get(prev).start) + ':00' }; global.__wrong = { veh: 'V7', declared: prev, real: p.id }; if (!global.__wl?.[src]) { (global.__wl ||= {})[src] = 1; console.log(`fakefeed: ${src} V7 dichiara ${prev}, fa ${p.id}`); } }
       }
       if (name === 'vehiclePositions') {
-        entity.push({ id: 'v' + n, vehicle: { trip: tripDesc, position: { latitude: p.lat, longitude: p.lon, bearing: 0 }, timestamp: Math.floor(now / 1000) - (n % 5), vehicle: { id: 'V' + n, label: String(4000 + n) } } });
+        // il mezzo 11 non trasmette l'ora del rilevamento (v33.5): il pannello non deve mostrare «Posizione aggiornata alle…»
+        entity.push({ id: 'v' + n, vehicle: { trip: tripDesc, position: { latitude: p.lat, longitude: p.lon, bearing: 0 }, ...(n === 11 ? {} : { timestamp: Math.floor(now / 1000) - (n % 5) }), vehicle: { id: 'V' + n, label: String(4000 + n) } } });
       } else {
         let i = 0; const tNow = secs; while (i < st.s.length - 1 && st.d[i] + delay <= tNow) i++;
         const upd = [];

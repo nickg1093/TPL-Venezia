@@ -10,6 +10,14 @@ const store = require('../gtfsstore'), gtfs = require('../gtfs'), sch = require(
 const { Zip } = require('../zip'), { eachRow, eachRowStream } = require('../csv');
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
+// versione GTFS datata più recente in archivio (non i file di base actv_*.zip) e giorni dentro il periodo che copre: le prove non dipendono
+// da un nome di file che l'aggiornamento automatico dei GTFS toglie dall'archivio (prima: 20261102_189116ae.zip, sparito il 20/11/2026)
+const piuGiorni = (d, n) => { const t = new Date(Date.UTC(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8) + n)); return t.toISOString().slice(0, 10).replace(/-/g, ''); };
+async function versioneDatata(src) {
+  const l = await store.list(src), c = l.find(x => /^\d{8}_/.test(path.basename(x.file))) || l[0];
+  return { c, giorno: n => piuGiorni(c.info.cover.min, n) };
+}
+
 test('lettura a pezzi = lettura intera (stessi byte, stesse righe); CRC sbagliato = errore', async () => {
   const c = (await store.list('nav'))[0], z = new Zip(c.file), e = z.getEntries().find(x => /stop_times\.txt$/.test(x.entryName));
   const parts = []; for await (const p of e.stream()) parts.push(p);
@@ -51,8 +59,8 @@ test('protezione della memoria: livelli e «c\'è spazio per un lavoro pesante?�
 
 test('orari per giorno (CDN): ricostruzione identica alla lettura dallo ZIP; file alterati o di un\'altra versione rifiutati', async () => {
   const orari = require('../orari');
-  for (const [src, name, date] of [['nav', '20261102_189116ae.zip', '20261118'], ['aut', '20261116_6010d7cd.zip', '20261125']]) {
-    const c = (await store.list(src)).find(x => x.file.endsWith(name)); assert.ok(c, `${name} in archivio`);
+  for (const src of ['nav', 'aut']) {
+    const { c, giorno } = await versioneDatata(src), date = giorno(src === 'nav' ? 5 : 9); assert.ok(c, `versione ${src} in archivio`);
     const full = await gtfs.loadVersion(src, c, date, { full: true });
     const { indice, files } = orari.versione(full, src, gtfs.window3(date));
     const idx = orari.checkIndice(JSON.parse(indice), src, c.hash); assert.ok(idx, 'indice valido');
@@ -78,7 +86,7 @@ test('orari per giorno (CDN): ricostruzione identica alla lettura dallo ZIP; fil
 
 test('server: orari di un\'altra data scaricati dal CDN (finto, locale); file alterato o CDN spento = lettura dallo ZIP, stessi risultati', async () => {
   const http = require('http'), orari = require('../orari');
-  const c = (await store.list('nav')).find(x => x.file.endsWith('20261102_189116ae.zip')), date = '20261118', v = c.hash.slice(0, 12);
+  const { c, giorno } = await versioneDatata('nav'), date = giorno(5), v = c.hash.slice(0, 12);
   const full = await gtfs.loadVersion('nav', c, date, { full: true }), { indice, files } = orari.versione(full, 'nav', gtfs.window3(date));
   const served = new Map([[`/orari/nav/${v}.json`, indice], ...[...files].map(([n, b]) => [`/orari/nav/g/${n}.json`, b])]);
   let guasto = null, richieste = 0;
@@ -88,13 +96,13 @@ test('server: orari di un\'altra data scaricati dal CDN (finto, locale); file al
   const fake = { get: () => ({ commit: 'a'.repeat(40), orari: new Set([`nav/${v}`]) }), bases: () => [base] };
   try {
     orari.init({ remote: fake });
-    const oggi = await gtfs.loadVersion('nav', c, '20261114');
+    const oggi = await gtfs.loadVersion('nav', c, giorno(1));
     const G = await orari.perData('nav', c, date, oggi);
     assert.ok(G.meta.cdn, 'dal CDN'); assert.ok(richieste >= 2);
     const zip = await gtfs.loadVersion('nav', c, date);
     assert.deepStrictEqual(G.tripIds, zip.tripIds);
     guasto = true; orari.init({ remote: fake });
-    const G2 = await orari.perData('nav', c, '20261119', oggi);
+    const G2 = await orari.perData('nav', c, giorno(6), oggi);
     assert.ok(!G2.meta.cdn, 'file alterato: dallo ZIP');
     orari.init({ remote: { get: () => null, bases: () => [] } });
     const G3 = await orari.perData('nav', c, date, oggi);

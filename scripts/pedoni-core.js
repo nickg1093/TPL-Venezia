@@ -8,7 +8,8 @@
 // Come è fatta una mattonella (JSON, compresso dal CDN):
 //   { f: 1, t: "4543_885", n: [dlat, dlon, …], e: [[a, b, w, s, dlat, dlon, …], …] }
 //   n   incroci (e capi dei tratti che escono dalla mattonella) in milionesimi di grado, rispetto all'angolo sud-ovest della mattonella
-//   e   tratti: a, b = posizione dei due capi in n; w = lunghezza «a piedi» in decimetri (scale × 1,3); s = 1 se scale;
+//   e   tratti: a, b = posizione dei due capi in n; w = lunghezza «a piedi» in decimetri (scale × 1,3); s = segni: 1 scale, 2 ponte
+//       (i ponti non si allagano mai: public/js/acqua.js; le app più vecchie leggono solo «s ≠ 0» e non lo usano);
 //       poi i punti intermedi, ognuno come differenza dal punto precedente (partendo da a), in milionesimi di grado
 // Un tratto sta nelle mattonelle di ENTRAMBI i suoi capi: caricata la mattonella di un incrocio si conoscono tutte le sue strade.
 // Gli incroci si riconoscono tra mattonelle diverse dalle coordinate (in milionesimi di grado).
@@ -55,7 +56,7 @@
           const p = L.split(' '); let T = '', N = '';
           for (const f of p) { if (f[0] === 'T') T = f.slice(1); else if (f[0] === 'N') N = f.slice(1); }
           const t = tagsOf(T); if (!walkable(t) || !N) return;
-          ways.push({ steps: t.highway === 'steps', nodes: N.split(',').map(x => +x.slice(1)) });
+          ways.push({ steps: t.highway === 'steps', bridge: !!t.bridge && t.bridge !== 'no', nodes: N.split(',').map(x => +x.slice(1)) });
         }
       },
       done() {
@@ -113,7 +114,7 @@
         const sig = (ka < kb ? ka + '|' + kb : kb + '|' + ka) + '|' + w10; if (seen.has(sig)) continue; seen.add(sig);   // vie doppie (stessa strada mappata due volte)
         const ca = cellOf(A[0] / U, A[1] / U), cb = cellOf(B[0] / U, B[1] / U);
         if (!inCover(ca) && !inCover(cb)) continue;
-        const e = { A, B, w: w10, s: w.steps ? 1 : 0, mid: pts.slice(1, -1) };
+        const e = { A, B, w: w10, s: (w.steps ? 1 : 0) | (w.bridge ? 2 : 0), mid: pts.slice(1, -1) };
         for (const c of new Set([ca, cb])) if (inCover(c)) { const t = tileOf(c); t.nodes.set(ka, A); t.nodes.set(kb, B); t.edges.push(e); }
         nEdges++;
       }

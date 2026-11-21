@@ -4,12 +4,14 @@
 //
 // Il modulo è puro (nessun import): riceve da fuori la funzione che carica una mattonella, così si prova anche fuori dal browser.
 //   createNet({ CL, CO, loadTile })  rete vuota; loadTile(cella) -> contenuto della mattonella o null (fuori zona)
-//   net.distances(da, mete, limite)  metri lungo la rete da un punto a più punti (fermate): Map(chiave -> metri)
-//   net.route(da, a, limite)         percorso tra due punti: { m, pts: [[lat, lon], …] } o null
+//   net.distances(da, mete, limite, enough, costo)  metri lungo la rete da un punto a più punti (fermate): Map(chiave -> metri)
+//   net.route(da, a, limite, costo)  percorso tra due punti: { m, pts: [[lat, lon], …], archi } o null
+// costo(tratto) facoltativo: metri «in più» per scegliere la strada (acqua alta: acqua.js); i metri restituiti restano quelli veri.
 // Punti: { lat, lon } in gradi. Metri «a piedi»: le scale contano 1,3 volte (come le distanze tra fermate del pianificatore).
 // La ricerca è un Dijkstra (A* quando la meta è una sola) che carica le mattonelle man mano che la frontiera ci arriva.
 const U = 1e6;
 const SNAP_M = 200;                                              // un punto più lontano di così da ogni strada non si aggancia alla rete
+const EQUIV = 2 / 7;                                              // acqua alta: 1 m con l'acqua conta 3 m per il pianificatore (acqua.js: PENALE 8)
 const SNAP_ALT = 40, SNAP_N = 6;                                  // agganci alternativi: fino a 40 m più lontani del più vicino, al massimo 6
 
 export function createNet({ CL, CO, loadTile }) {
@@ -31,7 +33,7 @@ export function createNet({ CL, CO, loadTile }) {
       const sig = (a.la * 1e8 + a.lo) + '|' + (b.la * 1e8 + b.lo) + '|' + row[2];
       if (sigs.has(sig)) { t.edges.push(null); continue; }       // stesso tratto già arrivato con la mattonella dell'altro capo
       sigs.add(sig);
-      const e = { a, b, w, s: row[3] ? 1 : 0, g };
+      const e = { a, b, w, s: row[3] | 0, g };          // s: 1 scale, 2 ponte (scripts/pedoni-core.js)
       a.adj.push(e); if (b !== a) b.adj.push(e);
       t.edges.push(e);
     }
@@ -90,7 +92,7 @@ export function createNet({ CL, CO, loadTile }) {
 
   // ricerca dagli agganci della partenza (SS) verso le mete (T: [{ key, snaps }]); h(nodo) = stima per A* (0 = Dijkstra).
   // Le distanze comprendono i tratti in linea retta tra i punti e la strada (d degli agganci).
-  async function search(SS, T, limit, h, enough = T.length) {
+  async function search(SS, T, limit, h, enough = T.length, costo = null) {
     const dist = new Map(), prev = new Map(), Q = heap(), done = new Set();
     const set = (n, d, pe) => { if (d < (dist.get(n) ?? Infinity) && d <= limit) { dist.set(n, d); prev.set(n, pe); Q.push(d + h(n), n); } };
     for (const S of SS) { set(S.e.a, S.d + S.pa, { from: S }); set(S.e.b, S.d + S.pb, { from: S }); }
@@ -119,11 +121,25 @@ export function createNet({ CL, CO, loadTile }) {
         if (!b || m < b.m) best.set(t.key, { m, via: u, ts });
         if (t.need.delete(u) && !t.need.size) open--;
       }
-      for (const e of u.adj) { const v = e.a === u ? e.b : e.a; if (!done.has(v)) set(v, du + e.w, { e }); }
+      for (const e of u.adj) { const v = e.a === u ? e.b : e.a; if (!done.has(v)) set(v, du + e.w + (costo ? costo(e) : 0), { e }); }
     }
     return { best, prev };
   }
 
+  // tratti interi del percorso verso una meta (dal primo incrocio all'ultimo), e metri veri (senza il costo in più)
+  function archi(b, prev, interi = false) {
+    if (!b.via) return interi && b.S ? [b.S.e] : [];
+    const out = []; let n = b.via, S = null;
+    for (;;) { const pe = prev.get(n); if (!pe) break; if (pe.from) { S = pe.from; break; } out.push(pe.e); n = pe.e.a === n ? pe.e.b : pe.e.a; }
+    out.reverse();
+    // con i tratti agganciati ai capi, se il percorso li percorre davvero (più di 3 m dal punto agganciato all'incrocio)
+    if (interi) {
+      if (S && S.e !== out[0] && (n === S.e.a ? S.pa : S.pb) > 3) out.unshift(S.e);
+      if (b.ts && b.ts.e !== out[out.length - 1] && (b.via === b.ts.e.a ? b.ts.pa : b.ts.pb) > 3) out.push(b.ts.e);
+    }
+    return out;
+  }
+  const veri = (b, prev, costo) => (costo ? b.m - archi(b, prev).reduce((s, e) => s + costo(e), 0) : b.m);
   // forma del percorso trovato verso una meta: dal punto agganciato della partenza, lungo i tratti, al punto agganciato della meta
   function shape(b, prev) {
     const ll = p => [p[0] / U, p[1] / U];
@@ -152,26 +168,38 @@ export function createNet({ CL, CO, loadTile }) {
   return {
     ensure, snap, nodes, tiles,
     // metri a piedi da «da» a ciascuna meta (entro limite); mete: [{ lat, lon, key }]. enough: bastano le N mete più vicine
-    async distances(da, mete, limit, enough = mete.length) {
+    async distances(da, mete, limit, enough = mete.length, costo = null) {
       await prefetch([da], 1);
       const SS = await snap(da); if (!SS) return null;
       const T = [];
       for (const m of mete) { const s = await snap(m); if (s) T.push({ snaps: s, key: m.key }); }
-      const { best } = await search(SS, T, limit, () => 0, enough);
+      const { best, prev } = await search(SS, T, costo ? limit * 2.5 : limit, () => 0, enough, costo);   // con il costo: più margine
       const out = new Map();
-      for (const t of T) { const b = best.get(t.key); if (b && b.m <= limit) out.set(t.key, Math.round(b.m)); }
+      // con il costo (acqua alta): metri veri più una parte del costo (EQUIV), così le fermate raggiungibili solo con l'acqua «sembrano» più
+      // lontane al pianificatore e i minuti a piedi tengono conto del passo più lento (acqua, passerelle); il limite resta sui metri veri
+      for (const t of T) { const b = best.get(t.key); if (!b) continue; const m = veri(b, prev, costo); if (m <= limit) out.set(t.key, Math.round(costo ? m + (b.m - m) * EQUIV : m)); }
       return out;
     },
     // percorso tra due punti: metri e forma (con i due tratti in linea retta tra il punto e la strada)
-    async route(da, a, limit) {
+    // tratti delle mattonelle che coprono un riquadro [s, w, n, e] (gradi), al massimo «max» mattonelle; null se sono troppe
+    async edgesIn(s, w, n, e, max = 16) {
+      const cells = [];
+      for (let r = Math.floor(s / CL); r <= Math.floor(n / CL); r++) for (let q = Math.floor(w / CO); q <= Math.floor(e / CO); q++) cells.push(`${r}_${q}`);
+      if (cells.length > max) return null;
+      const ts = await Promise.all(cells.map(ensure)), out = [];
+      for (const t of ts) if (t) out.push(...t.edges);
+      return out;
+    },
+    async route(da, a, limit, costo = null) {
       const n = Math.min(8, Math.ceil(Math.hypot((a.lat - da.lat) / CL, (a.lon - da.lon) / CO)));
       await prefetch(Array.from({ length: n + 1 }, (_, i) => ({ lat: da.lat + (a.lat - da.lat) * i / (n || 1), lon: da.lon + (a.lon - da.lon) * i / (n || 1) })), 0);
       const SS = await snap(da), AA = await snap(a); if (!SS || !AA) return null;
       const kx = 111320 / U * Math.cos(a.lat * Math.PI / 180), ky = 111320 / U;
       const h = n => { let x = Infinity; for (const s of AA) x = Math.min(x, Math.hypot((n.lo - s.pt[1]) * kx, (n.la - s.pt[0]) * ky) + s.d); return x; };
-      const { best, prev } = await search(SS, [{ snaps: AA, key: 'a' }], limit, h);
-      const b = best.get('a'); if (!b || b.m > limit) return null;
-      return { m: Math.round(b.m), pts: [[da.lat, da.lon], ...shape(b, prev), [a.lat, a.lon]] };
+      const { best, prev } = await search(SS, [{ snaps: AA, key: 'a' }], costo ? limit * 2.5 : limit, h, 1, costo);
+      const b = best.get('a'); if (!b) return null;
+      const m = veri(b, prev, costo); if (m > limit) return null;
+      return { m: Math.round(m), pts: [[da.lat, da.lon], ...shape(b, prev), [a.lat, a.lon]], archi: archi(b, prev, true) };
     }
   };
 }

@@ -10,3 +10,10 @@ metriche-*.csv
 tpl-metriche-*.html
 diag-token*.txt
 *.token
+# archivio originale del rilievo RAMSES (Insula spa, ~333 MB): solo sul computer, mai su GitHub (si scarica dal sito di Insula).
+# Le tessere derivate in public/acqua/rilievo/ si pubblicano con «Fonte informativa: Insula spa» (condizioni d'uso del sito di Insula).
+dati-ramses/
+dati-passerelle/
+tmp-atlante/
+
+__pycache__/

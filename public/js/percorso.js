@@ -12,6 +12,8 @@ import * as Viaggio from './viaggio.js';
 import * as Notify from './notify.js';
 import * as Avvisi from './avvisi.js';
 import * as Tide from './tide.js';
+import * as Livelli from './livelli.js';
+import * as XA from './acqua.js';
 
 const NEAR_M = 1500, NEAR_N = 14, REFRESH_MS = 60000, KEY = 'tpl.percorso', KEY_OPZ = 'tpl.percorso.opz';
 let X = null;                      // contesto dato da app.js (mappa, pannello, fermate, posizione…)
@@ -21,7 +23,7 @@ let X = null;                      // contesto dato da app.js (mappa, pannello, 
 // passo (andatura): calma (passo tranquillo + 3 minuti per i cambi) | normale | svelta; mezzi: battelli e/o autobus e tram
 const OPZ0 = { mezzi: ['nav', 'aut'], pref: 'equilibrata', passo: 'normale' };
 // when: 'now' (parti adesso, tempo reale) · 'at' (parti alle) · 'by' (arriva entro); date: giorno scelto (AAAA-MM-GG), entro le date dei GTFS in archivio
-const S = { formOpen: false, tall: false, walkShow: false, from: null, to: null, when: 'now', time: '', date: '', res: null, err: null, sel: -1, det: null, alts: null, edit: null, q: '', picking: null, loading: false, asked: 0,
+const S = { formOpen: false, tall: false, walkShow: false, from: null, to: null, when: 'now', time: '', date: '', res: null, err: null, sel: -1, det: null, alts: null, edit: null, lst: null, ren: null, draft: null, draftF: null, q: '', picking: null, loading: false, asked: 0,
   opz: { ...OPZ0 }, showOpz: false, opzDirty: false };
 let timer = null, token = 0, retry = null, range = { min: '', max: '' };
 // date con orari disponibili: le stesse della modalità «Programmato» (/api/dates, versioni dei GTFS in archivio)
@@ -44,7 +46,7 @@ function cands(ep) {
   if (ep.kind === 'zone') { const z = zones.get(ep.key); if (!z) return null; return z.items.flatMap(i => groups.get(i.id) || [i.id]).map(id => id + '~0'); }
   if (ep.kind === 'stop') return (groups.get(ep.id) || [ep.id]).map(id => id + '~0');
   // distanze lungo le strade già calcolate per questo punto (prepWalk): «~r» = metri reali, il server non aggiunge la sua stima
-  const real = walkVal.get(ptKey(ep));
+  const real = walkVal.get(ptKey(ep) + acquaK);
   if (real?.size) return [...real].sort((a, b) => a[1] - b[1]).slice(0, NEAR_N).flatMap(([id, d]) => (groups.get(id) || [id]).map(x => x + '~' + d + '~r'));
   return nearStops(ep).slice(0, NEAR_N).flatMap(([id, d]) => (groups.get(id) || [id]).map(x => x + '~' + Math.round(d)));
 }
@@ -67,20 +69,112 @@ function memoWalk(k, fn) {
   walkMemo.set(k, p); return p;
 }
 const isPoint = ep => ep && (ep.kind === 'me' || ep.kind === 'point') && ep.lat != null;
-const walkKey = () => (S.from?.lat != null && S.to?.lat != null ? `w|${ptKey(S.from)}|${ptKey(S.to)}` : null);
+// ACQUA ALTA nei tratti a piedi (acqua.js, livelli.js): al livello di marea in città nell'ora del tratto, con il MOSE, i tratti allagati
+// senza passerella si evitano se c'è un'altra strada e le passerelle posate si usano. Solo con la marea da +80 cm e i dati già sul telefono
+// (o scaricabili in 3 s); altrimenti tutto come prima. acquaK: parte delle chiavi dei calcoli a piedi (cambia con il livello).
+let acquaK = '';
+const idxMemo = new Map();
+async function acquaA(ms) {
+  const liv = Livelli.livelloA(ms); if (!liv || !(liv.cm >= XA.MIN_ACQUA)) return null;
+  const d = Livelli.pronti() || await Promise.race([Livelli.carica(), new Promise(r => setTimeout(() => r(null), 3000))]);
+  if (!d) return null;
+  if (d.Q.rilievo && S.from?.lat != null && S.to?.lat != null) {        // quote misurate per la zona del percorso (tessere del rilievo)
+    const box = [Math.min(S.from.lat, S.to.lat) - 0.006, Math.min(S.from.lon, S.to.lon) - 0.008, Math.max(S.from.lat, S.to.lat) + 0.006, Math.max(S.from.lon, S.to.lon) + 0.008];
+    await Promise.race([Livelli.prepara(box), new Promise(r => setTimeout(r, 2500))]);
+  }
+  const st = XA.inStagione(ms, d.P.stagione), k = `${liv.cm}${st ? 's' : ''}t${Livelli.tessere()}`;
+  let pass = idxMemo.get(k); if (!pass) { if (idxMemo.size > 30) idxMemo.clear(); pass = XA.indicePasserelle(XA.posate(d.P, liv.cm, ms)); idxMemo.set(k, pass); }
+  return { cm: liv.cm, Q: d.Q, pass, key: '|a' + k, mose: liv.mose };
+}
+// istante della ricerca (partenza o arrivo scelti, o adesso) e di un tratto a piedi di una soluzione (k = indice nella soluzione)
+const searchMs = () => (S.when !== 'now' && S.time ? Viaggio.romeMs(clampDate(S.date), S.time) : Date.now());
+function legMs(o, k) {
+  const sn = snapOf(o); if (!sn) return searchMs();
+  let j = 0, ms = sn.leaveMs;                                     // sn.legs: stesse tappe di o.tratte (senza le corse non valide)
+  for (let i = 0; i < o.tratte.length && i < k; i++) {
+    const t = o.tratte[i], l = sn.legs[j];
+    if (t.tipo === 'piedi') { if (l?.t === 'w') j++; continue; }
+    if (t.tipo === 'mezzo' && l?.t === 'r' && t.tripId) { ms = l.a.ms; j++; }
+  }
+  return ms;
+}
+const walkKey = () => (S.from?.lat != null && S.to?.lat != null ? `w|${ptKey(S.from)}|${ptKey(S.to)}${acquaK}` : null);
 // prima di chiedere le soluzioni: distanze reali dai punti alle fermate vicine e percorso «tutto a piedi» (se entro 30 minuti)
 async function prepWalk() {
-  const jobs = [];
-  for (const ep of [S.from, S.to]) if (isPoint(ep)) jobs.push(memoWalk(ptKey(ep), async () => {
+  const jobs = [], acqua = (isPoint(S.from) || isPoint(S.to)) ? await acquaA(searchMs()) : null;
+  acquaK = acqua ? acqua.key : '';
+  for (const ep of [S.from, S.to]) if (isPoint(ep)) jobs.push(memoWalk(ptKey(ep) + acquaK, async () => {
     const near = nearStops(ep); if (!near.length) return null;
-    const m = await Walk.distanze({ lat: +ep.lat, lon: +ep.lon }, near.map(([id, , lat, lon]) => ({ key: id, lat, lon })));
+    const m = await Walk.distanze({ lat: +ep.lat, lon: +ep.lon }, near.map(([id, , lat, lon]) => ({ key: id, lat, lon })), 14, 4000, acqua);
     return m && m.size ? m : null;                                 // nessuna fermata raggiungibile lungo la rete: linea d'aria, come prima
   }));
   const wk = walkKey();
-  if (wk && mDist(S.from.lat, S.from.lon, S.to.lat, S.to.lon) <= Walk.LIMITE_M) jobs.push(memoWalk(wk, () => Walk.percorso({ lat: +S.from.lat, lon: +S.from.lon }, { lat: +S.to.lat, lon: +S.to.lon })));
+  if (wk && mDist(S.from.lat, S.from.lon, S.to.lat, S.to.lon) <= Walk.LIMITE_M) jobs.push(memoWalk(wk, () => Walk.percorso({ lat: +S.from.lat, lon: +S.from.lon }, { lat: +S.to.lat, lon: +S.to.lon }, 6000, acqua)));
   await Promise.all(jobs);
 }
-const pathFor = (a, b) => memoWalk(`p|${a[0].toFixed(5)},${a[1].toFixed(5)}|${b[0].toFixed(5)},${b[1].toFixed(5)}`, () => Walk.percorso({ lat: a[0], lon: a[1] }, { lat: b[0], lon: b[1] }));
+// tratto a piedi disegnato: all'ora del tratto (ms), con l'acqua alta se serve
+const pathFor = async (a, b, ms) => {
+  const acqua = await acquaA(ms ?? searchMs());
+  return memoWalk(`p|${a[0].toFixed(5)},${a[1].toFixed(5)}|${b[0].toFixed(5)},${b[1].toFixed(5)}${acqua ? acqua.key : ''}`, () => Walk.percorso({ lat: a[0], lon: a[1] }, { lat: b[0], lon: b[1] }, 6000, acqua));
+};
+// testo breve per un tratto a piedi con l'acqua alta: passerelle usate e acqua inevitabile
+function acquaTxt(w) {
+  const a = w?.acqua; if (!a) return '';
+  const pp = a.passerelle.map(p => p.d.replace(/^Da /, 'da ')).slice(0, 2), out = [];
+  if (a.passerella >= 5 && pp.length) out.push(`su passerella ${pp.length === 1 ? pp[0] : pp.length + ' tratti'} (posata da ${Math.min(...a.passerelle.map(p => p.q))} cm)`);
+  const m = Math.round(a.bagnati / 10) * 10 || 5, cm = Math.max(2, Math.round(a.prof));
+  const qual = (a.stimati ?? a.bagnati) * 2 > a.bagnati ? 'stima' : 'quote del rilievo';   // quote misurate (RAMSES) per più di metà dei metri bagnati
+  if (a.bagnati >= 5) out.push(cm < 10 ? `acqua bassa possibile per circa ${m} m (pochi cm, ${qual})` : `acqua possibile per circa ${m} m, fino a ~${cm} cm (${qual}): ${cm < 30 ? 'stivali' : 'stivali alti'}`);
+  return out.join(' · ');
+}
+// ACQUA ALTA SULLE SCHEDE: i tratti a piedi di ogni soluzione (stessi capi del disegno sulla mappa, all'ora del tratto) si calcolano sul
+// telefono appena compaiono le soluzioni, e la scheda dice se si cammina all'asciutto, su passerella o con l'acqua. Solo da +80 cm in città.
+const acqSol = new Map(), acqWait = new Set();                    // chiave soluzione -> testo
+const acqKey = o => { const sn = snapOf(o); return `${solId(o)}|${sn?.leaveMs ?? ''}|${S.from ? epSig(S.from) : ''}|${S.to ? epSig(S.to) : ''}`; };
+function walkSegs(o) {
+  const F = S.from, T = S.to, out = []; let prev = F?.lat != null ? [F.lat, F.lon] : null;
+  const add = (a, b, k) => { if (a && b && mDist(a[0], a[1], b[0], b[1]) >= 15) out.push({ a, b, ms: legMs(o, k) }); };
+  o.tratte.forEach((t, k) => {
+    if (t.tipo === 'piedi') { const p = t.a?.lat != null ? [t.a.lat, t.a.lon] : t.estremo === 'arrivo' && T?.lat != null ? [T.lat, T.lon] : null; if (t.da?.lat != null) prev = [t.da.lat, t.da.lon]; add(prev, p, k); if (p) prev = p; return; }
+    const start = t.da?.lat != null ? [t.da.lat, t.da.lon] : null; if (prev && start && mDist(prev[0], prev[1], start[0], start[1]) > 25) add(prev, start, k);
+    prev = t.a?.lat != null ? [t.a.lat, t.a.lon] : prev;
+  });
+  const last = o.tratte[o.tratte.length - 1];
+  if (T?.lat != null && prev && last?.tipo === 'mezzo' && mDist(prev[0], prev[1], T.lat, T.lon) > 25) add(prev, [T.lat, T.lon], o.tratte.length);
+  return out;
+}
+async function acquaSol(o) {
+  const segs = walkSegs(o); if (!segs.length) return '';
+  const ws = await Promise.all(segs.map(g => pathFor(g.a, g.b, g.ms)));
+  const m = { bagnati: 0, passerella: 0, prof: 0, passerelle: [], stimati: 0 }; let any = false;
+  for (const w of ws) {
+    const a = w?.acqua; if (!a) continue; any = true;
+    m.bagnati += a.bagnati; m.passerella += a.passerella; m.prof = Math.max(m.prof, a.prof); m.stimati += a.stimati ?? a.bagnati;
+    for (const p of a.passerelle) if (!m.passerelle.some(x => x.d === p.d)) m.passerelle.push(p);
+  }
+  if (!any) return '';
+  const t = acquaTxt({ acqua: m });
+  return t ? 'A piedi: ' + t : 'A piedi all\'asciutto (stima)';
+}
+function acqLine(o) {
+  const t = acqSol.get(acqKey(o)); if (!t) return '';
+  return `<span class="pp-acl">${icon('passerella', 'sm')}<span>${esc(t)}</span></span>`;
+}
+// dopo aver disegnato l'elenco o il dettaglio: calcola le schede che mancano e le completa senza ridisegnare tutto
+function fillAcqua(list) {
+  const lv = Livelli.livelloA(searchMs()); if (!(lv?.cm >= XA.MIN_ACQUA)) return;
+  if (acqSol.size > 60) acqSol.clear();
+  for (const o of list) {
+    const k = acqKey(o); if (acqSol.has(k) || acqWait.has(k)) continue;
+    acqWait.add(k);
+    acquaSol(o).then(t => {
+      acqWait.delete(k); acqSol.set(k, t || ''); if (!t) return;
+      for (const b of X.plist.querySelectorAll('.pp-opt[data-sid]')) if (b.dataset.sid === k && !b.querySelector('.pp-acl')) b.insertAdjacentHTML('beforeend', acqLine(o));
+      const tb = S.det && acqKey(S.det) === k && X.plist.querySelector('.pp-tide > span');
+      if (tb && !tb.querySelector('.pp-acqt')) tb.insertAdjacentHTML('beforeend', `<span class="pp-acqt">${esc(t)}</span>`);
+    }, () => acqWait.delete(k));
+  }
+}
 const epName = ep => (ep ? ep.label : '');
 // PERCORSI RECENTI (v29), solo sul telefono: gli ultimi 5 cercati, offerti tra i suggerimenti quando il campo è vuoto. «La mia posizione» si
 // salva senza coordinate (al momento dell'uso si prende quella di adesso). Il modulo NON si riempie da solo con un percorso vecchio.
@@ -93,8 +187,20 @@ function addRecent() {
   const from = epKeep(S.from), to = epKeep(S.to); if (!from || !to) return;
   const sig = epSig(from) + '>' + epSig(to);
   recenti = [{ from, to, at: Date.now() }, ...recenti.filter(r => epSig(r.from) + '>' + epSig(r.to) !== sig)].slice(0, 5);
-  try { localStorage.setItem(KEY, JSON.stringify({ v: 2, recenti })); } catch { /* facoltativo */ }
+  keepRecenti();
 }
+const recSig = r => epSig(r.from) + '>' + epSig(r.to);
+const keepRecenti = () => { try { localStorage.setItem(KEY, JSON.stringify({ v: 2, recenti })); } catch { /* facoltativo */ } };
+// MODIFICA DI UN RECENTE (v33.5): stessa posizione e stessa data; se diventa uguale a un altro recente, l'altro si toglie (niente doppioni).
+// -> 'ok' | 'same' (partenza = arrivo) | 'missing'
+function updateRecent(k, from, to) {
+  const i = recenti.findIndex(x => recSig(x) === k), f = epKeep(from), t = epKeep(to); if (i < 0 || !f || !t) return 'missing';
+  if (epSig(f) === epSig(t)) return 'same';
+  const n = { from: f, to: t, at: recenti[i].at }, ns = recSig(n);
+  recenti = recenti.map((x, j) => (j === i ? n : x)).filter((x, j) => j === i || recSig(x) !== ns);
+  keepRecenti(); return 'ok';
+}
+function removeRecent(k) { recenti = recenti.filter(x => recSig(x) !== k); keepRecenti(); }
 function restore() {
   try {
     const d = JSON.parse(localStorage.getItem(KEY) || 'null');
@@ -134,20 +240,30 @@ export function init(ctx) {
   X.map?.on('dragstart zoomstart', userMove);                            // mappa spostata o ingrandita a mano (non dall'inquadratura automatica)
   // cambio di tema chiaro/scuro: i tratti a piedi sulla mappa si ridisegnano con i colori giusti
   new MutationObserver(() => { if (X.isOpen() && (S.res || S.det)) draw(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  // dati della marea arrivati dopo il pianificatore: nota sulla marea nel dettaglio e acqua alta sulle schede, senza ridisegnare tutto
+  window.addEventListener('tpl:tide', () => {
+    if (!X.isOpen() || vgShown()) return;
+    if (S.det && !X.plist.querySelector('.pp-tide')) { const h = tideHtml(S.det, snapOf(S.det)), st = X.plist.querySelector('.pp-steps'); if (h && st) st.insertAdjacentHTML('beforebegin', h); }
+    if (S.det) fillAcqua([S.det]); else if (S.res?.soluzioni?.length) fillAcqua(S.res.soluzioni);
+  });
   X.chips.addEventListener('click', onClick); X.plist.addEventListener('click', onClick);
   X.chips.addEventListener('input', e => { if (e.target.matches('.pp-q')) { S.q = e.target.value; renderSuggest(); } });
+  X.plist.addEventListener('input', e => { if (e.target.matches('.pp-dn') && S.draft) S.draft.name = e.target.value; });
+  X.plist.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('.pp-dn')) { e.preventDefault(); saveDraft(false); } });
   X.chips.addEventListener('change', e => {
     if (e.target.matches('.pp-time') && e.target.value) { S.time = e.target.value; run(); }
     if (e.target.matches('.pp-date')) { S.date = clampDate(e.target.value); e.target.value = S.date; run(); }
   });
-  X.chips.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('.pp-q')) { const f = X.plist.querySelector('.pp-sug'); if (f) f.click(); } if (e.key === 'Escape' && S.edit) { e.stopPropagation(); S.edit = null; render(); } });
+  X.chips.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('.pp-q')) { const f = X.plist.querySelector('.pp-sug'); if (f) f.click(); } if (e.key === 'Escape' && (S.edit || S.draft)) { e.stopPropagation(); back(); } });
 }
 export const isPicking = () => !!S.picking;
 // livelli interni del pianificatore per il tasto «indietro» (nav.js): ricerca di un punto, opzioni, dettaglio di una soluzione
-export const depth = () => (vgShown() ? 0 : (S.edit ? 1 : 0) + (S.showOpz ? 1 : 0) + (formShown() && S.from && S.to ? 1 : 0) + (S.det ? 1 : 0));
+export const depth = () => (vgShown() ? 0 : (S.edit ? 1 : 0) + (S.draft ? 1 : 0) + (S.draftF ? 1 : 0) + (S.showOpz ? 1 : 0) + (formShown() && S.from && S.to ? 1 : 0) + (S.det ? 1 : 0));
 export function back() {
   if (vgShown()) return false;                                     // schermata «In viaggio»: «indietro» chiude il pannello (il viaggio continua)
-  if (S.edit) { S.edit = null; S.q = ''; render(); draw(); return true; }
+  if (S.draftF) { S.draftF = null; S.q = ''; render(); return true; }   // scelta di un punto della bozza -> scheda di modifica
+  if (S.draft) { S.draft = null; render(); return true; }               // scheda di modifica -> elenchi (nulla salvato)
+  if (S.edit) { S.edit = null; S.lst = null; S.q = ''; render(); draw(); return true; }
   if (S.showOpz) { const d = S.opzDirty; S.showOpz = false; S.opzDirty = false; renderForm(); if (d) run(); else renderBody(); X.changed?.(); return true; }
   if (S.formOpen && S.from && S.to) { S.formOpen = false; render(); return true; }   // modulo riaperto: si richiude nella riga riassuntiva
   if (S.det) { S.sel = -1; S.det = null; S.tall = false; renderBody(); draw(); return true; }
@@ -196,7 +312,7 @@ export function show(opts = {}) {
   if (vgShown()) { S.edit = null; S.showOpz = false; vgTop = true; render(); draw(); return; }
   // riaperto dopo più di 30 minuti (o alla prima apertura): pulito, da «la mia posizione», «Adesso». Entro 30 minuti resta com'era.
   if (!opts.from && !opts.to && Date.now() - (S.usedAt || 0) > STALE_MS) {
-    Object.assign(S, { from: null, to: null, res: null, det: null, sel: -1, alts: null, sim: null, more: null, err: null, showOpz: false, formOpen: false, edit: null, q: '', when: 'now', walkShow: false, tall: false });
+    Object.assign(S, { from: null, to: null, res: null, det: null, sel: -1, alts: null, sim: null, more: null, err: null, showOpz: false, formOpen: false, edit: null, lst: null, ren: null, draft: null, draftF: null, q: '', when: 'now', walkShow: false, tall: false });
   }
   S.usedAt = Date.now();
   if (opts.from || opts.to) { S.res = null; S.det = null; S.sel = -1; S.alts = null; S.showOpz = false; }
@@ -234,6 +350,7 @@ export function pick(ll) {
   const f = S.picking; if (!f) return false;
   S.picking = null; X.setPick(false);
   if (!ll) { render(); return true; }                          // annullato
+  if (S.draft && S.draftF === f) { S.draft[f] = { kind: 'point', label: 'Punto sulla mappa', lat: ll.lat, lon: ll.lng }; S.draftF = null; render(); return true; }
   S[f] = { kind: 'point', label: 'Punto sulla mappa', lat: ll.lat, lon: ll.lng }; S.edit = null; render(); run();
   return true;
 }
@@ -388,9 +505,14 @@ function miniHtml() {
 }
 function renderForm() {
   if (vgShown()) { X.chips.innerHTML = ''; return; }
+  if (S.edit && S.draft && !S.draftF) {
+    X.chips.innerHTML = `<div class="pp pp-editing"><div class="pp-qwrap"><button type="button" class="ibtn sm pp-qback" aria-label="Annulla la modifica">${icon('back')}</button><b class="pp-dtitle">Modifica percorso</b></div></div>`;
+    return;
+  }
   if (S.edit) {
+    const ph = S.draftF ? (S.draftF === 'from' ? 'Nuova partenza: fermata o luogo' : 'Nuovo arrivo: fermata o luogo') : S.edit === 'from' ? 'Partenza: fermata o luogo' : 'Arrivo: fermata o luogo';
     X.chips.innerHTML = `<div class="pp pp-editing"><div class="pp-qwrap"><button type="button" class="ibtn sm pp-qback" aria-label="Annulla">${icon('back')}</button>`
-      + `<span class="xwrap"><input class="pp-q" type="search" enterkeyhint="search" autocomplete="off" maxlength="80" placeholder="${S.edit === 'from' ? 'Partenza: fermata o luogo' : 'Arrivo: fermata o luogo'}" aria-label="${S.edit === 'from' ? 'Cerca il punto di partenza' : 'Cerca il punto di arrivo'}" value="${esc(S.q)}">`
+      + `<span class="xwrap"><input class="pp-q" type="search" enterkeyhint="search" autocomplete="off" maxlength="80" placeholder="${ph}" aria-label="${(S.draftF || S.edit) === 'from' ? 'Cerca il punto di partenza' : 'Cerca il punto di arrivo'}" value="${esc(S.q)}">`
       + `<button type="button" class="ibtn sm xbtn" data-x aria-label="Cancella il testo"${S.q ? '' : ' hidden'}>${icon('close', 'sm')}</button></span></div></div>`;
     const inp = X.chips.querySelector('.pp-q'); if (inp && document.activeElement !== inp) setTimeout(() => inp.focus(), 30);
     return;
@@ -413,19 +535,62 @@ function renderForm() {
     + `<button type="button" class="pp-opzbtn${S.showOpz ? ' on' : ''}" aria-expanded="${S.showOpz}" aria-label="Opzioni del percorso${opzCount() ? ` (${opzCount()} attive)` : ''}" title="Opzioni">${icon('sliders', 'sm')}<span class="pp-optx">Opzioni</span>${opzCount() ? `<span class="pp-cnt">${opzCount()}</span>` : ''}</button>`
     + '</div></div>';
 }
+// PERCORSI RECENTI E SALVATI: «Modifica» per sezione, come nel pannello Preferiti (v33.5). In modifica ogni riga ha: cambia partenza e arrivo
+// (scheda di modifica qui sotto), sposta su/giù (solo salvati, come nei Preferiti), elimina.
+const catHtml = (s, title) => `<div class="search-category pp-cat"><span>${title}</span><button type="button" class="nlink pp-catb" data-lst="${s}" aria-pressed="${S.lst === s}">${S.lst === s ? 'Fine' : `${icon('edit', 'sm')}Modifica`}</button></div>`;
+function lstRow(s, k, r, i, n) {
+  const ic = icon(s === 'route' ? 'route' : 'clock'), title = esc(s === 'route' && r.name ? r.name : r.from.label), sub = esc(s === 'route' && r.name ? `${r.from.label} → ${r.to.label}` : r.to.label);
+  if (S.lst !== s) return `<button type="button" class="pp-sug" data-s="${s}" data-k="${esc(k)}">${ic}<span><b>${title}</b><small>${s === 'route' && r.name ? '' : icon('next', 'sm') + ' '}${sub}</small></span></button>`;
+  const lab = esc(`${r.from.label} → ${r.to.label}`);
+  return `<div class="vg-row pp-erow"><span class="pp-sug static">${ic}<span><b>${title}</b><small>${s === 'route' && r.name ? '' : icon('next', 'sm') + ' '}${sub}</small></span></span><span class="fv-acts">`
+    + `<button type="button" class="ibtn sm" data-ded="${s}" data-k="${esc(k)}" aria-label="Modifica il percorso ${lab}" title="Modifica">${icon('edit', 'sm')}</button>`
+    + (s === 'route' ? `<button type="button" class="ibtn sm" data-dmv="-1" data-k="${esc(k)}" aria-label="Sposta su"${i ? '' : ' disabled'}>${icon('up', 'sm')}</button>`
+      + `<button type="button" class="ibtn sm" data-dmv="1" data-k="${esc(k)}" aria-label="Sposta giù"${i < n - 1 ? '' : ' disabled'}>${icon('down', 'sm')}</button>` : '')
+    + `<button type="button" class="ibtn sm fv-del" data-ddel="${s}" data-k="${esc(k)}" aria-label="Elimina il percorso ${lab}" title="Elimina">${icon('trash', 'sm')}</button></span></div>`;
+}
+// SCHEDA DI MODIFICA (bozza): nulla si scrive finché non si tocca «Salva modifiche» (stessa voce) o «Salva come nuovo» / «Aggiungi ai salvati»
+// (voce nuova, l'originale resta). Partenza e arrivo si scelgono con la stessa ricerca del pianificatore (fermate, luoghi, posizione, mappa).
+function draftHtml() {
+  const d = S.draft, rt = d.s === 'route';
+  const fld = f => `<div class="pp-fw"><button type="button" class="pp-f pp-df" data-df="${f}" aria-label="${f === 'from' ? 'Partenza' : 'Arrivo'}: ${esc(epName(d[f]))}. Tocca per cambiare"><small>${f === 'from' ? 'Partenza' : 'Arrivo'}</small><span class="pp-v">${epIc(d[f])}<span>${esc(epName(d[f]))}</span></span></button></div>`;
+  return `<div class="pp-draft"><p class="pp-dhead muted">${icon('info', 'sm')}<span>${rt ? 'Percorso salvato' : 'Percorso recente'}: tocca partenza o arrivo per cambiarli.</span></p>`
+    + `<div class="pp-ends"><div class="pp-rail" aria-hidden="true"><span class="pp-o"></span><span class="pp-l"></span><span class="pp-d"></span></div><div class="pp-fields">${fld('from')}${fld('to')}</div>`
+    + `<button type="button" class="ibtn sm pp-dswap" aria-label="Inverti partenza e arrivo" title="Inverti">${icon('swap')}</button></div>`
+    + (rt ? `<label class="pp-dname"><small>Nome (facoltativo)</small><input type="text" class="pp-dn" maxlength="60" value="${esc(d.name || '')}" placeholder="Nome (es. Casa → Lavoro)"></label>` : '')
+    + `<div class="pp-dacts"><button type="button" class="pp-act pp-dok" data-dsave>${icon('check', 'sm')}<span>Salva modifiche</span></button>`
+    + `<button type="button" class="pp-act" data-dnew>${icon('star', 'sm')}<span>${rt ? 'Salva come nuovo' : 'Aggiungi ai salvati'}</span></button>`
+    + `<button type="button" class="pp-act" data-dcancel>${icon('close', 'sm')}<span>Annulla</span></button></div></div>`;
+}
+function saveDraft(asNew) {
+  const d = S.draft; if (!d) return;
+  const name = X.plist.querySelector('.pp-dn')?.value ?? d.name;
+  const res = d.s === 'route' ? (asNew ? Fav.addRoute(d.from, d.to, name) : Fav.updateRoute(d.k, d.from, d.to, name))
+    : asNew ? Fav.addRoute(d.from, d.to) : updateRecent(d.k, d.from, d.to);
+  const msg = { ok: asNew ? 'Percorso aggiunto ai salvati.' : d.s === 'recent' && Fav.hasRoute(d.from, d.to) ? 'Percorso modificato: è già tra i salvati.' : 'Percorso modificato.',
+    dup: 'Questo percorso è già tra i salvati: nessun doppione creato.', same: 'Partenza e arrivo coincidono: scegline due diversi.',
+    missing: 'Il percorso non c\'è più (forse eliminato in un\'altra scheda).' }[res] || 'Memoria del dispositivo non disponibile: modifica non salvata.';
+  X.toast?.(msg, res === 'ok' ? 2500 : 4500);
+  if (res === 'ok' || res === 'missing') { S.draft = null; S.draftF = null; X.favChanged?.(); render(); }
+}
 function renderSuggest() {
+  if (S.draft && !S.draftF) { X.plist.innerHTML = draftHtml(); X.layer.clearLayers(); return; }
   const q = S.q.trim(), qn = norm(q.toLowerCase()), out = [];
   out.push(`<button type="button" class="pp-sug" data-s="me">${icon('locate')}<span><b>La mia posizione</b><small>usata solo sul telefono: al server vanno le fermate vicine</small></span></button>`);
   out.push(`<button type="button" class="pp-sug" data-s="map">${icon('pin')}<span><b>Scegli sulla mappa</b><small>tocca il punto sulla mappa</small></span></button>`);
-  if (!q) {
+  if (S.draftF) out.unshift(`<p class="pp-dhead muted pad">${icon('edit', 'sm')}<span>Scegli ${S.draftF === 'from' ? 'la nuova partenza' : 'il nuovo arrivo'} del percorso.</span></p>`);
+  if (!q && !S.draftF) {
     const j = Viaggio.active();
     if (j) out.push(`<div class="search-category">Viaggio in corso</div><button type="button" class="pp-sug vg-cur" data-s="live">${icon('live')}<span><b>${esc(j.from?.label || 'Partenza')} → ${esc(j.to?.label || 'Arrivo')}</b><small>${esc(Viaggio.shortText())} · tocca per le indicazioni</small></span></button>`);
     out.push(Viaggio.savedHtml());
     const saved = new Set(Fav.allRoutes().map(r => epSig(r.from) + '>' + epSig(r.to)));
     const rec = recenti.filter(r => !saved.has(epSig(r.from) + '>' + epSig(r.to)));
-    if (rec.length) out.push('<div class="search-category">Percorsi recenti</div>' + rec.map(r => `<button type="button" class="pp-sug" data-s="recent" data-k="${esc(epSig(r.from) + '>' + epSig(r.to))}">${icon('clock')}<span><b>${esc(r.from.label)}</b><small>${icon('next', 'sm')} ${esc(r.to.label)}</small></span></button>`).join(''));
-    const rs = Fav.allRoutes();
-    if (rs.length) out.push('<div class="search-category">Percorsi salvati</div>' + rs.slice(0, 8).map(r => `<button type="button" class="pp-sug" data-s="route" data-k="${esc(r.k)}">${icon('route')}<span><b>${esc(r.from.label)}</b><small>${icon('next', 'sm')} ${esc(r.to.label)}</small></span></button>`).join(''));
+    if (S.lst === 'recent' && !rec.length) S.lst = null;
+    if (rec.length) out.push(catHtml('recent', 'Percorsi recenti') + rec.map((r, i) => lstRow('recent', recSig(r), r, i, rec.length)).join(''));
+    const rs = Fav.allRoutes(), rsv = S.lst === 'route' ? rs : rs.slice(0, 8);   // in modifica si vedono tutti (anche oltre gli 8)
+    if (S.lst === 'route' && !rs.length) S.lst = null;
+    if (rs.length) out.push(catHtml('route', 'Percorsi salvati') + rsv.map((r, i) => lstRow('route', r.k, r, i, rsv.length)).join(''));
+  }
+  if (!q) {
     const fav = Fav.all();
     if (fav.length) out.push('<div class="search-category">Preferiti</div>' + fav.slice(0, 8).map(f => `<button type="button" class="pp-sug" data-s="fav" data-k="${esc(f.k)}">${icon('star', 'sm fav-ic')}${srcIcon(f.src)}<span>${esc(f.name)}</span></button>`).join(''));
   } else {
@@ -565,10 +730,13 @@ function tideHtml(o, sn) {
     if (k === 0 && S.from?.lat != null) pts.push([S.from.lat, S.from.lon]); if (t.estremo === 'arrivo' && S.to?.lat != null) pts.push([S.to.lat, S.to.lon]);
   });
   if (!pts.some(([a, b]) => inVenice(a, b))) return '';
-  const p = Tide.peakIn(sn.leaveMs, sn.arriveMs); if (!p || p.cm < 100) return '';
-  const hm = new Date(p.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' }), ms = Tide.moseState();
-  const mose = ms === 'sollevata' || ms === 'sollevamento' ? ' Il MOSE è in funzione: in città il livello dovrebbe restare più basso.' : ms === 'programmato' ? ' È programmato il sollevamento del MOSE.' : '';
-  return `<p class="pp-tide">${icon('tide', 'sm')}<span><b>Marea ${p.kind === 'previsto' ? 'prevista' : 'misurata'} ${p.cm} cm verso le ${hm}</b>Nei tratti a piedi le zone più basse (come San Marco) possono essere allagate: controlla passerelle e calzature.${mose}</span></p>`;
+  const p = Livelli.picco(sn.leaveMs, sn.arriveMs); if (!p) return '';
+  const liv = XA.livelloCitta(p, Tide.moseState()); if (!(liv.cm >= 90 || (liv.mose && p.cm >= 100))) return '';
+  const hm = new Date(p.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' }), ms = p.prova ? null : Tide.moseState();
+  const mose = liv.mose ? ` Con il MOSE ${ms === 'programmato' ? 'previsto' : 'in funzione'} in città il livello dovrebbe restare sotto circa ${XA.LIV_MOSE + 2} cm.` : ms === 'sollevata' || ms === 'sollevamento' ? ' Il MOSE è in funzione.' : '';
+  const calc = Livelli.pronti() && liv.cm >= XA.MIN_ACQUA ? ' I tratti a piedi evitano dove possibile le zone potenzialmente allagabili e usano le passerelle posate: i dettagli sono in ogni tratto.' : ' Nei tratti a piedi le zone più basse (come San Marco) possono essere allagate: controlla passerelle e calzature.';
+  const tot = acqSol.get(acqKey(o)), riep = tot ? `<span class="pp-acqt">${esc(tot)}</span>` : '';
+  return `<p class="pp-tide">${icon('tide', 'sm')}<span><b>${p.prova ? `Prova in locale: marea ${p.cm} cm` : `Marea ${p.kind === 'previsto' ? 'prevista' : 'misurata'} ${p.cm} cm verso le ${hm}`}</b>${liv.mose ? '' : calc}${mose}${riep}</span></p>`;
 }
 const shareLink = sn => {
   const u = new URL('/', location.origin), c = { da: epCode(S.from), a: epCode(S.to) };
@@ -598,11 +766,11 @@ function optCard(o, attr, live, compact = false, noPoi = false) {
   const seq = o.tratte.map(t => t.tipo === 'piedi' ? walkChip(t.min) : `<span class="pp-b">${badge(t.line, t.color, t.src, ' sm')}</span>`).join(`<span class="pp-sep">${icon('next', 'sm')}</span>`);
   const when = live && o.partiMs ? `<span class="in-min" data-exp="${o.partiMs}">${esc(etaText(null, o.partiMs, 0))}</span>` : '';
   const poi = o.poi?.length ? `<span class="pp-o5">${S.res?.entro ? 'Anche prima, alle' : 'Poi alle'} ${o.poi.map(x => `<b>${esc(x.parti)}</b>`).join(' · ')}</span>` : '';
-  return `<button type="button" class="pp-opt${compact ? ' sm' : ''}" ${attr}>`
+  return `<button type="button" class="pp-opt${compact ? ' sm' : ''}" ${attr} data-sid="${esc(acqKey(o))}">`
     + `<span class="pp-o1"><span class="pp-times"><b>${esc(o.parti)}</b>${icon('next', 'sm')}<b>${esc(o.arrivi)}</b></span><span class="pp-dur">${minTxt(o.minuti)}</span></span>`
     + `<span class="pp-seq">${seq}</span>`
     + (compact ? '' : `<span class="pp-o3">${trkIcon(first.trk, live)}<span>Da ${stopName(first.da)}${st.txt ? ` · <span class="${st.cls}">${esc(st.txt)}</span>` : ''}</span></span>`)
-    + `<span class="pp-o4">${when}<span>${cambiTxt(o)}${o.piedi ? ` · ${o.piedi} min a piedi` : ''}</span>${o.etichetta && !compact ? `<span class="pp-tag">${esc(o.etichetta)}</span>` : ''}</span>${riskLine(o)}${avLine(o)}`
+    + `<span class="pp-o4">${when}<span>${cambiTxt(o)}${o.piedi ? ` · ${o.piedi} min a piedi` : ''}</span>${o.etichetta && !compact ? `<span class="pp-tag">${esc(o.etichetta)}</span>` : ''}</span>${riskLine(o)}${avLine(o)}${acqLine(o)}`
     + (compact || noPoi ? '' : poi) + '</button>';
 }
 const kmTxt = m => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`);
@@ -638,7 +806,7 @@ function renderBody() {
     : r.entro ? 'a piedi parti più tardi che con qualsiasi mezzo' : 'a piedi arrivi prima di qualsiasi mezzo')
     : r.soluzioni.length && r.piedi <= Math.min(...r.soluzioni.map(o => o.minuti)) ? 'fai prima a piedi' : '';
   const walkOnly = r.piedi != null && (!r.soluzioni.length || walkFirst || r.piedi <= Math.min(...r.soluzioni.map(o => o.minuti)) + 5)
-    ? `<${walkVal.get(walkKey()) ? `button type="button" data-walkonly aria-pressed="${walkShown()}"` : 'div'} class="pp-walkonly${walkShown() ? ' on' : ''}">${icon('walk')}<span><b>A piedi: circa ${minTxt(r.piedi)}${walkVal.get(walkKey()) ? ` · ${kmTxt(walkVal.get(walkKey()).m)}` : ''}</b>${r.soluzioni.length ? (walkNote ? `<small>${walkNote}</small>` : '') : '<small>nessun mezzo conviene per questo tragitto</small>'}${walkVal.get(walkKey()) ? `<small>${walkShown() ? 'sulla mappa il percorso a piedi' : 'tocca per vederlo sulla mappa'}</small>` : ''}</span></${walkVal.get(walkKey()) ? 'button' : 'div'}>` : '';
+    ? `<${walkVal.get(walkKey()) ? `button type="button" data-walkonly aria-pressed="${walkShown()}"` : 'div'} class="pp-walkonly${walkShown() ? ' on' : ''}">${icon('walk')}<span><b>A piedi: circa ${minTxt(r.piedi)}${walkVal.get(walkKey()) ? ` · ${kmTxt(walkVal.get(walkKey()).m)}` : ''}</b>${r.soluzioni.length ? (walkNote ? `<small>${walkNote}</small>` : '') : '<small>nessun mezzo conviene per questo tragitto</small>'}${walkVal.get(walkKey()) ? `<small>${walkShown() ? 'sulla mappa il percorso a piedi' : 'tocca per vederlo sulla mappa'}</small>` : ''}${acquaTxt(walkVal.get(walkKey())) ? `<small class="pp-acq">${icon('passerella', 'sm')}${esc(acquaTxt(walkVal.get(walkKey())))}</small>` : ''}</span></${walkVal.get(walkKey()) ? 'button' : 'div'}>` : '';
   if (!r.soluzioni.length) {
     X.plist.innerHTML = head + walkOnly + (walkOnly ? '' : `<p class="muted pad">${r.senzaFermate ? `Nessuna fermata vicina al punto scelto.` : r.entro ? `Nessuna soluzione per arrivare entro le ${esc(r.entro)} (si guardano le 5 ore prima). Prova un orario più tardi.` : 'Nessuna soluzione nelle prossime ore con autobus, tram o battelli. Prova un altro orario o un punto vicino.'}${nf ? ' Le opzioni attive possono escludere delle soluzioni.' : ''}</p>`);
     return;
@@ -649,6 +817,7 @@ function renderBody() {
     + (rest.length ? `<h3 class="pp-ah">Altre soluzioni</h3>${rest.map((o, k) => card(o, k + 1)).join('')}` : '') + moreHtml(r) + '</div>'
     + `<button type="button" class="pp-later"${S.more?.loading ? ' disabled aria-busy="true"' : ''}>${S.more?.loading ? '<span class="spin sm" aria-hidden="true"></span>' : icon('clock', 'sm')}<span>${r.entro ? 'Mostra soluzioni che arrivano prima' : 'Mostra soluzioni più tardi'}</span></button>`
     + `<p class="pp-note muted">Ordinate per «${esc(PREF_TXT[S.opz.pref] || 'Arrivare prima')}». Fanno fede gli orari ACTV.</p>`;
+  fillAcqua(r.soluzioni);
 }
 // pagina delle opzioni (v28): cosa conta di più, andatura, mezzi
 function renderOpz() {
@@ -693,7 +862,7 @@ function renderDetail(o, live) {
     + strikeOf([o]) + actsHtml(o, snapOf(o)) + detAvHtml(o) + tideHtml(o, snapOf(o))
     + `<ol class="pp-steps"><li class="pp-step start"><span class="pp-sic">${S.from.kind === 'me' ? icon('locate') : icon('pin')}</span><div><b>Partenza alle ${esc(o.parti)}</b><small>${esc(epName(S.from))}</small></div></li>${steps.join('')}</ol>`
     + '<section class="pp-alts" aria-live="polite"></section>';
-  renderAlts(); loadAlts(o);
+  renderAlts(); loadAlts(o); fillAcqua([o]);
 }
 function detAvHtml(o) {
   const av = avvisiOf(o, snapOf(o)); if (!av.length) return '';
@@ -744,14 +913,18 @@ function draw() {
     L.polyline(pts, { color: WS.halo, weight: 10, opacity: WS.ho, lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(X.layer),
     L.polyline(pts, { color: WS.dot, weight: 6, opacity: pending ? .45 : 1, dashArray: '0.1 10', lineCap: 'round', lineJoin: 'round', interactive: false }).addTo(X.layer)   // provvisorio (linea retta): più tenue
   ];
+  // acqua alta lungo il tratto: in blu le parti con acqua possibile, nel colore delle passerelle quelle su passerella posata
+  const acquaParti = w => { for (const pa of w?.acqua?.parti || []) L.polyline(pa.pts, { color: pa.k === 'acqua' ? '#1e78e6' : (dark ? '#ffa94d' : '#c2410c'), weight: 5, opacity: .95, lineCap: 'round', interactive: false }).addTo(X.layer); };
   // subito in linea retta (più tenue), poi (appena calcolato sul telefono) lungo le strade; k = tappa nel dettaglio (per i metri)
   const walkLine = (a, b, k) => {
     const near = mDist(a[0], a[1], b[0], b[1]) < 15, line = walkPath([a, b], !near);
     if (near) return;
-    pathFor(a, b).then(w => {
+    pathFor(a, b, o && k != null ? legMs(o, k) : searchMs()).then(w => {
       if (!w || myDraw !== drawTok) { if (myDraw === drawTok) line[1].setStyle?.({ opacity: 1 }); return; }   // niente percorso: resta la linea retta, piena
       for (const l of line) X.layer.removeLayer(l);
-      walkPath(w.pts);
+      walkPath(w.pts); acquaParti(w);
+      const at = k != null && acquaTxt(w), sa = at && X.plist.querySelector(`.pp-step.walk[data-wk="${k}"] div`);
+      if (sa && !sa.querySelector('.pp-acq')) sa.insertAdjacentHTML('beforeend', `<small class="pp-acq">${icon('passerella', 'sm')}${esc(at)}</small>`);
       // il tratto lungo le strade esce dall'inquadratura: si riallarga (solo se non hai spostato la mappa)
       if (!userMoved && X.map && !w.pts.every(p => X.map.getBounds().contains(p))) { pts.push(...w.pts); fitTo(pts); }
       const st = k != null && X.plist.querySelector(`.pp-step.walk[data-wk="${k}"] small`);
@@ -760,7 +933,7 @@ function draw() {
   };
   if (!vg && walkShown()) {                                              // tutto a piedi
     const w = walkVal.get(walkKey());
-    walkPath(w.pts); pts.push(...w.pts);
+    walkPath(w.pts); acquaParti(w); pts.push(...w.pts);
   } else if (o) {
     let prev = F?.lat != null ? [F.lat, F.lon] : null;
     const walkTo = (p, k) => { if (prev && p) { walkLine(prev, p, k); pts.push(prev, p); } };
@@ -785,7 +958,9 @@ function draw() {
 // ---------------------------------------------------------------------------------------------------------------------
 // TOCCHI
 // ---------------------------------------------------------------------------------------------------------------------
-function choose(f, ep) { S[f] = ep; S.edit = null; S.q = ''; if (S.from && S.to) S.formOpen = false; save(); render(); if (S.from && S.to) run(); else { S.edit = !S.from ? 'from' : !S.to ? 'to' : null; render(); } }
+function choose(f, ep) {
+  if (S.draft && S.draftF) { S.draft[S.draftF] = ep; S.draftF = null; S.q = ''; render(); return; }   // scheda di modifica: si cambia solo la bozza
+  S[f] = ep; S.edit = null; S.q = ''; if (S.from && S.to) S.formOpen = false; save(); render(); if (S.from && S.to) run(); else { S.edit = !S.from ? 'from' : !S.to ? 'to' : null; render(); } }
 let vgStarting = false;
 async function startVg(o) {
   const permP = Notify.askPermission();                             // dentro il tocco: Safari chiede il permesso solo durante un gesto
@@ -887,15 +1062,33 @@ function onClick(e) {
   if (t.closest('[data-expand]')) { S.formOpen = true; S.tall = false; render(); X.chips.querySelector('.pp-f')?.focus(); return; }
   if (t.closest('.pp-collapse')) { S.formOpen = false; render(); return; }
   if (t.closest('.pp-tall')) { S.tall = !S.tall; renderBody(); X.changed?.(); return; }
+  // modifica dei percorsi recenti e salvati (v33.5)
+  const ls = t.closest('[data-lst]'); if (ls) { S.lst = S.lst === ls.dataset.lst ? null : ls.dataset.lst; renderSuggest(); X.plist.querySelector(`[data-lst="${ls.dataset.lst}"]`)?.focus(); return; }
+  const de = t.closest('[data-ded]');
+  if (de) {
+    const k = de.dataset.k, r = de.dataset.ded === 'route' ? Fav.routeByKey(k) : recenti.find(x => recSig(x) === k);
+    if (r) { S.draft = { s: de.dataset.ded, k, from: { ...r.from }, to: { ...r.to }, name: r.name || '' }; S.draftF = null; S.q = ''; render(); X.plist.scrollTop = 0; } else renderSuggest();
+    return;
+  }
+  const dd = t.closest('[data-ddel]');
+  if (dd) { if (dd.dataset.ddel === 'route') { Fav.removeRoute(dd.dataset.k); X.favChanged?.(); } else removeRecent(dd.dataset.k); X.toast?.('Percorso eliminato.', 2500); renderSuggest(); return; }
+  const dm = t.closest('[data-dmv]'); if (dm) { Fav.moveRoute(dm.dataset.k, +dm.dataset.dmv); X.favChanged?.(); renderSuggest(); return; }
+  if (S.draft) {
+    const df = t.closest('[data-df]'); if (df) { S.draft.name = X.plist.querySelector('.pp-dn')?.value ?? S.draft.name; S.draftF = df.dataset.df; S.q = ''; render(); return; }
+    if (t.closest('.pp-dswap')) { S.draft.name = X.plist.querySelector('.pp-dn')?.value ?? S.draft.name; [S.draft.from, S.draft.to] = [S.draft.to, S.draft.from]; renderSuggest(); return; }
+    if (t.closest('[data-dcancel]')) { S.draft = null; S.draftF = null; render(); return; }
+    if (t.closest('[data-dsave], [data-dnew]')) { saveDraft(!!t.closest('[data-dnew]')); return; }
+  }
   const fld = t.closest('.pp-f'); if (fld) { S.edit = fld.dataset.f; S.q = ''; render(); return; }
-  if (t.closest('.pp-qback')) { S.edit = null; S.q = ''; render(); draw(); return; }
+  if (t.closest('.pp-qback')) { back(); return; }
   if (t.closest('.pp-swap')) { [S.from, S.to] = [S.to, S.from]; save(); render(); run(); return; }
   const clr = t.closest('[data-clr]');
   if (clr) { S[clr.dataset.clr] = null; S.res = null; S.det = null; S.sel = -1; S.alts = null; S.err = null; save(); render(); X.layer.clearLayers(); return; }
   const w = t.closest('[data-w]'); if (w) { S.when = w.dataset.w; S.showOpz = false; render(); run(); return; }
   const sg = t.closest('.pp-sug');
   if (sg) {
-    const f = S.edit, k = sg.dataset.k;
+    const f = S.draftF || S.edit, k = sg.dataset.k;
+    if (sg.dataset.s === 'me' && S.draftF) { choose(f, { kind: 'me', label: 'La mia posizione' }); return; }   // nel percorso si salva senza coordinate
     if (sg.dataset.s === 'me') { const me = X.me(); if (me) choose(f, meEp(me)); else { S.asked = f; X.locate(); X.plist.innerHTML = '<p class="muted pad">Cerco la tua posizione…</p>'; } return; }
     if (sg.dataset.s === 'map') { S.picking = f; X.setPick(true, f === 'from' ? 'Tocca la mappa nel punto di partenza' : 'Tocca la mappa nel punto di arrivo'); return; }
     if (sg.dataset.s === 'zone') { const z = zones.get(k); if (z) choose(f, zoneEp(z)); return; }

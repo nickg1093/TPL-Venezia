@@ -4,7 +4,7 @@ Mappa in tempo reale di autobus, tram e vaporetti ACTV di Venezia, con pannelli 
 avvisi di servizio, avvisi di arrivo (notifiche), marea e preferiti. È una **PWA** (si installa come app) servita da un **server Node.js
 senza database**, che gira gratis su Render oppure su un computer di casa.
 
-Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v32.1** · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md) · Stato del progetto, da leggere per primo in una nuova conversazione: [STATO.md](STATO.md)
+Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v33** (in prova in locale, non pubblicata) · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md) · Stato del progetto, da leggere per primo in una nuova conversazione: [STATO.md](STATO.md)
 
 ---
 
@@ -21,7 +21,7 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 9. [Prove e test: comandi da digitare](#9-prove-e-test)
 10. [Modifiche frequenti: ricette](#10-modifiche-frequenti)
 11. [Pubblicare una nuova versione e tornare indietro](#11-pubblicare-e-tornare-indietro)
-12. [Novità della v32.1](#12-novità-della-v321) · [v32](#novità-della-v32) · [v31](#novità-della-v31) · [v30](#novità-della-v30) · [v29](#novità-della-v29) · [v28](#novità-della-v28) · [v27](#novità-della-v27) · [v26](#novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
+12. [Novità della v33](#12-novità-della-v33) · [v32](#novità-della-v32) · [v31](#novità-della-v31) · [v30](#novità-della-v30) · [v29](#novità-della-v29) · [v28](#novità-della-v28) · [v27](#novità-della-v27) · [v26](#novità-della-v26) · [v25](#novità-della-v25) · [v24](#novità-della-v24)
 - Appendici tecniche: [A. GTFS statici](#a-gtfs-statici-perché-non-si-sovrascrivono-più) · [B. Regole del motore tempo reale](#b-eccezioni-e-contromisure-del-codice-elenco-dettagliato) · [C. Sicurezza](#c-sicurezza-securityjs-serverjs) · [D. Dati sul telefono e CDN](#d-dati-sul-telefono-e-cdn-ramo-dati) · [E. Orari per giorno e memoria](#e-orari-per-giorno-e-memoria-del-server-v28)
 
 ---
@@ -99,7 +99,9 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 | `js/viaggio.js` | Viaggio guidato («In viaggio», notifiche, schermo acceso, tempo reale della corsa che conta), «I miei viaggi», proposta esatta (firma, link, riapertura), testo da condividere, posizione a fasi. |
 | `js/fissi.js` | **Dati fissi sul telefono**: fermate, linee e tracciati salvati nella cache del sito (`tpl-fissi-1`), scaricati dal CDN con controllo dell'impronta, o dal server. Restituisce gli stessi dati dei vecchi `/api/stops`, `/api/routes`, `/api/shapes`. |
 | `js/pedoni.js` | **Percorsi a piedi**: rete pedonale in mattonelle caricate quando servono, aggancio dei punti alla strada, ricerca del percorso (Dijkstra/A*). Puro, senza import (provato anche con `node --test`). |
-| `js/camminata.js` | Collega `pedoni.js` al CDN e al pianificatore: distanze verso le fermate vicine e percorsi da disegnare, entro 30 minuti a passo svelto; se la rete non c'è, linea d'aria come prima. |
+| `js/acqua.js` | **Acqua alta**: regole pure (quote stimate delle calli, passerelle posate, stagione, MOSE, metri bagnati di un tratto, costo per il percorso). Provato con `node --test`. |
+| `js/livelli.js` | Pulsanti **Mezzi sulla mappa** e **Livelli della mappa** (menu compatti), scaricamento su richiesta di `/acqua/*.json`, disegno di allagamento e passerelle. |
+| `js/camminata.js` | Collega `pedoni.js` al CDN e al pianificatore (con l'acqua alta, v33): distanze verso le fermate vicine e percorsi da disegnare, entro 30 minuti a passo svelto; se la rete non c'è, linea d'aria come prima. |
 | `js/fav.js` | Memoria dei preferiti (fermate e percorsi), copia di sicurezza (esporta/importa). |
 | `js/favs.js` | Pannello **Preferiti** (stella in basso a destra): schede Fermate/Percorsi, modifica, copia. |
 | `js/notify.js` | Avvisi di arrivo sul telefono: permessi, iscrizione push, elenco attivo, ripristino dopo un riavvio del server. |
@@ -116,8 +118,14 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 
 | Cartella | Contenuto |
 |---|---|
+| `data/acqua/` | Dati di partenza dell'acqua alta (v33): `passerelle-atlante.json` (tabella ufficiale delle passerelle con i capi dei percorsi) e `quote-riferimenti.json` (curva ufficiale del suolo allagato, punti noti, zone del modello, griglia del rilievo e fonte/licenza del rilievo RAMSES), con le fonti. |
+| `dati-passerelle/` | **Solo sul computer** (in `.gitignore`): i 10 PDF dell'Atlante passerelle (Centro Maree), letti da `scripts/atlante/` (v33.10). |
+| `data/acqua/passerelle-tavole.json` | Tracciati delle passerelle georeferenziati dalle tavole dell'Atlante, verificati (v33.10). |
+| `dati-ramses/` | **Solo sul computer, mai su GitHub** (in `.gitignore`): `curve-livello-shp.zip` (rilievo RAMSES, «Fonte informativa: Insula spa», ~333 MB), letto da `genera-acqua.js --ramses` (v33.7). |
+| `public/acqua/rilievo/` | Tessere delle quote misurate prodotte da `genera-acqua.js --ramses` (v33.8), pubblicabili con «Fonte informativa: Insula spa» (condizioni d'uso del sito di Insula). Senza la cartella l'app usa la stima. |
+| `public/acqua/` | File per i telefoni generati da `scripts/genera-acqua.js` (~16 kB compressi): per la prova in locale; poi andranno sul ramo `dati`. |
 | `data/gtfs/<nav\|aut>/` | Archivio dei GTFS statici (`<inizio validità>_<hash>.zip`), aggiornato dal workflow. `data/actv_*.zip` sono versioni storiche ancora usate per le date vecchie: **non cancellarle**. |
-| `scripts/` | `update-gtfs.js` (scarica i GTFS), `archivia-avvisi.js` e `interpreta-avvisi.js` (workflow degli avvisi), `pedonale.js` (distanze a piedi tra fermate), `genera-dati.js` e `pedoni-core.js` (file del ramo `dati`: dati fissi e rete pedonale in mattonelle), `vapid-keys.js` (chiavi delle notifiche). |
+| `scripts/` | `update-gtfs.js` (scarica i GTFS), `archivia-avvisi.js` e `interpreta-avvisi.js` (workflow degli avvisi), `pedonale.js` (distanze a piedi tra fermate), `genera-dati.js` e `pedoni-core.js` (file del ramo `dati`: dati fissi e rete pedonale in mattonelle, con il segno «ponte»), `genera-acqua.js`, `acqua-core.js` e `ramses-core.js` (dati dell'acqua alta, v33; quote misurate dal rilievo RAMSES, v33.7), `vapid-keys.js` (chiavi delle notifiche). |
 | `tests/` | Prove automatiche (`*.test.js`, `node --test`), feed simulato (`fakefeed.js`), prove dell'interfaccia (`ui/run.py`, Playwright). |
 | `.github/workflows/` | `update-gtfs.yml`, `archivio-avvisi.yml`, `dati.yml`, `keepalive.yml` (vedi [7](#7-github)). |
 
@@ -128,9 +136,16 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 ### 3.1 Mappa e mezzi
 - Simboli: **cerchi** = battelli, **mattonelle** = bus e tram, colori della linea. Bordo tratteggiato = posizione da orario; grigio = mezzo non associato a una corsa.
 - Il mezzo si muove lungo il tracciato tra due rilevamenti, senza mai superare l'ultimo punto ricevuto (nessuna posizione inventata).
-- **Mezzi senza linea («?»)**: mezzi che il feed ACTV non associa a nessuna linea. Sono **nascosti** di norma; il terzo pulsante del gruppo
-  servizi (icona «?») li mostra, **grigi e trasparenti**. La scelta resta sul telefono (`tpl.mezziSenzaLinea`). Codice: `isUnk`, `showUnk` in `app.js`.
-- Pulsanti a destra: battelli · bus/tram · mezzi «?» | ricerca · posizione · tema | avvisi · marea · installa. In basso a destra: **preferiti** (stella),
+- **Mezzi senza linea («?»)**: mezzi che il feed ACTV non associa a nessuna linea. Sono **nascosti** di norma; l'interruttore nel menu
+  **Mezzi sulla mappa** li mostra, **grigi e trasparenti**. La scelta resta sul telefono (`tpl.mezziSenzaLinea`). Codice: `isUnk`, `showUnk` in `app.js`.
+- Pulsanti a destra (v33): **Mezzi sulla mappa** · **Livelli della mappa** | ricerca · posizione · tema | avvisi · marea · installa.
+  *Mezzi*: menu con Navigazione, Automobilistico, Mezzi senza linea (punto sul pulsante se un filtro è diverso dal solito).
+  *Livelli*: **Allagamento della città** (stima, solo su calli, fondamenta e campi della rete pedonale, blu più scuro dove l'acqua è più alta;
+  ponti asciutti; con la mappa lontana, zoom sotto 13, non si disegna e una nota invita ad avvicinarla) e **Percorsi su passerelle** (posati
+  alla quota di marea, tratteggiati se il tracciato è indicativo), all'ora scelta: *Adesso*, *Colmo previsto* o l'ora del cursore nel grafico della marea.
+  Automatici (si accendono da soli dalla marea in città di +80 cm; passerelle solo dal 15 settembre al 30 aprile) o accesi/spenti a mano
+  (`tpl.livelli`). MOSE programmato o alzato e previsione oltre 110 cm: in città si conta al massimo +88 cm, con una nota. Oltre +120 cm: avviso
+  che alcuni tratti delle passerelle possono essere sommersi. Esc e «indietro» chiudono i menu. Dettagli: appendice D, «Acqua alta». In basso a destra: **preferiti** (stella),
   avvisi di arrivo attivi (campanella, solo se ce ne sono), informazioni («i»).
 - Il pulsante **«Percorso»** sta sopra i crediti della mappa all'apertura; quando i crediti si riducono (dopo 5 secondi o alla prima mossa) scende al bordo.
 
@@ -222,23 +237,23 @@ nell'app installata) nessuna protezione.
     con l'app installata sulla schermata Home (iOS 16.4 o successivo). Senza Web Push le indicazioni arrivano finché l'app resta aperta (detto chiaramente).
   - **Salva viaggio** (soluzioni future): «**I miei viaggi**», in cima ai suggerimenti del pianificatore, separati dai preferiti (che sono luoghi e
     percorsi senza orario). Al massimo 10, sul telefono, cancellati da soli dopo l'arrivo; vicino alla partenza compare «Inizia il viaggio».
-  - **Proposta esatta (v32.3)**: viaggio salvato e link condiviso portano la **firma della soluzione scelta** (corse in ordine, giorno, partenza e
+  - **Proposta esatta (v33.2)**: viaggio salvato e link condiviso portano la **firma della soluzione scelta** (corse in ordine, giorno, partenza e
     arrivo, famiglia e linee: parametri `sol`, `fam`, `rotte`, `arr` oltre a `da`, `a`, `quando`, `ora`, `data`). Alla riapertura: se la partenza è
     già passata, messaggio «già partita» e soluzioni di adesso; entro 90 minuti ricerca «Adesso» (tempo reale), più avanti all'orario della proposta;
     la proposta si cerca tra le soluzioni e poi tra gli altri orari dello stesso percorso (`/api/percorso-simili`) e si apre **direttamente nel
     dettaglio**; se non c'è più, messaggio chiaro sopra le soluzioni migliori (mai una schermata vuota). Il link letto è controllato campo per campo:
     se è manomesso si apre il tragitto normale. Con una proposta aperta anche il pulsante di condivisione in alto condivide la proposta.
   - **Percorso preferito** (stella): solo partenza e arrivo, si apre sempre con «Adesso».
-  - **Condividi** (v32.3): testo ordinato con il simbolo del mezzo (⛴️ battello, 🚌 bus, 🚊 tram, 🚝 People Mover, 🚶 a piedi), linea tra parentesi
-    quadre, orari di salita e discesa, cambi, fermate e il link «Apri questa proposta». Il **calendario è stato tolto** (v32.3: niente `/api/ics`, niente `ics.js`).
-  - **Posizione durante il viaggio** (v32.3): il GPS si accende solo a piedi verso la fermata (5 minuti prima di uscire), nei cambi a piedi e
+  - **Condividi** (v33.2): testo ordinato con il simbolo del mezzo (⛴️ battello, 🚌 bus, 🚊 tram, 🚝 People Mover, 🚶 a piedi), linea tra parentesi
+    quadre, orari di salita e discesa, cambi, fermate e il link «Apri questa proposta». Il **calendario è stato tolto** (v33.2: niente `/api/ics`, niente `ics.js`).
+  - **Posizione durante il viaggio** (v33.2): il GPS si accende solo a piedi verso la fermata (5 minuti prima di uscire), nei cambi a piedi e
     negli ultimi minuti prima di scendere (distanza dalla fermata), con `maximumAge` 15 s; è spento a bordo, a fine viaggio e con l'app nascosta.
     Si accende da solo solo se il permesso è già concesso o dal tocco su «Inizia il viaggio» / sull'interruttore; la posizione non esce dal telefono.
     La schermata dice se è accesa o in pausa e perché, e spiega che con lo schermo spento o l'app chiusa lavorano le notifiche del server.
-  - **Alternativa più veloce** (v32.3): con l'app davanti, solo se c'è un problema vero (corsa soppressa, cambio perso con i tempi aggiornati,
+  - **Alternativa più veloce** (v33.2): con l'app davanti, solo se c'è un problema vero (corsa soppressa, cambio perso con i tempi aggiornati,
     arrivo in ritardo di 8 minuti o più), al massimo una ricerca ogni 3 minuti: se una soluzione da dove sei fa arrivare almeno 6 minuti prima (o il
     viaggio non regge più), compare un riquadro discreto «Trovata alternativa più veloce»; il viaggio non cambia finché non lo tocchi.
-- **Scelta delle soluzioni (v32.2, 19/11/2026)**: oltre 10 minuti a piedi in tutto ogni minuto in più pesa un minuto in più; a costi equivalenti
+- **Scelta delle soluzioni (v33.1, 19/11/2026)**: oltre 10 minuti a piedi in tutto ogni minuto in più pesa un minuto in più; a costi equivalenti
   (meno di 1 minuto) si consiglia chi ha meno cambi, poi meno strada a piedi, e il diretto non si scarta; in tempo reale la *consigliata* resta la
   stessa famiglia agli aggiornamenti se costa al massimo 3 minuti più della migliore (memoria del server: 500 tragitti, 10 minuti). Cambi tra
   servizi diversi (bus/tram/People Mover ↔ battello: P.le Roma, Ferrovia, Lido, Tronchetto) «a rischio» sotto i 3 minuti di margine e
@@ -248,7 +263,7 @@ nell'app installata) nessuna protezione.
     previsto (anche quando il pannello della fermata non ha la riga); niente proposte che chiederebbero di essere già partiti; una coincidenza già
     persa con i tempi aggiornati compare solo se non c'è altro.
   - *Partenza alle*: le regole sopra (prima combinazione sensata, niente attese inutili ai cambi: a parità d'arrivo vince chi parte dopo).
-  - *Arrivo entro* (v32.3): oltre all'ultima partenza utile con tutti i cambi, si cercano le ultime partenze **senza cambi** e **con un cambio**;
+  - *Arrivo entro* (v33.2): oltre all'ultima partenza utile con tutti i cambi, si cercano le ultime partenze **senza cambi** e **con un cambio**;
     restano proposte le soluzioni fino a 40 minuti prima dell'ultima partenza (60 per chi ha meno cambi o 5 minuti in meno a piedi). Ogni proposta ha
     il **margine** sull'orario chiesto (`margine`, minuti): sotto i 5 minuti o con un cambio stretto è «**al limite**» (`limite`), mostrata con
     «Arrivo al limite (margine 2 min): un piccolo ritardo può farti arrivare dopo le HH:MM»; le altre «Arrivi N min prima delle HH:MM».
@@ -259,8 +274,13 @@ nell'app installata) nessuna protezione.
     senza periodo, es. guasti: solo se in corso e il viaggio parte entro 3 ore; sciopero: tutti i viaggi del periodo). Una riga sulla scheda, l'elenco
     nel dettaglio. Un avviso che riguarda solo un pontile o una fermata (`ambito: 'fermate'`, es. «sospesa la fermata di Crea») vale solo se la
     soluzione sale o scende lì, non per tutte le soluzioni con quella linea. Il server pubblica gli avvisi in corso e quelli dei prossimi 3 giorni.
-  - **Marea**: con tratti a piedi nella città storica (Giudecca e Murano comprese) e marea prevista o misurata di almeno 100 cm nelle ore del viaggio,
-    una nota con il livello e lo stato del MOSE. Usa i dati della marea già sul telefono (previsione fino a circa 18 ore): nessuna richiesta in più.
+  - **Marea**: con tratti a piedi nella città storica (Giudecca e Murano comprese) e marea in città di almeno 90 cm nelle ore del viaggio (o MOSE
+    che la limita), una nota con il livello e lo stato del MOSE. Usa i dati della marea già sul telefono (previsione fino a circa 18 ore).
+  - **Acqua alta nei tratti a piedi** (v33): con la marea in città da +80 cm all'ora del tratto (partenza o arrivo della corsa precedente) e i dati
+    dell'acqua sul telefono, il percorso a piedi evita le calli allagate senza passerella (un metro con l'acqua vale 8 metri nel confronto, ma resta
+    possibile se non c'è altra strada) e usa le passerelle posate; le distanze mandate al server sono i metri veri del giro scelto. Nel dettaglio di
+    ogni tratto: «su passerella …» o «acqua possibile per circa … m, fino a ~… cm (stima)»; sulla mappa in blu le parti con acqua e nel colore delle
+    passerelle quelle su passerella. Senza dati, fuori modello o con la marea bassa: tutto come prima. Calcolo solo sul telefono.
 
 ### 3.5 Preferiti
 Stella in basso a destra → pannello con schede **Fermate** e **Percorsi**. Un tocco apre; **Modifica** per riordinare, rinominare (percorsi) ed eliminare;
@@ -281,7 +301,7 @@ ripresenta da solo gli avvisi attivi (`/api/watch/restore`), all'apertura dell'a
 
 ### 3.7 Avvisi di servizio, marea, modalità Programmato, guida, link
 - **Avvisi**: sito ACTV + Telegram, collegati a linee e fermate (bordo rosso sulla mappa, «!» nei pannelli); archivio storico nel ramo `archivio-avvisi`.
-- **Sciopero** (v32.4): l'avviso di sciopero (`effect: 'strike'`) porta `sciopero: { inizio, fine, da, fino, fasce, link }` (`avvisi.js`, `strikeMeta`):
+- **Sciopero** (v33.3): l'avviso di sciopero (`effect: 'strike'`) porta `sciopero: { inizio, fine, da, fino, fasce, link }` (`avvisi.js`, `strikeMeta`):
   finestra di evidenza **da 8 ore prima dell'inizio alle 05:00 del giorno dopo** (ripresa con le prime corse del mattino, come nei comunicati
   ACTV); in elenco resta «in corso» fino alle 05:00; **fasce garantite** lette solo dalle frasi con «garantit…» del comunicato o del messaggio
   Telegram; **link ufficiali** (comunicato ACTV, messaggio Telegram, altre pagine o PDF ACTV citati) solo dai domini ACTV/Telegram (gli
@@ -291,7 +311,7 @@ ripresenta da solo gli avvisi attivi (`/api/watch/restore`), all'apertura dell'a
   segue i suoi spostamenti e si nasconde quando lui non si vede: pannello aperto sul telefono, tastiera, scelta sulla mappa), rosso ad alto
   contrasto nei due temi, con un lampeggio discreto spento da «riduci movimento»; **avvertenza** nei pannelli fermata/corsa e nel pianificatore
   (elenco e dettaglio) quando gli orari cadono nella finestra dello sciopero. Nessuna richiesta in più al server: i dati sono in `/api/avvisi`.
-  **Giorno dello sciopero (v32.5)**: i messaggi Telegram successivi al comunicato (aggiornamenti «+++ aggiornamento +++», corse aggiuntive,
+  **Giorno dello sciopero (v33.4)**: i messaggi Telegram successivi al comunicato (aggiornamenti «+++ aggiornamento +++», corse aggiuntive,
   effettuate o soppresse, risposte a un messaggio dello sciopero) **restano dentro l'avviso** (`sciopero.aggiornamenti`, dal più recente) e
   non lo sostituiscono più: titolo, fasce e **link al comunicato ACTV** (sempre il primo) restano quelli dell'avviso principale. L'avviso si
   toglie solo per **revoca, annullamento, differimento, rinvio o precettazione** scritti nel messaggio (`STRIKE_STOP_RE`).
@@ -560,37 +580,71 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ---
 
-## 12. Novità della v32.5
+## 12. Novità della v33
 
-- **v32.5 (20/11/2026)**: correzioni dello sciopero. (1) Con la v32.4 online, la mattina del 20/11 gli aggiornamenti
+In prova in locale, **non pubblicata** (niente commit, niente deploy).
+- **v33.10 (21/11/2026)**: **tavole dell'Atlante passerelle** (10 PDF del Centro Maree, `dati-passerelle/`, fuori da GitHub) analizzate:
+  immagini di fondo georeferenziate registrandole sulle curve RAMSES (OpenCV, corrispondenza normalizzata), tracciati vettoriali (2019) o
+  dai colori della mappa (San Marco 2023); **32 percorsi** con il tracciato della tavola (`data/acqua/passerelle-tavole.json`, controllati su
+  lunghezza ufficiale e nettezza della georeferenziazione), gli altri ricalcati come prima; rami dei percorsi a «Y» (`l2`). **San Marco:
+  schede 2023** applicate (20 percorsi con lunghezza/quota/descrizione nuove, T1.1 E aggiunto; T1.7 D non posizionabile). **Crediti della
+  mappa** di nuovo per 5 s (poi in Informazioni), di nuovo visibili 5 s quando compaiono le quote misurate (fonte Insula). **Senza
+  connessione**: avviso sulla mappa, marea e avvisi salvati (36/24 ore) mostrati come «dati salvati» con l'ora. Strumenti di analisi in
+  `scripts/atlante/` (Python, solo sul computer). Dettagli in `PASSAGGIO_CONSEGNE.md`. Prove: `tests/passerelle-tavole.test.js`,
+  `tests/ui/offline.py` (nuove).
+- **v33.9 (21/11/2026)**: **donazioni tolte** (pulsante, cuore accanto alla «i», voce della privacy; vecchie impostazioni cancellate dal
+  telefono); **Instagram @olocin_g** in alto nelle Informazioni (sotto la versione) e in «Il progetto», come profilo di chi ha sviluppato
+  l'app (contatti e segnalazioni solo all'email della variabile di Render, in fondo alla pagina); **crediti della mappa sempre visibili**: per esteso all'apertura, poi in forma breve («© OpenStreetMap» e, con le quote
+  misurate, «Fonte informativa: Insula spa») invece di sparire; «Percorso» resta sopra i crediti. Testi sul rilievo: condizioni d'uso del
+  sito di Insula. Prove: `tests/ui/sistema.py` (crediti e contatti al posto della donazione), `modifica.py`.
+- **v33.8 (21/11/2026)**: rilievo RAMSES **in tessere caricate a richiesta**, pubblicabili con la fonte Insula (l'archivio originale resta fuori da GitHub): i file `acqua/*.json` tornano
+  quelli della stima; quote misurate in `acqua/rilievo/` (13 tessere, 25 kB compressi, `.gitignore`); `acqua.js: composta()`, `livelli.js:
+  prepara()` (vista della mappa, zona del percorso); attribuzione «Fonte informativa: Insula spa» nei crediti della mappa, nel menu e in
+  Informazioni (scheda con condizioni e avvertenze, visibile solo con il rilievo); testi «zone potenzialmente allagabili». Analisi dei diritti
+  nell'appendice D. Prove: `tests/ramses.test.js`, `tests/ui/acqua.py` con e senza rilievo.
+- **v33.7 (20/11/2026)**: **quote misurate** dell'acqua alta dal rilievo RAMSES del Comune di Venezia – Insula (curve di livello ogni 1 cm, quote
+  sullo zero di Punta della Salute) nella città storica e alla Giudecca, stima di prima altrove (appendice D, «Acqua alta»). Nuovi
+  `scripts/ramses-core.js` (lettura ZIP/SHP/DBF in streaming, coordinate, quota della curva più vicina) e `--ramses` in `genera-acqua.js`;
+  `acqua-core.js: rilievo()` e codifica `mis`; `acqua.js: misurata()` e metri bagnati «stimati»; mappa con linea continua (misurata) o
+  tratteggiata (stimata), testi del menu e del pianificatore, scheda «Quote delle calli» in Informazioni; dati dell'acqua anche **senza rete**
+  (ultimo indice salvato). Licenza del rilievo non dichiarata: **solo locale**. Prove: `tests/ramses.test.js` (nuova), `tests/acqua.test.js`,
+  `tests/ui/acqua.py` (quote misurate/stimate, senza rete).
+- **v33.6 (20/11/2026)**: Informazioni: collegamento a Instagram dell'autore (@olocin_g) nella sezione «Il progetto», con il simbolo di
+  Instagram nello stile delle icone dell'app (`i-instagram` in `sprite.svg`); pagina allineata alle funzioni attuali (memoria del dispositivo
+  con percorsi recenti e salvati, sciopero letto, testo e schermo intero; installazione e «Schermo intero»; avvisi letti anche con Cloudflare
+  Workers AI e archivio pubblico su GitHub; voce privacy per Instagram; data della pagina).
+- **v33.5 (20/11/2026)**: (1) **Schermo intero** a scelta (Informazioni → «Schermo intero»), con la Fullscreen API (`public/js/schermo.js`):
+  nasconde barra in alto e barra di navigazione o dei gesti dove il sistema lo permette (Android, iPad, computer); le barre si richiamano
+  scorrendo dal bordo; «indietro» di Android esce dallo schermo intero e si rientra al tocco successivo; serve un tocco anche alla riapertura
+  (regola dei browser). Su iPhone il sistema non lo permette: la scelta non compare e una nota lo spiega. Il manifest resta `standalone`
+  (un `fullscreen` fisso varrebbe per tutti, anche sul computer, senza modo di spegnerlo). (2) **Ultimo rilevamento del mezzo** nel pannello
+  di una corsa in tempo reale: «Posizione aggiornata alle hh:mm · N min fa» dall'ora trasmessa dal mezzo (`vehicle.timestamp` del feed
+  ACTV), in arancio oltre 3 minuti; niente se il mezzo non la trasmette (campo `noTs` dal server, inviato solo in quel caso), in
+  «Programmato» o con posizioni simulate. (3) **Modifica dei percorsi recenti e salvati** nel pianificatore, come nei Preferiti: «Modifica»
+  per sezione; per riga cambia partenza/arrivo (scheda con la ricerca del pianificatore, inverti, nome per i salvati), sposta (salvati),
+  elimina. «Salva modifiche» aggiorna la stessa voce (posizione e data restano), «Salva come nuovo» / «Aggiungi ai salvati» crea una voce
+  nuova; un percorso uguale a un altro salvato è rifiutato. File: `live.js`, `server.js`, `public/js/app.js`, `public/js/percorso.js`,
+  `public/js/fav.js`, `public/js/schermo.js` (nuovo), `public/index.html`, `public/css/app.css`, `public/sw.js`; prove in
+  `tests/percorsi-modifica.test.js`, `tests/ui/modifica.py`, `tests/fakefeed.js` (mezzo 11 senza ora del rilevamento).
+- **v33.4 (20/11/2026)**: correzioni dello sciopero. (1) Con la v33.3 online, la mattina del 20/11 gli aggiornamenti
   Telegram (11932, 11934 e la risposta 11936 «In linea 2 si aggiungono») sostituivano l'avviso dello sciopero: l'avviso diventava un «Avviso»
   qualsiasi, senza link ACTV, e scheda, pulsante e avvertenze sparivano. Ora gli aggiornamenti restano dentro l'avviso (scheda dello sciopero,
   elenco Avvisi, «Ultimo aggiornamento ACTV alle …» nelle avvertenze) e l'avviso si toglie solo per revoca o differimento espliciti; anche i
   messaggi del giorno stesso si collegano allo sciopero. (2) Il link al comunicato ACTV resta sempre il primo (scheda, elenco Avvisi).
-  (3) Icone: nella v32.4 il simbolo `i-strike` era finito **dopo** la chiusura `</svg>` di `public/icons/sprite.svg`: il file non era più
+  (3) Icone: nella v32.4 online il simbolo `i-strike` era finito **dopo** la chiusura `</svg>` di `public/icons/sprite.svg`: il file non era più
   XML valido e **tutte** le icone dell'app risultavano vuote. Simbolo rimesso dentro; nuova prova `tests/icone.test.js` (file valido, ogni
   icona usata esiste) e controllo in `tests/ui/run.py` (icone del pulsante e delle avvertenze con area > 0). File: `avvisi.js`,
   `public/js/avvisi.js`, `public/css/app.css`, `public/icons/sprite.svg`; prove in `tests/avvisi.test.js` (+ `tests/avvisi-2011.json`),
   `tests/icone.test.js`, `tests/ui/run.py`.
-
-## Novità della v32.4
-
-- **v32.4 (20/11/2026)**: gestione dello sciopero ad alta visibilità (§3.7): finestra da 8 ore prima alle 05:00 del giorno dopo, fasce
+- **v33.3 (20/11/2026)**: gestione dello sciopero ad alta visibilità (§3.7): finestra da 8 ore prima alle 05:00 del giorno dopo, fasce
   garantite e link ufficiali dal comunicato, scheda all'accesso con memoria della chiusura, pulsante «Sciopero» sopra «Percorso», avvertenze in
   pannelli e pianificatore. File: `avvisi.js`, `public/index.html`, `public/css/app.css`, `public/js/app.js`, `public/js/avvisi.js`,
   `public/js/percorso.js`, `public/icons/sprite.svg` (`i-strike`); prove in `tests/avvisi.test.js`, `tests/ui/run.py`, `tests/ui/sistema.py`.
-
-## Novità della v32.3
-
-- **v32.3 (19/11/2026)**: proposta esatta in «I miei viaggi» e nei link condivisi, con riapertura sicura (dettaglio, oppure messaggio e
+- **v33.2 (19/11/2026)**: proposta esatta in «I miei viaggi» e nei link condivisi, con riapertura sicura (dettaglio, oppure messaggio e
   alternative); testo condiviso nuovo; calendario tolto (`ics.js`, `/api/ics`, `tests/ics.test.js`, voce delle misure); posizione a fasi nel viaggio
   guidato e spiegazione di schermo spento / app chiusa; riquadro «Trovata alternativa più veloce»; «Arrivo entro» con più soluzioni e margine
   («al limite»). Dettagli nella §3.4.
-
-## Novità della v32.2
-
-Avvisi e pianificatore rivisti il 19/11/2026 (stessa parte della v33.1 in prova, senza l'acqua alta).
-- **Avvisi (v32.2)**, dai casi reali del ramo `archivio-avvisi` (ottobre-novembre 2026, prove in `tests/avvisi.test.js`, «casi reali»):
+- **Avvisi (v33.1)**, dai casi reali del ramo `archivio-avvisi` (ottobre-novembre 2026, prove in `tests/avvisi.test.js`, «casi reali»):
   - *settore nav/aut*: «i bus della linea 9» e «vaporetto 2» decidono il servizio; una linea che esiste solo nell'altro servizio non vi si attribuisce;
     in un avviso con un solo servizio nel titolo («servizio di navigazione…») la linea senza indizi dell'altro servizio non passa all'altro (anche
     se lo dice l'interpretazione AI: `avvisi-ai.js` la scarta);
@@ -603,21 +657,22 @@ Avvisi e pianificatore rivisti il 19/11/2026 (stessa parte della v33.1 in prova,
     «ripristino ora solare» non è un ripristino di servizio;
   - *propagazione*: `ambito: 'fermate'` per le sospensioni e gli spostamenti di pontili/fermate: l'avviso compare su quelle fermate, sulle corse che
     ci passano e sulle soluzioni che le usano, non su tutte le fermate e i mezzi della linea (`public/js/avvisi.js`).
-- **Pianificatore (v32.2)**: vedi §3.4, «Scelta delle soluzioni».
+- **Pianificatore (v33.1)**: vedi §3.4, «Scelta delle soluzioni».
 - **Correzioni del 19/11 (prima consegna)**: Crea su due giorni, sciopero nel giorno del titolo, doppioni Telegram (People Mover, sciopero,
   Madonna della Salute ripubblicata), fine «sino a fine servizi», ora di fine scritta rispettata, messaggi vuoti e notizie di cronaca esclusi.
-
-## Novità della v32.1
-
-- **Grafico della marea, etichette senza sovrapposizioni**: i valori dei massimi e minimi, «MOSE 110» (linea tratteggiata della soglia) e
-  «MOSE hh:mm» (linea verticale del sollevamento programmato) si mettono ognuno nella prima posizione libera tra diverse possibili (sopra/sotto,
-  a destra/sinistra), senza toccarsi, senza uscire dal grafico e possibilmente senza coprire la curva e le linee verticali; un alone del colore
-  della scheda le rende leggibili anche sopra le linee. Il grafico si ridisegna quando arriva l'orario del sollevamento (prima la linea
-  verticale compariva solo al giro successivo di aggiornamento). Prova: `tests/ui/marea.py` (4 casi difficili × 3 schermi).
+- **Pulsanti dei filtri ridisegnati**: *Mezzi sulla mappa* (icona battello+bus) e *Livelli della mappa* (icona a strati) con menu compatti
+  (`#mezzi`, `#livelli`, interruttori grandi, testo che va a capo); icone nuove in `sprite.svg`: `mezzi`, `layers`, `passerella`, `flood`.
+- **Acqua alta sulla mappa**: allagamento stimato della città e percorsi su passerelle (vedi §3.1 e appendice D, «Acqua alta»).
+- **Pianificatore**: tratti a piedi che tengono conto della marea all'ora del passaggio (§3.4).
+- **Rete pedonale**: segno «ponte» (2) nelle mattonelle accanto a quello delle scale (1); le app vecchie lo ignorano. Diventa effettivo quando il
+  workflow `dati.yml` rigenera le mattonelle; fino ad allora i ponti si riconoscono dalle scale.
+- **Prova in locale con l'acqua alta**: solo su `localhost`, l'indirizzo `http://localhost:3000/?marea=110` simula quel livello in città (livelli e
+  pianificatore), anche se la marea vera è bassa; sul sito pubblico il parametro non fa nulla.
+- Prove: `tests/acqua.test.js`, `tests/ui/acqua.py`; `run.py` controlla i due menu. Guida: passo nuovo «Acqua alta sulla mappa» (`GUIDA_VER = 'v33'`).
 
 ### Novità della v32
 
-- **Donazione volontaria** (Informazioni, in cima): testo non insistente, pulsante verso `https://paypal.me/olocing` (nuova scheda, `noopener`).
+- **Donazione volontaria** (v32–v33.8, **tolta nella v33.9**; Informazioni, in cima): testo non insistente, pulsante verso `https://paypal.me/olocing` (nuova scheda, `noopener`).
   Il cuore accanto alla «i» compare solo dal 3° giorno d'uso (contati sul telefono), apre la sezione e non PayPal direttamente, si nasconde per
   sempre («Non mostrare il cuore») e per 6 mesi dopo aver aperto PayPal. L'app non riceve dati del pagamento (informativa privacy aggiornata).
   Nessuna pubblicità: richiederebbe cookie, consenso e script di terzi, in contrasto con «Nessun tracciamento».
@@ -659,7 +714,7 @@ Aggiornamento di consolidamento (analisi del sito vero del 15/11/2026, fonti: do
 
 ### Novità della v30
 
-- **Viaggio guidato**, **I miei viaggi**, **condividi come testo** (calendario tolto nella v32.3), **avvisi e marea sulla soluzione** (sezione 3.4).
+- **Viaggio guidato**, **I miei viaggi**, **condividi come testo** (calendario tolto nella v33.2), **avvisi e marea sulla soluzione** (sezione 3.4).
 - **Carico sul server**: per un viaggio 2-6 avvisi (stesso meccanismo degli avvisi di arrivo, al massimo 8 per dispositivo); tempo reale solo della
   corsa che conta, ogni 30 s e solo con l'app davanti, senza tracciato (`/api/trip?lite=1`, circa un decimo dei dati); dispositivi senza Web Push:
   una sola lettura ogni 20 s per tutti gli avvisi (`/api/watch/poll?ids=…`). In secondo piano:
@@ -915,6 +970,86 @@ così un parcheggio o la strada del terminal non isolano il punto); poi Dijkstra
 Licenze: rete pedonale © OpenStreetMap contributors, ODbL (i file derivati restano ODbL, vedi `LEGGIMI.md` nel ramo `dati`).
 
 ---
+
+### Acqua alta (v33)
+
+**Fonti.** Passerelle: tabella ufficiale «Atlante dei percorsi in quota su passerelle» (Comune di Venezia, Centro Maree / Veritas, `tot_pass.pdf` e
+tavole per sestiere): 72 percorsi con quota di posa e lunghezza (ricontrollati il 21/11/2026 sul PDF: tutte le 74 righe tranne le due di
+lunghezza 0, codici, metri e quote identici). Curva del suolo allagato: studio Comune/Insula (1,84 % a +90 … 54,39 % a +140) e
+Centro Maree. **Quote misurate (v33.7)**: rilievo RAMSES delle pavimentazioni (Comune di Venezia – Insula S.p.A.), curve di livello ogni 1 cm,
+pagine del Comune [Quote altimetriche del suolo cittadino](https://www.comune.venezia.it/it/content/quote-altimetriche-venezia)
+(Centro Maree: progetto del Comune attuato da Insula nel 2011, «precisione centimetrica», quote su ZMPS, consultazione sul portale) e
+[Curve di livello](https://www.comune.venezia.it/it/content/curve-livello) → `https://maps.ramses.it/media/download/curve-livello-shp.zip`
+(332.908.824 byte; GML 550 MB, DXF 352 MB, TAB 155 MB sullo stesso server; `maps.insula.it` non risponde). Senza il rilievo le quote sono una
+stima indicativa e l'app lo dice.
+
+**Il rilievo RAMSES (verificato il 20/11/2026 sull'archivio).** 426.184 polilinee (419.834 chiuse), 45,5 milioni di vertici, 2.290 km di curve;
+campi `LIVELLO_PS` (cm sullo **Zero Mareografico di Punta della Salute**, lo stesso riferimento della marea) e `LIVELLO_GE` (Genova): differenza
+costante di 23 cm in tutte le curve. Quote 43–351 cm. Coordinate EPSG:3004 (Monte Mario / Italy zone 2). File del 21/06/2011; data dei rilievi
+non dichiarata (il progetto è iniziato nel 2005). Copertura: città storica e Giudecca; **mancano** Tronchetto, Santa Marta e area portuale,
+parte di Sant'Elena, San Giorgio, Sacca Fisola ovest, isole. Controlli: davanti alla Basilica 66 cm (Centro Maree: 63–70), Piazza 82 (80),
+Rialto 104 (104), piazzale della stazione 134 (135) entro 40 m; lunghezza di calli allagate a +90/+100/+110/+120 cm: 1,1/5,1/16,9/36,0 %
+(curva ufficiale della **superficie**: 1,8/5,2/14,0/28,8 %). Due implementazioni indipendenti (Python/SciPy e `ramses-core.js`) danno la stessa quota
+nel 95 % dei punti della rete, ±1 cm nel 98 %. Diritti: vedi «Licenza e pubblicazione» qui sotto.
+
+**Come si usa il rilievo** (`node scripts/genera-acqua.js public --ramses dati-ramses\curve-livello-shp.zip [--mattonelle …]`, ~15 s, ~250 MB di
+memoria, solo sul computer): le curve si disegnano su una griglia di 0,5 m (dove più curve cadono nello stesso pixel resta la più bassa); la quota
+di un punto della rete pedonale (ogni metro, ponti esclusi) è quella della curva più vicina entro 8 m: con curve ogni centimetro l'errore
+dell'interpolazione è al più 1 cm. Le coordinate WGS84 si portano in EPSG:3004 con «Monte Mario to WGS 84 (4)» (Helmert a 7 parametri,
+accuratezza ~4 m; il confronto con la rete di OpenStreetMap indica uno scarto di 1–2 m) e Gauss-Krüger: entro 1 mm da PROJ. Per ogni cella di
+~10 m (`griglia_rilievo`) la **mediana** dei punti misurati, arrotondata a 2 cm (il minimo o il 10° percentile segnavano bagnate intere celle per un
+avvallamento: 23 % di calli a +110 cm invece di 17 %); cella misurata se lo è almeno metà dei suoi punti (20.234 celle).
+
+**File (v33.8).** `acqua/{indice,quote,passerelle}.json` sono **sempre** quelli della stima, con o senza `--ramses` (pubblicabili). Con `--ramses`
+in più `acqua/rilievo/indice.json` (fonte, attribuzione, condizioni, `pubblicabile: false`, griglia delle tessere) e 13 tessere `<riga>_<colonna>.json`
+di 120×120 celle (~1,2 km): 52,8 kB in tutto, 24,7 kB compressi, la più grande 11,4 kB (5,9 kB compressi). Sul telefono `acqua.js: composta()`
+mette le tessere sopra la stima (quota misurata dove la tessera ha la cella, altrimenti stima); `livelli.js: prepara(riquadro)` scarica solo le
+tessere della vista (o della zona del percorso, dal pianificatore, al più 2,5 s di attesa), verificate con l'impronta e salvate in «tpl-fissi-1».
+Misure (Chromium, 21/11): a San Marco 2 tessere, da tutta la città 10; ~14 kB di memoria per tessera; 200.000 letture di quota in 22 ms.
+Senza la cartella (404) tutto come prima; l'indice del rilievo resta salvato per l'uso senza rete, le tessere già viste anche.
+
+**Cosa NON dice il rilievo** (scritto nell'app): una quota sotto la marea vuol dire acqua *possibile*: l'acqua entra dai tombini e dalle rive e
+arriva quasi ovunque attraverso la rete dei gatoli, quindi non si toglie l'acqua dalle zone basse «chiuse» (un filtro di connessione in
+superficie sarebbe sbagliato a Venezia); difese locali e rialzi successivi al rilievo non sono considerati (Piazza San Marco si allaga ancora da
+circa +80 cm, 2026); subsidenza e lavori dal rilievo a oggi possono spostare le quote di qualche cm; i punti più bassi di una cella si bagnano
+qualche cm prima della mediana; gradini, soglie e chiusini (elementi di discontinuità di RAMSES) non sono nell'archivio delle curve.
+
+**Licenza e pubblicazione (21/11/2026; non è una consulenza legale).** Le condizioni d'uso del sito di Insula (smu.insula.it) consentono
+l'uso, la riproduzione e l'elaborazione, anche parziale, dei contenuti pubblicati, indicando la fonte «Fonte informativa: Insula spa»; la
+titolarità resta di Insula; vietano la vendita e la cessione a terzi dei dati e la commercializzazione degli elaborati; nessuna garanzia.
+L'app è gratuita, senza pubblicità, senza donazioni (tolte nella v33.9) e senza compensi per l'autore. Quindi:
+- le **tessere derivate** (`public/acqua/rilievo/`, mediana ogni ~10 m, 2 cm) si pubblicano con la fonte indicata sulla mappa (crediti sempre
+  visibili quando ci sono quote misurate), nel menu Livelli e in Informazioni;
+- l'**archivio originale** `curve-livello-shp.zip` non si ridistribuisce (`dati-ramses/` in `.gitignore`): si scarica dal sito di Insula.
+
+Per l'online `genera-acqua.js` senza `--ramses`
+produce gli stessi dati di prima (provato: griglia, quote e passerelle identiche; cambia solo il testo della nota).
+
+**Come si fanno i file** (`node scripts/genera-acqua.js public`, oppure `--mattonelle <cartella>`; metodo in `scripts/acqua-core.js`):
+1. ogni percorso si ricalca sulla rete pedonale tra i capi cercati per nome su OpenStreetMap, scegliendo la coppia di punti con la lunghezza più
+   vicina a quella ufficiale. Aggancio al punto più vicino di un tratto (non solo agli incroci); se il percorso trovato è più lungo di quello
+   ufficiale si accorcia alla lunghezza ufficiale. Oggi «tracciato» 72 su 72 (capi rivisti a mano sulle tavole); «indicativo» resta per i casi dubbi;
+2. quote: punti certi = quota di posa delle passerelle (−3 cm) e pochi punti noti del Comune (Basilica, Piazza, Rialto, stazione); media pesata sulla
+   distanza con una quota di fondo; nella città storica calibrazione sulla curva ufficiale (stesso ordine, lunghezze allagate come la curva);
+   Murano, Burano-Mazzorbo, San Michele solo stima; fuori zona (Lido, Pellestrina, terraferma) nessun dato. Ponti esclusi: sempre asciutti;
+3. uscita: `acqua/quote.json` (celle di ~20 m in caratteri, ~29 kB, 11 kB compressi), `acqua/passerelle.json` (~13 kB, 4 kB compressi), con `--ramses` anche `acqua/rilievo/` (tessere, sopra),
+   `acqua/indice.json` (impronte SHA-256).
+
+**Pianificatore** (`percorso.js`, `camminata.js`, `pedoni.js`, `acqua.js`), con la marea in città da +80 cm all'ora del tratto:
+- i percorsi a piedi evitano i tratti allagati senza passerella se c'è un'altra strada (1 m bagnato pesa 8 m) e usano le passerelle posate;
+- le distanze verso le fermate vicine mandate al server contano 1 m bagnato come 3 m (`EQUIV` in `pedoni.js`): le fermate raggiungibili solo
+  con l'acqua scendono in classifica e i minuti a piedi tengono conto del passo più lento. I cambi a piedi tra due fermate li calcola il server
+  e **non** considerano l'acqua (solo l'avviso sulla scheda);
+- ogni scheda delle soluzioni dice «A piedi all'asciutto (stima)», «su passerella …» o «acqua possibile per circa N m, fino a ~X cm»; il dettaglio
+  ha il riquadro della marea con il riepilogo e la nota su ogni tratto a piedi; sulla mappa in blu le parti con l'acqua, in arancio le passerelle.
+
+**Sul telefono** (`livelli.js`): i file si scaricano solo quando un livello si accende (a mano o con la marea da +80 cm), si controllano con
+l'impronta e restano in «tpl-fissi-1» (`/__acqua/<impronta>`, e dalla v33.7 anche l'ultimo indice valido in `/__acqua/indice`: **senza rete**
+i livelli usano i file già salvati; serve però la marea, che arriva dalla rete o è già caricata nella pagina); il service worker non li intercetta.
+Sulla mappa (v33.7) linea continua dove la quota è misurata, tratteggiata dove è stimata, con «Fonte informativa: Insula spa» nei crediti
+quando ci sono quote misurate; nel pianificatore «(quote del rilievo)» o «(stima)»; nei testi «zone potenzialmente allagabili». In locale arrivano dal server come file
+statici; **quando si pubblicherà** andranno sul ramo `dati` (passo da aggiungere a `dati.yml` dopo la rete pedonale) e il server li elencherà
+in `/api/fissi`, così Render non li serve.
 
 ## E. Orari per giorno e memoria del server (v28)
 

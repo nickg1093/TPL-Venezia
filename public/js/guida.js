@@ -7,7 +7,7 @@
 // Memoria sul telefono (localStorage «tpl.guida»): versione della guida vista e quali parti; nessun dato esce dal telefono.
 import { esc, icon } from './util.js';
 
-export const GUIDA_VER = 'v31';
+export const GUIDA_VER = 'v33';
 const KEY = 'tpl.guida';
 
 // Nei testi: html scritto qui (fisso), mai dati che arrivano da fuori.
@@ -35,10 +35,11 @@ const GUIDA_MAPPA = [
   { since: 'v23', el: lonely, round: true, pad: 8, icon: 'live', title: 'Tocca un mezzo', html: 'Ogni simbolo è un mezzo che si muove adesso. Toccalo per vedere la sua corsa e le prossime fermate, e <b>seguirlo</b> sulla mappa.' },
   { since: 'v23', el: q('#search-toggle-btn'), round: true, icon: 'search', title: 'Cerca fermate e linee', html: 'Scrivi il nome di una fermata o il numero di una linea. Qui ritrovi anche i tuoi <b>preferiti</b>.' },
   { since: 'v23', el: q('#locate'), round: true, icon: 'locate', title: 'Fermate vicine a te', html: 'Mostra dove sei e le fermate più vicine. <b>La tua posizione resta sul telefono.</b>' },
-  { since: 'v23', el: q('#controls .group'), icon: 'ship', title: 'Battelli e bus', html: 'Mostra o nascondi la navigazione e i bus/tram, anche separatamente.' },
+  { since: 'v23', el: q('#mezzi-btn'), round: true, icon: 'mezzi', title: 'Battelli e bus', html: 'Nel menu <b>Mezzi sulla mappa</b> mostri o nascondi la navigazione e i bus/tram, anche separatamente.' },
+  { since: 'v33', el: q('#livelli-btn'), round: true, icon: 'layers', title: 'Acqua alta sulla mappa', html: 'Con l\'acqua alta qui vedi le <b>zone allagate</b> (stima) e i <b>percorsi su passerelle</b> posati: si accendono da soli, e puoi guardare anche il colmo previsto.' },
   { since: 'v23', el: q('#plan-btn'), icon: 'route', title: 'Pianifica un percorso', html: 'Dimmi da dove a dove: ti propongo le soluzioni migliori, con cambi e tratti a piedi. Puoi <b>salvare</b> i percorsi che fai spesso e, quando parti, farti <b>guidare</b> fino all\'arrivo.' },
   { since: 'v23', el: () => document.getElementById('avvisi-btn')?.closest('.group'), icon: 'warn', title: 'Avvisi e marea', html: 'Scioperi, deviazioni e fermate sospese; il livello della <b>marea</b> e i servizi in caso di acqua alta.' },
-  { since: 'v24', el: q('#unk-btn'), round: true, icon: 'unknown', title: 'Mezzi senza linea', html: 'I mezzi che il feed ACTV non associa a nessuna linea (simbolo <b>?</b>) sono nascosti: con questo tasto li mostri, in grigio.' },
+  { since: 'v24', el: q('#mezzi-btn'), round: true, icon: 'unknown', title: 'Mezzi senza linea', html: 'I mezzi che il feed ACTV non associa a nessuna linea (simbolo <b>?</b>) sono nascosti: li mostri, in grigio, dal menu <b>Mezzi sulla mappa</b>.' },
   { since: 'v24', el: q('#favs-btn'), round: true, icon: 'star', title: 'I tuoi preferiti', html: 'Fermate e percorsi salvati, a portata di tocco. Puoi riordinarli, dare un nome ai percorsi e salvarne una <b>copia</b>.' },
   { since: 'v23', el: q('#bottom-bar .seg'), icon: 'clock', title: 'Tempo reale o Programmato', html: '<b>Tempo reale</b>: dove sono i mezzi adesso. <b>Programmato</b>: gli orari di un altro giorno o di un\'altra ora.' },
   { since: 'v23', el: q('#info-btn'), round: true, icon: 'info', title: 'La guida è sempre qui', html: 'Nelle <b>Informazioni</b> puoi rivedere questa guida quando vuoi.', end: 'Fine' },

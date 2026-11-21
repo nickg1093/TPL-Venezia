@@ -123,7 +123,7 @@ label.ibtn:has(input:focus-visible){outline:3px solid var(--accent);outline-offs
 .card-h h2{margin:0;font-size:var(--fs-lg);font-weight:700}
 
 /* Marea: a sinistra della colonna controlli, allineata al suo pulsante (posizione fissata da JS) */
-#tide,#avvisi{width:min(340px,calc(100% - var(--tap) - 4*var(--gap) - var(--safe-l) - var(--safe-r)));max-height:calc(100% - 2*var(--gap));overflow-y:auto;right:calc(var(--tap) + 3*var(--gap) + var(--safe-r) + 4px);top:var(--gap)}
+#tide,#avvisi,#mezzi,#livelli{width:min(340px,calc(100% - var(--tap) - 4*var(--gap) - var(--safe-l) - var(--safe-r)));max-height:calc(100% - 2*var(--gap));overflow-y:auto;right:calc(var(--tap) + 3*var(--gap) + var(--safe-r) + 4px);top:var(--gap)}
 #tide-body{padding:4px 20px 18px}
 #avvisi-body{padding:0 16px 16px}
 .tide-level{display:flex;align-items:baseline;gap:6px;line-height:1}
@@ -396,6 +396,9 @@ body.busy #plist{opacity:.72;transition:opacity .15s}
 .alert-row[data-sev="severe"]{border-color:var(--late)}
 .alert-row[data-sev="severe"]>.ic{color:var(--late)}
 .reassign{display:block;margin-top:2px;font-size:var(--fs-xs);color:var(--info)}
+.vupd{display:flex;align-items:center;gap:4px;margin-top:2px;font-size:var(--fs-xs);color:var(--muted)}   /* ora dell'ultima posizione del mezzo (v33.5) */
+.vupd.old{color:var(--warn)}
+.vupd .ic{flex:none}
 
 /* ---- v18: righe dei pannelli più compatte, proporzionate allo schermo (rem: rispettano la dimensione del testo scelta nel telefono) ---- */
 .dep{grid-template-columns:auto minmax(0,1fr) auto auto;gap:8px;min-height:52px;padding:7px 6px 7px 8px}
@@ -489,6 +492,7 @@ button.chip.all{min-height:30px}
 .osm-attr{position:absolute;z-index:900;left:calc(var(--gap) + var(--safe-l));bottom:8px;padding:3px 9px;border-radius:99px;background:var(--glass);color:var(--muted);font-size:.75rem;line-height:1.5;box-shadow:var(--shadow);transition:opacity .5s}
 .osm-attr a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .osm-attr.off{opacity:0;pointer-events:none}
+.offline-bar{position:absolute;z-index:1100;left:50%;transform:translateX(-50%);bottom:calc(var(--gap) + 64px);width:max-content;max-width:min(420px,calc(100% - 2*var(--gap) - 2*var(--tap) - 24px));padding:6px 12px;border-radius:12px;background:var(--surface);color:var(--fg);border:1.5px solid var(--warn, #c77700);box-shadow:var(--shadow);font-size:var(--fs-xs);font-weight:700;line-height:1.35;text-align:center}
 
 /* fonte del passaggio sull'angolo in basso a sinistra della mattonella: onde verdi = rilevato in tempo reale, orologio = da orario */
 .bsrc{position:absolute;left:-8px;bottom:-8px;display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--surface);color:var(--muted);box-shadow:0 0 0 1.5px var(--surface)}
@@ -1279,6 +1283,7 @@ body.busy #panel:not([hidden])::before,body.busy .dock::before{content:"";positi
 .ip-ts button{flex:1;min-height:44px;padding:0 10px;border:1px solid var(--line-strong);border-radius:99px;background:var(--surface);color:var(--fg);font:inherit;font-weight:700;cursor:pointer}
 .ip-ts button[aria-checked="true"]{border-color:var(--accent);background:var(--accent);color:var(--on-accent)}
 .ip-ts button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.ip-fs-note{margin:-4px 0 12px;font-size:var(--fs-xs);color:var(--muted)}
 /* testo «Grande»/«Molto grande»: la barra in basso cresce poco (modalità e orologio restano su una riga anche sui telefoni stretti) */
 #bottom-bar{--fs-sm:min(.875rem,13.5px);--fs-md:min(1rem,16px);--fs-lg:min(1.125rem,17.5px)}
 @media (max-width:380px){#bottom-bar .seg label{padding:0 10px}}
@@ -1289,15 +1294,81 @@ body.busy #panel:not([hidden])::before,body.busy .dock::before{content:"";positi
 .pp-hs .mq,.fv-t small .mq{display:inline-flex;align-items:center;gap:4px}
 .pp-hs .mq:not(.run),.fv-t small .mq:not(.run){display:inline}
 
-/* v32 · donazione volontaria (Informazioni) e cuore accanto alla «i» */
-.ip-dona{margin:4px 0 12px;padding:14px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--surface-2)}
-.ip-dona h3{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:var(--fs-md)}
-.ip-dona h3 .ic{color:#d6336c}
-.ip-dona p{margin:0 0 10px;font-size:var(--fs-sm);line-height:1.5}
-#info #info-body a.ip-dona-go,.ip-dona-go{display:inline-flex;color:var(--on-accent);text-decoration:none;padding:0 20px;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 20px;border-radius:99px;background:var(--accent);color:var(--on-accent);
-  font-weight:800;text-decoration:none}
-.ip-dona-go .ic{width:18px;height:18px}
-.ip-dona-go:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
-.ip-dona .ip-dona-note{margin:8px 0 4px;font-size:var(--fs-xs);color:var(--muted)}
-.ip-dona .nlink{min-height:44px;font-size:var(--fs-xs)}
-.dona-btn .ic{color:#d6336c}
+
+/* ---------- MENU «MEZZI SULLA MAPPA» E «LIVELLI DELLA MAPPA» (livelli.js) ---------- */
+#mezzi,#livelli{width:min(320px,calc(100% - var(--tap) - 4*var(--gap) - var(--safe-l) - var(--safe-r)))}
+.pop-body{padding:2px 12px 14px}
+/* indicatore sul pulsante: filtro diverso dal normale (mezzi) o livello acceso/proposto (livelli) */
+.ibtn .fbadge{position:absolute;top:7px;right:7px;width:11px;height:11px;border-radius:50%;background:var(--accent);border:2px solid var(--glass)}
+.ibtn .fbadge[data-k="acqua"]{background:#1e78e6}
+.ibtn .fbadge[data-k="alta"]{background:var(--warn)}
+.ibtn[aria-expanded="true"] .fbadge{border-color:var(--accent);background:var(--on-accent)}
+/* riga con interruttore: tutta la riga si tocca (≥ 52 px), testo a capo con il testo grande */
+.sw-row{display:flex;align-items:center;gap:12px;min-height:56px;padding:6px 8px;border-radius:var(--r-sm);cursor:pointer;color:var(--fg)}
+.sw-row+.sw-row{border-top:1px solid var(--line)}
+.sw-row:hover{background:var(--accent-soft)}
+.sw-row>.ic{flex:none;width:24px;height:24px}
+.sw-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;font-size:var(--fs-md);font-weight:600;line-height:1.25;overflow-wrap:anywhere}
+.sw-t small{font-size:var(--fs-xs);font-weight:500;color:var(--muted)}
+.sw-row input[type=checkbox]{appearance:none;-webkit-appearance:none;flex:none;position:relative;width:46px;height:28px;margin:0;border-radius:99px;background:var(--surface-2);border:1.5px solid var(--line-strong);cursor:pointer;transition:background .15s,border-color .15s}
+.sw-row input[type=checkbox]::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:var(--muted);transition:transform .15s,background .15s}
+.sw-row input[type=checkbox]:checked{background:var(--accent);border-color:var(--accent)}
+.sw-row input[type=checkbox]:checked::after{transform:translateX(18px);background:var(--on-accent)}
+.sw-row input[type=checkbox]:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.lv-seg{display:flex;width:100%;margin-top:10px}
+.lv-seg button{flex:1;min-height:44px;padding:4px 10px;border:0;border-radius:99px;background:transparent;color:var(--fg);font:inherit;font-size:var(--fs-sm);font-weight:700;cursor:pointer;line-height:1.2}
+.lv-seg button[aria-checked="true"]{background:var(--accent);color:var(--on-accent)}
+.lv-seg button:disabled{opacity:.45;cursor:default}
+.pop-note:empty{display:none}
+.pop-note{margin:12px 0 0;padding:8px 12px;border-radius:var(--r-sm);font-size:var(--fs-xs);font-weight:600;line-height:1.4;background:var(--surface-2);border:1px solid var(--line)}
+.pop-note p{margin:0}.pop-note p+p{margin-top:6px}
+.pop-note .warn{color:var(--fg);border-left:3px solid var(--warn);padding-left:8px}
+.pop-note .lv-legend{display:flex;align-items:center;gap:8px;margin-top:6px;font-weight:500;color:var(--muted)}
+.pop-note .lv-grad{flex:none;width:72px;height:10px;border-radius:5px;background:linear-gradient(90deg,rgba(30,120,230,.3),rgba(30,120,230,.75))}
+.pop-note .lv-ql{flex:none;width:28px;height:0;border-top:4px solid rgba(30,120,230,.75)}
+.pop-note .lv-ql.s{border-top-style:dashed;margin-left:8px}
+.pop-note .lv-pl{flex:none;width:28px;height:0;border-top:4px solid var(--pass)}
+.pop-note .lv-pl.i{border-top-style:dashed}
+.pop-note button.nlink{margin-top:6px;min-height:44px}
+.pop-foot{margin:12px 2px 0;font-size:var(--fs-xs);color:var(--muted);line-height:1.4}
+:root{--pass:#c2410c;--pass-halo:#ffffff}
+:root[data-theme="dark"]{--pass:#ffa94d;--pass-halo:#0a1019}
+.leaflet-pane .pass-l{stroke:var(--pass);stroke-linecap:round;stroke-linejoin:round}
+.leaflet-pane .pass-h{stroke:var(--pass-halo);stroke-opacity:.85;stroke-linecap:round;stroke-linejoin:round}
+.leaflet-pane .pass-l.i{stroke-dasharray:7 6}
+.leaflet-pane .pass-l.oltre{stroke:var(--late)}
+.acqua-img{pointer-events:none}
+.acqua-img.griglia{image-rendering:pixelated}
+@media (prefers-reduced-motion:reduce){.sw-row input[type=checkbox],.sw-row input[type=checkbox]::after{transition:none}}
+.pp-acq{display:flex;align-items:flex-start;gap:6px;margin-top:4px;color:var(--fg);font-weight:600}
+.pp-acq .ic{flex:none;width:16px;height:16px;margin-top:1px;color:var(--pass)}
+/* acqua alta sulle schede delle soluzioni e nel riquadro della marea del dettaglio (percorso.js: acqLine, fillAcqua) */
+.pp-acl{display:flex;align-items:flex-start;gap:6px;margin-top:6px;padding:5px 8px;border-radius:10px;font-size:var(--fs-xs);line-height:1.35;text-align:left;color:var(--fg);background:color-mix(in srgb,var(--pass) 12%,transparent)}
+.pp-acl .ic{flex:none;width:16px;height:16px;margin-top:1px;color:var(--pass)}
+.pp-acqt{display:block;margin-top:4px;font-weight:600;color:var(--fg)}
+
+/* Modifica dei percorsi recenti e salvati nel pianificatore (v33.5): stessi comandi del pannello Preferiti */
+.search-category.pp-cat{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:2px;padding-bottom:2px}
+.pp-cat .nlink{text-transform:none;letter-spacing:0;font-size:var(--fs-sm);min-height:40px}
+.pp-erow{border-bottom:1px solid var(--line)}
+.pp-erow .pp-sug{border-bottom:0}
+.pp-sug.static{cursor:default}
+.pp-draft{padding:10px 12px 14px;display:flex;flex-direction:column;gap:10px}
+.pp-dhead{display:flex;align-items:flex-start;gap:6px;margin:0;font-size:var(--fs-sm)}
+.pp-dhead .ic{flex:none;margin-top:2px}
+.pp-dtitle{flex:1;min-width:0;font-size:var(--fs-md)}
+.pp-dname{display:flex;flex-direction:column;gap:4px}
+.pp-dname small{color:var(--muted);font-weight:600}
+.pp-dname input{min-height:44px;padding:0 12px;border-radius:var(--r-sm);border:1.5px solid var(--line);background:var(--surface);color:var(--fg);font:inherit;min-width:0}
+.pp-dname input:focus-visible{border-color:var(--accent)}
+.pp-dacts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));gap:8px}
+.pp-dacts .pp-dok{border-color:var(--accent);background:var(--accent);color:var(--on-accent,#fff)}
+
+/* Collegamento a Instagram in Informazioni (stile dei pulsanti della pagina, 44px di area tattile) */
+#info #info-body a.ip-social{display:flex;width:fit-content;align-items:center;gap:10px;min-height:44px;margin:10px 0 0;padding:4px 14px 4px 10px;border:1.5px solid var(--line);border-radius:999px;color:var(--fg);text-decoration:none;max-width:100%}
+#info #info-body a.ip-social:hover{border-color:var(--accent)}
+#info #info-body a.ip-social:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.ip-social .ic{flex:none;width:22px;height:22px;color:var(--accent)}
+.ip-social span{display:flex;flex-direction:column;line-height:1.2;min-width:0;overflow-wrap:anywhere}
+.ip-social small{color:var(--muted);font-size:var(--fs-xs);font-weight:600}
+.ip-foot a{color:var(--accent)}

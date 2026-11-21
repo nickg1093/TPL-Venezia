@@ -4,13 +4,14 @@
   const ll = (a, b) => Array.isArray(a) ? { lat: a[0], lng: a[1], lon: a[1] } : (a && typeof a === 'object' ? { lat: a.lat, lng: a.lng ?? a.lon, lon: a.lng ?? a.lon } : { lat: a, lng: b, lon: b });
   const pt = (x, y) => ({ x, y, subtract(o) { return pt(x - o.x, y - o.y); } });
   class Ev { on(t, f) { (this._h ||= {})[t] = [...(this._h[t] || []), f]; return this; } fire(t, e) { for (const f of (this._h?.[t] || [])) f(e); } }
-  class Layer extends Ev { addTo(g) { g.addLayer(this); return this; } bindTooltip() { return this; } setTooltipContent() {} remove() { if (this._g) this._g.removeLayer(this); else this._rm?.(); } }
+  class Layer extends Ev { addTo(g) { g.addLayer(this); return this; } bindTooltip() { return this; } bindPopup() { return this; } setTooltipContent() {} remove() { if (this._g) this._g.removeLayer(this); else this._rm?.(); } }
   class Group extends Layer {
     constructor() { super(); this.items = new Set(); }
     addLayer(l) { this.items.add(l); l._g = this; if (this._map) l._add?.(this._map); }
     removeLayer(l) { this.items.delete(l); l._rm?.(); }
     clearLayers() { for (const l of this.items) l._rm?.(); this.items.clear(); }
     _add(m) { this._map = m; for (const l of this.items) l._add?.(m); }
+    _rm() { for (const l of this.items) l._rm?.(); this._map = null; }
     get count() { return this.items.size; }
   }
   class Marker extends Layer {
@@ -32,6 +33,7 @@
     constructor(p, o) { super(); this.pts = p; this.o = o; }
     _add(m) { this.m = m; m._polys.add(this); } _rm() { this.m?._polys.delete(this); }
   }
+  class Img extends Layer { _add(m) { this.m = m; (m._imgs ||= new Set()).add(this); window.__acquaImg = this; } _rm() { this.m?._imgs?.delete(this); if (window.__acquaImg === this) window.__acquaImg = null; } setUrl(u) { this.url = u; return this; } }
   class Map_ extends Group {
     constructor(id, o) { super(); this.options = { ...(o || {}) }; this.el = typeof id === 'string' ? document.getElementById(id) : id; this._h = {}; this._all = new Set(); this._polys = new Set(); this.c = { lat: 45.437, lng: 12.335 }; this.z = 12;
       this._els = document.createElement('div'); this._els.className = 'leaflet-pane'; this._els.style.cssText = 'position:absolute;inset:0;overflow:hidden'; this.el.classList.add('leaflet-container'); this.el.appendChild(this._els);
@@ -42,18 +44,20 @@
     unproject(q, z = this.z) { return { lat: -q.y / (this.k(z) * 1.4), lng: q.x / this.k(z), lon: q.x / this.k(z) }; }
     latLngToContainerPoint(p) { const a = this.project(p), c = this.project(this.c), s = this.getSize(); return pt(a.x - c.x + s.x / 2, a.y - c.y + s.y / 2); }
     getBounds() { const s = this.getSize(), tl = this.unproject(pt(this.project(this.c).x - s.x / 2, this.project(this.c).y - s.y / 2)), br = this.unproject(pt(this.project(this.c).x + s.x / 2, this.project(this.c).y + s.y / 2));
-      const b = { pad() { return b; }, contains(p) { p = ll(p); return p.lat <= tl.lat && p.lat >= br.lat && p.lng >= tl.lng && p.lng <= br.lng; } }; return b; }
+      const b = { pad() { return b; }, getSouth: () => br.lat, getNorth: () => tl.lat, getWest: () => tl.lng, getEast: () => br.lng, contains(p) { p = ll(p); return p.lat <= tl.lat && p.lat >= br.lat && p.lng >= tl.lng && p.lng <= br.lng; } }; return b; }
     _moved() { for (const m of this._all) m.pos(); this.fire('moveend', {}); }
     setView(p, z = this.z) { this.c = ll(p); this.z = z; this._moved(); return this; }
     panTo(p) { this.c = ll(p); this._moved(); } flyTo(p, z) { this.c = ll(p); this.z = z; this._moved(); }
     panBy(d) { const c = this.project(this.c); this.c = this.unproject(pt(c.x + d[0], c.y + d[1])); this._moved(); }
     fitBounds(b) { this.c = b.getCenter(); this.z = 14; this._moved(); return this; }
     setMaxBounds(b) { this._maxB = b; return this; } setMinZoom(z) { this._minZ = z; return this; } getBoundsZoom() { return 9; }   // area servita: solo stato
+    createPane(n) { const d = document.createElement('div'); d.className = 'leaflet-pane leaflet-' + n + '-pane'; (this._panes ||= {})[n] = d; return d; }   // livelli dell'acqua alta (livelli.js)
     invalidateSize() { this._moved(); } stopLocate() {} locate() { window.__geo ? this.fire('locationfound', { latlng: ll(window.__geo), accuracy: 10 }) : this.fire('locationerror', {}); }
   }
   const bounds = (...a) => { const pts = a.length === 2 && !Array.isArray(a[0]?.[0]) && Array.isArray(a[0]) ? a : a[0]; const l = pts.map(x => ll(x)); return { pad() { return this; }, getCenter: () => ({ lat: l.reduce((s, p) => s + p.lat, 0) / l.length, lng: l.reduce((s, p) => s + p.lng, 0) / l.length }) }; };
   window.L = { map: (i, o) => new Map_(i, o), latLng: ll, latLngBounds: bounds, point: pt, divIcon: o => o, tileLayer: (u, o) => ({ options: { ...(o || {}) }, addTo() { return this; }, redraw() { return this; } }), layerGroup: () => new Group(),
-    marker: (p, o) => new Marker(p, o), circleMarker: (p, o) => new Circle(p, o), circle: (p, o) => new Acc(p, o), polyline: (p, o) => new Poly(p, o), polygon: (p, o) => Object.assign(new Poly(p, o), { isPolygon: true }),   // area servita (contorno e oscuramento)
+    marker: (p, o) => new Marker(p, o), circleMarker: (p, o) => new Circle(p, o), circle: (p, o) => new Acc(p, o), polyline: (p, o) => new Poly(p, o), polygon: (p, o) => Object.assign(new Poly(p, o), { isPolygon: true }),
+    svg: o => ({ options: o || {} }), canvas: o => ({ options: o || {} }), imageOverlay: (u, b, o) => Object.assign(new Img(), { url: u, b, o }),   // livelli dell'acqua alta   // area servita (contorno e oscuramento)
     control: { zoom: () => ({ addTo(m) {                                      // come Leaflet: angolo in basso a destra con due pulsanti
       const c = document.createElement('div'); c.className = 'leaflet-bottom leaflet-right'; c.style.cssText = 'position:absolute;right:0;bottom:0;z-index:1000';
       this.el = document.createElement('div'); this.el.className = 'leaflet-control-zoom leaflet-bar leaflet-control'; this.el.style.cssText = 'display:flex;flex-direction:column;float:right;clear:both';

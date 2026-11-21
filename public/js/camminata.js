@@ -3,8 +3,12 @@
 // linea d'aria e stima del server.
 //   distanze(punto, fermate)  metri a piedi verso le fermate vicine (entro 30 minuti a passo svelto), oppure null
 //   percorso(a, b)            { m, pts } per disegnare un tratto a piedi lungo le strade, oppure null
+// Acqua alta (facoltativa, ultimo argomento): { cm, Q, pass } da percorso.js con i dati di livelli.js. I tratti allagati senza passerella
+// costano molto di più (acqua.js: PENALE) e si evitano se c'è un'altra strada; sulla passerella posata si passa. Il percorso restituisce
+// anche «acqua»: metri bagnati e su passerella, passerelle usate, parti da evidenziare. Senza dati dell'acqua: come prima.
 import * as Fissi from './fissi.js';
 import { createNet } from './pedoni.js';
+import * as X from './acqua.js';
 
 export const LIMITE_M = 3000;                                   // 30 minuti a passo svelto (circa 6 km/h)
 let net = null, netV = null, netP = null;
@@ -45,9 +49,25 @@ async function pulisci(idx, v) {
 const entro = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);
 
 // enough: bastano le N fermate più vicine lungo le strade (il pianificatore ne usa 14): la ricerca si ferma lì
-export async function distanze(da, fermate, enough = 14, ms = 4000) {
-  return entro((async () => { const n = await rete(); return n ? n.distances(da, fermate, LIMITE_M, enough) : null; })().catch(() => null), ms);
+// funzione di costo per un livello di marea (memoria per tratto: ogni tratto si valuta una volta)
+function costoDi(acqua) {
+  if (!acqua || !acqua.Q || !(acqua.cm >= X.MIN_ACQUA)) return null;
+  const memo = new Map();
+  return e => { let c = memo.get(e); if (c == null) { c = X.costo(X.bagnato(e, acqua.cm, acqua.Q, acqua.pass)); memo.set(e, c); } return c; };
 }
-export async function percorso(a, b, ms = 6000) {
-  return entro((async () => { const n = await rete(); return n ? n.route(a, b, LIMITE_M + 500) : null; })().catch(() => null), ms);
+export async function distanze(da, fermate, enough = 14, ms = 4000, acqua = null) {
+  return entro((async () => { const n = await rete(); return n ? n.distances(da, fermate, LIMITE_M, enough, costoDi(acqua)) : null; })().catch(() => null), ms);
+}
+// tratti della rete pedonale in un riquadro (per disegnare le calli allagate, livelli.js); null senza rete o con troppe mattonelle
+export async function tratti(bbox, max = 16, ms = 8000) {
+  return entro((async () => { const n = await rete(); return n ? n.edgesIn(bbox[0], bbox[1], bbox[2], bbox[3], max) : null; })().catch(() => null), ms);
+}
+export async function percorso(a, b, ms = 6000, acqua = null) {
+  return entro((async () => {
+    const n = await rete(); if (!n) return null;
+    const c = costoDi(acqua), r = await n.route(a, b, LIMITE_M + 500, c); if (!r) return null;
+    const out = { m: r.m, pts: r.pts };
+    if (c) out.acqua = { cm: acqua.cm, ...X.riassunto(r.archi, acqua.cm, acqua.Q, acqua.pass) };
+    return out;
+  })().catch(() => null), ms);
 }

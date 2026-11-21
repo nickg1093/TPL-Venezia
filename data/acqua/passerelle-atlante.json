@@ -1,0 +1,2151 @@
+{
+ "formato": 1,
+ "fonte": "Comune di Venezia, Centro Previsioni e Segnalazioni Maree / Gruppo Veritas: «Atlante dei percorsi in quota su passerelle del centro storico e delle isole di Venezia», tabella riassuntiva tot_pass.pdf (pubblicata l’8/11/2019) e tavole per sestiere, https://www.comune.venezia.it/it/content/percorsi-su-passerelle; San Marco: schede dei percorsi dell'Atlante aggiornato al 17/04/2023 (1_sanmarco_20230417.pdf), che correggono lunghezze, quote e descrizioni della tabella 2019",
+ "note": [
+  "Escluso il percorso T1.7 D (lunghezza 0 nella tabella 2019; 8 m nella scheda 2023, ma posizione non ricavabile in modo affidabile dalla tavola). T1.1 E (0 m nel 2019) è incluso con i dati della scheda 2023. Le tavole senza numero nella tabella sono indicate con il numero dedotto dall’ordine (tavola: null).",
+  "a, b: punti di partenza e arrivo (gradi). geo=osm: cercati per nome su OpenStreetMap (© OpenStreetMap contributors, ODbL); geo=stima: almeno un capo stimato a mano dalla descrizione; geo=incerto: posizione approssimata, il tracciato resta indicativo.",
+  "quota: livello di marea (cm sullo zero mareografico di Punta della Salute) da cui il percorso viene allestito. Stagione del servizio: 15 settembre – 30 aprile; percorsi garantiti fino a +120 cm.",
+  "agg: '2023' = lunghezza, quota e descrizione dalla scheda dell'Atlante San Marco 2023 (la tabella riassuntiva in fondo allo stesso PDF riporta ancora i valori 2019). T1.2 B: posa da +90 a +110 cm, si usa +110 (percorso completo)."
+ ],
+ "stagione": {
+  "da": "09-15",
+  "a": "04-30"
+ },
+ "garantiti": 120,
+ "percorsi": [
+  {
+   "id": "T1.1A",
+   "tavola": "T1.1A",
+   "sestiere": "San Marco",
+   "descrizione": "Da Calle Larga San Marco a Torre Orologio",
+   "metri": 30,
+   "quota": 90,
+   "a": [
+    [
+     45.43514,
+     12.33936
+    ],
+    [
+     45.43537,
+     12.34031
+    ],
+    [
+     45.43493,
+     12.33877
+    ]
+   ],
+   "b": [
+    [
+     45.43474,
+     12.33897
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T1.1B",
+   "tavola": "T1.1B",
+   "sestiere": "San Marco",
+   "descrizione": "Da Torre Orologio a Procuratie Nuove",
+   "metri": 120,
+   "quota": 85,
+   "a": [
+    [
+     45.43474,
+     12.33897
+    ]
+   ],
+   "b": [
+    [
+     45.43361,
+     12.33818
+    ],
+    [
+     45.43339,
+     12.33743
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T1.1C",
+   "tavola": "T1.1C",
+   "sestiere": "San Marco",
+   "descrizione": "Da ingresso Campanile a Procuratie Nuove",
+   "metri": 36,
+   "quota": 90,
+   "a": [
+    [
+     45.43399,
+     12.33896
+    ]
+   ],
+   "b": [
+    [
+     45.43361,
+     12.33818
+    ],
+    [
+     45.43339,
+     12.33743
+    ]
+   ],
+   "geo": "stima",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.1D",
+   "tavola": "T1.1D",
+   "sestiere": "San Marco",
+   "descrizione": "Da Piazzetta Leoncini a Calle San Basso",
+   "metri": 12,
+   "quota": 90,
+   "a": [
+    [
+     45.43491,
+     12.33948
+    ],
+    [
+     45.43468,
+     12.33898
+    ],
+    [
+     45.4348,
+     12.33938
+    ]
+   ],
+   "b": [
+    [
+     45.43493,
+     12.33921
+    ],
+    [
+     45.43507,
+     12.3391
+    ],
+    [
+     45.43485,
+     12.33927
+    ]
+   ],
+   "geo": "osm",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.1E",
+   "tavola": "T1.1E",
+   "sestiere": "San Marco",
+   "descrizione": "Da entrata Basilica a Piazzetta dei Leoncini",
+   "metri": 48,
+   "quota": 80,
+   "a": [
+    [
+     45.43476,
+     12.339265
+    ]
+   ],
+   "b": [
+    [
+     45.434561,
+     12.339251
+    ]
+   ],
+   "geo": "tavola",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.1F",
+   "tavola": "T1.1F",
+   "sestiere": "San Marco",
+   "descrizione": "Da percorso Basilica a ingressi Basilica",
+   "metri": 24,
+   "quota": 65,
+   "a": [
+    [
+     45.43457,
+     12.33935
+    ],
+    [
+     45.43462,
+     12.33945
+    ]
+   ],
+   "b": [
+    [
+     45.43482,
+     12.3394
+    ],
+    [
+     45.43491,
+     12.33948
+    ]
+   ],
+   "geo": "stima",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.1G",
+   "tavola": null,
+   "sestiere": "San Marco",
+   "descrizione": "Da uscita Palazzo Ducale a percorso Basilica",
+   "metri": 12,
+   "quota": 100,
+   "a": [
+    [
+     45.43422,
+     12.3398
+    ]
+   ],
+   "b": [
+    [
+     45.43405,
+     12.33978
+    ],
+    [
+     45.43395,
+     12.33975
+    ]
+   ],
+   "geo": "stima",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.2A",
+   "tavola": "T1.2A",
+   "sestiere": "San Marco",
+   "descrizione": "Da bar Todaro a molo Giardini Reali",
+   "metri": 32,
+   "quota": 95,
+   "a": [
+    [
+     45.43327,
+     12.33944
+    ]
+   ],
+   "b": [
+    [
+     45.4331,
+     12.33901
+    ],
+    [
+     45.43303,
+     12.33906
+    ]
+   ],
+   "geo": "osm",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.2B",
+   "tavola": "T1.2B",
+   "sestiere": "San Marco",
+   "descrizione": "Da bar Todaro a Ponte de la Paglia (posa da +90 a +110)",
+   "metri": 105,
+   "quota": 110,
+   "a": [
+    [
+     45.43327,
+     12.33944
+    ]
+   ],
+   "b": [
+    [
+     45.43365,
+     12.341
+    ],
+    [
+     45.43364,
+     12.34095
+    ]
+   ],
+   "geo": "osm",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.2C",
+   "tavola": "T1.2C",
+   "sestiere": "San Marco",
+   "descrizione": "Da percorso Molo a ingresso Palazzo Ducale",
+   "metri": 16,
+   "quota": 100,
+   "a": [
+    [
+     45.43335,
+     12.3401
+    ]
+   ],
+   "b": [
+    [
+     45.43355,
+     12.3401
+    ]
+   ],
+   "geo": "stima",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.3A",
+   "tavola": "T1.3A",
+   "sestiere": "San Marco",
+   "descrizione": "Da Corner Ca’ Grande a Ponte Zaguri",
+   "metri": 112,
+   "quota": 110,
+   "a": [
+    [
+     45.432,
+     12.333
+    ]
+   ],
+   "b": [
+    [
+     45.4327,
+     12.33228
+    ],
+    [
+     45.43269,
+     12.33224
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T1.3B",
+   "tavola": "T1.3B",
+   "sestiere": "San Marco",
+   "descrizione": "Da Actv S. Maria del Giglio a Calle del Campanile o “Gritti”",
+   "metri": 32,
+   "quota": 100,
+   "a": [
+    [
+     45.43146,
+     12.33256
+    ],
+    [
+     45.43143,
+     12.33264
+    ]
+   ],
+   "b": [
+    [
+     45.43191,
+     12.3327
+    ],
+    [
+     45.43224,
+     12.33274
+    ],
+    [
+     45.43158,
+     12.33267
+    ]
+   ],
+   "geo": "osm",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.3C",
+   "tavola": "T1.3C",
+   "sestiere": "San Marco",
+   "descrizione": "Da Ponte de le Ostreghe a Calle Larga XXII Marzo",
+   "metri": 48,
+   "quota": 105,
+   "a": [
+    [
+     45.43247,
+     12.33349
+    ],
+    [
+     45.43245,
+     12.33347
+    ]
+   ],
+   "b": [
+    [
+     45.43277,
+     12.33381
+    ],
+    [
+     45.43285,
+     12.33432
+    ]
+   ],
+   "geo": "osm",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.4A",
+   "tavola": "T1.4A",
+   "sestiere": "San Marco",
+   "descrizione": "Da Ponte de la Guera a Campo de la Guera",
+   "metri": 40,
+   "quota": 100,
+   "a": [
+    [
+     45.43515,
+     12.33715
+    ]
+   ],
+   "b": [
+    [
+     45.43523,
+     12.33752
+    ]
+   ],
+   "geo": "stima",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.5A",
+   "tavola": "T1.5A",
+   "sestiere": "San Marco",
+   "descrizione": "Da Actv S. Samuele a Campo S. Samuele",
+   "metri": 8,
+   "quota": 110,
+   "a": [
+    [
+     45.43353,
+     12.32758
+    ],
+    [
+     45.43348,
+     12.32759
+    ]
+   ],
+   "b": [
+    [
+     45.43351,
+     12.32791
+    ],
+    [
+     45.43343,
+     12.32797
+    ]
+   ],
+   "geo": "osm",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.6A",
+   "tavola": "T1.6A",
+   "sestiere": "San Marco",
+   "descrizione": "Da ex cinema S. Marco a Ponte S. Moisé",
+   "metri": 92,
+   "quota": 95,
+   "a": [
+    [
+     45.43345,
+     12.3365
+    ]
+   ],
+   "b": [
+    [
+     45.43306,
+     12.33557
+    ],
+    [
+     45.43303,
+     12.33548
+    ]
+   ],
+   "geo": "stima",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.7A",
+   "tavola": "T1.7A",
+   "sestiere": "San Marco",
+   "descrizione": "Da Pescheria San Bartolomeo a edicola Calle Mazzini e Ponte Manin",
+   "metri": 124,
+   "quota": 105,
+   "a": [
+    [
+     45.4378,
+     12.33575
+    ],
+    [
+     45.4376,
+     12.3356
+    ]
+   ],
+   "b": [
+    [
+     45.43713,
+     12.3352
+    ],
+    [
+     45.43715,
+     12.33589
+    ]
+   ],
+   "geo": "stima",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.7B",
+   "tavola": "T1.7B",
+   "sestiere": "San Marco",
+   "descrizione": "Da pontile ACTV Rialto linea 2 a Riva del Ferro",
+   "metri": 72,
+   "quota": 110,
+   "a": [
+    [
+     45.43736,
+     12.3354
+    ],
+    [
+     45.43759,
+     12.33554
+    ]
+   ],
+   "b": [
+    [
+     45.4378,
+     12.33575
+    ],
+    [
+     45.4376,
+     12.3356
+    ]
+   ],
+   "geo": "stima",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.7C",
+   "tavola": "T1.7C",
+   "sestiere": "San Marco",
+   "descrizione": "Da Ponte Manin a Calle Cavalli",
+   "metri": 232,
+   "quota": 105,
+   "a": [
+    [
+     45.43713,
+     12.3352
+    ],
+    [
+     45.43715,
+     12.33524
+    ]
+   ],
+   "b": [
+    [
+     45.4364,
+     12.3337
+    ],
+    [
+     45.43633,
+     12.33357
+    ]
+   ],
+   "geo": "stima",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.8A",
+   "tavola": null,
+   "sestiere": "San Marco",
+   "descrizione": "Da Calle de le Acque a Ramo San Salvador",
+   "metri": 9,
+   "quota": 100,
+   "a": [
+    [
+     45.43651,
+     12.33762
+    ],
+    [
+     45.4366,
+     12.33745
+    ],
+    [
+     45.43643,
+     12.33779
+    ]
+   ],
+   "b": [
+    [
+     45.43664,
+     12.33701
+    ],
+    [
+     45.43652,
+     12.33693
+    ],
+    [
+     45.43675,
+     12.33707
+    ]
+   ],
+   "geo": "osm",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.9A",
+   "tavola": "T1.9A",
+   "sestiere": "San Marco",
+   "descrizione": "Da F.ta Calle Cavalli a Sottoportego del Volto",
+   "metri": 32,
+   "quota": 105,
+   "a": [
+    [
+     45.43633,
+     12.33357
+    ],
+    [
+     45.4364,
+     12.33365
+    ]
+   ],
+   "b": [
+    [
+     45.43609,
+     12.33374
+    ],
+    [
+     45.43616,
+     12.33388
+    ]
+   ],
+   "geo": "stima",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.9B",
+   "tavola": "T1.9B",
+   "sestiere": "San Marco",
+   "descrizione": "Da Calle Cavalli a fine F.ta Cavalli",
+   "metri": 40,
+   "quota": 90,
+   "a": [
+    [
+     45.4364,
+     12.3337
+    ]
+   ],
+   "b": [
+    [
+     45.43628,
+     12.3334
+    ],
+    [
+     45.4362,
+     12.3335
+    ]
+   ],
+   "geo": "stima",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.9C",
+   "tavola": "T1.9C",
+   "sestiere": "San Marco",
+   "descrizione": "Da Calle Cavalli a fine Sottoportego del Volto",
+   "metri": 28,
+   "quota": 115,
+   "a": [
+    [
+     45.4364,
+     12.3337
+    ]
+   ],
+   "b": [
+    [
+     45.43611,
+     12.33378
+    ],
+    [
+     45.43609,
+     12.33374
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T1.9D",
+   "tavola": null,
+   "sestiere": "San Marco",
+   "descrizione": "Da Campo San Salvador a Calle del Lovo",
+   "metri": 12,
+   "quota": 110,
+   "a": [
+    [
+     45.43683,
+     12.33616
+    ],
+    [
+     45.43675,
+     12.33607
+    ],
+    [
+     45.43688,
+     12.33615
+    ]
+   ],
+   "b": [
+    [
+     45.43656,
+     12.33581
+    ],
+    [
+     45.43652,
+     12.33577
+    ]
+   ],
+   "geo": "osm",
+   "agg": "2023"
+  },
+  {
+   "id": "T1.10A",
+   "tavola": "T1.10A",
+   "sestiere": "San Marco",
+   "descrizione": "Da Calle Albanesi a Salizada del Teatro/Rio Terà Mandola",
+   "metri": 128,
+   "quota": 95,
+   "a": [
+    [
+     45.43588,
+     12.33304
+    ]
+   ],
+   "b": [
+    [
+     45.4349,
+     12.33243
+    ],
+    [
+     45.43512,
+     12.33221
+    ],
+    [
+     45.43468,
+     12.33263
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T1.11A",
+   "tavola": "T1.11A",
+   "sestiere": "San Marco",
+   "descrizione": "Da Traghetto S. Tomà a Calle Gussoni e P.na S. Samuele",
+   "metri": 96,
+   "quota": 105,
+   "a": [
+    [
+     45.43532,
+     12.32941
+    ],
+    [
+     45.43539,
+     12.32891
+    ]
+   ],
+   "b": [
+    [
+     45.43443,
+     12.33015
+    ],
+    [
+     45.43478,
+     12.33014
+    ],
+    [
+     45.43468,
+     12.33012
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T1.11B",
+   "tavola": "T1.11B",
+   "sestiere": "San Marco",
+   "descrizione": "Da Ponte dei Frati a C.llo S. Stefano e C.llo Novo",
+   "metri": 80,
+   "quota": 100,
+   "a": [
+    [
+     45.43416,
+     12.33154
+    ],
+    [
+     45.43414,
+     12.33144
+    ],
+    [
+     45.43416,
+     12.33163
+    ]
+   ],
+   "b": [
+    [
+     45.4334,
+     12.33185
+    ],
+    [
+     45.43329,
+     12.33194
+    ]
+   ],
+   "geo": "stima",
+   "agg": "2023"
+  },
+  {
+   "id": "T2.1A",
+   "tavola": "T2.1A",
+   "sestiere": "Castello",
+   "descrizione": "Da Ponte de la Paglia a stazione Taxi",
+   "metri": 28,
+   "quota": 90,
+   "a": [
+    [
+     45.43365,
+     12.341
+    ],
+    [
+     45.43369,
+     12.3412
+    ]
+   ],
+   "b": [
+    [
+     45.43348,
+     12.3415
+    ],
+    [
+     45.43355,
+     12.3416
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T2.1B",
+   "tavola": "T2.1B",
+   "sestiere": "Castello",
+   "descrizione": "Da Ponte del Vin a Ponte de la Paglia",
+   "metri": 84,
+   "quota": 100,
+   "a": [
+    [
+     45.43385,
+     12.34229
+    ],
+    [
+     45.43387,
+     12.34239
+    ],
+    [
+     45.43388,
+     12.34217
+    ]
+   ],
+   "b": [
+    [
+     45.43369,
+     12.3412
+    ],
+    [
+     45.43365,
+     12.341
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T2.1C",
+   "tavola": "T2.1C",
+   "sestiere": "Castello",
+   "descrizione": "Da pontile ACTV Danieli a Riva degli Schiavoni",
+   "metri": 70,
+   "quota": 105,
+   "a": [
+    [
+     45.43328,
+     12.34192
+    ],
+    [
+     45.43336,
+     12.34225
+    ],
+    [
+     45.43337,
+     12.34208
+    ]
+   ],
+   "b": [
+    [
+     45.43362,
+     12.342
+    ],
+    [
+     45.43355,
+     12.3416
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T2.1D",
+   "tavola": "T2.1D",
+   "sestiere": "Castello",
+   "descrizione": "Da Riva Danieli a Calle de le Rasse",
+   "metri": 49,
+   "quota": 100,
+   "a": [
+    [
+     45.4336,
+     12.34185
+    ],
+    [
+     45.43362,
+     12.342
+    ]
+   ],
+   "b": [
+    [
+     45.4338,
+     12.34187
+    ],
+    [
+     45.43418,
+     12.34184
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T2.1E",
+   "tavola": "T2.1E",
+   "sestiere": "Castello",
+   "descrizione": "Da Ponte del Vin a percorso ACTV Jolanda",
+   "metri": 35,
+   "quota": 110,
+   "a": [
+    [
+     45.43385,
+     12.34229
+    ],
+    [
+     45.43387,
+     12.34239
+    ]
+   ],
+   "b": [
+    [
+     45.43347,
+     12.34306
+    ],
+    [
+     45.43347,
+     12.3428
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T2.1F",
+   "tavola": "T2.1F",
+   "sestiere": "Castello",
+   "descrizione": "Da pontile ACTV Jolanda a Riva degli Schiavoni",
+   "metri": 17.5,
+   "quota": 110,
+   "a": [
+    [
+     45.43344,
+     12.3428
+    ],
+    [
+     45.43347,
+     12.34306
+    ]
+   ],
+   "b": [
+    [
+     45.43375,
+     12.34285
+    ],
+    [
+     45.4338,
+     12.343
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T2.1G",
+   "tavola": "T2.1G",
+   "sestiere": "Castello",
+   "descrizione": "Da Sotoportego San Zaccaria a Comando Carabinieri",
+   "metri": 59.5,
+   "quota": 100,
+   "a": [
+    [
+     45.43405,
+     12.34288
+    ],
+    [
+     45.43402,
+     12.34289
+    ]
+   ],
+   "b": [
+    [
+     45.43423,
+     12.34308
+    ],
+    [
+     45.43471,
+     12.34291
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T2.2A",
+   "tavola": "T2.2A",
+   "sestiere": "Castello",
+   "descrizione": "Da pontile ACTV Pietà a Ponte de la Pietà",
+   "metri": 35,
+   "quota": 110,
+   "a": [
+    [
+     45.43337,
+     12.34495
+    ]
+   ],
+   "b": [
+    [
+     45.43401,
+     12.34454
+    ],
+    [
+     45.43401,
+     12.34441
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T2.2B",
+   "tavola": "T2.2B",
+   "sestiere": "Castello",
+   "descrizione": "Da pontile ACTV monumento V. Emanuele II a Riva degli Schiavoni",
+   "metri": 35,
+   "quota": 110,
+   "a": [
+    [
+     45.43349,
+     12.34409
+    ],
+    [
+     45.43363,
+     12.34411
+    ],
+    [
+     45.43349,
+     12.34377
+    ]
+   ],
+   "b": [
+    [
+     45.4339,
+     12.3441
+    ],
+    [
+     45.4339,
+     12.3438
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T2.3A",
+   "tavola": null,
+   "sestiere": "Castello",
+   "descrizione": "Da Calle Ospedaletto a Scuola Vivaldi",
+   "metri": 59.5,
+   "quota": 105,
+   "a": [
+    [
+     45.43828,
+     12.34273
+    ]
+   ],
+   "b": [
+    [
+     45.43882,
+     12.34284
+    ],
+    [
+     45.439,
+     12.343
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T2.4A",
+   "tavola": "T2.4A",
+   "sestiere": "Castello",
+   "descrizione": "Da pontile linea 5.* a Ospedale",
+   "metri": 14,
+   "quota": 110,
+   "a": [
+    [
+     45.44088,
+     12.34469
+    ],
+    [
+     45.44088,
+     12.34477
+    ]
+   ],
+   "b": [
+    [
+     45.4406,
+     12.3447
+    ],
+    [
+     45.4407,
+     12.34476
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T3.1A",
+   "tavola": "T3.1A",
+   "sestiere": "Cannaregio",
+   "descrizione": "Da Ponte degli Scalzi a Piazzale della Stazione FF.SS.",
+   "metri": 42,
+   "quota": 120,
+   "a": [
+    [
+     45.44135,
+     12.3226
+    ],
+    [
+     45.44114,
+     12.32273
+    ]
+   ],
+   "b": [
+    [
+     45.441,
+     12.322
+    ],
+    [
+     45.4411,
+     12.3222
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T3.1B",
+   "tavola": null,
+   "sestiere": "Cannaregio",
+   "descrizione": "Da Fondamenta degli Scalzi a Calle Priuli",
+   "metri": 14,
+   "quota": 115,
+   "a": [
+    [
+     45.44126,
+     12.32228
+    ],
+    [
+     45.44138,
+     12.32253
+    ]
+   ],
+   "b": [
+    [
+     45.4415,
+     12.32245
+    ],
+    [
+     45.44145,
+     12.32261
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T3.1C",
+   "tavola": "T3.1C",
+   "sestiere": "Cannaregio",
+   "descrizione": "Da Ponte degli Scalzi a Lista di Spagna",
+   "metri": 241.5,
+   "quota": 105,
+   "a": [
+    [
+     45.44114,
+     12.32273
+    ],
+    [
+     45.44135,
+     12.3226
+    ]
+   ],
+   "b": [
+    [
+     45.44255,
+     12.3242
+    ],
+    [
+     45.44281,
+     12.32459
+    ],
+    [
+     45.44214,
+     12.32353
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T3.2A",
+   "tavola": "T3.2A",
+   "sestiere": "Cannaregio",
+   "descrizione": "Da pontile ACTV linea 4.*/5.* a stazione FF.SS.",
+   "metri": 56,
+   "quota": 140,
+   "a": [
+    [
+     45.441,
+     12.32224
+    ],
+    [
+     45.44091,
+     12.32206
+    ],
+    [
+     45.44036,
+     12.32142
+    ]
+   ],
+   "b": [
+    [
+     45.441,
+     12.321
+    ],
+    [
+     45.4408,
+     12.3215
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T3.3A",
+   "tavola": "T3.3A",
+   "sestiere": "Cannaregio",
+   "descrizione": "Da pontile ACTV a Campo San Marcuola",
+   "metri": 21,
+   "quota": 90,
+   "a": [
+    [
+     45.44243,
+     12.32881
+    ],
+    [
+     45.44248,
+     12.3282
+    ]
+   ],
+   "b": [
+    [
+     45.44266,
+     12.32868
+    ],
+    [
+     45.44258,
+     12.32884
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T3.4A",
+   "tavola": "T3.4A",
+   "sestiere": "Cannaregio",
+   "descrizione": "Da pontile ACTV Ca’ d’Oro a Calle de la Ca’ d’Oro",
+   "metri": 31.5,
+   "quota": 105,
+   "a": [
+    [
+     45.44055,
+     12.33389
+    ]
+   ],
+   "b": [
+    [
+     45.44092,
+     12.33413
+    ],
+    [
+     45.44116,
+     12.33435
+    ],
+    [
+     45.44069,
+     12.33393
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T3.5A",
+   "tavola": "T3.5A",
+   "sestiere": "Cannaregio",
+   "descrizione": "Da Ponte dei Ziogatoli a Campo San Canciano",
+   "metri": 122.5,
+   "quota": 110,
+   "a": [
+    [
+     45.43947,
+     12.33707
+    ]
+   ],
+   "b": [
+    [
+     45.44009,
+     12.33854
+    ],
+    [
+     45.44019,
+     12.33857
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T3.6A",
+   "tavola": "T3.6A",
+   "sestiere": "Cannaregio",
+   "descrizione": "Da Ponte de la Panada a Ponte Cavallo",
+   "metri": 77,
+   "quota": 105,
+   "a": [
+    [
+     45.43983,
+     12.34004
+    ],
+    [
+     45.43982,
+     12.34006
+    ],
+    [
+     45.43984,
+     12.34012
+    ]
+   ],
+   "b": [
+    [
+     45.43956,
+     12.34115
+    ],
+    [
+     45.4396,
+     12.34099
+    ],
+    [
+     45.43955,
+     12.3412
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T3.7A",
+   "tavola": "T3.7A",
+   "sestiere": "Cannaregio",
+   "descrizione": "Da pontile ACTV Tre Archi a sottoportego delle cooperative",
+   "metri": 49,
+   "quota": 100,
+   "a": [
+    [
+     45.44628,
+     12.31977
+    ],
+    [
+     45.44634,
+     12.31974
+    ]
+   ],
+   "b": [
+    [
+     45.44616,
+     12.3203
+    ],
+    [
+     45.44612,
+     12.32025
+    ],
+    [
+     45.44623,
+     12.32037
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T4.1A",
+   "tavola": "T4.1A",
+   "sestiere": "San Polo",
+   "descrizione": "Da pontile ACTV Rialto Mercato a Campo C.Battisti già Bella Vienna",
+   "metri": 28,
+   "quota": 100,
+   "a": [
+    [
+     45.43944,
+     12.33531
+    ],
+    [
+     45.43944,
+     12.33529
+    ]
+   ],
+   "b": [
+    [
+     45.4391,
+     12.33507
+    ],
+    [
+     45.43925,
+     12.33496
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T4.1B",
+   "tavola": "T4.1B",
+   "sestiere": "San Polo",
+   "descrizione": "Da Ruga degli Oresi a tribunale",
+   "metri": 24.5,
+   "quota": 110,
+   "a": [
+    [
+     45.43861,
+     12.3351
+    ],
+    [
+     45.43844,
+     12.33542
+    ]
+   ],
+   "b": [
+    [
+     45.43892,
+     12.33518
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T4.1C",
+   "tavola": "T4.1C",
+   "sestiere": "San Polo",
+   "descrizione": "Da Ponte di Rialto verso Chiesa S.Giacometto",
+   "metri": 28,
+   "quota": 110,
+   "a": [
+    [
+     45.43815,
+     12.3358
+    ],
+    [
+     45.43796,
+     12.33589
+    ]
+   ],
+   "b": [
+    [
+     45.43849,
+     12.33547
+    ],
+    [
+     45.43837,
+     12.33551
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T4.1D",
+   "tavola": "T4.1D",
+   "sestiere": "San Polo",
+   "descrizione": "Da Ponte di Rialto a ingresso Magistrato alle Acque",
+   "metri": 17.5,
+   "quota": 105,
+   "a": [
+    [
+     45.43815,
+     12.3358
+    ],
+    [
+     45.43796,
+     12.33589
+    ]
+   ],
+   "b": [
+    [
+     45.43825,
+     12.33595
+    ],
+    [
+     45.4383,
+     12.336
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T4.2A",
+   "tavola": "T4.2A",
+   "sestiere": "San Polo",
+   "descrizione": "Da Fondamenta del Traghetto a Campiello San Tomà",
+   "metri": 87.5,
+   "quota": 95,
+   "a": [
+    [
+     45.43548,
+     12.32822
+    ],
+    [
+     45.4356,
+     12.3283
+    ]
+   ],
+   "b": [
+    [
+     45.4361,
+     12.32783
+    ],
+    [
+     45.43618,
+     12.32797
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T4.3A",
+   "tavola": null,
+   "sestiere": "San Polo",
+   "descrizione": "Da pontile ACTV San Silvestro a Pasina San Silvestro",
+   "metri": 14,
+   "quota": 105,
+   "a": [
+    [
+     45.43678,
+     12.33318
+    ],
+    [
+     45.43681,
+     12.33317
+    ]
+   ],
+   "b": [
+    [
+     45.43748,
+     12.33318
+    ],
+    [
+     45.43747,
+     12.33356
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T5.1A",
+   "tavola": "T5.1A",
+   "sestiere": "Santa Croce",
+   "descrizione": "Da pontile ACTV Parisi a Fondamenta Santa Chiara",
+   "metri": 42,
+   "quota": 115,
+   "a": [
+    [
+     45.43955,
+     12.31831
+    ],
+    [
+     45.43938,
+     12.31845
+    ]
+   ],
+   "b": [
+    [
+     45.4391,
+     12.31836
+    ],
+    [
+     45.43908,
+     12.31838
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T5.1B",
+   "tavola": "T5.1B",
+   "sestiere": "Santa Croce",
+   "descrizione": "Da ex biglietteria ACTV a Piazzale S.Chiara",
+   "metri": 42,
+   "quota": 120,
+   "a": [
+    [
+     45.4383,
+     12.3187
+    ],
+    [
+     45.43858,
+     12.31865
+    ]
+   ],
+   "b": [
+    [
+     45.43891,
+     12.31882
+    ],
+    [
+     45.43881,
+     12.31903
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T5.1C",
+   "tavola": null,
+   "sestiere": "Santa Croce",
+   "descrizione": "Da pontile ACTV linea 2 a gradini Fondamenta Santa Chiara",
+   "metri": 24.5,
+   "quota": 120,
+   "a": [
+    [
+     45.43881,
+     12.31903
+    ],
+    [
+     45.43891,
+     12.31882
+    ]
+   ],
+   "b": [
+    [
+     45.43871,
+     12.319
+    ],
+    [
+     45.43859,
+     12.31971
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T5.2A",
+   "tavola": "T5.2A",
+   "sestiere": "Santa Croce",
+   "descrizione": "Da Ponte Tolentini a Campazzo dei Tolentini",
+   "metri": 42,
+   "quota": 115,
+   "a": [
+    [
+     45.43786,
+     12.32125
+    ],
+    [
+     45.43789,
+     12.32117
+    ],
+    [
+     45.43782,
+     12.32133
+    ]
+   ],
+   "b": [
+    [
+     45.43786,
+     12.32168
+    ],
+    [
+     45.438,
+     12.32167
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T5.2B",
+   "tavola": "T5.2B",
+   "sestiere": "Santa Croce",
+   "descrizione": "Da Ponte Tolentini a scuola Poerio",
+   "metri": 38.5,
+   "quota": 100,
+   "a": [
+    [
+     45.43788,
+     12.32119
+    ],
+    [
+     45.43786,
+     12.32125
+    ]
+   ],
+   "b": [
+    [
+     45.43875,
+     12.32128
+    ],
+    [
+     45.43865,
+     12.3214
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T5.2C",
+   "tavola": "T5.2C",
+   "sestiere": "Santa Croce",
+   "descrizione": "Da percorso ex Pullman Park ad ingresso uffici comunali",
+   "metri": 14,
+   "quota": 105,
+   "a": [
+    [
+     45.43796,
+     12.31778
+    ],
+    [
+     45.4379,
+     12.318
+    ]
+   ],
+   "b": [
+    [
+     45.438,
+     12.3183
+    ],
+    [
+     45.4377,
+     12.3186
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T6.1A",
+   "tavola": "T6.1A",
+   "sestiere": "Dorsoduro",
+   "descrizione": "Da pontile Ca’ Rezzonico a Calle del Traghetto",
+   "metri": 59.5,
+   "quota": 95,
+   "a": [
+    [
+     45.43327,
+     12.32712
+    ],
+    [
+     45.43326,
+     12.32715
+    ]
+   ],
+   "b": [
+    [
+     45.4327,
+     12.3269
+    ],
+    [
+     45.433,
+     12.3268
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T6.2A",
+   "tavola": "T6.2A",
+   "sestiere": "Dorsoduro",
+   "descrizione": "Da Ponte Longo a Rio Terà Foscarini",
+   "metri": 140,
+   "quota": 105,
+   "a": [
+    [
+     45.42962,
+     12.32578
+    ],
+    [
+     45.4295,
+     12.3261
+    ]
+   ],
+   "b": [
+    [
+     45.42994,
+     12.32789
+    ],
+    [
+     45.43004,
+     12.32793
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T6.2B",
+   "tavola": "T6.2B",
+   "sestiere": "Dorsoduro",
+   "descrizione": "Da pontili ACTV a Fondamenta Zattere",
+   "metri": 14,
+   "quota": 105,
+   "a": [
+    [
+     45.42913,
+     12.32679
+    ],
+    [
+     45.42924,
+     12.32627
+    ]
+   ],
+   "b": [
+    [
+     45.42935,
+     12.32672
+    ],
+    [
+     45.42945,
+     12.3264
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T6.3A",
+   "tavola": null,
+   "sestiere": "Dorsoduro",
+   "descrizione": "Da pontile ACTV San Basilio a Calle del Vento",
+   "metri": 42,
+   "quota": 100,
+   "a": [
+    [
+     45.43051,
+     12.32091
+    ],
+    [
+     45.43052,
+     12.32082
+    ]
+   ],
+   "b": [
+    [
+     45.43087,
+     12.32092
+    ],
+    [
+     45.43076,
+     12.32091
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T7.1A",
+   "tavola": "T7.1A",
+   "sestiere": "Giudecca",
+   "descrizione": "Da Ponte de la Croce a Campo San Giacomo",
+   "metri": 161,
+   "quota": 110,
+   "a": [
+    [
+     45.42538,
+     12.33367
+    ],
+    [
+     45.42538,
+     12.33357
+    ],
+    [
+     45.42537,
+     12.33371
+    ]
+   ],
+   "b": [
+    [
+     45.42541,
+     12.33124
+    ],
+    [
+     45.42532,
+     12.33143
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T7.2A",
+   "tavola": "T7.2A",
+   "sestiere": "Giudecca",
+   "descrizione": "Da pontile ACTV Palanca a Fondamenta Santa Eufemia",
+   "metri": 3.5,
+   "quota": 110,
+   "a": [
+    [
+     45.4269,
+     12.32544
+    ],
+    [
+     45.42686,
+     12.32551
+    ]
+   ],
+   "b": [
+    [
+     45.427,
+     12.32545
+    ],
+    [
+     45.4267,
+     12.3251
+    ]
+   ],
+   "geo": "stima"
+  },
+  {
+   "id": "T8.1A",
+   "tavola": "T8.1A",
+   "sestiere": "Murano",
+   "descrizione": "Da pontile ACTV Da Mula a ingresso uffici",
+   "metri": 10.5,
+   "quota": 100,
+   "a": [
+    [
+     45.45612,
+     12.35193
+    ],
+    [
+     45.45614,
+     12.35187
+    ]
+   ],
+   "b": [
+    [
+     45.45599,
+     12.35164
+    ],
+    [
+     45.45596,
+     12.3515
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T8.2A",
+   "tavola": "T8.2A",
+   "sestiere": "Murano",
+   "descrizione": "Da pontile ACTV Murano Colonna a Piazzale Colonna",
+   "metri": 52.5,
+   "quota": 90,
+   "a": [
+    [
+     45.45109,
+     12.3489
+    ],
+    [
+     45.45109,
+     12.34886
+    ]
+   ],
+   "b": [
+    [
+     45.45131,
+     12.349
+    ],
+    [
+     45.45127,
+     12.34846
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T9.1A",
+   "tavola": "T9.1A",
+   "sestiere": "Burano",
+   "descrizione": "Da Corte Comare a Tre Ponti",
+   "metri": 28,
+   "quota": 95,
+   "a": [
+    [
+     45.48569,
+     12.41482
+    ],
+    [
+     45.48549,
+     12.4153
+    ]
+   ],
+   "b": [
+    [
+     45.48546,
+     12.41536
+    ],
+    [
+     45.48546,
+     12.4154
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T9.2A",
+   "tavola": "T9.2A",
+   "sestiere": "Burano",
+   "descrizione": "Da Ponte San Mauro a Fondamenta San Mauro",
+   "metri": 32,
+   "quota": 100,
+   "a": [
+    [
+     45.48585,
+     12.41748
+    ],
+    [
+     45.48585,
+     12.41746
+    ]
+   ],
+   "b": [
+    [
+     45.48608,
+     12.41686
+    ],
+    [
+     45.48589,
+     12.41742
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T9.2B",
+   "tavola": null,
+   "sestiere": "Burano",
+   "descrizione": "Da Ponte San Mauro a Calle Daffan",
+   "metri": 28,
+   "quota": 100,
+   "a": [
+    [
+     45.48585,
+     12.41748
+    ],
+    [
+     45.48585,
+     12.41746
+    ]
+   ],
+   "b": [
+    [
+     45.48582,
+     12.41792
+    ],
+    [
+     45.48581,
+     12.4179
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T9.3A",
+   "tavola": "T9.3A",
+   "sestiere": "Burano",
+   "descrizione": "Da Ponte de le Capuzzine a Corte Novello",
+   "metri": 24,
+   "quota": 115,
+   "a": [
+    [
+     45.48422,
+     12.41702
+    ],
+    [
+     45.48422,
+     12.41706
+    ]
+   ],
+   "b": [
+    [
+     45.48411,
+     12.41675
+    ],
+    [
+     45.48421,
+     12.41699
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T9.3B",
+   "tavola": "T9.3B",
+   "sestiere": "Burano",
+   "descrizione": "Da Ponte de le Capuzzine a Calle de la Providenza",
+   "metri": 24,
+   "quota": 115,
+   "a": [
+    [
+     45.48422,
+     12.41702
+    ],
+    [
+     45.48422,
+     12.41706
+    ]
+   ],
+   "b": [
+    [
+     45.48424,
+     12.41716
+    ],
+    [
+     45.48433,
+     12.41749
+    ]
+   ],
+   "geo": "osm"
+  },
+  {
+   "id": "T10.1A",
+   "tavola": "T10.1A",
+   "sestiere": "San Michele (cimitero)",
+   "descrizione": "Da pontile ACTV a entrata cimitero",
+   "metri": 14,
+   "quota": 100,
+   "a": [
+    [
+     45.44864,
+     12.3459
+    ],
+    [
+     45.44869,
+     12.34596
+    ]
+   ],
+   "b": [
+    [
+     45.4484,
+     12.346
+    ],
+    [
+     45.44845,
+     12.3459
+    ]
+   ],
+   "geo": "stima"
+  }
+ ]
+}

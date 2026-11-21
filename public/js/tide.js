@@ -47,7 +47,7 @@ function chartHtml(c) {
   for (let k = -6; k <= 18; k += (W < 420 ? 6 : 3)) {
     const t = c.now + k * 3600e3, x = X(t), anchor = x > W - 22 ? 'end' : 'middle', left = anchor === 'end' ? x - 36 : x - 18;
     xt += `<line class="g" x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${T}" y2="${H - B}"/>`;
-    if (left - lastX >= 8) { xt += `<text x="${x.toFixed(1)}" y="${H - 8}" text-anchor="${anchor}">${k === 0 ? 'ora' : hm(t)}</text>`; lastX = anchor === 'end' ? x : x + 18; }
+    if (left - lastX >= 8) { xt += `<text x="${x.toFixed(1)}" y="${H - 8}" text-anchor="${anchor}">${k === 0 && !data?.salvata ? 'ora' : hm(t)}</text>`; lastX = anchor === 'end' ? x : x + 18; }
   }
   // ETICHETTE SENZA SOVRAPPOSIZIONI: valori dei massimi/minimi, soglia MOSE (110 cm, linea tratteggiata) e orario del sollevamento
   // programmato (linea verticale). Per ognuna si provano più posizioni e si sceglie la prima che non tocca le etichette già messe, la curva
@@ -109,6 +109,7 @@ function bindChart(c) {                                       // collega cursore
     box.querySelector('.tr-val').textContent = v ? `${fmtCm(v.cm)} cm` : 'nessun dato';
     box.querySelector('.tr-kind').textContent = v ? (v.kind === 'previsto' ? 'previsto' : 'osservato') : (t <= ((c.observed || [])[0]?.[0] ?? c.now) ? 'storico non disponibile' : 'oltre la previsione');
     svg.setAttribute('aria-valuenow', String(Math.round(t))); svg.setAttribute('aria-valuetext', `${hmTxt}: ${v ? fmtCm(v.cm) + ' centimetri, ' + v.kind : 'nessun dato'}`);
+    window.dispatchEvent(new CustomEvent('tpl:tide-cursor'));   // livelli della mappa (livelli.js): allagamento all'ora scelta
   };
   // tastiera: frecce ±5 minuti, Pagina su/giù ±1 ora, Inizio/Fine
   svg.addEventListener('keydown', e => {
@@ -124,7 +125,7 @@ function bindChart(c) {                                       // collega cursore
 function aaLink(d) {
   if (!(peakOf(d) > AA_CM)) return '';
   const nx = (d.next || []).find(n => n.type === 'max' && n.cm > AA_CM), fc = ((d.chart && d.chart.forecast) || []).find(p => p[1] > AA_CM && p[0] > Date.now());
-  const txt = d.cm > AA_CM ? `Adesso ${fmtCm(d.cm)} cm: alcuni servizi di navigazione sono modificati`
+  const txt = d.cm > AA_CM ? `${d.salvata ? `Alle ${hm(d.ts)} (dati salvati)` : 'Adesso'} ${fmtCm(d.cm)} cm: alcuni servizi di navigazione sono modificati`
     : nx ? `Prevista ${fmtCm(nx.cm)} cm ${dayTag(nx.ts)}${hm(nx.ts)}: alcuni servizi di navigazione cambiano`
     : fc ? `Prevista oltre ${AA_CM} cm ${dayTag(fc[0])}${hm(fc[0])}: alcuni servizi di navigazione cambiano` : `Oltre ${AA_CM} cm alcuni servizi di navigazione cambiano`;
   return `<a class="tide-aa" href="${AA_URL}" target="_blank" rel="noopener noreferrer">${icon('warn', 'sm')}<span>${txt} · piano ACTV</span></a>`;
@@ -142,7 +143,8 @@ function render() {
     + `<div class="tide-cat" data-cat="${esc(d.category.key)}">${esc(d.category.label)}${d.cm > AA_CM ? warnBtn : ''}</div>`
     + `<div class="tide-trend">${icon(tr.icon)}<span>${tr.txt}${t && t.basis === 'previsione' ? ' <span class="muted">(da previsione)</span>' : ''}</span></div>`
     + aaLink(d)
-    + (d.stale ? `<p class="tide-note" role="status">Ultimo dato di ${Math.round(+d.ageMin) || 0} minuti fa: potrebbe non essere aggiornato.</p>` : '')
+    + (d.salvata ? `<p class="tide-note" role="status"><b>Senza connessione: dati salvati</b> alle ${dayTag(d.salvata)}${hm(d.salvata)}. Livello e tendenza sono di allora; per le ore successive vale la previsione di allora.</p>` : '')
+    + (d.stale && !d.salvata ? `<p class="tide-note" role="status">Ultimo dato di ${Math.round(+d.ageMin) || 0} minuti fa: potrebbe non essere aggiornato.</p>` : '')
     + (next ? `<ul class="tide-next" aria-label="Prossime alte e basse maree previste">${next}</ul>` : '')
     + (d.chart ? chartHtml(d.chart) : '')
     + moseHtml()
@@ -150,13 +152,24 @@ function render() {
   if (d.chart) bindChart(d.chart);
   btn.querySelector('.dotc').dataset.cat = d.category.key;
   markBtn();
-  const label = `Marea a Venezia: ${fmtCm(d.cm)} cm, ${d.category.label.toLowerCase()}${t ? ', ' + tr.txt.split(' · ')[0].toLowerCase() : ''}`;
+  const label = `Marea a Venezia: ${fmtCm(d.cm)} cm, ${d.category.label.toLowerCase()}${t ? ', ' + tr.txt.split(' · ')[0].toLowerCase() : ''}${d.salvata ? ' (dati salvati, senza connessione)' : ''}`;
   btn.setAttribute('aria-label', label); btn.title = label;
 }
+// SENZA RETE: l'ultima risposta valida resta nel telefono (36 ore al massimo) e si usa, dichiarata come «dati salvati» con l'ora, solo se
+// non ci sono dati più nuovi. Livello e tendenza sono quelli di allora; per le ore successive vale la previsione salvata (livelli.js).
+const SALVA = 'tpl.marea', MAX_SALVATI = 36 * 3600e3;
 async function load() {
-  try { const d = await api('/api/tide'); if (d.error) throw new Error(d.error); data = d; err = null; }
-  catch (e) { err = e.message; }
+  try {
+    const d = await api('/api/tide'); if (d.error) throw new Error(d.error); data = d; err = null;
+    try { localStorage.setItem(SALVA, JSON.stringify({ t: Date.now(), d })); } catch { /* memoria piena o non disponibile */ }
+  } catch (e) {
+    err = e.message;
+    if (!data || data.salvata) {
+      try { const s = JSON.parse(localStorage.getItem(SALVA) || 'null'); if (s?.d?.chart && Date.now() - s.t < MAX_SALVATI) data = { ...s.d, salvata: s.t }; } catch { /* niente */ }
+    }
+  }
   render(); if (!card.hidden) position();
+  window.dispatchEvent(new CustomEvent('tpl:tide'));                 // dati nuovi: livelli della mappa e pianificatore
 }
 // MOSE attivo o in movimento: segnale anche sul pulsante della marea (dallo stato letto o dal riassunto di /api/tide)
 function markBtn() {
@@ -221,6 +234,11 @@ export function peakIn(fromMs, toMs) {
   for (let t = Math.max(fromMs, c.from), end = Math.min(toMs, c.to); t <= end; t += 5 * 60e3) { const v = valueAt(c, t); if (v && (!best || v.cm > best.cm)) best = { ...v, ts: t }; }
   return best;
 }
+// livello (osservato o previsto) a un istante, dai dati già scaricati: { cm, kind } o null (fuori dai dati: circa −6 / +18 ore)
+export const levelAt = t => (data?.chart ? valueAt(data.chart, t) : null);
+export const span = () => (data?.chart ? { from: data.chart.from, to: data.chart.to, now: data.chart.now } : null);
+// ora scelta con il cursore del grafico, solo con la finestra della marea aperta (altrimenti null = adesso)
+export const cursorAt = () => (!card.hidden && cursorT != null ? cursorT : null);
 export const moseState = () => (mose && !mose.error ? mose.stato : data?.mose?.stato) || null;
 export const isOpen = () => !card.hidden;
 export function open(beforeOpen) {
@@ -228,7 +246,7 @@ export function open(beforeOpen) {
   card.hidden = false; btn.setAttribute('aria-expanded', 'true'); render(); position(); card.focus({ preventScroll: true });
   load(); loadMose(); clearInterval(timer); timer = setInterval(() => { if (!document.hidden) { load(); loadMose(); } }, 60000);   // app in secondo piano: nessuna richiesta
 }
-export function close() { if (card.hidden) return; card.hidden = true; btn.setAttribute('aria-expanded', 'false'); clearInterval(timer); }
+export function close() { if (card.hidden) return; card.hidden = true; btn.setAttribute('aria-expanded', 'false'); clearInterval(timer); if (cursorT != null) window.dispatchEvent(new CustomEvent('tpl:tide-cursor')); }
 export function init(beforeOpen) {
   body.addEventListener('toggle', e => { if (e.target.classList?.contains('mose-d')) { moseOpen = e.target.open; position(); } }, true);   // «toggle» non risale: in cattura
   body.addEventListener('click', e => { if (e.target.closest('.tide-warn')) window.dispatchEvent(new CustomEvent('tpl:water-alert')); });

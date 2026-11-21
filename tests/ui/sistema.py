@@ -9,7 +9,7 @@ from playwright.sync_api import sync_playwright
 BASE = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:3111'
 OUT = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else '/tmp/ui'); OUT.mkdir(parents=True, exist_ok=True)
 STUB = (pathlib.Path(__file__).parent / 'leaflet-stub.js').read_text()
-GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v31', mappa:true, pannello:true}))}catch(e){}"
+GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v33', mappa:true, pannello:true}))}catch(e){}"
 STANDALONE = "(()=>{const mm=window.matchMedia.bind(window);window.matchMedia=q=>/display-mode:\\s*standalone/.test(q)?{matches:true,media:q,addEventListener(){},removeEventListener(){},addListener(){},removeListener(){}}:mm(q)})()"
 fails = []
 def check(ok, msg):
@@ -112,25 +112,33 @@ with sync_playwright() as p:
     check(d2['run'] == d2['over'] and d2['over'] <= d['over'], f'tornati al testo normale: scorrono solo quelli che ancora non entrano ({d2})')
     ctx.close()
 
-    # --- 2c) donazione volontaria: sezione nelle Informazioni, link sicuro a PayPal; cuore accanto alla «i» solo dal 3° giorno d'uso, nascondibile
-    print('== donazione')
-    for giorni, visto in [(1, False), (3, True)]:
-        ctx = br.new_context(viewport={'width': 390, 'height': 844}, has_touch=True); setup(ctx)
-        ctx.add_init_script("localStorage.setItem('tpl.giorni', JSON.stringify({d:'2000-01-01', n:%d}))" % (giorni - 1))
-        page = ctx.new_page(); page.goto(BASE + '/'); page.wait_for_selector('.bus-marker', timeout=30000); page.wait_for_timeout(600)
-        check(page.is_visible('#dona-btn') == visto, f'{giorni}° giorno d\'uso: cuore accanto alla «i» {"visibile" if visto else "nascosto"}')
-        if visto:
-            page.click('#dona-btn'); page.wait_for_timeout(500)
-            a = page.evaluate("(()=>{const a=document.getElementById('dona-go');const r=document.getElementById('ip-dona').getBoundingClientRect();return {href:a.href,t:a.target,rel:a.rel,top:r.top,vis:r.top<innerHeight}})()")
-            check(a['href'] == 'https://paypal.me/olocing' and a['t'] == '_blank' and 'noopener' in a['rel'], f'link PayPal corretto e sicuro ({a["href"]})')
-            check(a['vis'], 'il cuore apre le Informazioni sulla sezione della donazione (non PayPal direttamente)')
-            page.screenshot(path=str(OUT / 'sys-dona.png'))
-            page.click('#dona-hide'); page.wait_for_timeout(200); page.keyboard.press('Escape'); page.wait_for_timeout(300)
-            check(not page.is_visible('#dona-btn'), '«Non mostrare il cuore»: sparisce')
-            page.reload(); page.wait_for_selector('.bus-marker', timeout=30000); page.wait_for_timeout(500)
-            check(not page.is_visible('#dona-btn'), '… e resta nascosto dopo la riapertura')
-            check(page.evaluate("!!document.getElementById('ip-dona')"), 'la sezione resta nelle Informazioni')
-        ctx.close()
+    # --- 2c) v33.9: niente donazioni; crediti della mappa per 5 s, poi sempre in Informazioni; Instagram (sviluppatore) in alto nelle Informazioni
+    print('== crediti e contatti')
+    ctx = br.new_context(viewport={'width': 390, 'height': 844}, has_touch=True); setup(ctx)
+    ctx.add_init_script("localStorage.setItem('tpl.dona.no','1')")
+    page = ctx.new_page(); page.goto(BASE + '/'); page.wait_for_selector('.bus-marker', timeout=30000); page.wait_for_timeout(600)
+    html = page.content()
+    check(page.query_selector('#dona-btn, #ip-dona, #dona-go') is None and 'paypal' not in html.lower(), 'nessun pulsante né collegamento per donazioni')
+    check(page.evaluate("localStorage.getItem('tpl.dona.no')") is None, 'vecchie impostazioni delle donazioni tolte dal telefono')
+    a0 = page.evaluate("(()=>{const e=document.getElementById('osm-attr');const r=e.getBoundingClientRect();return {t:e.innerText,h:r.height,o:+getComputedStyle(e).opacity}})()")
+    check('OpenStreetMap' in a0['t'] and 'ACTV' in a0['t'] and a0['o'] > 0.8, f'crediti per esteso all\'apertura {a0}')
+    page.wait_for_timeout(5600)
+    a1 = page.evaluate("(()=>{const e=document.getElementById('osm-attr');return {o:+getComputedStyle(e).opacity,pe:getComputedStyle(e).pointerEvents}})()")
+    check(a1['o'] < 0.1 and a1['pe'] == 'none', f'dopo 5 s i crediti spariscono e non intralciano {a1}')
+    page.evaluate("document.dispatchEvent(new Event('tpl:crediti'))"); page.wait_for_timeout(700)
+    a2 = page.evaluate("+getComputedStyle(document.getElementById('osm-attr')).opacity")
+    check(a2 > 0.8, f'nuove quote misurate sulla mappa: crediti di nuovo visibili ({a2})')
+    page.wait_for_timeout(5600)
+    check(page.evaluate("+getComputedStyle(document.getElementById('osm-attr')).opacity") < 0.1, '… e dopo 5 s spariscono di nuovo')
+    src = page.evaluate("document.getElementById('ip-src').innerText")
+    check('OpenStreetMap' in src and 'Fonte informativa: Insula spa' in page.evaluate("document.getElementById('ip-ramses').innerText"), 'crediti e diciture sempre consultabili in Informazioni')
+    page.click('#info-btn'); page.wait_for_selector('#info:not([hidden])', timeout=5000)
+    ig = page.evaluate("[...document.querySelectorAll('#info a[href=\"https://www.instagram.com/olocin_g/\"]')].map(a=>a.closest('.ip-hero')?'alto':a.closest('.ip-foot')?'fondo':'testo')")
+    check('alto' in ig and 'fondo' not in ig, f'Instagram in alto nelle Informazioni, non come contatto in fondo {ig}')
+    chip = page.inner_text('#info .ip-hero a.ip-social')
+    check('sviluppato' in chip and 'segnalazioni' not in chip, f'Instagram = profilo di chi ha sviluppato l\'app «{chip}»')
+    page.screenshot(path=str(OUT / 'sys-crediti.png'))
+    ctx.close()
 
     # --- 3) notifiche perse
     print('== notifiche perse')
@@ -164,7 +172,8 @@ with sync_playwright() as p:
             'published': now - 864e5, 'from': now + 3600e3, 'to': now + 25 * 3600e3, 'open': False, 'dated': True, 'lines': [], 'stops': [], 'stopNames': [], 'effect': 'strike', 'effectLabel': 'Sciopero',
             'severity': 'warning', 'state': 'upcoming', 'sciopero': {'inizio': now + 3600e3, 'fine': now + 25 * 3600e3, 'da': now - 7 * 3600e3, 'fino': now + 30 * 3600e3, 'fasce': [], 'link': [{'url': 'https://actv.avmspa.it/it/content/sciopero-prova', 'label': 'Comunicato ACTV'}]}})
         route.fulfill(response=resp, json=d)
-    ctx = br.new_context(viewport={'width': 390, 'height': 844}); setup(ctx)
+    # IP proprio (server con TRUST_PROXY=1): le prove precedenti, tutte dallo stesso indirizzo, consumano il limite dei file dell'app
+    ctx = br.new_context(viewport={'width': 390, 'height': 844}, extra_http_headers={'X-Forwarded-For': '10.6.1.1'}); setup(ctx)
     page = ctx.new_page(); page.route('**/api/avvisi', strike_route)
     page.goto(BASE + '/'); page.wait_for_selector('#sciopero:not([hidden])', timeout=30000)
     check('inizia' in page.inner_text('#sciopero') or 'domani' in page.inner_text('#sciopero-title').lower() or 'Sciopero' in page.inner_text('#sciopero-title'), 'sciopero in arrivo (8 ore prima): scheda all\'accesso')

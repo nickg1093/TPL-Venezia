@@ -236,12 +236,13 @@ async function refresh(id) {
       const lat = v.position.latitude, lon = v.position.longitude;
       if (!inArea(lat, lon)) { bad++; continue; }                        // 0,0 / coordinate scambiate / fuori area
       let ts = v.timestamp ? Number(v.timestamp) * 1000 : (P.headerTs ? P.headerTs * 1000 : now);
-      if (ts > now + FUTURE_TS_MS) ts = now;
+      let own = !!v.timestamp;                                             // ora del rilevamento dichiarata DAL MEZZO (non del feed né dell'arrivo)
+      if (ts > now + FUTURE_TS_MS) { ts = now; own = false; }
       if (now - ts > LAG_DROP_MS) { ghost++; continue; }                 // mezzo fermo da ore con dato vecchio
       const key = v.vehicle?.id || e.id; if (!key) continue;
-      const prev = byKey.get(key); if (!prev || ts > prev.ts) byKey.set(key, { e, ts });
+      const prev = byKey.get(key); if (!prev || ts > prev.ts) byKey.set(key, { e, ts, own });
     }
-    s8.vehicles = [...byKey.values()].map(({ e, ts }) => {
+    s8.vehicles = [...byKey.values()].map(({ e, ts, own }) => {
       const v = e.vehicle, tripId = resolveTrip(G, v.trip, strict, tally), trip = G.trips[tripId] || {}, key = v.vehicle?.id || e.id;
       if (tripId) vOk++;
       const routeKey = trip.route || ids.resolveRouteId(G, v.trip?.routeId) || v.trip?.routeId || null, r = G.routes[routeKey] || {};
@@ -249,7 +250,7 @@ async function refresh(id) {
         lat: +v.position.latitude.toFixed(5), lon: +v.position.longitude.toFixed(5),
         // velocità: dichiarata dal feed se plausibile (0..45 m/s), altrimenti da due rilevamenti successivi / differenza dei loro timestamp
         speed: (calc => Number.isFinite(v.position.speed) && v.position.speed >= 0 && v.position.speed < 45 ? v.position.speed : calc)(motion.updateSpeed(s8.track, key, v.position.latitude, v.position.longitude, ts, now, s8.fixes)),
-        stillS: motion.stillFor(s8.track, key), vInst: motion.instSpeed(s8.track, key), key, ts, old: now - ts > OLD_FLAG_MS, bearing: v.position.bearing ?? null,
+        stillS: motion.stillFor(s8.track, key), vInst: motion.instSpeed(s8.track, key), key, ts, noTs: !own, old: now - ts > OLD_FLAG_MS, bearing: v.position.bearing ?? null,
         frozen: frozenAt(G, v.position.latitude, v.position.longitude, motion.sameFor(s8.track, key)),
         status: v.currentStatus ?? null, seq: v.currentStopSequence ?? null,
         line: r.name || routeKey || '?', color: r.color || null, tripId,

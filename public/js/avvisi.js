@@ -169,15 +169,25 @@ function render() {
       + (okSc(a) ? (scLinks(a) ? `<ul class="st-links">${scLinks(a)}</ul>` : '') + scUpdHtml(a) : '')
       + (links && !okSc(a) ? `<div class="av-links">${links}</div>` : '') + '</article>';
   };
-  body.innerHTML = (data.stale ? '<p class="av-note" role="status">Gli avvisi non si aggiornano da un po\': potrebbero non essere completi.</p>' : '')
+  body.innerHTML = (data.salvati ? `<p class="av-note" role="status"><b>Senza connessione: avvisi salvati</b> alle ${new Date(data.salvati).toLocaleString('it-IT', { timeZone: 'Europe/Rome', weekday: 'short', hour: '2-digit', minute: '2-digit' })}. Potrebbero essere cambiati.</p>` : '')
+    + (data.stale && !data.salvati ? '<p class="av-note" role="status">Gli avvisi non si aggiornano da un po\': potrebbero non essere completi.</p>' : '')
     + (act.length ? `<h2 class="av-h">In corso</h2>${act.map(item).join('')}` : '<p class="muted pad">Nessun avviso in corso.</p>')
     + (up.length ? `<h2 class="av-h">In arrivo</h2>${up.map(item).join('')}` : '')
     + '<p class="tide-foot">Fonti: notizie del sito ACTV e canale Telegram ufficiale «AVM/Actv Venezia». Raccolta automatica: per le informazioni ufficiali fa fede il sito ACTV.</p>';
   if (highlight) { const el = body.querySelector('.hl'); if (el) el.scrollIntoView({ block: 'start' }); }
 }
+// SENZA RETE: ultimi avvisi validi salvati nel telefono (24 ore al massimo), mostrati con l'ora del salvataggio
+const SALVA = 'tpl.avvisi', MAX_SALVATI = 24 * 3600e3;
 async function load() {
-  try { const d = await api('/api/avvisi'); if (d.error) throw new Error(d.error); data = d; err = null; reindex(); }
-  catch (e) { if (!e.busy) err = e.message; }
+  try {
+    const d = await api('/api/avvisi'); if (d.error) throw new Error(d.error); data = d; err = null; reindex();
+    try { localStorage.setItem(SALVA, JSON.stringify({ t: Date.now(), d })); } catch { /* memoria piena o non disponibile */ }
+  } catch (e) {
+    if (!e.busy) err = e.message;
+    if (!e.busy && (!data || data.salvati)) {
+      try { const s = JSON.parse(localStorage.getItem(SALVA) || 'null'); if (s?.d?.items && Date.now() - s.t < MAX_SALVATI) { data = { ...s.d, salvati: s.t }; reindex(); } } catch { /* niente */ }
+    }
+  }
   render(); onChange();
 }
 function position() {                                                // allineata al pulsante, come la scheda della marea

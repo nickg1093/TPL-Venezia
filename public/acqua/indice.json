@@ -1,0 +1,16 @@
+{
+ "formato": 1,
+ "v": "627d6e711e38",
+ "creato": "2026-11-21T14:52:38.050Z",
+ "rete": "locale",
+ "files": {
+  "passerelle": {
+   "sha": "d601c03e6537979c658757c9bd2060c5a2a63f9d6153c40bd1a6bfe122a0afb3",
+   "bytes": 13456
+  },
+  "quote": {
+   "sha": "af20b675f1c0d37fcf43c7e2b38c59b97191340613734f444cab107636187c90",
+   "bytes": 29513
+  }
+ }
+}

@@ -1,0 +1,31 @@
+{
+ "formato": 1,
+ "curva_fonte": "Percentuale del suolo pubblico della città storica allagato per livello di marea a Punta della Salute: studio Comune di Venezia / Insula (valori da +90 a +140: 1,84 · 5,17 · 14,04 · 28,75 · 43,15 · 54,39 %); +80 cm circa 0,1 % (Centro Maree, «Venezia altimetria», 2009); oltre +140 cm valori indicativi dalle comunicazioni del Centro Maree (circa 70 % a +149 cm, oltre 90 % a +190 cm).",
+ "curva": [[80, 0.1], [90, 1.84], [100, 5.17], [110, 14.04], [120, 28.75], [130, 43.15], [140, 54.39], [150, 70], [160, 78], [175, 86], [195, 93], [215, 97]],
+ "punti_fonte": "Comune di Venezia, «Venice and high water» (comune.venezia.it): acqua percepibile in Piazza San Marco da +82 cm, area di Rialto da +105 cm, piazzale della stazione da +135 cm; punto più basso davanti alla Basilica intorno a +63/+70 cm (Centro Maree, «Venezia altimetria», 2009).",
+ "punti": [
+  { "nome": "Davanti alla Basilica di San Marco", "lat": 45.43455, "lon": 12.33925, "cm": 68, "r": 40 },
+  { "nome": "Piazza San Marco", "lat": 45.43415, "lon": 12.33790, "cm": 80, "r": 70 },
+  { "nome": "Rialto", "lat": 45.43800, "lon": 12.33590, "cm": 104, "r": 60 },
+  { "nome": "Piazzale della stazione", "lat": 45.44110, "lon": 12.32110, "cm": 134, "r": 50 }
+ ],
+ "griglia": { "lat0": 45.418, "lon0": 12.298, "dlat": 0.00018, "dlon": 0.00026, "righe": 420, "colonne": 500 },
+ "griglia_rilievo": { "lat0": 45.418, "lon0": 12.298, "dlat": 0.00009, "dlon": 0.00013, "righe": 840, "colonne": 1000 },
+ "tessera": 120,
+ "rilievo": {
+  "nome": "RAMSES",
+  "fonte": "Insula S.p.A. per il Comune di Venezia, progetto RAMSES: curve di livello della pavimentazione della città storica (equidistanza 1 cm, quote LIVELLO_PS in cm sullo Zero Mareografico di Punta della Salute; file del 21/06/2011). https://www.comune.venezia.it/it/content/curve-livello · https://www.comune.venezia.it/it/content/quote-altimetriche-venezia (Comune di Venezia, Centro Maree: progetto del Comune attuato da Insula nel 2011, precisione centimetrica, quote su ZMPS)",
+  "attribuzione": "Fonte informativa: Insula spa",
+  "data": "2011 (file); data dei rilievi non dichiarata",
+  "licenza": "condizioni d'uso del sito di Insula (smu.insula.it): uso, riproduzione ed elaborazione, anche parziale, dei contenuti con la fonte «Fonte informativa: Insula spa»; titolarità di Insula; vietate vendita e cessione a terzi dei dati; vietato commercializzare gli elaborati; nessuna garanzia.",
+  "pubblicabile": true
+ },
+ "zone": [
+  { "id": "venezia", "nome": "Città storica e Giudecca", "box": [45.4195, 12.300, 45.4475, 12.3725], "curva": true, "fondo": 128, "escludi": [[45.4455, 12.3425, 45.4475, 12.3725]] },
+  { "id": "sanmichele", "nome": "San Michele", "box": [45.4455, 12.3425, 45.4505, 12.3530], "curva": false, "fondo": 120, "pesoFondo": 0.8 },
+  { "id": "murano", "nome": "Murano", "box": [45.4500, 12.3420, 45.4640, 12.3680], "curva": false, "fondo": 122, "pesoFondo": 0.8 },
+  { "id": "burano", "nome": "Burano e Mazzorbo", "box": [45.4800, 12.4050, 45.4920, 12.4260], "curva": false, "fondo": 118, "pesoFondo": 0.8 }
+ ],
+ "note_rilievo": "Quote MISURATE (rilievo RAMSES delle pavimentazioni, Fonte informativa: Insula spa) nella città storica e alla Giudecca: per ogni cella di ~10 m la quota mediana delle calli, arrotondata a 2 cm (i punti più bassi della cella si bagnano qualche cm prima). Altrove resta la STIMA indicativa. Una quota sotto la marea indica una zona POTENZIALMENTE allagabile, non un allagamento certo: l'acqua arriva dai tombini e dalle rive, e lavori successivi al rilievo (rialzi, difese locali) non sono considerati.",
+ "note": "Le quote prodotte sono una STIMA indicativa (file generati senza il rilievo RAMSES delle pavimentazioni, che il Comune pubblica senza una licenza dichiarata). Fuori dalle zone elencate (Lido, Pellestrina, Sant'Erasmo, terraferma…) il modello non dà quote."
+}

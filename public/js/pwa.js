@@ -19,6 +19,9 @@ async function doInstall() {
   else if (iOS) showSnack(true);
 }
 export function init() {
+  // indicatore «senza connessione» (i dati live non si simulano: si dice da dove vengono quelli mostrati)
+  const ob = $('offline-bar'), net = () => { if (ob) ob.hidden = navigator.onLine !== false; };
+  addEventListener('online', net); addEventListener('offline', net); net();
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); evt = e; sync(); if (!snoozed() && !standalone()) showSnack(false); });
   window.addEventListener('appinstalled', () => { evt = null; snack.hidden = true; sync(); });
   installBtn.onclick = doInstall; $('snack-install').onclick = doInstall;
