@@ -68,15 +68,20 @@ jobs:
 
       - name: Serve la rete pedonale?
         id: ped
+        env:                                # valori dell'evento passati come variabili, mai incollati nel comando (iniezione nei workflow)
+          PROGRAMMA: ${{ github.event.schedule }}
+          PEDONI: ${{ github.event.inputs.pedoni }}
+          MSG_PEDONI: ${{ contains(github.event.head_commit.message, '[pedoni]') }}
         run: |
-          if [ ! -f out/pedoni/ultimo.json ] || [ "${{ github.event.schedule }}" = "23 2 * * 1" ] || [ "${{ github.event.inputs.pedoni }}" = "1" ] \
-             || [ "${{ contains(github.event.head_commit.message, '[pedoni]') }}" = "true" ]; then echo "go=1" >> "$GITHUB_OUTPUT"; else echo "go=0" >> "$GITHUB_OUTPUT"; fi
+          if [ ! -f out/pedoni/ultimo.json ] || [ "$PROGRAMMA" = "23 2 * * 1" ] || [ "$PEDONI" = "1" ] \
+             || [ "$MSG_PEDONI" = "true" ]; then echo "go=1" >> "$GITHUB_OUTPUT"; else echo "go=0" >> "$GITHUB_OUTPUT"; fi
 
       - name: Rete pedonale da OpenStreetMap (Geofabrik, Italia nord-est)
         if: steps.ped.outputs.go == '1'
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
-          curl -fsSL --retry 3 -o ne.osm.pbf https://download.geofabrik.de/europe/italy/nord-est/nord-est-latest.osm.pbf || curl -fsSL --retry 3 -o ne.osm.pbf https://download.geofabrik.de/europe/italy/nord-est/nord-est-latest.osm.pbf || curl -fsSL --retry 3 -o ne.osm.pbf https://download.geofabrik.de/europe/italy/nord-est-latest.osm.pbf
+          # Geofabrik ha cambiato gli indirizzi il 19/11/2026 (file dentro la cartella della regione); il vecchio resta come riserva
+          curl -fsSL --retry 3 -o ne.osm.pbf https://download.geofabrik.de/europe/italy/nord-est/nord-est-latest.osm.pbf || curl -fsSL --retry 3 -o ne.osm.pbf https://download.geofabrik.de/europe/italy/nord-est-latest.osm.pbf
           # zona servita con margine (fermate 45,02-45,68 N, 11,85-12,48 E, più 3 mattonelle)
           osmium extract -b 11.75,44.95,12.60,45.75 ne.osm.pbf -o zona.osm.pbf --overwrite
           osmium tags-filter zona.osm.pbf w/highway=footway,pedestrian,path,steps,living_street,residential,service,unclassified,tertiary,secondary,primary,track,cycleway,corridor,platform,road,tertiary_link,secondary_link,primary_link -o rete.osm.pbf --overwrite

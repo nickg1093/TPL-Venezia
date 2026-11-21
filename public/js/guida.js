@@ -36,7 +36,7 @@ const GUIDA_MAPPA = [
   { since: 'v23', el: q('#search-toggle-btn'), round: true, icon: 'search', title: 'Cerca fermate e linee', html: 'Scrivi il nome di una fermata o il numero di una linea. Qui ritrovi anche i tuoi <b>preferiti</b>.' },
   { since: 'v23', el: q('#locate'), round: true, icon: 'locate', title: 'Fermate vicine a te', html: 'Mostra dove sei e le fermate più vicine. <b>La tua posizione resta sul telefono.</b>' },
   { since: 'v23', el: q('#mezzi-btn'), round: true, icon: 'mezzi', title: 'Battelli e bus', html: 'Nel menu <b>Mezzi sulla mappa</b> mostri o nascondi la navigazione e i bus/tram, anche separatamente.' },
-  { since: 'v33', el: q('#livelli-btn'), round: true, icon: 'layers', title: 'Acqua alta sulla mappa', html: 'Con l\'acqua alta qui vedi le <b>zone allagate</b> (stima) e i <b>percorsi su passerelle</b> posati: si accendono da soli, e puoi guardare anche il colmo previsto.' },
+  { since: 'v33', el: q('#livelli-btn'), round: true, icon: 'layers', title: 'Acqua alta sulla mappa', html: 'Con l\'acqua alta qui vedi le <b>zone potenzialmente allagabili</b> e i <b>percorsi su passerelle</b> posati: si accendono da soli, e puoi guardare anche il colmo previsto.' },
   { since: 'v23', el: q('#plan-btn'), icon: 'route', title: 'Pianifica un percorso', html: 'Dimmi da dove a dove: ti propongo le soluzioni migliori, con cambi e tratti a piedi. Puoi <b>salvare</b> i percorsi che fai spesso e, quando parti, farti <b>guidare</b> fino all\'arrivo.' },
   { since: 'v23', el: () => document.getElementById('avvisi-btn')?.closest('.group'), icon: 'warn', title: 'Avvisi e marea', html: 'Scioperi, deviazioni e fermate sospese; il livello della <b>marea</b> e i servizi in caso di acqua alta.' },
   { since: 'v24', el: q('#mezzi-btn'), round: true, icon: 'unknown', title: 'Mezzi senza linea', html: 'I mezzi che il feed ACTV non associa a nessuna linea (simbolo <b>?</b>) sono nascosti: li mostri, in grigio, dal menu <b>Mezzi sulla mappa</b>.' },
@@ -55,6 +55,7 @@ const GUIDA_PANNELLO = [
 ];
 // novità senza un punto nell'app (solo a chi aveva già visto la guida di una versione precedente)
 const NOVITA_EXTRA = [
+  { since: 'v33', icon: 'info', title: 'Anche senza connessione', html: 'Senza rete l\'app si apre lo stesso e lo dice: marea, avvisi e acqua alta restano consultabili con l\'<b>ora dei dati salvati</b>. Nelle <b>Informazioni</b> trovi anche «Schermo intero» e lo storico delle novità.' },
   { since: 'v31', icon: 'info', title: 'Testo più grande, uscite evitate', html: 'Nelle <b>Informazioni</b> puoi ingrandire tutto il testo dell\'app. Nell\'app installata, con niente aperto, il primo «indietro» chiede conferma prima di uscire. Se le notifiche smettono di funzionare, l\'app te lo dice e le riattivi con un tocco.' },
   { since: 'v30', icon: 'route', title: 'Inizia il viaggio', html: 'Scelta una soluzione che parte a breve, tocca <b>Inizia il viaggio</b>: ti avviso quando uscire, cambiare e scendere, anche con l\'app chiusa, e con l\'app aperta vedi passo per passo cosa fare. I viaggi per un altro giorno li <b>salvi</b> in «I miei viaggi», li metti nel <b>calendario</b> o li <b>condividi</b> come testo.' },
   { since: 'v24', icon: 'back', title: 'Il tasto «indietro» funziona', html: 'Il tasto o il gesto <b>indietro</b> del telefono chiude la finestra aperta o torna al pannello precedente. I comandi dei pannelli sono nella <b>linguetta</b> sul bordo, e il nome della fermata resta su una riga.' },
@@ -68,6 +69,16 @@ const NOVITA_EXTRA = [
   { since: 'v25', icon: 'db', title: 'Più veloce ad aprirsi', html: 'Fermate, linee e strade restano salvate sul telefono e si riscaricano solo quando ACTV pubblica orari nuovi.' },
   { since: 'v24', icon: 'route', title: 'Percorsi in qualsiasi giorno', html: 'Il pianificatore usa gli orari del giorno che scegli (gli stessi di <b>Programmato</b>) e, mentre lo usi, sulla mappa restano solo i mezzi del tuo percorso.' }
 ];
+// STORICO SINTETICO (pagina Informazioni, «Novità delle versioni»): passi e novità dalla v24 in poi, dal più recente; testi fissi scritti qui
+export function storico() {
+  const per = new Map(), visti = new Set();
+  for (const s of [...NOVITA_EXTRA, ...GUIDA_MAPPA, ...GUIDA_PANNELLO]) {
+    if (!s.since || !newer(s.since, 'v23') || visti.has(s.title)) continue;
+    visti.add(s.title); const v = 'v' + vnum(s.since)[0];
+    if (!per.has(v)) per.set(v, []); per.get(v).push({ title: s.title, html: s.html });
+  }
+  return [...per].sort((a, b) => vnum(b[0])[0] - vnum(a[0])[0]).map(([v, items]) => ({ v, items }));
+}
 const NOVITA_INTRO = { tag: 'Novità', icon: 'info', title: 'Cosa c\'è di nuovo', html: 'L\'app è stata aggiornata: ti mostro in breve le novità.', start: 'Vediamo' };
 
 // ---------------------------------------------------------------------------------------------------------------------

@@ -2,6 +2,7 @@
 // Il testo è nella pagina (index.html); qui: apertura/chiusura (anche col tasto «indietro»), indice, avvisi attivi, titolare e contatti.
 import { $, esc, icon, api } from './util.js';
 import * as Notify from './notify.js';
+import { storico } from './guida.js';
 
 const btn = $('info-btn'), card = $('info'), list = $('info-watches'), wbtn = $('watch-btn'), wcount = $('watch-count');
 let before = () => {};
@@ -26,8 +27,13 @@ list.addEventListener('click', async e => {
   const w = Notify.all().find(x => x.id === b.dataset.wid); if (w) await Notify.stopWatch(w);
   renderWatches();
 });
+// storico sintetico delle novità (testi fissi della guida, guida.js), disegnato all'apertura
+function renderNews() {
+  const box = $('ip-news-list'); if (!box || box.childElementCount) return;
+  box.innerHTML = storico().map(g => `<h4>Versione ${esc(g.v.slice(1))}</h4><ul class="ip-news">${g.items.map(i => `<li><span class="nt">${esc(i.title)}</span><span>${i.html.replace(/<span class="tg-hint">[\s\S]*?<\/span>/g, '')}</span></li>`).join('')}</ul>`).join('');
+}
 export function open() {
-  before(); card.hidden = false; btn.setAttribute('aria-expanded', 'true'); renderWatches();
+  before(); card.hidden = false; btn.setAttribute('aria-expanded', 'true'); renderWatches(); renderNews();
   card.style.setProperty('--fp-h', card.querySelector('.fp-h').offsetHeight + 'px');   // l'indice resta agganciato sotto l'intestazione
   card.scrollTop = 0; card.focus({ preventScroll: true });
 }
