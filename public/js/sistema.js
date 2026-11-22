@@ -24,7 +24,7 @@ export function hide(key) { if (bar && (!key || key === cur)) { bar.hidden = tru
 if (cls) cls.onclick = () => { if (cur) closed.add(cur); hide(); };
 
 // ---- ERRORI IMPREVISTI ----
-const VERSION = 'v33.11';
+const VERSION = 'v33.10';
 let sent = 0, recent = [];
 const SKIP = /ResizeObserver loop|^Script error\.?$|AbortError|The operation was aborted|Failed to fetch|Load failed|NetworkError|network error|cancelled|annullat/i;
 function report(kind, msg, where) {

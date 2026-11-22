@@ -2,7 +2,7 @@
   "id": "/",
   "name": "Venezia TPL live",
   "short_name": "TPL Venezia",
-  "description": "Autobus, tram e vaporetti di Venezia in tempo reale, con livello e tendenza della marea.",
+  "description": "Autobus, tram e battelli di Venezia in tempo reale, con livello e tendenza della marea.",
   "lang": "it",
   "dir": "ltr",
   "start_url": "/?source=pwa",

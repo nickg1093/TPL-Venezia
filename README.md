@@ -4,7 +4,7 @@ Mappa in tempo reale di autobus, tram e vaporetti ACTV di Venezia, con pannelli 
 avvisi di servizio, avvisi di arrivo (notifiche), marea e preferiti. È una **PWA** (si installa come app) servita da un **server Node.js
 senza database**, che gira gratis su Render oppure su un computer di casa.
 
-Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v33.11** (pubblicata la v33.10 il 21/11/2026; novità in [CHANGELOG.md](CHANGELOG.md)) · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md) · Stato del progetto, da leggere per primo in una nuova conversazione: [STATO.md](STATO.md)
+Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://github.com/nickg1093/TPL-Venezia> · Versione: **v33** (in prova in locale, non pubblicata) · Criteri permanenti per ogni aggiornamento: [CRITERI.md](CRITERI.md) · Stato del progetto, da leggere per primo in una nuova conversazione: [STATO.md](STATO.md)
 
 ---
 
@@ -582,14 +582,7 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ## 12. Novità della v33
 
-Pubblicata online dalla **v33.10** (21/11/2026). Le voci qui sotto erano state sviluppate in locale e sono ora tutte su `main`.
-- **v33.11 (21/11/2026, audit finale)**: Informazioni: privacy allineata a ciò che fa davvero il server (conteggi giornalieri con impronta
-  dell'IP a sale giornaliero, solo in memoria), fonte dell'**Atlante passerelle** (Comune di Venezia – Centro Maree, con Veritas) tra le
-  fonti, sezione **«Novità delle versioni»** (storico sintetico da `guida.js: storico()`); novità «Anche senza connessione» nella guida;
-  testo «zone potenzialmente allagabili» anche nella guida. Server: le segnalazioni di errore registrano la versione anche con due cifre
-  (`v33.10`), un'intestazione `Origin` non valida dà 403 invece di un errore 500. Workflow: valori dell'evento passati come variabili
-  (`dati.yml`), nuovo indirizzo Geofabrik, tempo massimo per `update-gtfs.yml`. Prova `memoria-giorni.test.js` indipendente dalla versione
-  dei GTFS in archivio.
+In prova in locale, **non pubblicata** (niente commit, niente deploy).
 - **v33.10 (21/11/2026)**: **tavole dell'Atlante passerelle** (10 PDF del Centro Maree, `dati-passerelle/`, fuori da GitHub) analizzate:
   immagini di fondo georeferenziate registrandole sulle curve RAMSES (OpenCV, corrispondenza normalizzata), tracciati vettoriali (2019) o
   dai colori della mappa (San Marco 2023); **32 percorsi** con il tracciato della tavola (`data/acqua/passerelle-tavole.json`, controllati su

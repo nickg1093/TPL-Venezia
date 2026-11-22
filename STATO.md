@@ -1,6 +1,6 @@
 # STATO DEL PROGETTO — da leggere per primo in ogni nuova conversazione
 
-Aggiornato il **21/11/2026** (v33.11 su `main` dopo l'audit finale, da pubblicare con il deploy manuale; online la v33.10; vedi PASSAGGIO_CONSEGNE.md), ultimo commit di codice `0842dd0`. Questo file dice dove siamo, come si lavora e dove guardare.
+Aggiornato il **21/11/2026** (v33.10 in prova in locale, non pubblicata; Atlante passerelle georeferenziato, uso senza rete; vedi PASSAGGIO_CONSEGNE.md), ultimo commit di codice `0842dd0`. Questo file dice dove siamo, come si lavora e dove guardare.
 I dettagli stanno in **README.md** (riferimento completo, con sezioni numerate) e **CRITERI.md** (regole obbligatorie): qui non si ripetono,
 si indica la sezione. Chi modifica il progetto aggiorna anche questo file (sezioni 5, 8 e 9).
 
@@ -16,7 +16,7 @@ di percorso con viaggio guidato, avvisi di arrivo (notifiche push), avvisi di se
 | Sito | https://veneziatpl.onrender.com (Render, piano gratuito, 512 MB, regione Virginia) |
 | Codice | https://github.com/nickg1093/TPL-Venezia, ramo `main` (repository pubblico) |
 | Copia sul PC dell'utente | `D:\Downloads\TPL-Venezia` (Windows, clone git, aggiornata con GitHub Desktop) |
-| Versione | **v33.11** su `main` / v33.10 online (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v33`) |
+| Versione | **v33 in locale** / v32.1 online (grafico marea, da pubblicare a mano) (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v33`) |
 | Tecnologia | Node.js 22, **nessun framework, nessun database**; dipendenze: solo `leaflet` e `protobufjs` |
 
 ## 2. Regole di lavoro (non negoziabili)
@@ -79,28 +79,28 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 
 ## 5. Stato attuale
 
-- **v33.11 (21/11/2026, audit finale)**: correzioni di sicurezza e privacy, «Novità delle versioni» nelle Informazioni, fonte dell'Atlante
-  passerelle; dettagli in README §12 e CHANGELOG.md. **v33.10 pubblicata il 21/11/2026**: acqua alta, passerelle, rilievo RAMSES, uso senza rete.
-- **v33.8 (21/11/2026)**: v33.7 con il rilievo in tessere caricate a richiesta (`public/acqua/rilievo/`, pubblicabili
+- **In locale (17/11/2026)**: v33, acqua alta (allagamento stimato, passerelle, pianificatore) e pulsanti dei filtri ridisegnati — README §12,
+  appendice D «Acqua alta». **Non pubblicata**: da provare sul PC dell'utente prima di decidere.
+- **v33.8 in locale (21/11/2026, non pubblicata)**: v33.7 con il rilievo in tessere caricate a richiesta (`public/acqua/rilievo/`, pubblicabili
   con «Fonte informativa: Insula spa») e i file `acqua/*.json` della sola stima; attribuzione Insula; analisi dei diritti in README appendice D.
-- **v33.7 (20/11/2026, solo locale per la licenza)**: v33.6 + quote misurate dell'acqua alta dal rilievo RAMSES
+- **v33.7 in locale (20/11/2026, non pubblicata, solo locale per la licenza)**: v33.6 + quote misurate dell'acqua alta dal rilievo RAMSES
   (Comune di Venezia – Insula) nella città storica e alla Giudecca, stima altrove; mappa continua/tratteggiata; dati dell'acqua anche senza rete.
   Il rilievo (`dati-ramses/curve-livello-shp.zip`) sta solo sul PC. README §12 e appendice D.
-- **v33.6 (20/11/2026)**: v33.5 + Informazioni (Instagram @olocin_g, testi allineati). Online: **v32.6**.
-- **v33.5 (20/11/2026)**: v33.4 + schermo intero a scelta (Fullscreen API, non su iPhone), ora dell'ultimo
+- **v33.6 in locale (20/11/2026, non pubblicata)**: v33.5 + Informazioni (Instagram @olocin_g, testi allineati). Online: **v32.6**.
+- **v33.5 in locale (20/11/2026)**: v33.4 + schermo intero a scelta (Fullscreen API, non su iPhone), ora dell'ultimo
   rilevamento del mezzo nel pannello della corsa (solo tempo reale, solo se il mezzo la trasmette), modifica dei percorsi recenti e salvati
   nel pianificatore (README §12). Portata sull'online nella v32.6.
-- **v33.4 (20/11/2026)**: v33.3 + sciopero sempre visibile nel giorno stesso (gli aggiornamenti Telegram restano
+- **v33.4 in locale (20/11/2026)**: v33.3 + sciopero sempre visibile nel giorno stesso (gli aggiornamenti Telegram restano
   dentro l'avviso, che si toglie solo per revoca o differimento), link al comunicato ACTV sempre presente, icone di nuovo visibili (README §12).
   Per l'online: **v32.5**.
-- **v33.3 (20/11/2026)**: v33.2 + sciopero ad alta visibilità (README §3.7): scheda all'accesso, pulsante «Sciopero»,
+- **v33.3 in locale (20/11/2026)**: v33.2 + sciopero ad alta visibilità (README §3.7): scheda all'accesso, pulsante «Sciopero»,
   avvertenze in pannelli e pianificatore, finestra da 8 ore prima alle 05:00 del giorno dopo, fasce garantite e link ufficiali. Per l'online: **v32.4**.
-- **v33.2 (19/11/2026)**: v33.1 + proposta esatta in «I miei viaggi» e nei link (riapertura nel dettaglio, oppure
+- **v33.2 in locale (19/11/2026)**: v33.1 + proposta esatta in «I miei viaggi» e nei link (riapertura nel dettaglio, oppure
   messaggio e alternative), testo condiviso nuovo, calendario tolto, posizione a fasi e spiegazioni nel viaggio guidato, riquadro «alternativa più
   veloce», «Arrivo entro» con più soluzioni e margine («al limite»). File: `public/js/viaggio.js`, `public/js/percorso.js`, `public/js/app.js`,
   `public/css/app.css`, `percorso.js`, `server.js`, `metriche.js`, versione in `public/sw.js` e `public/js/sistema.js`; tolti `ics.js` e
   `tests/ics.test.js`; prove in `tests/viaggio.test.js`, `tests/percorso.test.js`, `tests/ui/viaggio.py`. Per l'online: **v32.3** (senza acqua alta).
-- **v33.1 (19/11/2026)**: v33 + avvisi (settore nav/aut, fermate toccate, date, fusioni, propagazione per fermata) e
+- **v33.1 in locale (19/11/2026)**: v33 + avvisi (settore nav/aut, fermate toccate, date, fusioni, propagazione per fermata) e
   pianificatore (camminate lunghe, consigliata stabile, soppressioni e fermate saltate, coincidenze irrealistiche, «arrivo entro»). File:
   `avvisi.js`, `avvisi-ai.js`, `percorso.js`, `public/js/avvisi.js`, versione in `server.js`, `public/sw.js`, `public/js/sistema.js`; prove in
   `tests/avvisi.test.js` (+ `tests/avvisi-casi-reali.json`), `tests/avvisi-1911.test.js`, `tests/percorso.test.js`, `tests/percorso-v28.test.js`,
@@ -136,14 +136,14 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 
 ### Ultime versioni (dettagli in README §12)
 - **v33.10 (pubblicazione online preparata il 21/11/2026: acqua alta, passerelle e rilievo RAMSES vanno online insieme al resto della v33)**: tavole dell'Atlante georeferenziate (32 tracciati), San Marco 2023, crediti 5 s, marea e avvisi salvati per l'uso senza rete. Vedi `PASSAGGIO_CONSEGNE.md`.
-- **v33.9**: donazioni tolte; Instagram (profilo dello sviluppatore) in alto nelle Informazioni, segnalazioni solo via email; crediti della mappa sempre visibili.
-- **v33.8**: tessere del rilievo a richiesta, pubblicabili con la fonte Insula; archivio originale fuori da GitHub.
-- **v33.7**: quote misurate RAMSES per l'acqua alta, distinte dalle stime; livelli dell'acqua anche senza rete.
-- **v33.5**: schermo intero, ultimo rilevamento del mezzo, modifica dei percorsi recenti e salvati.
-- **v33.4**: sciopero visibile tutto il giorno con gli aggiornamenti Telegram, link ACTV sempre presente, icone corrette.
-- **v33.3**: sciopero ad alta visibilità (scheda, pulsante, avvertenze, finestra, fasce, link).
-- **v33.2**: proposta esatta salvata e condivisa, condivisione nuova, calendario tolto, GPS a fasi, alternativa più veloce, «Arrivo entro» con margine.
-- **v33.1**: avvisi e pianificatore rivisti sui casi reali (README §12 e §3.4, «Scelta delle soluzioni»).
+- **v33.9 (solo in locale)**: donazioni tolte; Instagram (profilo dello sviluppatore) in alto nelle Informazioni, segnalazioni solo via email; crediti della mappa sempre visibili.
+- **v33.8 (solo in locale)**: tessere del rilievo a richiesta, pubblicabili con la fonte Insula; archivio originale fuori da GitHub.
+- **v33.7 (solo in locale)**: quote misurate RAMSES per l'acqua alta, distinte dalle stime; livelli dell'acqua anche senza rete.
+- **v33.5 (solo in locale)**: schermo intero, ultimo rilevamento del mezzo, modifica dei percorsi recenti e salvati.
+- **v33.4 (solo in locale)**: sciopero visibile tutto il giorno con gli aggiornamenti Telegram, link ACTV sempre presente, icone corrette.
+- **v33.3 (solo in locale)**: sciopero ad alta visibilità (scheda, pulsante, avvertenze, finestra, fasce, link).
+- **v33.2 (solo in locale)**: proposta esatta salvata e condivisa, condivisione nuova, calendario tolto, GPS a fasi, alternativa più veloce, «Arrivo entro» con margine.
+- **v33.1 (solo in locale)**: avvisi e pianificatore rivisti sui casi reali (README §12 e §3.4, «Scelta delle soluzioni»).
 - **Correzioni del 19/11 (server)**, dal confronto tra l'archivio degli avvisi e il sito pubblicato:
   - avvisi: «giovedì 19 e venerdì 20, dalle 8 alle 17» = due giorni separati (non un periodo continuo); sciopero con il giorno nel titolo = quel
     giorno (le date accessorie della pagina lo allungavano dal 19 al 21); messaggi Telegram uniti alla notizia ACTV anche con «per aggiornamenti 👉»,
@@ -155,7 +155,7 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
     (meno di 1 minuto, `C.TIE_S`) si consiglia chi ha meno cambi, poi meno strada a piedi, e il diretto non viene scartato; in tempo reale la
     «Consigliata» resta la stessa famiglia agli aggiornamenti se costa al massimo 3 minuti più della migliore (`C.STICKY_S`; memoria del server:
     massimo 500 tragitti per 10 minuti, nessun dato personale).
-- **v33**: menu «Mezzi sulla mappa» e «Livelli della mappa»; allagamento stimato e passerelle dell'Atlante del Comune, automatici
+- **v33 (solo in locale)**: menu «Mezzi sulla mappa» e «Livelli della mappa»; allagamento stimato e passerelle dell'Atlante del Comune, automatici
   da +80 cm e con il MOSE; percorsi a piedi che evitano l'acqua e usano le passerelle; segno «ponte» nelle mattonelle della rete pedonale.
   Correzioni del 17/11: allagamento disegnato solo su calli e campi (niente acqua su case e canali; mappa lontana: nessun disegno); le schede
   del pianificatore dicono asciutto / passerella / acqua e le fermate raggiungibili solo con l'acqua pesano di più; 72 passerelle su 72 tracciate.
@@ -188,8 +188,8 @@ Senza `AVVISI_ARCHIVIO=0` il server legge l'archivio vero degli avvisi (utile pe
 **Pubblicazione**: commit e push su `main` → l'utente fa il pull sul PC e il deploy manuale su Render → controllo con `/api/about`.
 Il workflow dei GTFS fa commit su `main` da solo: prima del push serve spesso `git fetch` + `git rebase origin/main`.
 
-**Cambio di versione** (quando cambia l'interfaccia): `ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js`, `VERSION` in `public/js/sistema.js`,
-intestazione e §12 del README, CHANGELOG.md; `GUIDA_VER` solo se si aggiungono passi alla guida.
+**Cambio di versione** (quando cambia l'interfaccia): `ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js`, versione in `public/index.html`,
+intestazione e §12 del README; `GUIDA_VER` solo se si aggiungono passi alla guida.
 
 **Token riservati**: `DIAG_TOKEN` (diagnosi e misure) e `ADMIN_TOKEN` stanno solo su Render; mai nel codice, mai negli indirizzi.
 
@@ -217,7 +217,7 @@ intestazione e §12 del README, CHANGELOG.md; `GUIDA_VER` solo se si aggiungono 
 3. **Misure per giorno**: si perdono a ogni riavvio; lo storico dipende dallo script lanciato dall'utente (anche con l'Utilità di pianificazione).
 4. **Regione di Render** (Virginia → Francoforte): richiede un servizio nuovo e cambierebbe l'indirizzo. Non deciso.
 5. **Regole degli avvisi**: rilettura periodica dei casi nuovi nell'archivio.
-6. **Acqua alta (pubblicata con la v33.10; restano solo i punti d ed e)**: (a) provare in locale; (b) aggiungere `genera-acqua.js` a `dati.yml` e pubblicare i file sul ramo `dati`
+6. **Acqua alta, prima di pubblicare**: (a) provare in locale; (b) aggiungere `genera-acqua.js` a `dati.yml` e pubblicare i file sul ramo `dati`
    (CDN) invece che da `public/acqua`; (c) **rilievo RAMSES** (v33.7–v33.9 in locale): le condizioni d'uso del sito di Insula consentono uso, riproduzione ed elaborazione,
    anche parziale, con «Fonte informativa: Insula spa»; le tessere `public/acqua/rilievo/` sono pubblicabili insieme all'acqua alta (quando l'utente lo dice);
    l'archivio originale `dati-ramses/` resta fuori da GitHub; (d) i capi delle passerelle sono rivisti a mano (`data/acqua/passerelle-atlante.json`):
@@ -229,7 +229,8 @@ intestazione e §12 del README, CHANGELOG.md; `GUIDA_VER` solo se si aggiungono 
 9. **`sistema.py` dopo le 22:30**: la prova del pannello di una corsa dipende dall'ora (corse simulate a fine servizio); si può renderla indipendente.
 10. **Sciopero**: un aggiornamento Telegram che non è una risposta e non contiene «sciopero» (né nel giorno dello sciopero, né parole simili al
     comunicato) resta un avviso a sé; la revoca si riconosce solo dalle parole (revoca, annullamento, differimento, rinvio, precettazione). Le fasce garantite sono quelle scritte nel comunicato (di solito autobus e tram); per la navigazione ACTV pubblica una
-    locandina dei servizi minimi che l'app non legge (si rimanda al link).
+    locandina dei servizi minimi che l'app non legge (si rimanda al link). `tests/memoria-giorni.test.js` dipende da una versione dei GTFS che
+    scade il 20/11/2026: da aggiornare.
 11. **Parcheggi pieni** («Park … al completo») tolti dagli avvisi dal 19/11: se servono, si possono rimettere in una sezione a parte.
 12. Pulizia consigliata e non confermata: variabili `ACTV_CENTRALE*` su Render, ramo `dependabot/...adm-zip`, impostazioni di GitHub (README §7.4).
 
