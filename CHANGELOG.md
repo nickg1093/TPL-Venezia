@@ -3,6 +3,19 @@
 Riepilogo per versione delle modifiche che contano per chi usa o mantiene l'app. I dettagli tecnici sono in `README.md` §12; lo storico per
 gli utenti è nell'app (Informazioni → Novità, generato da `public/js/guida.js`).
 
+## v33.13 — 22/11/2026 (passerelle legate alle calli, simulazione a +110 cm)
+- Simulazione del pianificatore a +110 cm (16 percorsi a piedi, rete pedonale vera e rilievo): con la v33.12 le passerelle comparivano solo dove
+  il terreno sotto risultava allagato; alle Zattere (terreno a +111/121 cm), alla Giudecca e ai Tolentini non comparivano mai. Ora un tratto
+  su passerella posata conta come «su passerella» anche con il terreno asciutto (senza rallentare il calcolo).
+- Tracciati legati alle calli di OpenStreetMap (`scripts/acqua-core.js: allinea`): 89 parti su 102 coincidono con la rete pedonale (Zattere
+  comprese); le 13 restanti (Piazza San Marco, pontili di Piazzale Roma, qualche pontile della Riva) restano disegnate e diventano archi
+  propri della rete sul telefono. Raggio di riconoscimento sul telefono da 9 a 6 m.
+- Testo del pianificatore: «su passerella per circa 120 m: da Ponte Longo a Rio Terà Foscarini (posata da 105 cm)»; con più percorsi
+  il numero vero e il primo nome. Finestra della passerella: «sulle calli di OpenStreetMap» quando il tracciato è legato alla rete.
+- Rete pedonale del ramo `dati` controllata: aggiornata il 21/11/2026, copre città storica, isole, Lido, Pellestrina, Chioggia e
+  terraferma; su un campione di 83 ponti OSM tutti quelli pubblici hanno il segno «ponte» (i 5 senza: 4 ponti privati e la carreggiata del Ponte della Libertà vietata ai pedoni, esclusi apposta).
+- Prove: `tests/ui/passerelle.py` (nuova, con una copia del ramo `dati`), `tests/acqua.test.js`.
+
 ## v33.12 — 22/11/2026 (verifica e correzioni finali)
 - Passerelle: tracciati confrontati con le tavole dell'Atlante e con OpenStreetMap (nomi e geometrie dall'API ufficiale di OSM); corretti
   T1.3A (Fondamenta Corner Zaguri), T1.4A (Ponte e Campo de la Guerra, prima ~170 m più a sud), T2.3A (Barbaria de le Tole), T5.2B e T5.2C

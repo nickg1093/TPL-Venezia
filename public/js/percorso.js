@@ -83,7 +83,7 @@ async function acquaA(ms) {
     await Promise.race([Livelli.prepara(box), new Promise(r => setTimeout(r, 2500))]);
   }
   const st = XA.inStagione(ms, d.P.stagione), k = `${liv.cm}${st ? 's' : ''}t${Livelli.tessere()}`;
-  let pass = idxMemo.get(k); if (!pass) { if (idxMemo.size > 30) idxMemo.clear(); pass = XA.indicePasserelle(XA.posate(d.P, liv.cm, ms), 9, d.P.garantiti); idxMemo.set(k, pass); }
+  let pass = idxMemo.get(k); if (!pass) { if (idxMemo.size > 30) idxMemo.clear(); pass = XA.indicePasserelle(XA.posate(d.P, liv.cm, ms), 6, d.P.garantiti); idxMemo.set(k, pass); }
   return { cm: liv.cm, Q: d.Q, pass, key: '|a' + k, mose: liv.mose };
 }
 // istante della ricerca (partenza o arrivo scelti, o adesso) e di un tratto a piedi di una soluzione (k = indice nella soluzione)
@@ -120,8 +120,8 @@ const pathFor = async (a, b, ms) => {
 // testo breve per un tratto a piedi con l'acqua alta: passerelle usate e acqua inevitabile
 function acquaTxt(w) {
   const a = w?.acqua; if (!a) return '';
-  const pp = a.passerelle.map(p => p.d.replace(/^Da /, 'da ')).slice(0, 2), out = [];
-  if (a.passerella >= 5 && pp.length) out.push(`su passerella ${pp.length === 1 ? pp[0] : pp.length + ' tratti'} (posata da ${Math.min(...a.passerelle.map(p => p.q))} cm)`);
+  const pp = a.passerelle.map(p => p.d.replace(/^Da /, 'da ')), out = [], mp = Math.max(5, Math.round(a.passerella / 10) * 10);
+  if (a.passerella >= 5 && pp.length) out.push(`su passerella per circa ${mp} m: ${pp.length === 1 ? pp[0] : `${pp.length} percorsi del piano, tra cui ${pp[0]}`} (posat${pp.length === 1 ? 'a' : 'e'} da ${Math.min(...a.passerelle.map(p => p.q))} cm)`);
   const m = Math.round(a.bagnati / 10) * 10 || 5, cm = Math.max(2, Math.round(a.prof));
   const qual = (a.stimati ?? a.bagnati) * 2 > a.bagnati ? 'stima' : 'quote del rilievo';   // quote misurate (RAMSES) per più di metà dei metri bagnati
   if (a.bagnati >= 5) out.push(cm < 10 ? `acqua bassa possibile per circa ${m} m (pochi cm, ${qual})` : `acqua possibile per circa ${m} m, fino a ~${cm} cm (${qual}): ${cm < 30 ? 'stivali' : 'stivali alti'}`);

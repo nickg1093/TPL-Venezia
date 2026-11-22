@@ -1,15 +1,15 @@
 {
  "formato": 1,
- "v": "dd9704cb24bd",
- "creato": "2026-11-22T10:21:17.677Z",
+ "v": "08e51544b7fc",
+ "creato": "2026-11-22T11:46:52.786Z",
  "rete": "b2f1bb3e30622032",
  "files": {
   "passerelle": {
-   "sha": "56198924a6ed27d867671bb14b580c706e4ebe0dd3ed6582eee6afcafefe7c14",
-   "bytes": 13386
+   "sha": "84d607fd449e9ca13edd24953454de658c940f342786b48c4f7242e34489bea5",
+   "bytes": 14562
   },
   "quote": {
-   "sha": "fed78317f1fb2239819331817649bd648c20c65ecba277500ba77430df8728de",
+   "sha": "accd066a2b2915c9d688277659d5a97395f87cb12bdef69c1b165edd48855d18",
    "bytes": 29078
   }
  }

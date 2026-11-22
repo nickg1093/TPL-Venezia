@@ -99,10 +99,10 @@ function forma(path) {
 }
 
 // aggancio di un punto al TRATTO più vicino (proiezione sul segmento, non solo sui nodi): i percorsi brevi stanno spesso a metà di una riva
-function indiceTratti(R) {
+function indiceTratti(R, conPonti = false) {
   const S = 0.0004, M = new Map(), key = (r, q) => r + ',' + q;
   for (const e of R.edges) {
-    if (e.ponte) continue;
+    if (e.ponte && !conPonti) continue;
     let along = 0;
     for (let i = 1; i < e.g.length; i++) {
       const a = [e.g[i - 1][0] / U, e.g[i - 1][1] / U], b = [e.g[i][0] / U, e.g[i][1] / U], L = mDist(a[0], a[1], b[0], b[1]);
@@ -142,6 +142,116 @@ function traAgganci(R, A, B, limite) {
     best = { m, g: [...g1, ...(c.archi.length ? forma(c).slice(1, -1) : []), ...g3] };
   }
   return best;
+}
+
+// ---- 1 bis. tracciati LEGATI ALLA RETE PEDONALE (v33.12) ----
+// Un tracciato (dalla tavola dell'Atlante o ricalcato) si sostituisce con la strada della rete OSM che gli corre sopra: stessa geometria
+// delle calli usate dal pianificatore, così il telefono riconosce senza ambiguità i tratti percorsi su passerella. Ricerca del cammino
+// tra le proiezioni dei due capi sui tratti più vicini, con un costo che cresce con la distanza dal tracciato (gli archi lontani più di
+// FUORI m non si usano). Il risultato vale solo se resta vicino al tracciato in ogni punto e nei due sensi (scarto massimo MAXD, medio
+// MEDD) e con lunghezza simile; altrimenti (OSM non ha la calle: attraverso un campo, verso un pontile) resta il tracciato disegnato e il
+// telefono lo aggiunge alla rete come archi propri (public/js/pedoni.js). Ritorna { g, ok, max, medio, L, Lp }.
+const FUORI = 22, MAXD = 14, MEDD = 6;
+function distLinea(P) {                                          // distanza (m) di un punto [lat, lon] dalla polilinea P (gradi)
+  return (la, lo) => {
+    const kx = 111320 * Math.cos(la * Math.PI / 180); let best = Infinity;
+    for (let i = 1; i < P.length; i++) {
+      const ax = (P[i - 1][1] - lo) * kx, ay = (P[i - 1][0] - la) * 111320, bx = (P[i][1] - lo) * kx, by = (P[i][0] - la) * 111320, dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+      let t = L2 ? -(ax * dx + ay * dy) / L2 : 0; t = Math.max(0, Math.min(1, t)); best = Math.min(best, Math.hypot(ax + t * dx, ay + t * dy));
+    }
+    return best;
+  };
+}
+const lunghezza = g => { let m = 0; for (let i = 1; i < g.length; i++) m += mDist(g[i - 1][0], g[i - 1][1], g[i][0], g[i][1]); return m; };
+function scarti(A, B) {                                          // scarti dei punti di A (ogni 2 m) dalla linea B: { max, medio }
+  const d = distLinea(B), pts = lungo(A, 2); let mx = 0, sum = 0;
+  for (const [la, lo] of pts) { const x = d(la, lo); mx = Math.max(mx, x); sum += x; }
+  return { max: mx, medio: pts.length ? sum / pts.length : 0 };
+}
+function allinea(R, P) {
+  const Lp = lunghezza(P);
+  if (!(P.length >= 2 && Lp > 0.5)) return { g: P, ok: false, max: 0, medio: 0, L: 0, Lp };
+  const snapT = R._snapTP || (R._snapTP = indiceTratti(R, true)), d = distLinea(P), memo = new Map();   // anche i ponti: un percorso può partire dal piede di un ponte
+  const peso = e => {                                            // metri «di costo»: lunghezza × (1 + penalità per la distanza dal tracciato)
+    let c = memo.get(e); if (c != null) return c;
+    const pts = e.g.map(([la, lo]) => [la / U, lo / U]), sm = lungo(pts, 4); let sum = 0, mn = Infinity;
+    for (const [la, lo] of sm) { const x = d(la, lo); sum += x; mn = Math.min(mn, x); }
+    const med = sum / sm.length; c = mn > FUORI ? Infinity : e.len * (1 + Math.pow(Math.max(0, med - 3) / 3, 2));
+    memo.set(e, c); return c;
+  };
+  const A = snapT(P[0][0], P[0][1], FUORI), B = snapT(P[P.length - 1][0], P[P.length - 1][1], FUORI);
+  if (!A || !B) return { g: P, ok: false, max: Infinity, medio: Infinity, L: 0, Lp };
+  let g;
+  if (A.e === B.e) g = pezzo(A.e, A.along, B.along);
+  else {
+    // Dijkstra con il costo pesato, dai due capi del tratto di partenza ai due del tratto d'arrivo
+    const dist = new Map(), prev = new Map(), H = [];
+    const push = (n, c, pe) => { if (c < (dist.get(n) ?? Infinity)) { dist.set(n, c); prev.set(n, pe); H.push([c, n]); } };
+    const kA = A.e.len > 0 ? peso(A.e) / A.e.len : 1;
+    push(A.e.a, A.along * kA, null); push(A.e.b, (A.e.len - A.along) * kA, null);
+    const kB = B.e.len > 0 ? peso(B.e) / B.e.len : 1, fine = new Map([[B.e.a, B.along * kB], [B.e.b, (B.e.len - B.along) * kB]]);
+    let best = null; const lim = Lp * 4 + 300;
+    while (H.length) {
+      let bi = 0; for (let i = 1; i < H.length; i++) if (H[i][0] < H[bi][0]) bi = i;
+      const [c, u] = H.splice(bi, 1)[0]; if (c > (dist.get(u) ?? Infinity) || c > lim) continue;
+      if (best && c >= best.c) break;
+      if (fine.has(u)) { const t = c + fine.get(u); if (!best || t < best.c) best = { c: t, n: u }; }
+      for (const e of u.adj) { if (e === A.e || e === B.e) continue; const w = peso(e); if (!Number.isFinite(w)) continue; push(e.a === u ? e.b : e.a, c + w, e); }
+    }
+    if (!best) return { g: P, ok: false, max: Infinity, medio: Infinity, L: 0, Lp };
+    const archi = [], nodi = [best.n]; let n = best.n;
+    while (prev.get(n)) { const e = prev.get(n); archi.push(e); n = e.a === n ? e.b : e.a; nodi.push(n); }
+    archi.reverse(); nodi.reverse();
+    const g1 = pezzo(A.e, A.along, nodi[0] === A.e.a ? 0 : A.e.len), g3 = pezzo(B.e, best.n === B.e.a ? 0 : B.e.len, B.along);
+    g = [...g1, ...(archi.length ? forma({ nodi, archi }).slice(1, -1) : []), ...g3];
+  }
+  const L = lunghezza(g), s1 = scarti(P, g), s2 = scarti(g, P), max = Math.max(s1.max, s2.max), medio = Math.max(s1.medio, s2.medio);
+  const ok = max <= MAXD && medio <= MEDD && L <= Lp * 1.4 + 8 && L >= Lp * 0.75 - 2;
+  if (ok) return { g, ok, max, medio, L, Lp };
+  const par = parallelo(R, P, Lp) || perNodi(R, P, Lp);         // tratto diritto (es. dalla riva al pontile): il tratto OSM parallelo e vicino
+  return par || { g: P, ok: false, max, medio, L, Lp };
+}
+// tratti corti: dagli incroci della rete più vicini ai due capi (entro 12 m), se il cammino tra loro somiglia al disegno
+function perNodi(R, P, Lp) {
+  if (Lp > 40) return null;
+  const near = R._nearN || (R._nearN = indiceNodi(R)), A = near(P[0][0], P[0][1], 12), B = near(P[P.length - 1][0], P[P.length - 1][1], 12);
+  if (!A || !B || A.n === B.n) return null;
+  const c = cammino(R, A.n, B.n, Lp * 2 + 20); if (!c) return null;
+  const g = forma(c), L = lunghezza(g); if (L < Lp * 0.5 || L > Lp * 1.5 + 5) return null;
+  const s1 = scarti(P, g), s2 = scarti(g, P), max = Math.max(s1.max, s2.max), medio = Math.max(s1.medio, s2.medio);
+  return max <= 14 && medio <= 10 ? { g, ok: true, max, medio, L, Lp, nodi: true } : null;
+}
+// Per i tratti quasi diritti e corti (passerelle verso i pontili, attraversamenti di una riva) la ricerca del cammino può non bastare: il
+// pontile in OSM è un tratto a sé, parallelo al disegno a qualche metro. Si cerca il segmento della rete con la stessa direzione (entro
+// 30°), entrambi i capi del disegno entro PAR_D m dalla sua retta e sovrapposto per almeno 3/4 della lunghezza: il tracciato diventa la
+// parte di quel segmento che corrisponde al disegno.
+const PAR_D = 15;
+function parallelo(R, P, Lp) {
+  if (Lp > 70 || Lp < 2) return null;
+  const a = P[0], b = P[P.length - 1], ch = distLinea([a, b]);
+  if (P.some(([la, lo]) => ch(la, lo) > 3)) return null;          // non diritto
+  const la0 = (a[0] + b[0]) / 2, kx = 111320 * Math.cos(la0 * Math.PI / 180), xy = q => [(q[1] - a[1]) * kx, (q[0] - a[0]) * 111320];
+  const B = xy(b), vl = Math.hypot(B[0], B[1]); if (!vl) return null;
+  const v = [B[0] / vl, B[1] / vl], near = (q, m) => Math.abs(q[0] - la0) < m / 111320 && Math.abs(q[1] - a[1]) < m / kx;
+  let best = null;
+  for (const e of R.edges) {
+    const g = e.g.map(([y, x]) => [y / U, x / U]); if (!g.some(q => near(q, Lp + 60))) continue;
+    for (let i = 1; i < g.length; i++) {
+      const p0 = xy(g[i - 1]), p1 = xy(g[i]), sx = p1[0] - p0[0], sy = p1[1] - p0[1], sl = Math.hypot(sx, sy); if (sl < 1) continue;
+      const u = [sx / sl, sy / sl], cos = Math.abs(u[0] * v[0] + u[1] * v[1]); if (cos < Math.cos(Math.PI / 6)) continue;
+      const dl = q => Math.abs((q[0] - p0[0]) * u[1] - (q[1] - p0[1]) * u[0]), t = q => ((q[0] - p0[0]) * u[0] + (q[1] - p0[1]) * u[1]) / sl;
+      const d0 = dl([0, 0]), d1 = dl(B); if (d0 > PAR_D || d1 > PAR_D) continue;
+      const t0 = Math.max(0, Math.min(t([0, 0]), t(B))), t1 = Math.min(1, Math.max(t([0, 0]), t(B))), ov = (t1 - t0) * sl;
+      if (ov < Lp * 0.75) continue;
+      const sc = (d0 + d1) / 2; if (best && sc >= best.sc) continue;
+      const at = f => [g[i - 1][0] + (g[i][0] - g[i - 1][0]) * f, g[i - 1][1] + (g[i][1] - g[i - 1][1]) * f];
+      const fa = Math.max(0, Math.min(1, t([0, 0]))), fb = Math.max(0, Math.min(1, t(B)));
+      best = { sc, g: [at(fa), at(fb)] };
+    }
+  }
+  if (!best) return null;
+  const L = lunghezza(best.g), s1 = scarti(P, best.g), s2 = scarti(best.g, P);
+  return { g: best.g, ok: true, max: Math.max(s1.max, s2.max), medio: Math.max(s1.medio, s2.medio), L, Lp, parallelo: true };
 }
 
 // ---- 1. percorsi su passerelle ricalcati sulla rete ----
@@ -349,5 +459,5 @@ function linea(g) {
   return out;
 }
 
-const api = { U, E5, mDist, rete, ponte, cammino, indiceNodi, indiceTratti, pezzo, forma, ricalca, lungo, zonaDi, percento, quote, allagata, rilievo, tessere, ALFA, codice, valore, codifica, decodifica, linea };
+const api = { U, E5, mDist, rete, ponte, cammino, indiceNodi, indiceTratti, pezzo, forma, ricalca, allinea, distLinea, scarti, lungo, zonaDi, percento, quote, allagata, rilievo, tessere, ALFA, codice, valore, codifica, decodifica, linea };
 module.exports = api;

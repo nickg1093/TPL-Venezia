@@ -73,6 +73,20 @@ async function main() {
     return { ...p, ...A.ricalca(R, near, { a: p.a, b: p.b, m: p.metri, geo: p.geo }) };
   });
   console.log(`passerelle: ${percorsi.filter(p => p.daTavola).length} tracciati dalle tavole georeferenziate, gli altri ricalcati sulla rete`);
+  // 1 bis. ogni parte del tracciato legata alla rete pedonale OSM (A.allinea): dove la rete ha la calle, il tracciato È la calle
+  let nParti = 0, nOk = 0;
+  for (const p of percorsi) {
+    const parti = [p.g, ...(p.g2 || [])].filter(g => g && g.length >= 2), out = [];
+    let mOk = 0, mTot = 0;
+    for (const g of parti) {
+      const r = A.allinea(R, g); nParti++; if (r.ok) nOk++;
+      out.push(r.g); mTot += r.Lp; if (r.ok) mOk += r.Lp;
+      if (!r.ok) console.log(`  non legata alla rete: ${p.id} parte di ${Math.round(r.Lp)} m (scarto ${Number.isFinite(r.max) ? Math.round(r.max) + ' m' : 'nessuna calle entro 22 m'}): resta il disegno`);
+    }
+    if (out.length) { p.g = out[0]; p.g2 = out.slice(1); }
+    p.osm = mTot > 0 ? Math.round(100 * mOk / mTot) / 100 : 0;
+  }
+  console.log(`passerelle: ${nOk} parti su ${nParti} legate alle calli di OpenStreetMap`);
   const nt = percorsi.filter(p => p.k === 't').length;
   for (const p of percorsi) if (p.k !== 't') console.log(`  indicativo ${p.id} (${p.geo}): ufficiali ${p.metri} m, sulla rete ${p.m ?? '—'} m — ${p.descrizione}`);
   console.log(`passerelle: ${percorsi.length} percorsi, ${nt} tracciati sulla rete, ${percorsi.length - nt} indicativi`);
@@ -85,8 +99,8 @@ async function main() {
   const righe = A.codifica(celle, G);
   const fonteQ = 'Stima indicativa TPL Venezia da: ' + rif.curva_fonte + ' ' + rif.punti_fonte + ' Quote di posa delle passerelle: ' + atl.fonte + '. Rete pedonale © OpenStreetMap contributors (ODbL).';
   const quote = { f: 1, fonte: fonteQ, nota: rif.note, g: G, zone: rif.zone.map(z => ({ id: z.id, nome: z.nome, box: z.box, curva: !!z.curva })), curva: rif.curva, r: righe };
-  const pass = { f: 1, fonte: atl.fonte + '. Tracciati: dalle tavole dell\'Atlante georeferenziate sulle curve RAMSES (Fonte informativa: Insula spa) dove verificati, altrove ricalcati sulla rete pedonale © OpenStreetMap contributors (ODbL), indicativi.', stagione: atl.stagione, garantiti: atl.garantiti,
-    p: percorsi.map(p => ({ id: p.id, t: p.tavola, s: p.sestiere, d: p.descrizione, m: p.metri, q: p.quota, k: p.k, l: A.linea(p.g), ...(p.g2?.length ? { l2: p.g2.map(A.linea) } : {}), ...(p.daTavola ? { o: 'tavola' } : {}) })) };
+  const pass = { f: 1, fonte: atl.fonte + '. Tracciati: dalle tavole dell\'Atlante georeferenziate sulle curve RAMSES (Fonte informativa: Insula spa) dove verificati, altrove ricalcati sulla rete pedonale; poi legati alle calli della rete pedonale © OpenStreetMap contributors (ODbL) dove la rete le ha.', stagione: atl.stagione, garantiti: atl.garantiti,
+    p: percorsi.map(p => ({ id: p.id, t: p.tavola, s: p.sestiere, d: p.descrizione, m: p.metri, q: p.quota, k: p.k, osm: p.osm, l: A.linea(p.g), ...(p.g2?.length ? { l2: p.g2.map(A.linea) } : {}), ...(p.daTavola ? { o: 'tavola' } : {}) })) };
 
   const dirOut = path.join(path.resolve(out), 'acqua'); fs.mkdirSync(dirOut, { recursive: true });
   const files = {};

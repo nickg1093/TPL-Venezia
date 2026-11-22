@@ -1,6 +1,6 @@
 # STATO DEL PROGETTO — da leggere per primo in ogni nuova conversazione
 
-Aggiornato il **22/11/2026** (v33.12 su `main` dopo la verifica finale: passerelle, acqua alta, orari senza rete, schede, posizione del mezzo; da pubblicare con il deploy manuale; online la v33.10; vedi PASSAGGIO_CONSEGNE.md). Questo file dice dove siamo, come si lavora e dove guardare.
+Aggiornato il **22/11/2026** (v33.13 su `main`: v33.12 + passerelle legate alle calli OSM e indicate nel pianificatore anche su terreno asciutto; da pubblicare con il deploy manuale; online la v33.10; vedi PASSAGGIO_CONSEGNE.md). Questo file dice dove siamo, come si lavora e dove guardare.
 I dettagli stanno in **README.md** (riferimento completo, con sezioni numerate) e **CRITERI.md** (regole obbligatorie): qui non si ripetono,
 si indica la sezione. Chi modifica il progetto aggiorna anche questo file (sezioni 5, 8 e 9).
 
@@ -16,7 +16,7 @@ di percorso con viaggio guidato, avvisi di arrivo (notifiche push), avvisi di se
 | Sito | https://veneziatpl.onrender.com (Render, piano gratuito, 512 MB, regione Virginia) |
 | Codice | https://github.com/nickg1093/TPL-Venezia, ramo `main` (repository pubblico) |
 | Copia sul PC dell'utente | `D:\Downloads\TPL-Venezia` (Windows, clone git, aggiornata con GitHub Desktop) |
-| Versione | **v33.12** su `main` / v33.10 online (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v33.12`) |
+| Versione | **v33.13** su `main` / v33.10 online (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v33.12`) |
 | Tecnologia | Node.js 22, **nessun framework, nessun database**; dipendenze: solo `leaflet` e `protobufjs` |
 
 ## 2. Regole di lavoro (non negoziabili)
@@ -79,6 +79,8 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 
 ## 5. Stato attuale
 
+- **v33.13 (22/11/2026)**: simulazione a +110 cm: le passerelle non comparivano dove il terreno sotto era asciutto (Zattere, Giudecca,
+  Tolentini); ora compaiono; tracciati legati alle calli OSM (89/102 parti). Prova `tests/ui/passerelle.py` con una copia del ramo `dati`.
 - **v33.12 (22/11/2026, verifica e correzioni finali)**: passerelle confrontate con tavole e OpenStreetMap (6 capi corretti, Zattere
   verificate), passerelle come archi del grafo pedonale e costo dell'acqua anche ai capi dei percorsi a piedi, avviso oltre +120 cm,
   orari programmati di oggi senza rete (`public/js/orarioggi.js`), fermate e linee salvate usate all'apertura senza rete, «Posizione

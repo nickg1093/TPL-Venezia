@@ -201,7 +201,7 @@ function disegnaPasserelle(list, oltre) {
   passLayer = L.layerGroup();
   for (const p of list) L.polyline(p.parti || p.pts, { renderer: svgR, className: 'pass-h', weight: 8, interactive: false }).addTo(passLayer);   // prima tutti gli aloni, poi le linee
   for (const p of list) {
-    const txt = `<b>Passerella ${esc(p.t || p.id)}</b> · ${esc(p.s)}<br>${esc(p.d)}<br>Posata da ${fmt(p.q)} cm · ${Math.round(p.m)} m${p.k === 'i' ? '<br><i>Tracciato indicativo</i>' : p.tavola ? '<br><i>Tracciato dalla tavola dell\'Atlante passerelle</i>' : ''}${oltre ? '<br><b>Oltre +120 cm alcuni tratti possono essere sommersi</b>' : ''}`;
+    const txt = `<b>Passerella ${esc(p.t || p.id)}</b> · ${esc(p.s)}<br>${esc(p.d)}<br>Posata da ${fmt(p.q)} cm · ${Math.round(p.m)} m${p.k === 'i' ? '<br><i>Tracciato indicativo</i>' : p.osm >= 0.95 ? `<br><i>Tracciato ${p.tavola ? 'dalla tavola dell\'Atlante, ' : ''}sulle calli di OpenStreetMap</i>` : p.tavola ? `<br><i>Tracciato dalla tavola dell'Atlante${p.osm > 0 ? ', in parte sulle calli di OpenStreetMap' : ''}</i>` : ''}${oltre ? '<br><b>Oltre +120 cm alcuni tratti possono essere sommersi</b>' : ''}`;
     L.polyline(p.parti || p.pts, { renderer: svgR, className: `pass-l ${p.k}${oltre ? ' oltre' : ''}`, weight: 4.5 }).bindPopup(txt).addTo(passLayer);
   }
   passLayer.addTo(map);

@@ -1,4 +1,4 @@
-# Passaggio di consegne — Venezia TPL live v33.12 (22/11/2026)
+# Passaggio di consegne — Venezia TPL live v33.13 (22/11/2026)
 
 Documento autonomo per riprendere il progetto in una nuova conversazione. Dopo questo leggere `STATO.md` (stato e regole), `CRITERI.md`
 (regole obbligatorie per ogni modifica) e, quando serve un dettaglio, `README.md` (riferimento completo a sezioni numerate).
@@ -18,7 +18,7 @@ potenzialmente allagabili e passerelle dell'Atlante del Comune), preferiti, perc
 | Codice | https://github.com/nickg1093/TPL-Venezia (pubblico). Rami: `main` (codice), `dati` (file per i telefoni via CDN jsDelivr), `archivio-avvisi`, `archivio-marea` (archivi dei workflow), `ripristino-v33.10` (punto di ripristino prima dell'audit) |
 | PC dell'utente | `D:\Downloads\TPL-Venezia` = clone di GitHub (quello che va online). `D:\Downloads\TPL-Venezia-LOCALE` = copia di lavoro locale (contiene anche i dati solo locali sotto) |
 | Solo sul PC, mai su GitHub | `dati-ramses/curve-livello-shp.zip` (rilievo RAMSES di Insula, 333 MB), `dati-passerelle/*.pdf` (Atlante passerelle), `tmp-atlante/` |
-| Versione | `ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js` (tutte **v33.12**); `GUIDA_VER` in `public/js/guida.js` (`v33.12`) |
+| Versione | `ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js` (tutte **v33.13**); `GUIDA_VER` in `public/js/guida.js` (`v33.12`) |
 
 ## 3. Architettura
 - **Server** Node.js 22, nessun framework né database, nessuna scrittura su disco tranne l'archivio GTFS; dipendenze solo `leaflet` e
@@ -120,6 +120,19 @@ testi sull'acqua alta sempre «potenzialmente allagabili», mai allagamento cert
 - **Prove**: `npm test` 315/315; interfaccia (Chrome headless, 6 dimensioni in `run.py`): `run.py`, `sistema.py`, `acqua.py`, `marea.py`,
   `viaggio.py`, `modifica.py`, `offline.py` passate, anche con `TESTO=1.3` (dopo il cambio di versione ripetute `run`, `sistema`,
   `viaggio`, `modifica`, `offline`).
+
+## 9 ter. Passerelle nel pianificatore, simulazione a +110 cm (22/11/2026, v33.13)
+- **Problema trovato**: con il terreno sotto la passerella più alto del livello (dati del rilievo: Zattere +111/121 cm) il tratto non
+  contava né bagnato né su passerella: a +110 cm il percorso Rio Terà Foscarini → Zattere diceva solo «a piedi». Su 16 percorsi simulati
+  (rete pedonale del ramo `dati`, rilievo, passerelle posate a +110) prima: 0 m di passerella a Zattere, Giudecca, Tolentini; ora: 122 m
+  (T6.2A), 158 m (T7.1A), 58 m (T5.2B/C) e in tutti gli altri casi il percorso dichiara le passerelle usate.
+- **Tracciati legati alla rete**: `allinea` sostituisce ogni parte del tracciato con le calli OSM che gli corrono sopra (89/102 parti;
+  Zattere T6.2A: scarto prima 2–3 m, ora coincide; i due tratti T6.2B verso i pontili sono legati alle passerelle dei pontili in OSM).
+  Restano disegnati (e diventano archi propri sul telefono): T1.1B/C/E e T1.2A (Piazza e Piazzetta San Marco, area senza calli in OSM),
+  T1.2C, T2.1A (un tratto), T5.1A/B/C (pontili di Piazzale Roma: in OSM sono aree, non percorsi). Elenco a ogni `genera-acqua.js`.
+- **Rete pedonale (ramo `dati`)**: versione `b2f1bb3e30622032` del 21/11/2026, 1.603 mattonelle; controllo su 83 ponti OSM: tutti i
+  pubblici hanno il segno «ponte»; i 5 senza sono 4 ponti `access=private` e la carreggiata del Ponte della Libertà (`foot=no`), esclusi apposta dalla rete.
+- **Prove**: `npm test` 316/316; `tests/ui/passerelle.py` (DATI_DIR), `acqua.py` (anche `TESTO=1.3`), `offline.py`, `run.py`.
 
 ## 10. Limiti noti e verifiche da fare
 - Non provati su dispositivi veri: Safari iOS (installata e non), Android, Firefox e Safari desktop. Su iPhone le notifiche esistono solo

@@ -585,6 +585,11 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 ## 12. Novità della v33
 
 Pubblicata online dalla **v33.10** (21/11/2026). Le voci qui sotto erano state sviluppate in locale e sono ora tutte su `main`.
+- **v33.13 (22/11/2026)**: *passerelle legate alla rete pedonale*: `acqua-core.js: allinea` (cammino sulla rete tra le proiezioni dei capi
+  con costo crescente con la distanza dal disegno; valido se scarto massimo ≤ 14 m e medio ≤ 6 m e lunghezza simile), poi `parallelo`
+  (tratti diritti verso i pontili) e `perNodi` (tratti corti tra incroci); applicato da `genera-acqua.js` a ogni parte (campo `osm` =
+  quota di lunghezza legata). `acqua.js: bagnato`: punto su passerella posata = «su passerella» anche con terreno asciutto (`secco`, senza
+  costo); raggio 6 m. Prova d'interfaccia `tests/ui/passerelle.py` (`DATI_DIR` = copia del ramo `dati`).
 - **v33.12 (22/11/2026, verifica e correzioni finali)**:
   - *Passerelle*: tracciati ricalcolati confrontati con le tavole PDF (render delle pagine) e con OpenStreetMap (API ufficiale
     `api.openstreetmap.org/api/0.6/map`: nomi delle vie lungo ogni tracciato e pontili vicini ai capi). Capi corretti in

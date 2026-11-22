@@ -149,6 +149,10 @@ test('telefono: stagione, MOSE, passerelle posate, metri bagnati di un tratto', 
   const idx = X.indicePasserelle([{ pts: [[45.434, 12.338], [45.434, 12.33864]] }]);
   const sopra = X.bagnato(e, 100, Q, idx); assert.ok(sopra.bagnati < 1 && sopra.passerella > 49, JSON.stringify(sopra));
   assert.strictEqual(X.bagnato({ ...e, s: 2 }, 120, Q, null).bagnati, 0, 'ponte sempre asciutto');
+  // v33.12: sulla passerella posata si cammina anche dove il terreno è ancora asciutto (il pianificatore lo deve dire), senza rallentare
+  const secco = X.bagnato(e, 91, Q, idx);
+  assert.ok(secco.passerella > 49 && secco.secco > 49 && secco.bagnati === 0, JSON.stringify(secco));
+  assert.ok(X.costo(secco) < 0.5, 'passerella su terreno asciutto: nessun costo in più');
   assert.ok(X.costo(wet) > 300 && X.costo(sopra) < 10);
 });
 
@@ -207,4 +211,20 @@ test('passerelle come archi della rete: usate dove OpenStreetMap non ha la calle
   const pass2 = X.indicePasserelle([diag, coda], 9, 120), su2 = await net.route(A0, B0, 3000, costoDi({ cm: 130, Q, pass: pass2 }));
   const r2 = X.riassunto(su2.archi, 130, Q, pass2);
   assert.ok(r2.oltre > dd - 3 && r2.bagnati < 3, JSON.stringify({ ...r2, parti: 0 }));
+});
+
+test('tracciati legati alle calli OSM (genera-acqua.js: allinea): sul tratto vicino sì, lontano no; ogni passerella generata è sulla rete', async () => {
+  const R = A.rete(tilesOf(opl()), P.CL, P.CO);
+  // disegno spostato di ~4 m dalla riga 3 (tra le colonne 0 e 3, stessa riva): diventa la calle
+  const off = 4 / 111320, dis = [[pt(3, 0)[0] + off, pt(3, 0)[1] + 0.00015], [pt(3, 3)[0] + off, pt(3, 3)[1] - 0.00015]];
+  const r = A.allinea(R, dis);
+  assert.ok(r.ok && r.max < 6, JSON.stringify({ ok: r.ok, max: r.max }));
+  assert.ok(r.g.every(([la]) => Math.abs(la - pt(3, 0)[0]) < 2e-6), 'il tracciato coincide con la calle: ' + JSON.stringify(r.g));
+  // in diagonale attraverso un isolato (nessuna calle): resta il disegno
+  const diag = [pt(1, 1), pt(2, 2)].map(([la, lo]) => [la + 0.0001, lo + 0.0001]), r2 = A.allinea(R, diag);
+  assert.strictEqual(r2.ok, false); assert.deepStrictEqual(r2.g, diag);
+  // file pubblicati: almeno l'80 % dei percorsi interamente sulla rete, nessun valore fuori scala
+  const pj = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'public', 'acqua', 'passerelle.json'), 'utf8'));
+  assert.ok(pj.p.every(p => p.osm >= 0 && p.osm <= 1));
+  assert.ok(pj.p.filter(p => p.osm >= 0.95).length >= pj.p.length * 0.8, `${pj.p.filter(p => p.osm >= 0.95).length}/${pj.p.length} sulla rete`);
 });

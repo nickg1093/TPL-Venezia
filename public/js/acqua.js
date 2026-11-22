@@ -67,7 +67,7 @@ export function passerelleDa(j) {
     if (!p || typeof p.id !== 'string' || !(p.q >= 50 && p.q <= 200) || !Array.isArray(p.l) || p.l.length < 4) continue;
     const dec = l => { const out = []; let y = 0, x = 0; for (let i = 0; i + 1 < l.length; i += 2) { y += l[i]; x += l[i + 1]; out.push([y / 1e5, x / 1e5]); } return out; };
     const pts = dec(p.l), parti = [pts, ...(Array.isArray(p.l2) ? p.l2.filter(l => Array.isArray(l) && l.length >= 4).map(dec) : [])];   // l2: rami (percorsi a «Y» delle tavole)
-    list.push({ id: p.id, t: p.t || null, s: String(p.s || ''), d: String(p.d || ''), m: +p.m || 0, q: +p.q, k: p.k === 't' ? 't' : 'i', pts, parti, tavola: p.o === 'tavola' });
+    list.push({ id: p.id, t: p.t || null, s: String(p.s || ''), d: String(p.d || ''), m: +p.m || 0, q: +p.q, k: p.k === 't' ? 't' : 'i', pts, parti, tavola: p.o === 'tavola', osm: p.osm >= 0 && p.osm <= 1 ? +p.osm : null });
   }
   const st = j.stagione && /^\d\d-\d\d$/.test(j.stagione.da) && /^\d\d-\d\d$/.test(j.stagione.a) ? j.stagione : { da: '09-15', a: '04-30' };
   return { list, stagione: st, garantiti: +j.garantiti || 120, fonte: String(j.fonte || '') };
@@ -106,7 +106,7 @@ export const posate = (P, cm, ms) => (P && inStagione(ms, P.stagione) && Number.
 // indice dei tratti di passerella posati, per sapere se un punto della rete pedonale ci sta sopra (entro «raggio» metri).
 // byId: passerelle posate per codice (gli archi aggiunti alla rete da pedoni.js le ritrovano così); garantiti: livello fino a cui il
 // servizio è garantito (oltre, i metri su passerella si contano anche in «oltre»: possono essere sommersi, da verificare sul posto)
-export function indicePasserelle(list, raggio = 9, garantiti = null) {
+export function indicePasserelle(list, raggio = 6, garantiti = null) {   // 6 m: i tracciati sono legati alle calli OSM (genera-acqua.js)
   const S = 0.0003, M = new Map(), key = (la, lo) => Math.floor(la / S) + ',' + Math.floor(lo / S);
   const segs = [];
   for (const p of list) for (const pts of p.parti || [p.pts]) for (let i = 1; i < pts.length; i++) {
@@ -140,7 +140,7 @@ export function ponte(e) {
 // passerella posata. { bagnati, passerella, prof, pp, stimati } (prof: profondità massima in cm, pp: passerelle usate, stimati: metri
 // bagnati dove la quota è una stima e non una misura del rilievo, per i testi)
 export function bagnato(e, cm, Q, pass) {
-  const out = { bagnati: 0, passerella: 0, prof: 0, pp: new Set(), stimati: 0, oltre: 0 };
+  const out = { bagnati: 0, passerella: 0, prof: 0, pp: new Set(), stimati: 0, oltre: 0, secco: 0 };
   const sopra = pass && pass.garantiti != null && cm > pass.garantiti;   // oltre il livello garantito: passerelle forse sommerse
   if (e.s & 4) {                                                // arco di passerella aggiunto alla rete (pedoni.js): tutto su passerella, mai bagnato
     const p = pass?.byId?.get(e.p); if (!p || !Number.isFinite(cm)) return out;
@@ -155,11 +155,13 @@ export function bagnato(e, cm, Q, pass) {
   for (let i = 1; i < g.length; i++) {
     const la0 = g[i - 1][0] / U, lo0 = g[i - 1][1] / U, la1 = g[i][0] / U, lo1 = g[i][1] / U, L = mDist(la0, lo0, la1, lo1), n = Math.max(1, Math.ceil(L / 6));
     for (let j = 0; j < n; j++) {
-      const f = (j + 0.5) / n, la = la0 + (la1 - la0) * f, lo = lo0 + (lo1 - lo0) * f, h = Q.at(la, lo);
+      const f = (j + 0.5) / n, la = la0 + (la1 - la0) * f, lo = lo0 + (lo1 - lo0) * f, seg = L / n * k;
+      // sulla passerella posata si cammina su di essa anche dove il terreno sotto è ancora asciutto (v33.12: prima contava solo sopra l'acqua,
+      // così il pianificatore non diceva di passerelle percorse con il terreno appena sopra il livello)
+      const p = pass && pass.near(la, lo), h = Q.at(la, lo);
+      if (p) { out.passerella += seg; out.pp.add(p); if (sopra) out.oltre += seg; if (h == null || cm - h < 2) out.secco += seg; continue; }
       if (h == null || cm - h < 2) continue;                    // asciutto, o appena un velo d'acqua
-      const seg = L / n * k;
-      const p = pass && pass.near(la, lo);
-      if (p) { out.passerella += seg; out.pp.add(p); if (sopra) out.oltre += seg; } else { out.bagnati += seg; out.prof = Math.max(out.prof, cm - h); if (!Q.misurata?.(la, lo)) out.stimati += seg; }
+      out.bagnati += seg; out.prof = Math.max(out.prof, cm - h); if (!Q.misurata?.(la, lo)) out.stimati += seg;
     }
   }
   return out;
@@ -168,7 +170,7 @@ export function bagnato(e, cm, Q, pass) {
 // un po' più lento (folla, una persona per senso). Un tratto bagnato resta possibile se non c'è altra strada. Oltre il livello garantito
 // la passerella resta preferita al guado (è comunque più alta del terreno), ma costa di più (OLTRE_PASS): può essere sommersa o chiusa.
 export const PENALE = 8, LENTO_PASS = 0.15, OLTRE_PASS = 1.5;
-export const costo = b => b.bagnati * (PENALE - 1) + b.passerella * LENTO_PASS + (b.oltre || 0) * OLTRE_PASS;
+export const costo = b => b.bagnati * (PENALE - 1) + (b.passerella - (b.secco || 0)) * LENTO_PASS + (b.oltre || 0) * OLTRE_PASS;   // passerella su terreno asciutto: nessun rallentamento
 
 // Riassunto dei tratti di un percorso a piedi (archi di pedoni.js): metri bagnati e su passerella, profondità, passerelle usate, e le parti
 // da evidenziare sulla mappa ({ k: 'acqua' | 'passerella', pts: [[lat, lon], …] }, tratti interi)
