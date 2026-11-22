@@ -9,7 +9,7 @@
 // Anche gli indici restano salvati: SENZA RETE si usano gli ultimi file verificati (la marea, invece, serve dalla rete o già caricata).
 // Nessun calcolo e nessuna richiesta in più al server oltre ai file statici.
 // Livelli «automatici» (scelta predefinita): accesi con la marea in città da +80 cm (allagamento) e, in stagione, passerelle posate.
-import { $, esc, hm } from './util.js';
+import { $, esc, hm, seguiScheda, altezzaUtile } from './util.js';
 import * as Tide from './tide.js';
 import * as Fissi from './fissi.js';
 import * as X from './acqua.js';
@@ -263,6 +263,7 @@ function testi(m, vedi, stato, posateL, pk) {
   if (vedi.all && dati?.Q.rilievo) note.push(`<p class="lv-legend"><span class="lv-ql" aria-hidden="true"></span>quota misurata<span class="lv-ql s" aria-hidden="true"></span>quota stimata</p>`);
   if (vedi.all && dati && acquaOn && lontano) note.push('<p>Avvicina la mappa per vedere le calli allagate.</p>');
   if (vedi.pass && dati && posateL.length) note.push(`<p class="lv-legend"><span class="lv-pl" aria-hidden="true"></span>passerella<span class="lv-pl i" aria-hidden="true"></span>tracciato indicativo</p>`);
+  if (vedi.pass && dati && posateL.length) note.push('<p>Passerelle del piano comunale, mostrate dal livello di posa previsto: la posa effettiva e le chiusure non sono verificabili da qui. I ponti non si allagano.</p>');
   if (pref.all !== 'auto' || pref.pass !== 'auto') note.push('<p><button type="button" class="nlink" data-auto>Torna ad automatico</button></p>');
   $('lv-nota').innerHTML = note.join('');
   const R = dati?.Q.rilievo;
@@ -274,15 +275,19 @@ function testi(m, vedi, stato, posateL, pk) {
 const POP = { mezzi: 'mezzi-btn', livelli: 'livelli-btn' };
 export const isOpen = () => (!$('mezzi').hidden ? 'mezzi' : !$('livelli').hidden ? 'livelli' : null);
 function position(id) {
-  const card = $(id), w = $('wrap').getBoundingClientRect(), b = $(POP[id]).getBoundingClientRect(), h = card.offsetHeight, g = 12;
-  card.style.top = Math.max(g, Math.min(b.top - w.top - 8, w.height - h - g)) + 'px';
+  const card = $(id), w = $('wrap').getBoundingClientRect(), b = $(POP[id]).getBoundingClientRect(), g = 12, H = altezzaUtile(w);
+  card.style.maxHeight = (H - 2 * g) + 'px';
+  const h = card.offsetHeight;
+  card.style.top = Math.max(g, Math.min(b.top - w.top - 8, H - h - g)) + 'px';
 }
+let seguiti = false;
+function segui() { if (seguiti) return; seguiti = true; for (const id of Object.keys(POP)) seguiScheda($(id), () => position(id)); }
 export function open(id) {
   if (!POP[id]) return;
   beforeOpenFn(); close(id === 'mezzi' ? 'livelli' : 'mezzi');
   const card = $(id); card.hidden = false; $(POP[id]).setAttribute('aria-expanded', 'true');
   if (id === 'livelli') applica();
-  position(id); card.focus({ preventScroll: true });
+  segui(); position(id); card.focus({ preventScroll: true });
 }
 // chiude un menu (o quello aperto); restituisce l'id del pulsante a cui tornare
 export function close(id = isOpen()) {

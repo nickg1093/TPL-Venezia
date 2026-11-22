@@ -1,6 +1,6 @@
 # STATO DEL PROGETTO — da leggere per primo in ogni nuova conversazione
 
-Aggiornato il **21/11/2026** (v33.11 su `main` dopo l'audit finale, da pubblicare con il deploy manuale; online la v33.10; vedi PASSAGGIO_CONSEGNE.md), ultimo commit di codice `0842dd0`. Questo file dice dove siamo, come si lavora e dove guardare.
+Aggiornato il **22/11/2026** (v33.12 su `main` dopo la verifica finale: passerelle, acqua alta, orari senza rete, schede, posizione del mezzo; da pubblicare con il deploy manuale; online la v33.10; vedi PASSAGGIO_CONSEGNE.md). Questo file dice dove siamo, come si lavora e dove guardare.
 I dettagli stanno in **README.md** (riferimento completo, con sezioni numerate) e **CRITERI.md** (regole obbligatorie): qui non si ripetono,
 si indica la sezione. Chi modifica il progetto aggiorna anche questo file (sezioni 5, 8 e 9).
 
@@ -16,7 +16,7 @@ di percorso con viaggio guidato, avvisi di arrivo (notifiche push), avvisi di se
 | Sito | https://veneziatpl.onrender.com (Render, piano gratuito, 512 MB, regione Virginia) |
 | Codice | https://github.com/nickg1093/TPL-Venezia, ramo `main` (repository pubblico) |
 | Copia sul PC dell'utente | `D:\Downloads\TPL-Venezia` (Windows, clone git, aggiornata con GitHub Desktop) |
-| Versione | **v33.11** su `main` / v33.10 online (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v33`) |
+| Versione | **v33.12** su `main` / v33.10 online (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v33.12`) |
 | Tecnologia | Node.js 22, **nessun framework, nessun database**; dipendenze: solo `leaflet` e `protobufjs` |
 
 ## 2. Regole di lavoro (non negoziabili)
@@ -79,6 +79,11 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 
 ## 5. Stato attuale
 
+- **v33.12 (22/11/2026, verifica e correzioni finali)**: passerelle confrontate con tavole e OpenStreetMap (6 capi corretti, Zattere
+  verificate), passerelle come archi del grafo pedonale e costo dell'acqua anche ai capi dei percorsi a piedi, avviso oltre +120 cm,
+  orari programmati di oggi senza rete (`public/js/orarioggi.js`), fermate e linee salvate usate all'apertura senza rete, «Posizione
+  aggiornata N secondi/minuti fa», schede agganciate ai pulsanti ricalcolate a ogni cambio. Dettagli in README §12 e CHANGELOG.md.
+  Prove: vedi PASSAGGIO_CONSEGNE.md §9.
 - **v33.11 (21/11/2026, audit finale)**: correzioni di sicurezza e privacy, «Novità delle versioni» nelle Informazioni, fonte dell'Atlante
   passerelle; dettagli in README §12 e CHANGELOG.md. **v33.10 pubblicata il 21/11/2026**: acqua alta, passerelle, rilievo RAMSES, uso senza rete.
 - **v33.8 (21/11/2026)**: v33.7 con il rilievo in tessere caricate a richiesta (`public/acqua/rilievo/`, pubblicabili
@@ -220,8 +225,8 @@ intestazione e §12 del README, CHANGELOG.md; `GUIDA_VER` solo se si aggiungono 
 6. **Acqua alta (pubblicata con la v33.10; restano solo i punti d ed e)**: (a) provare in locale; (b) aggiungere `genera-acqua.js` a `dati.yml` e pubblicare i file sul ramo `dati`
    (CDN) invece che da `public/acqua`; (c) **rilievo RAMSES** (v33.7–v33.9 in locale): le condizioni d'uso del sito di Insula consentono uso, riproduzione ed elaborazione,
    anche parziale, con «Fonte informativa: Insula spa»; le tessere `public/acqua/rilievo/` sono pubblicabili insieme all'acqua alta (quando l'utente lo dice);
-   l'archivio originale `dati-ramses/` resta fuori da GitHub; (d) i capi delle passerelle sono rivisti a mano (`data/acqua/passerelle-atlante.json`):
-   controllarli a occhio sulla mappa; (e) i cambi a piedi tra fermate calcolati dal server non considerano ancora l'acqua.
+   l'archivio originale `dati-ramses/` resta fuori da GitHub; (d) i capi delle passerelle sono rivisti a mano (`data/acqua/passerelle-atlante.json`; il 22/11/2026 tutti i
+   ricalcolati confrontati con tavole e OSM, 6 corretti; restano da guardare sul posto T3.2A e T9.2B, vedi PASSAGGIO_CONSEGNE.md §10); (e) i cambi a piedi tra fermate calcolati dal server non considerano ancora l'acqua.
 7. **Proseguire sullo stesso mezzo al capolinea** (richiesto il 19/11/2026, rinviato): nei GTFS ACTV `block_id` è vuoto in tutte le corse e il
    tempo reale non dice quale corsa farà dopo lo stesso mezzo. Si riprende se ACTV pubblica i turni.
 8. **Push per una coincidenza persa**: oggi il server avvisa di soppressioni, fermate saltate e ritardi della singola corsa; un avviso «il cambio
@@ -249,7 +254,7 @@ Per «I miei viaggi» e i link: la riapertura è in `public/js/percorso.js` (`sh
 Per lo sciopero: metadati in `avvisi.js` (`fasceOf`, `addStrikeInfo`, `strikeMeta`), scheda e pulsante in `public/js/app.js` (`strikeUpdate`,
 `strikeLayout`) e testi in `public/js/avvisi.js` (`strikeCardHtml`, `strikeNoteHtml`); le prove d'interfaccia fingono lo sciopero intercettando `/api/avvisi`.
 Schermo intero: `public/js/schermo.js` (scelta in Informazioni). Ultimo rilevamento del mezzo: `live.js` (`noTs`), `public/js/app.js`
-(`vehUpdHtml`). Modifica dei percorsi: `public/js/percorso.js` (`lstRow`, `draftHtml`, `saveDraft`, `updateRecent`) e `public/js/fav.js`
+(`vehUpdHtml`) e `public/js/util.js` (`etaPosizione`, testo «N secondi/minuti fa»). Modifica dei percorsi: `public/js/percorso.js` (`lstRow`, `draftHtml`, `saveDraft`, `updateRecent`) e `public/js/fav.js`
 (`updateRoute`, `addRoute`); prova d'interfaccia `tests/ui/modifica.py`.
 Aggiornamenti dello sciopero: `thread` in `avvisi.js` (ramo «SCIOPERO», `STRIKE_STOP_RE`, `strikeUpdText`). Icone: ogni simbolo va DENTRO `<svg>`
 in `public/icons/sprite.svg` (`tests/icone.test.js`); un file non valido rende vuote tutte le icone.

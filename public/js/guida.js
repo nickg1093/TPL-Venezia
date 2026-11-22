@@ -7,7 +7,7 @@
 // Memoria sul telefono (localStorage «tpl.guida»): versione della guida vista e quali parti; nessun dato esce dal telefono.
 import { esc, icon } from './util.js';
 
-export const GUIDA_VER = 'v33';
+export const GUIDA_VER = 'v33.12';
 const KEY = 'tpl.guida';
 
 // Nei testi: html scritto qui (fisso), mai dati che arrivano da fuori.
@@ -55,6 +55,7 @@ const GUIDA_PANNELLO = [
 ];
 // novità senza un punto nell'app (solo a chi aveva già visto la guida di una versione precedente)
 const NOVITA_EXTRA = [
+  { since: 'v33.12', icon: 'info', title: 'Orari di oggi anche senza rete', html: 'Senza connessione il pannello della fermata mostra gli <b>orari programmati di oggi</b> salvati nel telefono, scritti chiaramente come tali (niente ritardi né mezzi). Nel pannello del mezzo vedi da quanti <b>secondi o minuti</b> è arrivata la sua ultima posizione. Con l\'acqua alta il percorso a piedi usa meglio le <b>passerelle</b> posate.' },
   { since: 'v33', icon: 'info', title: 'Anche senza connessione', html: 'Senza rete l\'app si apre lo stesso e lo dice: marea, avvisi e acqua alta restano consultabili con l\'<b>ora dei dati salvati</b>. Nelle <b>Informazioni</b> trovi anche «Schermo intero» e lo storico delle novità.' },
   { since: 'v31', icon: 'info', title: 'Testo più grande, uscite evitate', html: 'Nelle <b>Informazioni</b> puoi ingrandire tutto il testo dell\'app. Nell\'app installata, con niente aperto, il primo «indietro» chiede conferma prima di uscire. Se le notifiche smettono di funzionare, l\'app te lo dice e le riattivi con un tocco.' },
   { since: 'v30', icon: 'route', title: 'Inizia il viaggio', html: 'Scelta una soluzione che parte a breve, tocca <b>Inizia il viaggio</b>: ti avviso quando uscire, cambiare e scendere, anche con l\'app chiusa, e con l\'app aperta vedi passo per passo cosa fare. I viaggi per un altro giorno li <b>salvi</b> in «I miei viaggi», li metti nel <b>calendario</b> o li <b>condividi</b> come testo.' },

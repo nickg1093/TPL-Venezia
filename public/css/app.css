@@ -1375,3 +1375,5 @@ body.busy #panel:not([hidden])::before,body.busy .dock::before{content:"";positi
 
 /* storico delle novità (Informazioni) */
 .ip-news{margin:0 0 12px;padding-left:18px}.ip-news li{margin:0 0 8px}.ip-news .nt{display:block;font-weight:700}.ip-news .k,.ip-news .ic{vertical-align:-3px}
+.off-note{margin:8px 12px 6px}
+.vupd.na{color:var(--muted);font-style:italic}   /* mezzo che non trasmette l'ora della posizione (v33.12) */

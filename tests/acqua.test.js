@@ -170,7 +170,41 @@ test('percorso a piedi con l\'acqua alta: evita la calle allagata, usa la passer
   const su = await net.route(A0, B0, 3000, costoDi({ cm: 100, Q, pass }));
   assert.ok(Math.abs(su.m - 150) < 5, `sulla passerella: ${su.m}`);
   const r2 = X.riassunto(su.archi, 100, Q, pass); assert.ok(r2.passerella > 100 && r2.passerelle[0].id === 'P' && r2.bagnati < 10, JSON.stringify({ ...r2, parti: r2.parti.length }));
-  // distanze verso le fermate: metri veri del percorso più asciutto
+  // distanze verso le fermate: metri veri del percorso più asciutto, più una parte del costo dell'acqua inevitabile (partenza e arrivo
+  // sono sulla calle bassa: dalla v33.12 anche i pezzi di tratto ai capi pagano l'acqua)
   const d = await net.distances(A0, [{ key: 'b', ...B0 }], 3000, 1, costoDi({ cm: 100, Q, pass: null }));
-  assert.ok(Math.abs(d.get('b') - evita.m) < 3, `${d.get('b')} ≈ ${evita.m}`);
+  assert.ok(d.get('b') >= evita.m - 3 && d.get('b') < evita.m + 40, `${d.get('b')} ≈ ${evita.m} + acqua ai capi`);
+});
+
+test('passerelle come archi della rete: usate dove OpenStreetMap non ha la calle, solo se posate; oltre il livello garantito avviso', async () => {
+  const X = await load('acqua'), { createNet } = await load('pedoni');
+  const T = tilesOf(opl()), net = createNet({ CL: P.CL, CO: P.CO, loadTile: async c => T[c] || null });
+  // tutta la zona bassa (+90): ogni calle è allagata a +100
+  const G = { lat0: LAT0 - 0.0005, lon0: LON0 - 0.0005, dlat: 0.00018, dlon: 0.00026, righe: 30, colonne: 30 };
+  const Q = X.quoteDa({ f: 1, g: G, r: Array.from({ length: G.righe }, (_, i) => [i, 0, X.ALFA[20].repeat(G.colonne)]) });
+  // passerella in diagonale attraverso un «campo» (nessuna strada nella rete), da un incrocio all'altro, più un capo a 15 m da una calle
+  const diag = { id: 'D', d: 'Da A a B', q: 95, pts: [pt(2, 2), pt(3, 3)], parti: [[pt(2, 2), pt(3, 3)]] };
+  const coda = { id: 'C', d: 'Da B a C', q: 95, pts: [pt(3, 3), [pt(3, 3)[0] + 0.00014, pt(3, 3)[1] + 0.0003]], parti: [[pt(3, 3), [pt(3, 3)[0] + 0.00014, pt(3, 3)[1] + 0.0003]]] };
+  const A0 = { lat: pt(2, 2)[0], lon: pt(2, 2)[1] }, B0 = { lat: pt(3, 3)[0], lon: pt(3, 3)[1] };
+  const costoDi = acqua => { const m = new Map(); const f = e => { if (!m.has(e)) m.set(e, X.costo(X.bagnato(e, acqua.cm, acqua.Q, acqua.pass))); return m.get(e); }; f.ok = e => !!acqua.pass?.byId?.has(e.p); return f; };
+  await net.route(A0, B0, 3000);                                   // carica le mattonelle
+  assert.strictEqual(net.passerelle([diag, coda]), 2, 'aggiunte subito: mattonelle già caricate');
+  assert.strictEqual(net.passerelle([diag, coda]), 2, 'stesso tracciato: non si ripete');
+  assert.ok([...net.passerelleAggiunte().values()].every(v => v.agganciata));
+  // d'estate o senza acqua: la diagonale non esiste per la ricerca
+  const senza = await net.route(A0, B0, 3000);
+  assert.ok(senza.m > 80, `a scacchiera: ${senza.m}`);
+  const nonPosata = await net.route(A0, B0, 3000, costoDi({ cm: 100, Q, pass: X.indicePasserelle([], 9, 120) }));
+  assert.ok(nonPosata.m > 80, 'passerella non posata: niente diagonale');
+  // posata: si cammina sulla diagonale, all'asciutto
+  const pass = X.indicePasserelle([diag, coda], 9, 120);
+  const su = await net.route(A0, B0, 3000, costoDi({ cm: 100, Q, pass }));
+  const dd = Math.hypot(DLAT * 111320, DLON * 111320 * Math.cos(LAT0 * Math.PI / 180));
+  assert.ok(Math.abs(su.m - dd) < 3, `diagonale ${su.m} ≈ ${dd}`);
+  const r = X.riassunto(su.archi, 100, Q, pass);
+  assert.ok(r.bagnati < 3 && r.passerella > dd - 3 && r.passerelle.some(p => p.id === 'D') && r.oltre === 0, JSON.stringify({ ...r, parti: 0 }));
+  // oltre +120: stessa strada (meglio della calle allagata) ma segnalata come da verificare
+  const pass2 = X.indicePasserelle([diag, coda], 9, 120), su2 = await net.route(A0, B0, 3000, costoDi({ cm: 130, Q, pass: pass2 }));
+  const r2 = X.riassunto(su2.archi, 130, Q, pass2);
+  assert.ok(r2.oltre > dd - 3 && r2.bagnati < 3, JSON.stringify({ ...r2, parti: 0 }));
 });

@@ -97,6 +97,7 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 | `js/nav.js` | Tasto e gesto **«indietro»** del sistema: una voce di cronologia per ogni livello aperto. |
 | `js/percorso.js` | Pianificatore lato telefono: punti di partenza/arrivo, quando, opzioni, soluzioni, dettaglio, disegno sulla mappa. |
 | `js/viaggio.js` | Viaggio guidato («In viaggio», notifiche, schermo acceso, tempo reale della corsa che conta), «I miei viaggi», proposta esatta (firma, link, riapertura), testo da condividere, posizione a fasi. |
+| `js/orarioggi.js` | **Orari programmati di oggi senza rete** (v33.12): file per giorno del CDN salvati sul telefono e partenze calcolate quando il server non risponde (README §12). |
 | `js/fissi.js` | **Dati fissi sul telefono**: fermate, linee e tracciati salvati nella cache del sito (`tpl-fissi-1`), scaricati dal CDN con controllo dell'impronta, o dal server. Restituisce gli stessi dati dei vecchi `/api/stops`, `/api/routes`, `/api/shapes`. |
 | `js/pedoni.js` | **Percorsi a piedi**: rete pedonale in mattonelle caricate quando servono, aggancio dei punti alla strada, ricerca del percorso (Dijkstra/A*). Puro, senza import (provato anche con `node --test`). |
 | `js/acqua.js` | **Acqua alta**: regole pure (quote stimate delle calli, passerelle posate, stagione, MOSE, metri bagnati di un tratto, costo per il percorso). Provato con `node --test`. |
@@ -341,6 +342,7 @@ I bersagli di tocco restano tra 44 e 48 px. La regola è in testa alla sezione v
 | GTFS statici | repository GitHub (`data/gtfs/`) | sempre | aggiunti dal workflow, mai sovrascritti |
 | Archivio avvisi e interpretazioni AI | ramo GitHub `archivio-avvisi` | 6 mesi letti dal server | scritto solo dal workflow |
 | Fermate, linee, tracciati, rete pedonale | telefono (cache del sito `tpl-fissi-1`) | finché non cambiano | riscaricati solo con una nuova versione dei GTFS o della rete; le versioni vecchie si cancellano da sole |
+| Orari programmati per l'uso senza rete (v33.12) | telefono (`tpl-fissi-1`, chiavi `/__orari/<impronta>`; `tpl.orari`; ultimo indice dei dati fissi `tpl.fissi.indice`) | ieri, oggi, domani | file per giorno del CDN della versione in uso, verificati con l'impronta; gli altri giorni si cancellano da soli |
 | File per i telefoni (dati fissi, mattonelle) | ramo GitHub `dati`, letto dal CDN jsDelivr | sempre | scritto solo dal workflow `dati.yml` |
 | Stato tempo reale, cache | memoria del server | fino al riavvio | si ricostruisce in pochi secondi |
 
@@ -583,6 +585,29 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 ## 12. Novità della v33
 
 Pubblicata online dalla **v33.10** (21/11/2026). Le voci qui sotto erano state sviluppate in locale e sono ora tutte su `main`.
+- **v33.12 (22/11/2026, verifica e correzioni finali)**:
+  - *Passerelle*: tracciati ricalcolati confrontati con le tavole PDF (render delle pagine) e con OpenStreetMap (API ufficiale
+    `api.openstreetmap.org/api/0.6/map`: nomi delle vie lungo ogni tracciato e pontili vicini ai capi). Capi corretti in
+    `data/acqua/passerelle-atlante.json` (campo `verifica`): T1.3A, T1.4A, T2.3A, T5.2B, T5.2C, T6.1A; file rigenerati con
+    `genera-acqua.js --mattonelle` (rete del ramo `dati`, `public/acqua/{indice,passerelle,quote}.json`; il rilievo non cambia). Zattere
+    (T6.2A/B, dalla tavola 6.2) verificate: coerenti con tavola e OSM. Overpass non era raggiungibile (server pieni): usata l'API principale.
+  - *Grafo pedonale* (`public/js/pedoni.js`): `net.passerelle(list)` / `preparaPasserelle(box)` aggiungono ogni passerella come catena di
+    archi (`e.v = 1`, `e.s = 4`, `e.p` = codice) agganciata alla rete ai capi (incrocio entro 6 m, altrimenti punto del tratto più vicino
+    entro 30 m) e agli incroci lungo il tracciato; la ricerca li usa solo se `costo.ok(e)` (passerella posata al livello del calcolo,
+    `camminata.js`). I pezzi di tratto ai capi pagano il costo dell'acqua in proporzione (prima erano gratis) e i metri veri lo tolgono
+    (`veri`). `acqua.js`: `bagnato` conta tutto su passerella per gli archi `s & 4`; `indicePasserelle(list, raggio, garantiti)` con
+    `byId`; oltre il livello garantito (`garantiti`, +120) i metri su passerella vanno anche in `oltre` (costo `OLTRE_PASS`, testo
+    «da verificare sul posto»).
+  - *Senza rete*: `public/js/orarioggi.js` salva in «tpl-fissi-1» (`/__orari/<impronta>`, metadati in `localStorage['tpl.orari']`) i file
+    per giorno del CDN dei giorni che il server indica in `/api/fissi` (`src[].orari`: oggi e domani se usa la stessa versione,
+    `live.hashFor`), verificati con l'impronta del nome; tiene ieri/oggi/domani, scarica domani solo dopo le 20 e non con «risparmio
+    dati». Senza connessione `app.js: loadDepartures` calcola le partenze programmate (stessi campi di `/api/stop`, `live: false`) e il
+    pannello dice «Senza rete · orari programmati». `fissi.js`: ultimo indice valido salvato (`tpl.fissi.indice`) usato senza rete;
+    `app.js: staticiSenzaRete` carica fermate e linee salvate anche se il server non risponde.
+  - *Pannello della corsa*: `util.js: etaPosizione` («Posizione aggiornata N secondi/minuti fa», «dato non recente» da 3 minuti, ora
+    futura nascosta), aggiornato ogni secondo solo con il pannello aperto e visibile; mezzo senza ora: «Ora della posizione non trasmessa».
+  - *Schede agganciate ai pulsanti*: `util.js: seguiScheda` (ResizeObserver + rotazione + `visualViewport`) e `altezzaUtile` in
+    `favs.js`, `tide.js`, `avvisi.js`, `livelli.js`: niente altezza residua cambiando scheda Fermate/Percorsi, niente parti fuori schermo.
 - **v33.11 (21/11/2026, audit finale)**: Informazioni: privacy allineata a ciò che fa davvero il server (conteggi giornalieri con impronta
   dell'IP a sale giornaliero, solo in memoria), fonte dell'**Atlante passerelle** (Comune di Venezia – Centro Maree, con Veritas) tra le
   fonti, sezione **«Novità delle versioni»** (storico sintetico da `guida.js: storico()`); novità «Anche senza connessione» nella guida;

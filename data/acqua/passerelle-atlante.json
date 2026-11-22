@@ -5,7 +5,8 @@
   "Escluso il percorso T1.7 D (lunghezza 0 nella tabella 2019; 8 m nella scheda 2023, ma posizione non ricavabile in modo affidabile dalla tavola). T1.1 E (0 m nel 2019) è incluso con i dati della scheda 2023. Le tavole senza numero nella tabella sono indicate con il numero dedotto dall’ordine (tavola: null).",
   "a, b: punti di partenza e arrivo (gradi). geo=osm: cercati per nome su OpenStreetMap (© OpenStreetMap contributors, ODbL); geo=stima: almeno un capo stimato a mano dalla descrizione; geo=incerto: posizione approssimata, il tracciato resta indicativo.",
   "quota: livello di marea (cm sullo zero mareografico di Punta della Salute) da cui il percorso viene allestito. Stagione del servizio: 15 settembre – 30 aprile; percorsi garantiti fino a +120 cm.",
-  "agg: '2023' = lunghezza, quota e descrizione dalla scheda dell'Atlante San Marco 2023 (la tabella riassuntiva in fondo allo stesso PDF riporta ancora i valori 2019). T1.2 B: posa da +90 a +110 cm, si usa +110 (percorso completo)."
+  "agg: '2023' = lunghezza, quota e descrizione dalla scheda dell'Atlante San Marco 2023 (la tabella riassuntiva in fondo allo stesso PDF riporta ancora i valori 2019). T1.2 B: posa da +90 a +110 cm, si usa +110 (percorso completo).",
+  "verifica: capi corretti il 22/11/2026 confrontando le tavole dell'Atlante con OpenStreetMap (API ufficiale, nomi e geometrie delle vie): T1.3A, T1.4A, T2.3A, T5.2B, T5.2C, T6.1A; gli altri percorsi ricalcolati sono risultati coerenti con le tavole e con i nomi delle vie di OSM (controllo a vista, precisione di qualche metro)."
  ],
  "stagione": {
   "da": "09-15",
@@ -292,21 +293,18 @@
    "quota": 110,
    "a": [
     [
-     45.432,
-     12.333
+     45.43272,
+     12.33223
     ]
    ],
    "b": [
     [
-     45.4327,
-     12.33228
-    ],
-    [
-     45.43269,
-     12.33224
+     45.43184,
+     12.33201
     ]
    ],
-   "geo": "stima"
+   "geo": "osm",
+   "verifica": "2026-11-22: Fondamenta Corner Zaguri da Calle Zaguri verso sud (tavola 1.3 p.6; OSM)"
   },
   {
    "id": "T1.3B",
@@ -381,18 +379,19 @@
    "quota": 100,
    "a": [
     [
-     45.43515,
-     12.33715
+     45.43621,
+     12.33919
     ]
    ],
    "b": [
     [
-     45.43523,
-     12.33752
+     45.4359,
+     12.33875
     ]
    ],
-   "geo": "stima",
-   "agg": "2023"
+   "geo": "osm",
+   "agg": "2023",
+   "verifica": "2026-11-22: piede ovest del Ponte de la Guerra, attraverso Campo della Guerra (tavola 1.4 p.8; OSM)"
   },
   {
    "id": "T1.5A",
@@ -1067,21 +1066,18 @@
    "quota": 105,
    "a": [
     [
-     45.43828,
-     12.34273
+     45.4387,
+     12.34294
     ]
    ],
    "b": [
     [
-     45.43882,
-     12.34284
-    ],
-    [
-     45.439,
-     12.343
+     45.43863,
+     12.34363
     ]
    ],
-   "geo": "stima"
+   "geo": "osm",
+   "verifica": "2026-11-22: Barbaria de le Tole verso est dall'incrocio con Calle de l'Ospedaleto (tavola 2.3 p.7; OSM)"
   },
   {
    "id": "T2.4A",
@@ -1688,25 +1684,18 @@
    "quota": 100,
    "a": [
     [
-     45.43788,
-     12.32119
-    ],
-    [
-     45.43786,
-     12.32125
+     45.43789,
+     12.32117
     ]
    ],
    "b": [
     [
-     45.43875,
-     12.32128
-    ],
-    [
-     45.43865,
-     12.3214
+     45.43797,
+     12.32062
     ]
    ],
-   "geo": "stima"
+   "geo": "osm",
+   "verifica": "2026-11-22: dal piede ovest del Ponte dei Tolentini verso ovest (tavola 5.2 p.5; OSM)"
   },
   {
    "id": "T5.2C",
@@ -1717,25 +1706,18 @@
    "quota": 105,
    "a": [
     [
-     45.43796,
-     12.31778
-    ],
-    [
-     45.4379,
-     12.318
+     45.43795,
+     12.32058
     ]
    ],
    "b": [
     [
-     45.438,
-     12.3183
-    ],
-    [
-     45.4377,
-     12.3186
+     45.4378,
+     12.32051
     ]
    ],
-   "geo": "stima"
+   "geo": "osm",
+   "verifica": "2026-11-22: dal capo ovest del percorso B verso sud, lungo il lato ovest del Comando di Polizia locale (tavola 5.2 p.5; OSM)"
   },
   {
    "id": "T6.1A",
@@ -1756,15 +1738,12 @@
    ],
    "b": [
     [
-     45.4327,
-     12.3269
-    ],
-    [
-     45.433,
-     12.3268
+     45.43297,
+     12.3255
     ]
    ],
-   "geo": "stima"
+   "geo": "osm",
+   "verifica": "2026-11-22: dal pontile lungo Fondamenta e Calle del Tragheto verso ovest, tagliato alla lunghezza ufficiale (tavola 6.1 p.3; OSM)"
   },
   {
    "id": "T6.2A",

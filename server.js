@@ -198,7 +198,7 @@ const validStyle = st => {
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
-const ABOUT_VERSION = 'v33.11';
+const ABOUT_VERSION = 'v33.12';
 // DATI FISSI sul telefono e dal CDN (fissi.js): file per versione dei GTFS con impronta, indice del ramo «dati» letto da GitHub.
 // DATI_REPO: repository del ramo dati (predefinito: quello da cui Render ha preso il codice); DATI_CDN=0 spegne il CDN (tutto dal server).
 const DATI_REPO = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/.test(process.env.DATI_REPO || '') ? process.env.DATI_REPO : (process.env.RENDER_GIT_REPO_SLUG || 'nickg1093/TPL-Venezia');
@@ -208,7 +208,11 @@ function fissiManifest() {
   const idx = datiRemote.get(), src = [];
   for (const i of IDS) {
     const c = ready[i] ? fissiStore.get(i, D[i]) : null; if (!c) continue;
-    src.push({ id: i, v: c.v, cdn: !!idx?.fissi.has(`${i}/${c.v}`), ...Object.fromEntries(fissi.NOMI.map(k => [k, c.files[k].sha])) });
+    // orari per giorno (CDN, orari.js) per l'uso SENZA RETE sul telefono (public/js/orarioggi.js): oggi e domani, solo se quel giorno
+    // usa la stessa versione dei dati fissi (stesse fermate e linee) e il ramo «dati» ha quella versione
+    const oggi = require('./calendar').romeYmd(), orariGiorni = idx?.orari?.has(`${i}/${c.v}`)
+      ? [oggi, require('./calendar').addDays(oggi, 1)].filter(d => String(live.hashFor(i, d) || '').slice(0, 12) === c.v) : [];
+    src.push({ id: i, v: c.v, cdn: !!idx?.fissi.has(`${i}/${c.v}`), ...Object.fromEntries(fissi.NOMI.map(k => [k, c.files[k].sha])), ...(orariGiorni.length ? { orari: orariGiorni } : {}) });
   }
   return { formato: fissi.FORMATO, cdn: datiRemote.bases(), src, pedoni: idx?.pedoni || null };
 }

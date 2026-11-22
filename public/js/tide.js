@@ -1,5 +1,5 @@
 // FINESTRA MAREA: livello attuale, categoria, tendenza, prossimi estremi e grafico delle ultime ore (dati CPSM Venezia tramite /api/tide).
-import { $, esc, icon, hm, api } from './util.js';
+import { $, esc, icon, hm, api, seguiScheda, altezzaUtile } from './util.js';
 
 const btn = $('tide-btn'), card = $('tide'), body = $('tide-body');
 let data = null, err = null, timer = null, mose = null, moseOpen = false, drawnEv = null;   // dettaglio delle 4 barriere: chiuso di base, resta come lo lascia l'utente
@@ -223,8 +223,10 @@ function moseHtml() {
     + `<p class="tide-foot">${mose.aggiornato ? `Stato aggiornato dall'Autorità alle ${dayTag(mose.aggiornato)}${hm(mose.aggiornato)}` : 'Stato'}${mose.stale ? ' · <b>non aggiornato di recente</b>' : ''}. Il sollevamento si decide con previsioni oltre 110 cm; informazione indicativa.<br>Fonte:<a href="${esc(safeUrl(mose.fonte?.url || ''))}" target="_blank" rel="noopener noreferrer">${esc(mose.fonte?.nome || 'Autorità per la Laguna di Venezia')} · Operatività M.O.S.E.</a></p></section>`;
 }
 function position() {   // la scheda si allinea al suo pulsante, senza uscire dalla mappa
-  const w = $('wrap').getBoundingClientRect(), b = btn.getBoundingClientRect(), h = card.offsetHeight, g = 12;
-  card.style.top = Math.max(g, Math.min(b.top - w.top - 8, w.height - h - g)) + 'px';
+  const w = $('wrap').getBoundingClientRect(), b = btn.getBoundingClientRect(), g = 12, H = altezzaUtile(w);
+  card.style.maxHeight = (H - 2 * g) + 'px';
+  const h = card.offsetHeight;
+  card.style.top = Math.max(g, Math.min(b.top - w.top - 8, H - h - g)) + 'px';
 }
 // marea più alta in un periodo (osservata o prevista), per il pianificatore: { cm, kind, ts } oppure null se il periodo esce dai dati
 // (la previsione arriva a circa 18 ore). Usa i dati già scaricati per il pulsante della marea: nessuna richiesta in più.
@@ -248,6 +250,7 @@ export function open(beforeOpen) {
 }
 export function close() { if (card.hidden) return; card.hidden = true; btn.setAttribute('aria-expanded', 'false'); clearInterval(timer); if (cursorT != null) window.dispatchEvent(new CustomEvent('tpl:tide-cursor')); }
 export function init(beforeOpen) {
+  seguiScheda(card, position);
   body.addEventListener('toggle', e => { if (e.target.classList?.contains('mose-d')) { moseOpen = e.target.open; position(); } }, true);   // «toggle» non risale: in cattura
   body.addEventListener('click', e => { if (e.target.closest('.tide-warn')) window.dispatchEvent(new CustomEvent('tpl:water-alert')); });
   btn.onclick = () => (card.hidden ? open(beforeOpen) : close());

@@ -642,6 +642,13 @@ function dataFor(id, date) {
   }
   return { loading: true };
 }
+// impronta della versione dei GTFS usata per una data (oggi: quella in memoria; altre date: la scelta dell'archivio, se esatta), o null.
+// Serve a dire ai telefoni quali file degli orari per giorno corrispondono ai dati fissi che hanno (fissiManifest in server.js).
+function hashFor(id, date) {
+  if (!cal.isYmd(date) || date === cal.romeYmd()) return D[id]?.meta?.hash || null;
+  const r = store.choose(catalog[id] || [], date);
+  return r.pick && !r.approx ? r.pick.hash : null;
+}
 // Date selezionabili: dal primo all'ultimo giorno coperto dalle versioni in archivio (calendari + eccezioni), per ciascun servizio e in totale.
 function dateRange() {
   const per = {}; let min = '99999999', max = '00000000';
@@ -722,5 +729,5 @@ function startLoops() {
   })();
 }
 
-module.exports = { Feed, events, D, S, ready, IDS, REFRESH_MS, refresh, tripDetail, setTurnoCheck, setPassCheck, dedupePassages, tripNow, noteOf, dataFor, dateRange, startStatic, startLoops, adopt, syncStatic, gtfsStatus,
+module.exports = { Feed, events, D, S, ready, IDS, REFRESH_MS, refresh, tripDetail, setTurnoCheck, setPassCheck, dedupePassages, tripNow, noteOf, dataFor, dateRange, hashFor, startStatic, startLoops, adopt, syncStatic, gtfsStatus,
   version: () => version, stopsCache: () => cachedStopsGzip, setStopsCache: v => { cachedStopsGzip = v; } };

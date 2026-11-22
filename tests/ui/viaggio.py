@@ -6,7 +6,7 @@ from playwright.sync_api import sync_playwright
 BASE = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:3111'
 OUT = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else '/tmp/ui'); OUT.mkdir(parents=True, exist_ok=True)
 STUB = (pathlib.Path(__file__).parent / 'leaflet-stub.js').read_text()
-GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v33', mappa:true, pannello:true}))}catch(e){}"
+GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v33.12', mappa:true, pannello:true}))}catch(e){}"
 fails = []
 def check(ok, msg):
     print(('  ok   ' if ok else '  FAIL ') + msg)

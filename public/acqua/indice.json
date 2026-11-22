@@ -1,16 +1,16 @@
 {
  "formato": 1,
- "v": "627d6e711e38",
- "creato": "2026-11-21T14:52:38.050Z",
- "rete": "locale",
+ "v": "dd9704cb24bd",
+ "creato": "2026-11-22T10:21:17.677Z",
+ "rete": "b2f1bb3e30622032",
  "files": {
   "passerelle": {
-   "sha": "d601c03e6537979c658757c9bd2060c5a2a63f9d6153c40bd1a6bfe122a0afb3",
-   "bytes": 13456
+   "sha": "56198924a6ed27d867671bb14b580c706e4ebe0dd3ed6582eee6afcafefe7c14",
+   "bytes": 13386
   },
   "quote": {
-   "sha": "af20b675f1c0d37fcf43c7e2b38c59b97191340613734f444cab107636187c90",
-   "bytes": 29513
+   "sha": "fed78317f1fb2239819331817649bd648c20c65ecba277500ba77430df8728de",
+   "bytes": 29078
   }
  }
 }

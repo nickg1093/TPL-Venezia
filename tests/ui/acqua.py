@@ -9,7 +9,7 @@ OUT = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else '/tmp/ui'); OUT.mkdir(p
 STUB = (pathlib.Path(__file__).parent / 'leaflet-stub.js').read_text()
 TESTO = os.environ.get('TESTO', '')
 TESTO_JS = f"try{{localStorage.setItem('tpl.testo','{TESTO}')}}catch(e){{}}" if TESTO in ('1.15', '1.3') else "0"
-GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v33', mappa:true, pannello:true}))}catch(e){}"
+GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v33.12', mappa:true, pannello:true}))}catch(e){}"
 # data finta in stagione (17 novembre 2026, 10:00 a Venezia) per avere sempre le passerelle, qualunque sia il giorno della prova
 CLOCK = "(()=>{const T0=Date.UTC(2026,10,17,9,0,0), d=T0-Date.now(), N=Date.now; Date.now=()=>N()+d; const D=Date; class F extends D{constructor(...a){super(...(a.length?a:[Date.now()]))}} F.now=Date.now; F.UTC=D.UTC; F.parse=D.parse; window.Date=F;})()"
 T0 = 1794906000000   # stesso istante in millisecondi

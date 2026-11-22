@@ -114,3 +114,27 @@ export async function api(url, { cache = 'no-store' } = {}) {
     return d;
   } finally { busyDelta(-1); }
 }
+// ultimo rilevamento del mezzo (pannello della corsa, app.js): «Posizione aggiornata N secondi/minuti fa», «dato non recente» da 3 minuti
+export function etaPosizione(ts, now, old = false) {                 // testo e stato da ora del rilevamento (ms) e adesso (ms)
+  if (!Number.isFinite(ts) || ts > now + 60e3) return null;           // ora futura (orologio del mezzo sbagliato): non si mostra
+  const sec = Math.max(0, Math.floor((now - ts) / 1000)), min = Math.floor(sec / 60), vecchio = !!old || sec >= 180;
+  const quanto = sec < 60 ? (sec === 1 ? '1 secondo fa' : `${sec} secondi fa`) : min < 60 ? (min === 1 ? '1 minuto fa' : `${min} minuti fa`) : 'più di un\'ora fa';
+  return { txt: `Posizione aggiornata ${quanto}${vecchio ? ' · dato non recente' : ''}`, vecchio };
+}
+// SCHEDE AGGANCIATE A UN PULSANTE (preferiti, marea, avvisi, menu della mappa): la posizione si ricalcola ogni volta che cambia l'altezza
+// della scheda (schede Fermate/Percorsi, modifica, dati arrivati dopo), lo schermo (rotazione, finestra) o la parte visibile (tastiera
+// aperta: visualViewport). Così la scheda non resta più alta o più bassa del dovuto e non esce dallo schermo. fn() riposiziona; si chiama
+// al più una volta per fotogramma e solo con la scheda aperta.
+export function seguiScheda(card, fn) {
+  let q = 0;
+  const go = () => { if (q || card.hidden) return; q = requestAnimationFrame(() => { q = 0; if (!card.hidden) fn(); }); };
+  try { new ResizeObserver(go).observe(card); } catch { /* browser vecchio: restano gli eventi qui sotto */ }
+  addEventListener('resize', go); addEventListener('orientationchange', go);
+  globalThis.visualViewport?.addEventListener('resize', go);
+  return go;
+}
+// altezza utile per una scheda dentro #wrap: la parte di mappa visibile (con la tastiera aperta è più bassa della finestra)
+export function altezzaUtile(w) {
+  const vv = globalThis.visualViewport, vis = vv ? vv.height + vv.offsetTop - w.top : innerHeight - w.top;
+  return Math.max(120, Math.min(w.height, vis));
+}

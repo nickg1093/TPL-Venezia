@@ -1,6 +1,6 @@
 // AVVISI DI INFOMOBILITÀ (client): pulsante con contatore, finestra con l'elenco, e interrogazioni per fermata (usate da mappa e pannello fermata).
 // I dati arrivano da /api/avvisi (sito ACTV + canale Telegram, già uniti e con linee/fermate collegate). Tutto il testo è mostrato come testo semplice (esc).
-import { $, esc, icon, srcIcon, api, badge } from './util.js';
+import { $, esc, icon, srcIcon, api, badge, seguiScheda, altezzaUtile } from './util.js';
 
 const btn = $('avvisi-btn'), card = $('avvisi'), body = $('avvisi-body'), cnt = $('avvisi-count');
 let data = null, err = null, timer = null, highlight = null, onChange = () => {};
@@ -191,8 +191,10 @@ async function load() {
   render(); onChange();
 }
 function position() {                                                // allineata al pulsante, come la scheda della marea
-  const w = $('wrap').getBoundingClientRect(), b = btn.getBoundingClientRect(), h = card.offsetHeight, g = 12;
-  card.style.top = Math.max(g, Math.min(b.top - w.top - 8, w.height - h - g)) + 'px';
+  const w = $('wrap').getBoundingClientRect(), b = btn.getBoundingClientRect(), g = 12, H = altezzaUtile(w);
+  card.style.maxHeight = (H - 2 * g) + 'px';
+  const h = card.offsetHeight;
+  card.style.top = Math.max(g, Math.min(b.top - w.top - 8, H - h - g)) + 'px';
 }
 export const isOpen = () => !card.hidden;
 export function open(id = null, beforeOpen) {
@@ -203,6 +205,7 @@ export function close() { if (card.hidden) return; card.hidden = true; highlight
 let before = () => {};
 export function init(beforeOpen, changed) {
   before = beforeOpen || before; onChange = changed || onChange;
+  seguiScheda(card, position);
   btn.onclick = () => (card.hidden ? open(null, before) : close());
   $('avvisi-close').onclick = () => { close(); btn.focus(); };
   window.addEventListener('resize', () => { if (!card.hidden) position(); });

@@ -53,10 +53,19 @@ const entro = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(nu
 function costoDi(acqua) {
   if (!acqua || !acqua.Q || !(acqua.cm >= X.MIN_ACQUA)) return null;
   const memo = new Map();
-  return e => { let c = memo.get(e); if (c == null) { c = X.costo(X.bagnato(e, acqua.cm, acqua.Q, acqua.pass)); memo.set(e, c); } return c; };
+  const f = e => { let c = memo.get(e); if (c == null) { c = X.costo(X.bagnato(e, acqua.cm, acqua.Q, acqua.pass)); memo.set(e, c); } return c; };
+  f.ok = e => !!acqua.pass?.byId?.has(e.p);                       // archi delle passerelle (pedoni.js): solo quelle posate a questo livello
+  return f;
 }
+// passerelle posate come archi della rete (pedoni.js): aggiunte una volta, usate solo quando il costo le ammette
+async function conPasserelle(n, acqua, box) {
+  if (!acqua?.pass?.byId?.size || !n.passerelle) return;
+  n.passerelle([...acqua.pass.byId.values()]);
+  if (box) await n.preparaPasserelle(box);
+}
+const boxDi = (pts, m) => { const la = pts.map(p => p.lat), lo = pts.map(p => p.lon), dl = m / 111320, dn = m / (111320 * Math.cos(la[0] * Math.PI / 180)); return [Math.min(...la) - dl, Math.min(...lo) - dn, Math.max(...la) + dl, Math.max(...lo) + dn]; };
 export async function distanze(da, fermate, enough = 14, ms = 4000, acqua = null) {
-  return entro((async () => { const n = await rete(); return n ? n.distances(da, fermate, LIMITE_M, enough, costoDi(acqua)) : null; })().catch(() => null), ms);
+  return entro((async () => { const n = await rete(); if (!n) return null; await conPasserelle(n, acqua, boxDi([da], 600)); return n.distances(da, fermate, LIMITE_M, enough, costoDi(acqua)); })().catch(() => null), ms);
 }
 // tratti della rete pedonale in un riquadro (per disegnare le calli allagate, livelli.js); null senza rete o con troppe mattonelle
 export async function tratti(bbox, max = 16, ms = 8000) {
@@ -65,6 +74,7 @@ export async function tratti(bbox, max = 16, ms = 8000) {
 export async function percorso(a, b, ms = 6000, acqua = null) {
   return entro((async () => {
     const n = await rete(); if (!n) return null;
+    await conPasserelle(n, acqua, boxDi([a, b], 300));
     const c = costoDi(acqua), r = await n.route(a, b, LIMITE_M + 500, c); if (!r) return null;
     const out = { m: r.m, pts: r.pts };
     if (c) out.acqua = { cm: acqua.cm, ...X.riassunto(r.archi, acqua.cm, acqua.Q, acqua.pass) };

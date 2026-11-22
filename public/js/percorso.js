@@ -83,7 +83,7 @@ async function acquaA(ms) {
     await Promise.race([Livelli.prepara(box), new Promise(r => setTimeout(r, 2500))]);
   }
   const st = XA.inStagione(ms, d.P.stagione), k = `${liv.cm}${st ? 's' : ''}t${Livelli.tessere()}`;
-  let pass = idxMemo.get(k); if (!pass) { if (idxMemo.size > 30) idxMemo.clear(); pass = XA.indicePasserelle(XA.posate(d.P, liv.cm, ms)); idxMemo.set(k, pass); }
+  let pass = idxMemo.get(k); if (!pass) { if (idxMemo.size > 30) idxMemo.clear(); pass = XA.indicePasserelle(XA.posate(d.P, liv.cm, ms), 9, d.P.garantiti); idxMemo.set(k, pass); }
   return { cm: liv.cm, Q: d.Q, pass, key: '|a' + k, mose: liv.mose };
 }
 // istante della ricerca (partenza o arrivo scelti, o adesso) e di un tratto a piedi di una soluzione (k = indice nella soluzione)
@@ -125,6 +125,7 @@ function acquaTxt(w) {
   const m = Math.round(a.bagnati / 10) * 10 || 5, cm = Math.max(2, Math.round(a.prof));
   const qual = (a.stimati ?? a.bagnati) * 2 > a.bagnati ? 'stima' : 'quote del rilievo';   // quote misurate (RAMSES) per più di metà dei metri bagnati
   if (a.bagnati >= 5) out.push(cm < 10 ? `acqua bassa possibile per circa ${m} m (pochi cm, ${qual})` : `acqua possibile per circa ${m} m, fino a ~${cm} cm (${qual}): ${cm < 30 ? 'stivali' : 'stivali alti'}`);
+  if (a.oltre >= 5) out.push('oltre il livello garantito le passerelle possono essere sommerse o chiuse: da verificare sul posto');
   return out.join(' · ');
 }
 // ACQUA ALTA SULLE SCHEDE: i tratti a piedi di ogni soluzione (stessi capi del disegno sulla mappa, all'ora del tratto) si calcolano sul
@@ -146,10 +147,10 @@ function walkSegs(o) {
 async function acquaSol(o) {
   const segs = walkSegs(o); if (!segs.length) return '';
   const ws = await Promise.all(segs.map(g => pathFor(g.a, g.b, g.ms)));
-  const m = { bagnati: 0, passerella: 0, prof: 0, passerelle: [], stimati: 0 }; let any = false;
+  const m = { bagnati: 0, passerella: 0, prof: 0, passerelle: [], stimati: 0, oltre: 0 }; let any = false;
   for (const w of ws) {
     const a = w?.acqua; if (!a) continue; any = true;
-    m.bagnati += a.bagnati; m.passerella += a.passerella; m.prof = Math.max(m.prof, a.prof); m.stimati += a.stimati ?? a.bagnati;
+    m.bagnati += a.bagnati; m.passerella += a.passerella; m.oltre += a.oltre || 0; m.prof = Math.max(m.prof, a.prof); m.stimati += a.stimati ?? a.bagnati;
     for (const p of a.passerelle) if (!m.passerelle.some(x => x.d === p.d)) m.passerelle.push(p);
   }
   if (!any) return '';
@@ -734,7 +735,7 @@ function tideHtml(o, sn) {
   const liv = XA.livelloCitta(p, Tide.moseState()); if (!(liv.cm >= 90 || (liv.mose && p.cm >= 100))) return '';
   const hm = new Date(p.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' }), ms = p.prova ? null : Tide.moseState();
   const mose = liv.mose ? ` Con il MOSE ${ms === 'programmato' ? 'previsto' : 'in funzione'} in città il livello dovrebbe restare sotto circa ${XA.LIV_MOSE + 2} cm.` : ms === 'sollevata' || ms === 'sollevamento' ? ' Il MOSE è in funzione.' : '';
-  const calc = Livelli.pronti() && liv.cm >= XA.MIN_ACQUA ? ' I tratti a piedi evitano dove possibile le zone potenzialmente allagabili e usano le passerelle posate: i dettagli sono in ogni tratto.' : ' Nei tratti a piedi le zone più basse (come San Marco) possono essere allagate: controlla passerelle e calzature.';
+  const calc = Livelli.pronti() && liv.cm >= XA.MIN_ACQUA ? ' I tratti a piedi evitano dove possibile le zone potenzialmente allagabili e usano le passerelle del piano comunale (posa prevista dal livello indicato, non verificata in tempo reale): i dettagli sono in ogni tratto.' : ' Nei tratti a piedi le zone più basse (come San Marco) possono essere allagate: controlla passerelle e calzature.';
   const tot = acqSol.get(acqKey(o)), riep = tot ? `<span class="pp-acqt">${esc(tot)}</span>` : '';
   return `<p class="pp-tide">${icon('tide', 'sm')}<span><b>${p.prova ? `Prova in locale: marea ${p.cm} cm` : `Marea ${p.kind === 'previsto' ? 'prevista' : 'misurata'} ${p.cm} cm verso le ${hm}`}</b>${liv.mose ? '' : calc}${mose}${riep}</span></p>`;
 }

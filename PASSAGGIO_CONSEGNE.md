@@ -1,4 +1,4 @@
-# Passaggio di consegne — Venezia TPL live v33.11 (21/11/2026)
+# Passaggio di consegne — Venezia TPL live v33.12 (22/11/2026)
 
 Documento autonomo per riprendere il progetto in una nuova conversazione. Dopo questo leggere `STATO.md` (stato e regole), `CRITERI.md`
 (regole obbligatorie per ogni modifica) e, quando serve un dettaglio, `README.md` (riferimento completo a sezioni numerate).
@@ -7,7 +7,8 @@ Documento autonomo per riprendere il progetto in una nuova conversazione. Dopo q
 PWA gratuita, personale e indipendente (non ufficiale ACTV) con mappa in tempo reale di autobus, tram e vaporetti di Venezia:
 pannelli di fermate e corse, «Programmato» per altri giorni, pianificatore (RAPTOR) con viaggio guidato e percorsi a piedi lungo le strade,
 avvisi di arrivo (notifiche push), avvisi di servizio ACTV (RSS e Telegram, scioperi), marea CPSM e MOSE, **acqua alta** (zone
-potenzialmente allagabili e passerelle dell'Atlante del Comune), preferiti, percorsi e viaggi salvati, uso senza rete con dati salvati.
+potenzialmente allagabili e passerelle dell'Atlante del Comune), preferiti, percorsi e viaggi salvati, uso senza rete con dati salvati
+(dalla v33.12 anche fermate, linee e **orari programmati di oggi** nel pannello della fermata).
 
 ## 2. Dove sta
 
@@ -17,7 +18,7 @@ potenzialmente allagabili e passerelle dell'Atlante del Comune), preferiti, perc
 | Codice | https://github.com/nickg1093/TPL-Venezia (pubblico). Rami: `main` (codice), `dati` (file per i telefoni via CDN jsDelivr), `archivio-avvisi`, `archivio-marea` (archivi dei workflow), `ripristino-v33.10` (punto di ripristino prima dell'audit) |
 | PC dell'utente | `D:\Downloads\TPL-Venezia` = clone di GitHub (quello che va online). `D:\Downloads\TPL-Venezia-LOCALE` = copia di lavoro locale (contiene anche i dati solo locali sotto) |
 | Solo sul PC, mai su GitHub | `dati-ramses/curve-livello-shp.zip` (rilievo RAMSES di Insula, 333 MB), `dati-passerelle/*.pdf` (Atlante passerelle), `tmp-atlante/` |
-| Versione | `ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js` (tutte **v33.11**); `GUIDA_VER` in `public/js/guida.js` (`v33`) |
+| Versione | `ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js` (tutte **v33.12**); `GUIDA_VER` in `public/js/guida.js` (`v33.12`) |
 
 ## 3. Architettura
 - **Server** Node.js 22, nessun framework né database, nessuna scrittura su disco tranne l'archivio GTFS; dipendenze solo `leaflet` e
@@ -26,8 +27,9 @@ potenzialmente allagabili e passerelle dell'Atlante del Comune), preferiti, perc
   `gtfs*.js`, `orari.js`, `percorso.js` (pianificatore), `avvisi*.js`, `watch.js`/`push.js` (notifiche), `tide.js`/`mose.js`,
   `memoria.js` (protezione dei 512 MB), `metriche.js` (misure aggregate in memoria), `security.js` (intestazioni, limiti, token, validazione).
 - **Telefono** `public/`: moduli ES senza build; Leaflet servito da `/vendor`; `sw.js` (guscio in cache versionata, `/api/*` e `/acqua/*`
-  sempre dalla rete); `js/fissi.js` e `js/pedoni.js` salvano dati fissi e rete pedonale (CDN, impronta SHA-256); `js/acqua.js` e
-  `js/livelli.js` per l'acqua alta; `js/guida.js` guida, novità e storico; `js/info.js` pagina Informazioni (testi in `index.html`).
+  sempre dalla rete); `js/fissi.js` e `js/pedoni.js` salvano dati fissi e rete pedonale (CDN, impronta SHA-256); `js/orarioggi.js`
+  salva gli orari per giorno del CDN (oggi/domani/ieri) e calcola le partenze programmate senza rete; `js/acqua.js` e
+  `js/livelli.js` per l'acqua alta (le passerelle posate diventano archi del grafo pedonale in `js/pedoni.js`); `js/guida.js` guida, novità e storico; `js/info.js` pagina Informazioni (testi in `index.html`).
 - **Acqua alta**: preparata sul computer con `scripts/genera-acqua.js` (+ `acqua-core.js`, `ramses-core.js`) → `public/acqua/`
   (indice, quote stimate, passerelle, tessere del rilievo). Il server non calcola nulla; il telefono scarica i file solo quando serve.
   Analisi delle tavole dell'Atlante (georeferenziazione, criteri, tabella dei 32 tracciati, comandi Python di `scripts/atlante/`): nel
@@ -91,6 +93,34 @@ testi sull'acqua alta sempre «potenzialmente allagabili», mai allagamento cert
   fonte dell'Atlante passerelle; storico delle novità; testi della guida.
 - **Prove**: `npm test` 308/308; prove dell'interfaccia in Chrome (vista iPhone e desktop) — risultati in `STATO.md` §5 e nel rapporto.
 
+## 9 bis. Verifica e correzioni del 22/11/2026 (v33.12)
+- **Passerelle**: i 41 tracciati ricalcolati confrontati con le pagine delle tavole PDF (render a 70–110 dpi, affiancate alla rete OSM) e
+  con l'API ufficiale di OpenStreetMap (`api.openstreetmap.org/api/0.6/map`, dal browser: Overpass era saturo). Per ogni tracciato: nomi
+  delle vie entro 10 m e pontili entro 45 m dai capi, confrontati con la descrizione ufficiale. **Corretti** (capi da nodi OSM, campo
+  `verifica` in `data/acqua/passerelle-atlante.json`): T1.3A (era verso Santa Maria del Giglio, ora Fondamenta Corner Zaguri), T1.4A (era
+  ~170 m a sud, ora Ponte e Campo de la Guerra), T2.3A (era su Calle de l'Ospedaleto, ora Barbaria de le Tole verso est), T5.2B e T5.2C
+  (Tolentini: la C era ~200 m fuori), T6.1A (allungata sulla Calle del Tragheto). **Zattere** T6.2A/B (dalla tavola 6.2): forma e posizione
+  coerenti con tavola e OSM (rio terà, fondamenta, due pontili), nessuna correzione. I 32 tracciati dalle tavole non sono cambiati.
+  Rigenerati `public/acqua/{indice,passerelle,quote}.json` con `node scripts/genera-acqua.js public --mattonelle <copia del ramo dati>`
+  (rete `b2f1bb3e30622032`; il rilievo `public/acqua/rilievo/` non dipende dalle passerelle e non è cambiato).
+- **Perché alcune passerelle erano ignorate dal percorso**: (1) la passerella contava solo se un punto della calle OSM stava entro 9 m dal
+  tracciato: dove OSM non ha la calle (attraverso un campo, verso un pontile, es. T1.1E al 26 %, T5.1B al 69 %) non c'era strada da usare;
+  (2) i pezzi di tratto ai capi del percorso a piedi erano gratis per il costo dell'acqua: un percorso corto su calli allagate poteva battere
+  la passerella. Corretto in `pedoni.js` (passerelle come archi aggiunti, solo se posate; costo proporzionale ai capi, tolto dai metri veri).
+- **Acqua alta**: ponti sempre asciutti (segno «ponte» delle mattonelle; 1.918 tratti di ponte nella rete attuale), passerelle mai bagnate,
+  oltre +120 cm (livello garantito) passerella ancora preferita al guado ma segnalata «da verificare sul posto»; la posa effettiva e le
+  chiusure non sono verificabili (non esiste un dato pubblico in tempo reale): lo dicono il menu Livelli e il pianificatore.
+- **Orari senza rete**: `/api/fissi` dice per ogni servizio i giorni con orari per giorno della stessa versione (`src[].orari`); il telefono
+  salva oggi (e domani dopo le 20, non con «risparmio dati»), tiene ieri per le corse dopo mezzanotte, verifica ogni file con l'impronta;
+  senza rete il pannello della fermata mostra «Senza rete · orari programmati», righe «Da orario», mai ritardi/mezzi/soppressioni. Prova
+  sui GTFS veri: partenze del telefono identiche a `schedule.departures` del server (navigazione e autobus, 4 orari, fino a 60 fermate per servizio).
+- **Schede**: Preferiti (Fermate/Percorsi), marea, avvisi, Mezzi e Livelli si riposizionano a ogni cambio di altezza, rotazione e
+  tastiera (`util.js: seguiScheda`, `altezzaUtile`). Misurato prima: passando a «Percorsi» la scheda restava in alto con 294 px vuoti sotto.
+- **Posizione del mezzo**: «Posizione aggiornata N secondi fa / N minuti fa» (`util.js: etaPosizione`), ogni secondo con il pannello aperto.
+- **Prove**: `npm test` 315/315; interfaccia (Chrome headless, 6 dimensioni in `run.py`): `run.py`, `sistema.py`, `acqua.py`, `marea.py`,
+  `viaggio.py`, `modifica.py`, `offline.py` passate, anche con `TESTO=1.3` (dopo il cambio di versione ripetute `run`, `sistema`,
+  `viaggio`, `modifica`, `offline`).
+
 ## 10. Limiti noti e verifiche da fare
 - Non provati su dispositivi veri: Safari iOS (installata e non), Android, Firefox e Safari desktop. Su iPhone le notifiche esistono solo
   con l'app nella schermata Home; «Schermo intero» non c'è (Fullscreen API non disponibile).
@@ -98,6 +128,11 @@ testi sull'acqua alta sempre «potenzialmente allagabili», mai allagamento cert
 - Avvisi aperti di CodeQL: da controllare in GitHub → Security (non leggibili dall'IA senza accesso autenticato).
 - Ramo `dependabot/npm_and_yarn/adm-zip-0.6.1` obsoleto (adm-zip non è più usato): da eliminare a mano su GitHub.
 - Passerelle non georeferenziate dalle tavole (San Marco 1.3–1.11, isole) restano ricostruite sulle calli; quote di posa del piano, non posa reale.
+  Da guardare sul posto: T3.2A (Ferrovia, tracciato con un tratto lungo la fondamenta che nella tavola non c'è) e T9.2B (Burano, «Calle
+  Daffan» non trovata tra i nomi OSM lungo il tracciato). Isole senza rilievo: confronto solo a vista (precisione di qualche metro).
+- Orari senza rete: solo se l'app è stata aperta con la rete nello stesso giorno (o dopo le 20 del giorno prima); al cambio di versione dei
+  GTFS a mezzanotte domani non si scarica (versione diversa): senza rete il pannello dice che gli orari non sono salvati.
+- Non provati su dispositivi veri: ResizeObserver/visualViewport con la tastiera su iPhone e Android, orari senza rete su Safari iOS.
 - Informativa e condizioni: testi prudenziali scritti senza consulenza legale; verifica professionale consigliata (vedi rapporto finale).
 
 ## 11. Regole per le modifiche future

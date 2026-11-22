@@ -1,7 +1,7 @@
 // APP PRINCIPALE: mappa, mezzi in movimento, ricerca, pannelli (fermata · zona · corsa) con navigazione e inseguimento.
 // Moduli: util.js (testo, icone, nomi, colori, etichette) · zones.js (zone di fermate) · tide.js (marea) · pwa.js (installazione).
 import * as Sistema from './sistema.js';   // per primo: i controlli sugli errori imprevisti valgono anche durante l'avvio
-import { hm, $, esc, p2, nowSecs, fmtSecs, localDate, icon, srcIcon, vehIcon, vehName, lum, colorInfo, badge, ptHtml, etaText, tickEta, delayInfo, api, onBusy, ritenta, riuscito, NON_ORA } from './util.js';
+import { hm, $, esc, p2, nowSecs, fmtSecs, localDate, icon, srcIcon, vehIcon, vehName, lum, colorInfo, badge, ptHtml, etaText, tickEta, delayInfo, api, onBusy, ritenta, riuscito, NON_ORA, etaPosizione } from './util.js';
 import { zones, zoneOf, snorm, buildZones, norm, unitOf, mergeDuplicates, groups, aliasOf } from './zones.js';
 import * as Tide from './tide.js';
 import * as Livelli from './livelli.js';
@@ -20,6 +20,7 @@ import * as Guida from './guida.js';
 import * as Nav from './nav.js';
 import * as Favs from './favs.js';
 import * as Fissi from './fissi.js';
+import * as OrariOggi from './orarioggi.js';
 
 const POLL_MS = 2000, MIN_STOP_ZOOM = 14;
 onBusy(b => { $('busybar').hidden = !b; document.body.classList.toggle('busy', b); });   // barra di caricamento per le richieste lente
@@ -338,6 +339,7 @@ async function load() {
   } catch (e) {
     if (m === 'sched' && (e.loading || e.busy)) { schedWait(!!e.loading); if (!ritenta('sched', () => { if (mode === 'sched') load(); })) schedFail(); return; }
     if (m === mode && !e.busy) { statusEl.className = 'err'; statusEl.textContent = 'Errore: ' + e.message; }
+    if (!e.busy && !e.loading) staticiSenzaRete();
   }
 }
 function schedFail() { schedWait(false); if (mode === 'sched') { statusEl.className = 'err'; statusEl.textContent = 'Errore: ' + NON_ORA; } }
@@ -395,8 +397,16 @@ function loadStatics() {
   Fissi.manifest(true).finally(() => {
     Fissi.routes().then(d => { if (d && !d.error) routesData = d; }).catch(() => {});
     Fissi.stops().then(d => { if (Array.isArray(d)) { buildZones(d); stops = mergeDuplicates(d); stopById.clear(); for (const s of stops) stopById.set(s[0], s); drawStops(); updateNear(); openLink(); setTimeout(guideBoot, 1200); } }).catch(() => {});
+    setTimeout(() => OrariOggi.prepara(), 8000);                       // orari programmati di oggi salvati per l'uso senza rete (orarioggi.js)
   });
 }
+addEventListener('online', () => OrariOggi.prepara());
+// SENZA RETE all'apertura (v33.12): il server non dà la versione dei dati, ma fermate e linee salvate nel telefono si usano lo stesso
+// (fissi.js: ultimo indice salvato); quando torna la rete la versione vera arriva e, se è cambiata, si ricaricano
+let staticiSalvati = false;
+function staticiSenzaRete() { if (staticVer === -1 && !staticiSalvati) { staticiSalvati = true; loadStatics(); } }
+if (navigator.onLine === false) setTimeout(staticiSenzaRete, 0);
+setTimeout(staticiSenzaRete, 8000);                                   // server che non risponde: dopo 8 s si usano i dati salvati
 async function showRoutes(ids, layer = lineLayer) {
   const tok = ++routeToken;
   layer.clearLayers();
@@ -606,6 +616,15 @@ async function loadDepartures() {
       if (err.loading) lastDeps = null;
       return;
     }
+    // SENZA RETE (orarioggi.js): solo gli orari programmati di oggi salvati nel telefono, dichiarati come tali; mai dati vecchi come attuali
+    if (mode === 'live' && !err.loading && !err.busy && (navigator.onLine === false || err instanceof TypeError)) {
+      const ids = z ? z.items.map(i => i.id) : e.ids?.length ? e.ids : [e.id];
+      const d = await OrariOggi.perFermate(ids, Date.now(), { nome: stopLabel, linea: (src, r) => routesData[`${src}:${r}`] || null }).catch(() => null);
+      if (current !== e) return;
+      if (d) { d.offline = true; d._e = e; lastDeps = d; renderDepartures(); return; }
+      plist.innerHTML = '<p class="late pad">Senza connessione: gli orari di oggi di questa fermata non sono salvati nel telefono. Si aggiornano da soli appena torna la rete.</p>';
+      return;
+    }
     if (!(err.busy && mine)) plist.innerHTML = `<p class="late pad">Dati non disponibili: ${esc(err.loading ? NON_ORA : err.message)}</p>`;
   }
 }
@@ -752,7 +771,7 @@ function marquee(root) { Scorri.run(root); }                              // sco
 function renderDepartures() {
   if (!lastDeps || !current || (current.t !== 'stop' && current.t !== 'zone')) return;   // mai nel pannello della corsa o del pianificatore
   const live = mode === 'live', z = current.t === 'zone' ? zones.get(current.key) : null;
-  psub.textContent = (z ? `${z.letters.length} ${unitOf(z)[1]} · ` : '') + (live ? (lastDeps.liveUpdated ? 'Live' : 'Live · in attesa dei dati') : 'Orario') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
+  psub.textContent = (z ? `${z.letters.length} ${unitOf(z)[1]} · ` : '') + (lastDeps.offline ? 'Senza rete · orari programmati' : live ? (lastDeps.liveUpdated ? 'Live' : 'Live · in attesa dei dati') : 'Orario') + (lastDeps.note ? ` · ${lastDeps.note}` : '');
   const rows = lastDeps.departures.map(x => ({ ...x, tIn: live ? x.expIn : x.schedIn, tSec: live ? x.expSec : x.schedIn * 60 }))
     .filter(x => !x.arrival && x.tSec >= -200 && x.tIn <= 120 && active.has(x.src) && (live || !x.done))   // partiti: al massimo da 3 minuti
     .filter(x => !z || z.pick === '*' || z.letterOf.get(x.stop) === z.pick)
@@ -767,7 +786,8 @@ function renderDepartures() {
   requestAnimationFrame(() => { marquee(plist); ticker(plist); });
   // chi usa la tastiera non perde il punto in cui era (titolo «Partiti da poco», gruppo, interruttore della vista) a ogni aggiornamento
   const fa = document.activeElement, fsel = fa && plist.contains(fa) ? (fa.matches('[data-past]') ? '[data-past]' : fa.dataset.g ? `.grp[data-g="${CSS.escape(fa.dataset.g)}"]` : fa.dataset.view ? `[data-view="${CSS.escape(fa.dataset.view)}"]` : null) : null;
-  plist.innerHTML = Avvisi.strikeNoteHtml(Avvisi.strikeFor(Date.now(), Date.now() + 3 * 3600e3)) + al.list.map(a => Avvisi.rowHtml(a, al.keys)).join('') + depListHtml(rows, z, live);
+  const offNote = lastDeps.offline ? '<p class="av-note off-note" role="status"><b>Senza connessione:</b> solo gli orari programmati di oggi salvati nel telefono, senza ritardi, mezzi né soppressioni.</p>' : '';
+  plist.innerHTML = offNote + Avvisi.strikeNoteHtml(Avvisi.strikeFor(Date.now(), Date.now() + 3 * 3600e3)) + al.list.map(a => Avvisi.rowHtml(a, al.keys)).join('') + depListHtml(rows, z, live);
   if (fsel) plist.querySelector(fsel)?.focus({ preventScroll: true });
   if (live && !guidePanelWait && !Guida.active() && plist.querySelector('.dep.d3')) {   // prima fermata aperta: guida del pannello (una volta)
     guidePanelWait = setTimeout(() => { guidePanelWait = null; if (!panel.hidden && current && (current.t === 'stop' || current.t === 'zone') && mode === 'live') Guida.panelReady(); }, 800);
@@ -906,21 +926,24 @@ function placeVehicle(d, first) {
   veh.style.top = y + 'px'; trav.style.height = Math.max(0, y - firstCenter.y) + 'px';
   vehMemo = { trip: current.v.tripId, y };
 }
-// ULTIMO RILEVAMENTO DEL MEZZO (v33.5): l'ora della posizione trasmessa DAL MEZZO nel feed ACTV (vehicle.timestamp), non quella del feed
-// o della richiesta. Se il mezzo non la trasmette (noTs), se i dati sono da orario o simulati, non si mostra nulla.
+// ULTIMO RILEVAMENTO DEL MEZZO (v33.5, testo v33.12): da quanto tempo il mezzo ha trasmesso la sua posizione nel feed ACTV (vehicle.timestamp,
+// l'ora del rilevamento GPS del mezzo: non quella del feed o della richiesta). «Posizione aggiornata 25 secondi fa» / «4 minuti fa», contato
+// di nuovo ogni secondo finché il pannello è aperto e visibile; da 3 minuti (o se il server lo segna vecchio) «dato non recente»; oltre
+// un'ora «più di un'ora fa». Mezzo che non trasmette l'ora: lo si dice. Dati da orario, simulati o «Programmato»: niente.
 const panelVeh = d => (current?.t === 'trip' && (vehicles.find(x => x.id === current.v.id)
   || vehicles.find(c => c.src === d.trip.src && c.tripId === current.v.tripId && !c.co))) || null;
 function vehUpdHtml(d) {
   if (mode !== 'live' || !d?.live || d.detected === false) return '';
-  const v = panelVeh(d); if (!v || v.sim || v.noTs || !Number.isFinite(v.ts) || v.ts > Date.now() + 60e3) return '';
-  const age = Math.max(0, Math.floor((Date.now() - v.ts) / 60000)), old = !!v.old || age >= 3;
-  return `<span class="vupd${old ? ' old' : ''}" title="Ora dell'ultima posizione trasmessa dal mezzo">${icon(old ? 'warn' : 'live', 'sm')}<span>Posizione aggiornata alle ${esc(hm(v.ts))} · ${age < 1 ? 'meno di 1 min fa' : minTxt(age) + ' fa'}${old ? ' · dato non recente' : ''}</span></span>`;
+  const v = panelVeh(d); if (!v || v.sim) return '';
+  if (v.noTs || !Number.isFinite(v.ts)) return `<span class="vupd na" title="Il mezzo non trasmette l'ora della sua posizione">${icon('clock', 'sm')}<span>Ora della posizione non trasmessa dal mezzo</span></span>`;
+  const r = etaPosizione(v.ts, Date.now(), v.old); if (!r) return '';
+  return `<span class="vupd${r.vecchio ? ' old' : ''}" title="Ora dell'ultima posizione trasmessa dal mezzo: ${esc(hm(v.ts))}">${icon(r.vecchio ? 'warn' : 'live', 'sm')}<span>${esc(r.txt)}</span></span>`;
 }
-setInterval(() => {                                                   // «N min fa» resta vero anche senza nuovi dati
+setInterval(() => {                                                   // «N secondi/minuti fa» resta vero anche senza nuovi dati
   if (document.hidden || !lastTrip || current?.t !== 'trip') return;
   const e = psub.querySelector('.vupd'), h = vehUpdHtml(lastTrip);
-  if (e) { if (h) e.outerHTML = h; else e.remove(); } else if (h) psub.insertAdjacentHTML('beforeend', h);
-}, 15000);
+  if (e) { if (!h) e.remove(); else if (e.outerHTML !== h) e.outerHTML = h; } else if (h) psub.insertAdjacentHTML('beforeend', h);
+}, 1000);
 function renderTrip(first) {
   const d = lastTrip; if (!d || !current || current.t !== 'trip') return;
   if (!current.v.line) { current.v.line = d.trip.line; current.v.color = d.trip.color; current.v.headsign = d.trip.headsign; pbadge.innerHTML = badge(d.trip.line, d.trip.color, d.trip.src); }
@@ -1131,6 +1154,7 @@ document.addEventListener('visibilitychange', () => {
   streamSync();
   if (document.hidden) return;
   lastPushAt = Date.now();
+  OrariOggi.prepara();                                                 // nuovo giorno o sera: orari di oggi/domani per l'uso senza rete
   if (mode === 'live') { if (!streamLive()) load(); refreshPanel(); lastPanelAt = Date.now(); }
 });
 setInterval(() => {                                                    // controllo del collegamento (solo app in primo piano, tempo reale)

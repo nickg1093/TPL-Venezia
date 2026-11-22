@@ -15,7 +15,7 @@ TESTO_JS = f"try{{localStorage.setItem('tpl.testo','{TESTO}')}}catch(e){{}}" if 
 fails = []
 ES_LOG = "try{const E=window.EventSource;if(E)window.EventSource=class extends E{constructor(u,o){super(u,o);(window.__es||(window.__es=[])).push(String(u));}}}catch(e){}"   # indirizzi dei flussi aperti (un flusso aperto non compare tra le richieste concluse)
 FAV_ONE = "try{if(!localStorage.getItem('tpl.favorites'))localStorage.setItem('tpl.favorites', JSON.stringify({v:1,items:[{k:'nav:5032',name:'Fermata preferita di prova',src:'nav',at:1}]}))}catch(e){}"   # un preferito: la ricerca non deve mostrarlo
-GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v33', mappa:true, pannello:true}))}catch(e){}"   # guida già vista: le prove non la incontrano (ha una prova sua)
+GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v33.12', mappa:true, pannello:true}))}catch(e){}"   # guida già vista: le prove non la incontrano (ha una prova sua)
 def check(ok, msg):
     print(('  ok   ' if ok else '  FAIL ') + msg)
     if not ok: fails.append(msg)
@@ -430,6 +430,14 @@ with sync_playwright() as p:
     check('Adesso' in page.inner_text('.pp-sum-w'), 'percorso recente aperto con «Adesso» (non con l\'orario di prima)')
     page.goto(BASE + '/?apri=preferiti'); page.wait_for_timeout(2500)
     check(page.evaluate("!document.getElementById('favs').hidden"), 'scorciatoia «Preferiti»: pannello dei preferiti aperto')
+    # v33.12: cambiando scheda (Fermate / Percorsi) o entrando in «Modifica» la scheda resta allineata al pulsante e dentro lo schermo
+    page.evaluate("(()=>{const s=[];for(let i=0;i<9;i++)s.push({k:'nav:50'+(32+i),name:'Preferito '+i,src:'nav',at:i});localStorage.setItem('tpl.favorites',JSON.stringify({v:1,items:s}));})()")
+    page.goto(BASE + '/?apri=preferiti'); page.wait_for_timeout(2500)
+    fv = "(()=>{const c=document.getElementById('favs').getBoundingClientRect(),b=document.getElementById('favs-btn').getBoundingClientRect(),w=document.getElementById('wrap').getBoundingClientRect();return {al:Math.abs(c.bottom-b.bottom)<2||c.top<=w.top+13, in:c.top>=w.top-1&&c.bottom<=w.bottom+1, h:Math.round(c.height)}})()"
+    seq = []
+    for t in ['[data-tab=routes]', '[data-tab=stops]', '[data-edit]', '[data-tab=routes]']:
+        page.click('#favs ' + t); page.wait_for_timeout(250); seq.append(page.evaluate(fv))
+    check(all(x['al'] and x['in'] for x in seq) and len({x['h'] for x in seq}) > 1, f'preferiti: altezza che cambia con la scheda, sempre allineata e dentro lo schermo {seq}')
     page.goto(BASE + '/?apri=percorso'); page.wait_for_selector('.pp-q, .pp-fields', timeout=8000); check(True, 'scorciatoia «Pianifica percorso»')
     man = json.loads(page.request.get(BASE + '/manifest.webmanifest').text())
     check(len(man.get('shortcuts', [])) == 3 and all(page.request.get(BASE + x['icons'][0]['src']).ok for x in man['shortcuts']), 'manifest: 3 scorciatoie con icone')

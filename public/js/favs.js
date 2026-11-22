@@ -3,7 +3,7 @@
 //  · copia di sicurezza: «Salva una copia» scarica un file con i preferiti, «Ripristina» lo rilegge e lo unisce a quelli presenti
 //    (utile cambiando telefono o browser, o dopo aver cancellato i dati del sito). Nessun dato esce dal dispositivo.
 // Tutti i testi che arrivano dalla memoria del browser passano da esc(): non sono mai HTML.
-import { $, esc, icon, srcIcon } from './util.js';
+import { $, esc, icon, srcIcon, seguiScheda, altezzaUtile } from './util.js';
 import * as Fav from './fav.js';
 
 const btn = $('favs-btn'), card = $('favs'), body = $('favs-body'), file = $('favs-file');
@@ -19,9 +19,12 @@ export function open(which) {
 export function close() { if (card.hidden) return; card.hidden = true; btn.setAttribute('aria-expanded', 'false'); edit = false; renaming = null; }
 export const refresh = () => { if (!card.hidden) render(); };
 // in basso, allineata al pulsante (come marea e avvisi lo sono ai loro)
+// (anche dopo ogni cambio di scheda o di contenuto: seguiScheda in init)
 function position() {
-  const w = $('wrap').getBoundingClientRect(), b = btn.getBoundingClientRect(), h = card.offsetHeight, g = 12;
-  card.style.top = Math.max(g, Math.min(b.bottom - w.top - h, w.height - h - g)) + 'px';
+  const w = $('wrap').getBoundingClientRect(), b = btn.getBoundingClientRect(), g = 12, H = altezzaUtile(w);
+  card.style.maxHeight = (H - 2 * g) + 'px';
+  const h = card.offsetHeight;
+  card.style.top = Math.max(g, Math.min(b.bottom - w.top - h, H - h - g)) + 'px';
 }
 
 const routeIcon = ep => (ep.kind === 'me' ? icon('locate', 'sm') : ep.kind === 'point' ? icon('pin', 'sm') : srcIcon(ep.src, 'sm'));
@@ -69,6 +72,7 @@ async function importFile(f) {
 
 export function init(beforeOpen, ctx) {
   before = beforeOpen || before; X = { ...X, ...ctx };
+  seguiScheda(card, position);
   btn.onclick = () => (card.hidden ? open() : close());
   $('favs-close').onclick = () => { close(); btn.focus(); };
   card.querySelector('.fv-tabs').addEventListener('click', e => {

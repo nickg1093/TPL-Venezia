@@ -1,6 +1,6 @@
 # PROVE DELLA v33.5 (Playwright + Chromium), con il server avviato sul feed simulato (come run.py):
-#   1) pannello di un mezzo in tempo reale: «Posizione aggiornata alle hh:mm · N min fa» dall'ora del MEZZO; niente per il mezzo che non la
-#      trasmette (V11 nel feed simulato) e niente in «Programmato»;
+#   1) pannello di un mezzo in tempo reale: «Posizione aggiornata N secondi/minuti fa» dall'ora del MEZZO, contata di nuovo ogni secondo;
+#      per il mezzo che non la trasmette (V11 nel feed simulato) «Ora della posizione non trasmessa dal mezzo»; niente in «Programmato»;
 #   2) pianificatore: «Modifica» su Percorsi recenti e Percorsi salvati (cambia arrivo, inverti, nome, salva modifiche / salva come nuovo,
 #      doppioni rifiutati, elimina), memoria del dispositivo dopo la riapertura, tasto «indietro»;
 #   3) Informazioni: collegamento a Instagram; schermo intero: scelta, memoria e rientro al tocco; nessun elemento tagliato dopo il cambio di dimensione.
@@ -11,7 +11,7 @@ BASE = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:3111'
 STUB = (pathlib.Path(__file__).parent / 'leaflet-stub.js').read_text()
 TESTO = os.environ.get('TESTO', '')
 TESTO_JS = f"try{{localStorage.setItem('tpl.testo','{TESTO}')}}catch(e){{}}" if TESTO in ('1.15', '1.3') else "0"
-GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v33', mappa:true, pannello:true}))}catch(e){}"
+GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v33.12', mappa:true, pannello:true}))}catch(e){}"
 SIZES = [('phone', 390, 844), ('phone-small', 360, 640), ('landscape', 844, 390), ('desktop', 1440, 900)]
 fails = []
 def check(ok, msg):
@@ -52,10 +52,14 @@ with sync_playwright() as p:
             vn = page.inner_text('#pstatus') if page.query_selector('#pstatus') else ''
             up = page.query_selector('#psub .vupd')
             if '4011' in vn:
-                check(up is None, 'mezzo senza ora del rilevamento (V11): nessun «aggiornato alle»'); seen_nots = True
-            elif not seen_ok and up:
+                check(up is not None and 'non trasmessa' in up.inner_text() and 'aggiornata' not in up.inner_text(), 'mezzo senza ora del rilevamento (V11): «Ora della posizione non trasmessa dal mezzo»'); seen_nots = True
+            elif not seen_ok and up and 'non trasmessa' not in up.inner_text():
                 t = up.inner_text()
-                check(re.search(r'Posizione aggiornata alle \d{2}:\d{2} · (meno di 1 min fa|\d+ min fa)', t) is not None, f'ora dell\'ultimo rilevamento del mezzo: «{t}»')
+                check(re.search(r'^Posizione aggiornata (\d+ second[oi] fa|\d+ minut[oi] fa|più di un\'ora fa)', t) is not None and 'alle' not in t, f'tempo dall\'ultimo rilevamento del mezzo: «{t}»')
+                vals = {t}
+                for _ in range(5):
+                    page.wait_for_timeout(700); vals.add(page.inner_text('#psub .vupd') if page.query_selector('#psub .vupd') else '')
+                check(len(vals) > 1 or 'minut' in t or 'ora' in t, f'il tempo si aggiorna da solo (ogni secondo): {sorted(vals)}')
                 r = page.evaluate("(()=>{const e=document.querySelector('#psub .vupd');const b=e.getBoundingClientRect(),p=document.getElementById('panel').getBoundingClientRect();return b.left>=p.left-1&&b.right<=p.right+1&&b.width>0})()")
                 check(r, 'riga dell\'aggiornamento dentro il pannello'); seen_ok = True
             if seen_ok and seen_nots: break

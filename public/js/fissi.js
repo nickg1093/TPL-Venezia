@@ -19,13 +19,18 @@ export async function openCache() { try { return secure() && globalThis.caches ?
 const signal = () => (typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(TIMEOUT) : undefined);
 
 // indice del server: impronte dei file della versione in uso, indirizzi del CDN, rete pedonale. Riletto quando cambia la versione dei GTFS.
+// Senza rete (o server irraggiungibile): l'ultimo indice valido salvato nel telefono, così fermate, linee e orari salvati restano
+// usabili (i file si leggono dal telefono con la loro impronta); con l'indice salvato non si cancella nulla.
+const MAN_KEY = 'tpl.fissi.indice';
+const valido = m => !!(m && m.formato === 1 && Array.isArray(m.src) && m.src.every(s => s && typeof s.id === 'string' && ['stops', 'routes', 'shapes'].every(k => HEX64.test(s[k] || ''))));
+function salvato() { try { const m = JSON.parse(localStorage.getItem(MAN_KEY) || 'null'); return valido(m) ? { ...m, salvato: true } : null; } catch { return null; } }
 export function manifest(force = false) {
   if (manP && !force) return manP;
   manP = fetch('/api/fissi', { cache: 'no-cache' }).then(r => (r.ok ? r.json() : null)).then(m => {
-    man = m && m.formato === 1 && Array.isArray(m.src) ? m : null;
-    if (man) prune();
-    return man;
-  }).catch(() => (man = null));
+    man = valido(m) ? m : null;
+    if (man) { prune(); try { localStorage.setItem(MAN_KEY, JSON.stringify(man)); } catch { /* memoria piena */ } }
+    return man || salvato();
+  }).catch(() => (man = salvato()));
   return manP;
 }
 export const current = () => man;
