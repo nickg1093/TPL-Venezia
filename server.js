@@ -170,7 +170,8 @@ function departuresFor(fulls, u) {
 function readJson(req, max = 4096) {
   return new Promise((ok, ko) => {
     if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) return ko(sec.bad('formato non valido'));
-    const o = req.headers.origin; if (o && new URL(o).host !== req.headers.host) return ko(fail(403, 'origine non ammessa'));
+    const o = req.headers.origin; let oh = null; try { oh = o ? new URL(o).host : null; } catch { oh = ''; }   // «null» o non valida: rifiutata (403, non errore 500)
+    if (o && oh !== req.headers.host) return ko(fail(403, 'origine non ammessa'));
     let n = 0; const parts = [];
     req.on('data', c => { n += c.length; if (n > max) { ko(fail(413, 'richiesta troppo grande')); req.destroy(); } else parts.push(c); });
     req.on('end', () => { try { ok(JSON.parse(Buffer.concat(parts).toString('utf8') || '{}')); } catch { ko(sec.bad('JSON non valido')); } });
@@ -197,7 +198,7 @@ const validStyle = st => {
   const hex = v => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v : null);
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
-const ABOUT_VERSION = 'v33.10';
+const ABOUT_VERSION = 'v33.11';
 // DATI FISSI sul telefono e dal CDN (fissi.js): file per versione dei GTFS con impronta, indice del ramo «dati» letto da GitHub.
 // DATI_REPO: repository del ramo dati (predefinito: quello da cui Render ha preso il codice); DATI_CDN=0 spegne il CDN (tutto dal server).
 const DATI_REPO = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/.test(process.env.DATI_REPO || '') ? process.env.DATI_REPO : (process.env.RENDER_GIT_REPO_SLUG || 'nickg1093/TPL-Venezia');
@@ -319,7 +320,7 @@ const API = new Map(Object.entries({
   // errore imprevisto in un telefono (public/js/sistema.js): solo testo tecnico ripulito, contato in memoria (/api/metriche), niente dati dell'utente
   '/api/errore': { method: 'POST', limit: 'watch', fn: async (u, req) => {
     const b = await readJson(req, 1024), t = (x, n) => (typeof x === 'string' ? x.replace(/[^\x20-\x7e\u00c0-\u017f]/g, ' ').replace(/https?:\/\/\S+/g, '').replace(/\d{4,}/g, '#').trim().slice(0, n) : '');
-    const k = b.k === 'promessa' ? 'promessa' : 'errore', m = t(b.m, 160), w = t(b.w, 120), v = /^v\d{1,3}(?:\.\d)?$/.test(b.v || '') ? b.v : '?';
+    const k = b.k === 'promessa' ? 'promessa' : 'errore', m = t(b.m, 160), w = t(b.w, 120), v = /^v\d{1,3}(?:\.\d{1,3})?$/.test(b.v || '') ? b.v : '?';   // anche «v33.10» (prima solo una cifra dopo il punto)
     if (m) require('./metriche').errore({ k, m, w, v });
     return { ok: true };
   } },

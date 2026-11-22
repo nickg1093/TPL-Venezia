@@ -1372,3 +1372,6 @@ body.busy #panel:not([hidden])::before,body.busy .dock::before{content:"";positi
 .ip-social span{display:flex;flex-direction:column;line-height:1.2;min-width:0;overflow-wrap:anywhere}
 .ip-social small{color:var(--muted);font-size:var(--fs-xs);font-weight:600}
 .ip-foot a{color:var(--accent)}
+
+/* storico delle novità (Informazioni) */
+.ip-news{margin:0 0 12px;padding-left:18px}.ip-news li{margin:0 0 8px}.ip-news .nt{display:block;font-weight:700}.ip-news .k,.ip-news .ic{vertical-align:-3px}
