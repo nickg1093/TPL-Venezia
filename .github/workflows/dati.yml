@@ -73,15 +73,24 @@ jobs:
           PEDONI: ${{ github.event.inputs.pedoni }}
           MSG_PEDONI: ${{ contains(github.event.head_commit.message, '[pedoni]') }}
         run: |
+          # anche se l'ultima rete pubblicata ha più di 8 giorni (es. download del lunedì fallito: si ritenta alla corsa successiva)
+          ULTIMA=$(git -C out log -1 --format=%ct -- pedoni/ultimo.json 2>/dev/null || true); VECCHIA=0
+          if [ -z "$ULTIMA" ] || [ $(( $(date +%s) - ULTIMA )) -gt 691200 ]; then VECCHIA=1; fi
           if [ ! -f out/pedoni/ultimo.json ] || [ "$PROGRAMMA" = "23 2 * * 1" ] || [ "$PEDONI" = "1" ] \
-             || [ "$MSG_PEDONI" = "true" ]; then echo "go=1" >> "$GITHUB_OUTPUT"; else echo "go=0" >> "$GITHUB_OUTPUT"; fi
+             || [ "$MSG_PEDONI" = "true" ] || [ "$VECCHIA" = "1" ]; then echo "go=1" >> "$GITHUB_OUTPUT"; else echo "go=0" >> "$GITHUB_OUTPUT"; fi
 
       - name: Rete pedonale da OpenStreetMap (Geofabrik, Italia nord-est)
         if: steps.ped.outputs.go == '1'
         run: |
+          # Se Geofabrik non risponde (il 23/11/2026 alle 03:19 UTC entrambi gli indirizzi davano 404) la rete già pubblicata resta e la
+          # corsa NON fallisce: fermate, linee e orari si pubblicano lo stesso; la rete si ritenta alla corsa successiva (più di 8 giorni).
           sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
-          # Geofabrik ha cambiato gli indirizzi il 19/11/2026 (file dentro la cartella della regione); il vecchio resta come riserva
-          curl -fsSL --retry 3 -o ne.osm.pbf https://download.geofabrik.de/europe/italy/nord-est/nord-est-latest.osm.pbf || curl -fsSL --retry 3 -o ne.osm.pbf https://download.geofabrik.de/europe/italy/nord-est-latest.osm.pbf
+          scarica() { curl -fsSL --retry 4 --retry-all-errors --retry-delay 60 --connect-timeout 30 -o ne.osm.pbf "$1"; }
+          if ! scarica https://download.geofabrik.de/europe/italy/nord-est-latest.osm.pbf \
+             && ! scarica https://download.geofabrik.de/europe/italy/nord-est/nord-est-latest.osm.pbf; then
+            echo "::warning::Rete pedonale non aggiornata: Geofabrik non raggiungibile (resta la versione già pubblicata)"
+            rm -f ne.osm.pbf; exit 0
+          fi
           # zona servita con margine (fermate 45,02-45,68 N, 11,85-12,48 E, più 3 mattonelle)
           osmium extract -b 11.75,44.95,12.60,45.75 ne.osm.pbf -o zona.osm.pbf --overwrite
           osmium tags-filter zona.osm.pbf w/highway=footway,pedestrian,path,steps,living_street,residential,service,unclassified,tertiary,secondary,primary,track,cycleway,corridor,platform,road,tertiary_link,secondary_link,primary_link -o rete.osm.pbf --overwrite
