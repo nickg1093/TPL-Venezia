@@ -3,14 +3,14 @@
 // alla pagina) e la loro icona può sparire con il tema scuro. Questi sono dell'app: stesso aspetto ovunque, icone con il contrasto del tema,
 // sempre dentro lo schermo (sul telefono foglio dal basso, sul computer finestrella accanto al campo, spostata se non c'è posto).
 // Accessibili: finestra di dialogo, Esc chiude, frecce per muoversi tra i giorni, il fuoco torna al campo.
-import { esc, icon } from './util.js';
+import { esc, icon, romeP } from './util.js';
 
 const MESI = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
 const GG = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'];
 const pad = n => String(n).padStart(2, '0');
 const iso = d => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 const parse = s => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || ''); return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null; };
-const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const todayIso = () => romeP().iso;
 const addDays = (s, n) => { const d = parse(s); d.setUTCDate(d.getUTCDate() + n); return iso(d); };
 
 // testo del campo: «Oggi», «Domani», altrimenti «lun 17/11»
@@ -97,7 +97,7 @@ export function giorno(anchor, { value, min, max, onPick, label = 'Scegli il gio
 
 // ORA: due colonne (ore, minuti a passi di `step`), scorciatoie («Adesso», «+15 min», «+1 ora»), «Fatto» conferma
 export function ora(anchor, { value, step = 5, onPick, label = 'Scegli l\'ora' }) {
-  const now = () => { const d = new Date(Date.now() + (step * 60000 - 1)); return [d.getHours(), Math.floor(d.getMinutes() / step) * step]; };
+  const now = () => { const d = romeP(Date.now() + (step * 60000 - 1)); return [d.h, Math.floor(d.mi / step) * step]; };
   let [h, mi] = /^(\d{1,2}):(\d{2})$/.test(value || '') ? value.split(':').map(Number) : now();
   mi = Math.round(mi / step) * step; if (mi >= 60) { mi = 0; h = (h + 1) % 24; }
   const txt = () => `${pad(h)}:${pad(mi)}`;

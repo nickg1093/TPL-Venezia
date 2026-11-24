@@ -1,0 +1,27 @@
+{
+ "server_rss_inizio_mb": 216,
+ "avvio": {
+  "dcl": 244,
+  "load": 342,
+  "pronta_ms": 479
+ },
+ "richieste": {
+  "primi_30s": 80,
+  "kb_primi_30s": 351,
+  "dopo": 0,
+  "kb_dopo": 0,
+  "al_minuto_dopo": 0.0
+ },
+ "memoria_pagina_mb": {
+  "inizio": 4,
+  "fine": 6
+ },
+ "nodi_dom": 858,
+ "compiti_lunghi": {
+  "n": 1,
+  "max_ms": 66,
+  "totale_ms": 66
+ },
+ "server_rss_fine_mb": 262,
+ "durata_s": 90
+}

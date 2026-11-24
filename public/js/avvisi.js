@@ -1,6 +1,6 @@
 // AVVISI DI INFOMOBILITÀ (client): pulsante con contatore, finestra con l'elenco, e interrogazioni per fermata (usate da mappa e pannello fermata).
 // I dati arrivano da /api/avvisi (sito ACTV + canale Telegram, già uniti e con linee/fermate collegate). Tutto il testo è mostrato come testo semplice (esc).
-import { $, esc, icon, srcIcon, api, badge, seguiScheda, altezzaUtile } from './util.js';
+import { $, esc, icon, srcIcon, api, badge, seguiScheda, altezzaUtile, romeP } from './util.js';
 
 const btn = $('avvisi-btn'), card = $('avvisi'), body = $('avvisi-body'), cnt = $('avvisi-count');
 let data = null, err = null, timer = null, highlight = null, onChange = () => {};
@@ -16,10 +16,10 @@ const isActive = a => (okSc(a) ? a.from <= now() && a.sciopero.fino >= now() : a
 // avviso che "pesa" su fermate e mezzi: in corso, non risolto, non generale (es. nuovi orari di tutta la rete)
 const isWarn = a => isActive(a) && !a.resolved && !a.general;
 const two = n => String(n).padStart(2, '0');
-const hmOf = ms => { const d = new Date(ms); return `${d.getHours()}:${two(d.getMinutes())}`; };
-const dayOf = ms => new Date(ms).toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
-const midnight = ms => { const d = new Date(ms); return d.getHours() === 0 && d.getMinutes() === 0; };
-const endOfDay = ms => { const d = new Date(ms); return d.getHours() === 23 && d.getMinutes() === 59; };
+const hmOf = ms => { const d = romeP(ms); return `${d.h}:${two(d.mi)}`; };
+const dayOf = ms => new Date(ms).toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/Rome' });
+const midnight = ms => { const d = romeP(ms); return d.h === 0 && d.mi === 0; };
+const endOfDay = ms => { const d = romeP(ms); return d.h === 23 && d.mi === 59; };
 const sameDay = (a, b) => new Date(a).toDateString() === new Date(b).toDateString();
 const fmt = ms => `${dayOf(ms)}, ${hmOf(ms)}`;
 const safeUrl = u => (/^https:\/\/(actv\.avmspa\.it|avm\.avmspa\.it|t\.me|telegram\.me)\//.test(u) ? u : null);
@@ -75,7 +75,7 @@ const SEV_ORD = { severe: 0, warning: 1, info: 2 };
 // ritardi diffusi), segnati con «generale: true» e messi dopo quelli specifici del viaggio. Gli avvisi non cambiano le soluzioni: orari e
 // passaggi restano quelli dei dati ACTV, che spesso non tolgono una fermata sospesa; il pianificatore lo dice (fermateSospese).
 const GEN_EFF = new Set(['water', 'no_service', 'reduced', 'detour', 'delays', 'stop_moved', 'restoring']);
-const genRilevante = a => GEN_EFF.has(a.effect) || /nebbia|visibilit|maltempo|bora|vento forte/i.test(`${a.title || ''} ${a.text || ''}`);
+const genRilevante = a => GEN_EFF.has(a.effect) || /nebbia|visibilit|maltempo|bora|vento forte|bassa marea|acqua alta/i.test(`${a.title || ''} ${a.text || ''}`);
 export function forJourney({ lines = [], stops = [], fromMs, toMs }, t = now()) {
   const lk = new Set(lines.map(l => lineKey(l.s, l.n))), sk = new Set(stops), out = [];
   for (const a of data?.items || []) {
@@ -143,7 +143,7 @@ export function strikeShouldOpen(a, t = now()) {
   return !s || s.sig !== scSig(a) || !(t - s.at < SC_REPEAT_MS);
 }
 export function strikeSeen(a, t = now()) { try { localStorage.setItem(KEY_SC, JSON.stringify({ sig: scSig(a), at: t })); } catch { /* facoltativo */ } }
-const longDay = ms => new Date(ms).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+const longDay = ms => new Date(ms).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Rome' });
 const scPhase = (a, t = now()) => (t < a.sciopero.inizio ? 'prima' : t <= a.sciopero.fine ? 'durante' : 'dopo');
 export function strikeTitle(a, t = now()) {
   const p = scPhase(a, t), d = longDay(a.sciopero.inizio);

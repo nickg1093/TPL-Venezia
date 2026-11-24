@@ -1,7 +1,7 @@
 // APP PRINCIPALE: mappa, mezzi in movimento, ricerca, pannelli (fermata · zona · corsa) con navigazione e inseguimento.
 // Moduli: util.js (testo, icone, nomi, colori, etichette) · zones.js (zone di fermate) · tide.js (marea) · pwa.js (installazione).
 import * as Sistema from './sistema.js';   // per primo: i controlli sugli errori imprevisti valgono anche durante l'avvio
-import { hm, $, esc, p2, nowSecs, fmtSecs, localDate, icon, srcIcon, vehIcon, vehName, lum, colorInfo, badge, ptHtml, etaText, tickEta, delayInfo, api, onBusy, ritenta, riuscito, NON_ORA, etaPosizione } from './util.js';
+import { hm, $, esc, p2, nowSecs, fmtSecs, localDate, icon, srcIcon, vehIcon, vehName, lum, colorInfo, badge, ptHtml, etaText, tickEta, delayInfo, api, onBusy, ritenta, riuscito, NON_ORA, etaPosizione, romeP } from './util.js';
 import { zones, zoneOf, snorm, buildZones, norm, unitOf, mergeDuplicates, groups, aliasOf } from './zones.js';
 import * as Tide from './tide.js';
 import * as Livelli from './livelli.js';
@@ -186,8 +186,9 @@ new ResizeObserver(() => {
 // ---------------------------------------------------------------------------------------------------------------------
 function updateClock() {
   if (mode !== 'live' || document.hidden) return;                    // pagina nascosta: niente lavoro (si aggiorna al ritorno)
-  const n = new Date();
-  $('clock-time').innerHTML = `${p2(n.getHours())}:${p2(n.getMinutes())}:<small>${p2(n.getSeconds())}</small>`;
+  // v34: ora di Venezia anche se il telefono è su un altro fuso (gli orari di mezzi e percorsi sono sempre quelli di Venezia)
+  const n = romeP();
+  $('clock-time').innerHTML = `${p2(n.h)}:${p2(n.mi)}:<small>${p2(n.s)}</small>`;
 }
 setInterval(updateClock, 1000);
 setInterval(() => { if (!document.hidden) tickEta(); }, 1000);   // «tra N min»: solo con la pagina visibile
@@ -356,7 +357,7 @@ function showStatus(d, m = mode, force = false) {
   if (m === 'live' && d.stale?.length) notes.push('il feed ACTV non si aggiorna da diversi minuti');
   if (wait.length) notes.push(`in caricamento: ${wait.join(', ')}`);
   if (d.error) notes.push(d.error);
-  const html = `${counts}<span>${m === 'sched' ? 'programmato' : 'mezzi'} · ${new Date(d.updated || Date.now()).toLocaleTimeString('it-IT')}</span>${notes.map(n => `<span class="note">${esc(n)}</span>`).join('')}`;
+  const html = `${counts}<span>${m === 'sched' ? 'programmato' : 'mezzi'} · ${new Date(d.updated || Date.now()).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome' })}</span>${notes.map(n => `<span class="note">${esc(n)}</span>`).join('')}`;
   if (html === lastStatus && statusEl.className === (notes.length ? 'warn' : '')) return;   // nulla di nuovo: nessun ridisegno
   lastStatus = html; statusEl.className = notes.length ? 'warn' : ''; statusEl.innerHTML = html;
 }

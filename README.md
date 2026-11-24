@@ -521,7 +521,13 @@ python tests/ui/run.py http://localhost:3111 C:\temp\ui     # atteso: «FALLITI:
 python tests/ui/viaggio.py http://localhost:3111 C:\temp\ui # viaggio guidato, I miei viaggi, proposta esatta (link valido e scaduto), condividi (atteso: «Tutto ok»)
 python tests/ui/sistema.py http://localhost:3111 C:\temp\ui # indietro nell'app installata, testo grande, testi che scorrono, notifiche perse, errori
 $env:TESTO="1.3"; python tests/ui/run.py http://localhost:3111 C:\temp\ui13; Remove-Item Env:TESTO   # tutte le prove con il testo «Molto grande»
+powershell -ExecutionPolicy Bypass -File tests\ui\tutte.ps1 http://localhost:3111 C:\temp\ui   # v34: TUTTE le prove in fila (circa 40 minuti), registri in C:\temp\ui\log
 ```
+Prove v34 sul campo (anche singolarmente): `viaggio-gps.py` (posizioni GPS progressive e orologio simulato: mezzo perso, discesa
+mancata, salto del GPS, GPS negato, app in secondo piano, rete assente, corsa soppressa, fermata sospesa e nebbia), `marea-scenari.py`
+(bassa marea, 105 cm, marea che sale, dati vecchi, assenti o rovinati), `avvisi-campo.py`, `copertura.py`, `guasti.py` (risposte rovinate,
+errori 500, servizio lento, memoria piena, due schede, altro fuso orario), `prestazioni.py` (misure; confronto con
+`tests/collaudo/prestazioni-prima.json`). Su Linux: `bash tests/ui/tutte.sh`.
 
 ### 9.5 Provare le API dal computer (PowerShell) o dal browser
 ```powershell
@@ -582,9 +588,25 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 
 ---
 
-## 12. Novità della v33
+## 12. Novità della v33 (e v34)
 
 Pubblicata online dalla **v33.10** (21/11/2026). Le voci qui sotto erano state sviluppate in locale e sono ora tutte su `main`.
+- **v34 (24/11/2026, audit funzionale; ramo locale `audit-v34`, non pubblicata)**:
+  - *Avvisi nel viaggio* (`public/js/avvisi.js`): `forJourney` include gli avvisi generali rilevanti (`GEN_EFF`: water, no_service,
+    reduced, detour, delays, stop_moved, restoring, oppure nebbia/visibilità/maltempo/bora/vento/bassa marea/acqua alta nel testo) segnati
+    `generale` e messi dopo quelli specifici (in corso adesso e viaggio entro 3 ore, o con date che si sovrappongono); `fermateSospese`,
+    `sospesaTxt`, `NOTA_INCERTA`. `percorso.js`: `sospHtml`, `detAvHtml` (nota `.pp-incerto`, anche con colmo ≥ 110 cm), `vgAvHtml`;
+    `app.js`: `.pp-sosp` nel pannello della fermata. I percorsi NON cambiano per gli avvisi testuali (solo GTFS-RT soppresse/saltate).
+  - *Controlli sul campo* (`public/js/viaggio.js`): `checkRide` (salita: 4 min dopo la partenza; discesa: 6 min dopo l'arrivo),
+    `gpsWarn(s, fixes)` (almeno 2 letture ≤ 60 s, a ≥ 8 s, precisione ≤ 100 m, tutte concordi: salita entro max(80 m, precisione) con
+    precisione ≤ 50 m dopo 90 s; discesa oltre 300 m + 150 m/min dall'arrivo), `gpsTarget` acceso anche in quelle finestre,
+    `lastFix()` usato da `percorso.js: vgFrom` per «Ricalcola da qui». Riga `.vg-gw` con `role="alert"`.
+  - *Marea* (`public/js/tide.js`): `staleMin()`; `peakIn` valuta anche gli istanti dei dati e la fine dell'intervallo. `percorso.js: tideHtml`
+    aggiunge «Dati della marea non aggiornati».
+  - *Preferiti* (`public/js/fav.js`): `KEY_OK`, `importData` tutto-o-niente con ripristino; `favs.js` messaggi.
+  - `.github/workflows/dati.yml`: `curl --retry 4 --retry-all-errors`, indirizzo di riserva, `::warning::` e uscita 0 se Geofabrik non
+    risponde; rete rifatta anche se l'ultima ha più di 8 giorni.
+  - Prove: vedi `tests/collaudo/RAPPORTO.md` e §9 (`tests/ui/tutte.sh`).
 - **v33.13 (22/11/2026)**: *passerelle legate alla rete pedonale*: `acqua-core.js: allinea` (cammino sulla rete tra le proiezioni dei capi
   con costo crescente con la distanza dal disegno; valido se scarto massimo ≤ 14 m e medio ≤ 6 m e lunghezza simile), poi `parallelo`
   (tratti diritti verso i pontili) e `perNodi` (tratti corti tra incroci); applicato da `genera-acqua.js` a ogni parte (campo `osm` =

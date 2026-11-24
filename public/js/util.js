@@ -4,10 +4,17 @@ export const $ = id => document.getElementById(id);
 // Tutto ciò che viene da fuori (nomi di fermate, destinazioni, etichette dei mezzi) passa da esc() prima di entrare in innerHTML.
 export const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const p2 = n => String(n).padStart(2, '0');
-export const nowSecs = () => { const d = new Date(); return d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds(); };
+// v34: ORA DI VENEZIA anche se il telefono è su un altro fuso (turista che pianifica da casa, fuso impostato a mano): orari, date e
+// orologio dell'app sono sempre quelli di Venezia, come gli orari ACTV.
+const ROME = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+export const romeP = (ms = Date.now()) => {
+  const o = {}; for (const x of ROME.formatToParts(new Date(ms))) o[x.type] = x.value;
+  return { y: +o.year, mo: +o.month, d: +o.day, h: +o.hour % 24, mi: +o.minute, s: +o.second, iso: `${o.year}-${o.month}-${o.day}` };
+};
+export const nowSecs = () => { const r = romeP(); return r.h * 3600 + r.mi * 60 + r.s; };
 export const fmtSecs = s => `${p2(Math.floor(s / 3600) % 24)}:${p2(Math.floor(s % 3600 / 60))}:${p2(s % 60)}`;
-export const localDate = () => { const d = new Date(); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`; };
-export const hm = ms => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+export const localDate = () => romeP().iso;
+export const hm = ms => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
 
 // ---------- ICONE ----------
 // Un solo set (icons/sprite.svg), stesso stile ovunque. Niente emoji nel codice: per cambiare o aggiungere un simbolo si modifica lo sprite.

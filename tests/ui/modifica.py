@@ -11,7 +11,7 @@ BASE = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:3111'
 STUB = (pathlib.Path(__file__).parent / 'leaflet-stub.js').read_text()
 TESTO = os.environ.get('TESTO', '')
 TESTO_JS = f"try{{localStorage.setItem('tpl.testo','{TESTO}')}}catch(e){{}}" if TESTO in ('1.15', '1.3') else "0"
-GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v33.12', mappa:true, pannello:true}))}catch(e){}"
+GUIDE_OFF = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v34', mappa:true, pannello:true}))}catch(e){}"
 SIZES = [('phone', 390, 844), ('phone-small', 360, 640), ('landscape', 844, 390), ('desktop', 1440, 900)]
 fails = []
 def check(ok, msg):

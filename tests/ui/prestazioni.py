@@ -9,7 +9,7 @@ BASE = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:3111'
 OUT = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else '/tmp/ui'); OUT.mkdir(parents=True, exist_ok=True)
 DUR = int(sys.argv[3]) if len(sys.argv) > 3 else 90
 STUB = (pathlib.Path(__file__).parent / 'leaflet-stub.js').read_text()
-GUIDE = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v33.12', mappa:true, pannello:true}))}catch(e){}"
+GUIDE = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v34', mappa:true, pannello:true}))}catch(e){}"
 LONG = "window.__long=[];try{new PerformanceObserver(l=>{for(const e of l.getEntries())__long.push(e.duration)}).observe({type:'longtask',buffered:true})}catch(e){}"
 def rss():
     try:

@@ -1,10 +1,10 @@
 // FINESTRA MAREA: livello attuale, categoria, tendenza, prossimi estremi e grafico delle ultime ore (dati CPSM Venezia tramite /api/tide).
-import { $, esc, icon, hm, api, seguiScheda, altezzaUtile } from './util.js';
+import { $, esc, icon, hm, api, seguiScheda, altezzaUtile, romeP } from './util.js';
 
 const btn = $('tide-btn'), card = $('tide'), body = $('tide-body');
 let data = null, err = null, timer = null, mose = null, moseOpen = false, drawnEv = null;   // dettaglio delle 4 barriere: chiuso di base, resta come lo lascia l'utente
 const fmtCm = cm => `${cm > 0 ? '+' : cm < 0 ? '−' : ''}${Math.abs(cm)}`;
-const dayTag = ms => { const a = new Date(ms), b = new Date(); return a.toDateString() === b.toDateString() ? '' : a.toLocaleDateString('it-IT', { weekday: 'short' }) + ' '; };
+const dayTag = ms => (romeP(ms).iso === romeP().iso ? '' : new Date(ms).toLocaleDateString('it-IT', { weekday: 'short', timeZone: 'Europe/Rome' }) + ' ');
 // Promemoria breve: con la marea (attuale o prevista nel grafico) oltre 85 cm ACTV pubblica quali servizi di navigazione sono previsti
 const AA_URL = 'https://actv.avmspa.it/it/content/acqua-alta-servizi-di-navigazione-previsti', AA_CM = 85;
 const peakOf = d => Math.max(d.cm, ...(d.next || []).map(n => n.cm), ...((d.chart && d.chart.forecast) || []).map(p => p[1]));
@@ -233,10 +233,17 @@ function position() {   // la scheda si allinea al suo pulsante, senza uscire da
 export function peakIn(fromMs, toMs) {
   const c = data?.chart; if (!c || !(c.observed?.length || c.forecast?.length) || toMs < c.from || fromMs > c.to) return null;
   let best = null;
-  for (let t = Math.max(fromMs, c.from), end = Math.min(toMs, c.to); t <= end; t += 5 * 60e3) { const v = valueAt(c, t); if (v && (!best || v.cm > best.cm)) best = { ...v, ts: t }; }
+  const a = Math.max(fromMs, c.from), end = Math.min(toMs, c.to), ts = [];
+  for (let t = a; t <= end; t += 5 * 60e3) ts.push(t);
+  // v34: anche gli istanti dei dati e il termine dell'intervallo (prima un colmo tra due passi di 5 minuti poteva sfuggire di qualche cm)
+  for (const q of [...(c.observed || []), ...fcFrom(c), ...(c.extremes || []).map(e => [e.ts])]) if (q[0] >= a && q[0] <= end) ts.push(q[0]);
+  ts.push(end);
+  for (const t of ts) { const v = valueAt(c, t); if (v && (!best || v.cm > best.cm)) best = { ...v, ts: t }; }
   return best;
 }
 // livello (osservato o previsto) a un istante, dai dati già scaricati: { cm, kind } o null (fuori dai dati: circa −6 / +18 ore)
+// v34: età dell'ultimo dato se è vecchio (per dirlo anche nel pianificatore), altrimenti null
+export const staleMin = () => (data?.stale && !data?.salvata ? Math.max(0, Math.round(+data.ageMin) || 0) : null);
 export const levelAt = t => (data?.chart ? valueAt(data.chart, t) : null);
 export const span = () => (data?.chart ? { from: data.chart.from, to: data.chart.to, now: data.chart.now } : null);
 // ora scelta con il cursore del grafico, solo con la finestra della marea aperta (altrimenti null = adesso)

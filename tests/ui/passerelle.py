@@ -13,7 +13,7 @@ if not os.environ.get('DATI_DIR') or not (DATI / 'indice.json').is_file():
     print('DATI_DIR non indicata o senza indice.json: prova saltata'); sys.exit(0)
 IND = json.loads((DATI / 'indice.json').read_text())
 CDN = 'https://cdn.jsdelivr.net/gh/prova/prova@' + 'a' * 40
-GUIDE = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v33.12', mappa:true, pannello:true}))}catch(e){}"
+GUIDE = "try{localStorage.setItem('tpl.guida', JSON.stringify({v:'v34', mappa:true, pannello:true}))}catch(e){}"
 fails = []
 def check(ok, msg):
     print(('  ok   ' if ok else '  FAIL ') + msg)

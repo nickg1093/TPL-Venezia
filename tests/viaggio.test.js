@@ -166,9 +166,10 @@ test('avvisi per un viaggio: legati al giorno e alle ore del viaggio (non alla p
     it('sospesa', { dated: true, effect: 'no_service', severity: 'severe', from: now, to: now + 72 * H, stops: ['aut:162'] }),
     it('nebbia', { dated: false, general: true, effect: 'reduced', title: 'Nebbia: navigazione rallentata', from: now - H, to: now + 4 * H }),
     it('acqua', { dated: true, general: true, effect: 'water', from: now, to: now + 6 * H }),
-    it('nuovi-orari', { dated: true, general: true, effect: 'modified', from: now, to: now + 72 * H })] });
+    it('nuovi-orari', { dated: true, general: true, effect: 'modified', from: now, to: now + 72 * H }),
+    it('bassa', { dated: false, general: true, effect: 'modified', title: 'Bassa marea: alcune corse deviate', from: now - H, to: now + 3 * H })] });
   const av = A.forJourney({ ...trip, fromMs: now + H, toMs: now + 2 * H }, now);
-  assert.deepEqual(av.map(x => x.id), ['sospesa', 'nebbia', 'acqua']);
+  assert.deepEqual(av.map(x => x.id), ['sospesa', 'nebbia', 'bassa', 'acqua'], 'anche la bassa marea, scritta nel titolo');
   assert.ok(av[1].generale && av[2].generale && !av[0].generale);
   const sosp = A.fermateSospese(av, [{ id: 'aut:510', name: 'VENEZIA' }, { id: 'aut:162', name: 'Mestre FS' }]);
   assert.deepEqual(sosp.map(f => [f.id, f.label]), [['aut:162', 'sospesa']]);
@@ -188,7 +189,32 @@ test('posizione durante il viaggio: accesa solo a piedi verso la fermata, nei ca
   assert.equal(tg('08:25').k, 'bordo'); assert.equal(tg('08:25').t, null, 'a bordo: spenta');
   assert.equal(tg('08:32').k, 'scendi'); assert.equal(tg('08:32').t.stop.name, 'Mestre FS C4', 'prima di scendere: accesa');
   assert.equal(tg('08:36').k, 'cambio'); assert.equal(tg('08:36').t.stop.name, 'Stazione Mestre FS', 'cambio a piedi: accesa');
-  assert.equal(tg('08:54').t, null, 'ultimo tratto a piedi: spenta');
+  assert.equal(tg('08:54').t.check, 'discesa', 'v34: 2 minuti dopo la discesa, accesa per controllare la discesa');
+  assert.equal(tg('08:59').t, null, 'ultimo tratto a piedi, dopo il controllo: spenta');
+  assert.equal(tg('08:22').t.check, 'salita', 'v34: 2 minuti dopo la partenza, accesa per controllare la salita');
+});
+
+test('v34 controlli sul campo: mezzo perso e discesa mancata solo con letture concordi; un salto del GPS non basta', async () => {
+  const { V } = await load();
+  const sol = { ...SOL, tratte: SOL.tratte.map(t => (t.tipo === 'mezzo' ? { ...t, da: { ...t.da, lat: 45.44, lon: 12.32 }, a: { ...t.a, lat: 45.48, lon: 12.23 } } : t)) };
+  const s = V.snapshot(sol, { date: '2026-11-16', from: FROM, to: TO }), at = hm => V.romeMs('2026-11-16', hm);
+  const fx = (lat, lon, ms, acc = 15) => ({ lat, lon, acc, at: ms });
+  const pontile = (ms) => [fx(45.4401, 12.3201, ms - 20e3), fx(45.4400, 12.3200, ms - 5e3)];
+  assert.equal(V.gpsWarn(s, pontile(at('08:20') + 60e3), at('08:20') + 60e3), null, 'un minuto dopo la partenza: si aspetta ancora');
+  assert.match(V.gpsWarn(s, pontile(at('08:22')), at('08:22')), /Sei ancora a VENEZIA\? .*linea 2.*ritardo o non fermarsi.*Ricalcola da qui/);
+  assert.equal(V.gpsWarn(s, [fx(45.4400, 12.3200, at('08:22') - 5e3)], at('08:22')), null, 'una sola lettura: niente');
+  assert.equal(V.gpsWarn(s, pontile(at('08:22')).map(f => ({ ...f, acc: 120 })), at('08:22')), null, 'lettura imprecisa: niente');
+  assert.equal(V.gpsWarn(s, [fx(45.4400, 12.3200, at('08:22') - 20e3), fx(45.4450, 12.3100, at('08:22') - 5e3)], at('08:22')), null, 'a bordo e già partito: niente');
+  const R = s.legs.filter(l => l.t === 'r'); R[0].da.live = at('08:23');     // in ritardo con il tempo reale: al pontile è normale
+  assert.equal(V.gpsWarn(s, pontile(at('08:22')), at('08:22')), null, 'mezzo in ritardo: niente');
+  delete R[0].da.live;
+  // discesa mancata: Mestre FS C4 alle 08:34 (45.48, 12.23); alle 08:37 a 2 km sulla linea
+  const lontano = ms => [fx(45.4900, 12.2100, ms - 20e3), fx(45.4950, 12.2050, ms - 5e3)];
+  assert.match(V.gpsWarn(s, lontano(at('08:37')), at('08:37')), /da Mestre FS C4: se non sei sceso, scendi alla prossima fermata/);
+  const piedi = ms => [fx(45.4805, 12.2310, ms - 20e3), fx(45.4810, 12.2320, ms - 5e3)];   // ~150 m: camminando verso il cambio
+  assert.equal(V.gpsWarn(s, piedi(at('08:37')), at('08:37')), null, 'a piedi vicino alla fermata: niente');
+  assert.equal(V.gpsWarn(s, [fx(45.4805, 12.2310, at('08:37') - 20e3), fx(45.4950, 12.2050, at('08:37') - 5e3)], at('08:37')), null, 'salto del GPS isolato: niente');
+  assert.equal(V.gpsWarn(s, lontano(at('08:45')), at('08:45')), null, 'oltre i 6 minuti dopo la discesa: niente');
 });
 
 test('alternativa più veloce: si cerca solo con soppressione, cambio perso o arrivo in ritardo di 8 minuti o più', async () => {

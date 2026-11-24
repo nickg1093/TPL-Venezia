@@ -152,7 +152,7 @@ const walkTxt = m => (m <= 1 ? 'a piedi 1 min' : `a piedi ${m} min`);
 // ---- I MIEI VIAGGI ----
 function readSaved() { try { const d = JSON.parse(localStorage.getItem(KEY_SAVED) || '[]'); return Array.isArray(d) ? d.map(clean).filter(Boolean) : []; } catch { return []; } }
 let saved = readSaved().filter(s => s.arriveMs > Date.now());
-const writeSaved = () => { try { localStorage.setItem(KEY_SAVED, JSON.stringify(saved)); } catch { /* solo in memoria */ } };
+const writeSaved = () => { try { localStorage.setItem(KEY_SAVED, JSON.stringify(saved)); return true; } catch { return false; /* solo in memoria */ } };
 writeSaved();                                                       // (toglie subito i viaggi passati)
 export const savedList = (now = Date.now()) => { const n = saved.length; saved = saved.filter(s => s.arriveMs > now); if (saved.length !== n) writeSaved(); return saved.slice(); };
 export const isSaved = id => saved.some(s => s.id === id);
@@ -161,7 +161,9 @@ export function toggleSaved(s) {                                    // -> { save
   savedList();
   if (saved.length >= MAX_SAVED) return { error: `Hai già ${MAX_SAVED} viaggi salvati: elimina quello che non ti serve più.` };
   const { started, viaggio, notif, mode, ...keep } = s;
-  saved.push(keep); saved.sort((a, b) => a.leaveMs - b.leaveMs); writeSaved();
+  saved.push(keep); saved.sort((a, b) => a.leaveMs - b.leaveMs);
+  // v34: memoria del browser piena o bloccata: lo si dice (prima diceva «Salvato» e il viaggio spariva alla riapertura)
+  if (!writeSaved()) return { saved: true, volatile: true };
   try { navigator.storage?.persist?.(); } catch { /* facoltativo: chiede al browser di non cancellare da solo i dati del sito */ }
   return { saved: true };
 }
@@ -229,7 +231,7 @@ export async function start(s, styleOf) {
 }
 export async function end(quiet = false) {
   if (!J) return;
-  const v = J.viaggio; J = null; writeJ(); stopTimers(); release(); gpsStop(); gpsFix = null; emit();
+  const v = J.viaggio; J = null; writeJ(); stopTimers(); release(); gpsStop(); gpsFix = null; gpsHist = []; emit();
   if (v) await Notify.stopJourney(v, quiet);
 }
 
@@ -291,7 +293,7 @@ export function altNeed(s, now = Date.now()) {
 // quanto manca alla fermata). A bordo e con l'app nascosta è spento: lì lavorano gli orari in tempo reale e le notifiche del server.
 // La posizione resta sul telefono (non va mai al server). Si accende da sola solo se il permesso c'è già o se l'hai attivata tu con un tocco.
 const KEY_GPS = 'tpl.viaggio.gps', GPS_OPTS = { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 };
-let gpsId = null, gpsFix = null, gpsPerm = null, gpsErr = null, gpsEmitAt = 0;
+let gpsId = null, gpsFix = null, gpsHist = [], gpsPerm = null, gpsErr = null, gpsEmitAt = 0;
 export const gpsSupported = () => typeof navigator !== 'undefined' && 'geolocation' in navigator;
 export const gpsWanted = () => { try { return localStorage.getItem(KEY_GPS) !== '0'; } catch { return true; } };
 const distM = (a, b) => Math.hypot((a.lat - b.lat) * 111320, (a.lon - b.lon) * 111320 * Math.cos(a.lat * Math.PI / 180));
@@ -306,8 +308,39 @@ export function gpsTarget(s, ph, now = Date.now()) {
     return w > 0 ? { stop: R[ph.idx].da, why: 'verso la fermata del cambio' } : null;
   }
   if (ph.kind === 'scendi') return { stop: R[ph.idx].a, why: 'per la discesa' };
-  return null;                                                       // a bordo, ultimo tratto a piedi, arrivato: spento
+  const c = checkRide(s, now);                                       // v34: pochi minuti dopo la partenza e dopo la discesa, per un controllo
+  if (c) return { stop: c.stop, why: c.kind === 'salita' ? 'per controllare la salita' : 'per controllare la discesa', check: c.kind };
+  return null;                                                       // a bordo e ultimo tratto a piedi (dopo i controlli), arrivato: spento
 }
+// ---- CONTROLLI SUL CAMPO CON LA POSIZIONE (v34): solo suggerimenti, mai azioni automatiche ----
+// salita: fino a 4 minuti dopo la partenza (prevista o in tempo reale) si guarda se sei ancora al pontile/alla fermata (mezzo perso, in ritardo
+// o che non si è fermato); discesa: fino a 6 minuti dopo l'arrivo si guarda se ti allontani più in fretta di chi cammina (discesa mancata).
+const SALITA_MS = 4 * 60e3, DISCESA_MS = 6 * 60e3;
+export function checkRide(s, now = Date.now()) {
+  if (!s) return null;
+  const R = rides(s), t = x => x.live ?? x.ms;
+  for (let k = 0; k < R.length; k++) { const dep = t(R[k].da); if (now >= dep && now < dep + SALITA_MS && now < t(R[k].a)) return { kind: 'salita', k, stop: R[k].da, since: now - dep }; }
+  for (let k = R.length - 1; k >= 0; k--) { const arr = t(R[k].a); if (now >= arr && now < arr + DISCESA_MS) return { kind: 'discesa', k, stop: R[k].a, since: now - arr }; }
+  return null;
+}
+// fixes: ultime posizioni (la più recente in fondo). Servono almeno due letture recenti e precise, a 8 s o più di distanza, tutte d'accordo:
+// un salto isolato del GPS non basta.
+export function gpsWarn(s, fixes, now = Date.now()) {
+  const c = checkRide(s, now); if (!c || !Number.isFinite(c.stop?.lat)) return null;
+  const ok = (fixes || []).filter(f => f && now - f.at <= 60e3 && f.acc <= 100);
+  if (ok.length < 2 || ok[ok.length - 1].at - ok[0].at < 8e3) return null;
+  const l = rides(s)[c.k], d = f => distM(f, c.stop), t0 = now - c.since;
+  if (c.kind === 'salita') {
+    if (c.since < 90e3 || !ok.every(f => f.acc <= 50 && d(f) <= Math.max(80, f.acc))) return null;
+    return `Sei ancora a ${c.stop.name}? Se la linea ${l.line} non è passata può essere in ritardo o non fermarsi; se l'hai persa, tocca «Ricalcola da qui».`;
+  }
+  if (c.since < 60e3) return null;
+  const lim = f => 300 + 150 * Math.max(0, f.at - t0) / 60e3;       // a piedi ci si allontana al massimo di ~85 m al minuto: margine ampio
+  if (!ok.every(f => d(f) - f.acc > lim(f))) return null;
+  const m = Math.round(d(ok[ok.length - 1]) / 50) * 50;
+  return `Sei a circa ${m >= 1000 ? (m / 1000).toFixed(1).replace('.', ',') + ' km' : m + ' m'} da ${c.stop.name}: se non sei sceso, scendi alla prossima fermata e tocca «Ricalcola da qui».`;
+}
+
 function gpsStop() { if (gpsId != null) { try { navigator.geolocation.clearWatch(gpsId); } catch { /* niente */ } gpsId = null; } }
 async function gpsPermState() {
   try { const p = await navigator.permissions?.query?.({ name: 'geolocation' }); gpsPerm = p?.state || null; } catch { gpsPerm = null; }
@@ -318,6 +351,7 @@ function gpsStart() {
   gpsId = navigator.geolocation.watchPosition(pos => {
     const c = pos.coords; if (!Number.isFinite(c.latitude)) return;
     gpsFix = { lat: c.latitude, lon: c.longitude, acc: c.accuracy || 0, at: Date.now() }; gpsErr = null;
+    gpsHist = [...gpsHist.filter(f => gpsFix.at - f.at <= 60e3), gpsFix].slice(-4);
     if (Date.now() - gpsEmitAt > 10000) { gpsEmitAt = Date.now(); emit(); }   // al massimo un ridisegno ogni 10 s
   }, err => { gpsErr = err.code === 1 ? 'negato' : 'assente'; if (err.code === 1) { gpsStop(); try { localStorage.setItem(KEY_GPS, '0'); } catch { /* niente */ } } emit(); }, GPS_OPTS);
 }
@@ -334,7 +368,7 @@ export function gpsLine(s = J, now = Date.now()) {
   if (!s || !gpsSupported()) return '';
   if (!gpsWanted()) return gpsErr === 'negato' ? 'Posizione non permessa: la puoi consentire dalle impostazioni del browser.' : 'Posizione spenta per questo viaggio.';
   const tgt = gpsTarget(s, phase(s, now), now);
-  if (!tgt) return 'Posizione in pausa: a bordo e con l\'app chiusa non serve (bastano orari in tempo reale e notifiche). Si riaccende a piedi verso la fermata e prima di scendere.';
+  if (!tgt) return 'Posizione in pausa: a bordo e con l\'app chiusa non serve (bastano orari in tempo reale e notifiche). Si riaccende a piedi verso la fermata, prima di scendere e per pochi minuti dopo salita e discesa.';
   if (gpsId == null) return `Posizione: si accende ${tgt.why} quando il permesso è concesso.`;
   if (!gpsFix || now - gpsFix.at > 60e3) return `Posizione accesa ${tgt.why}: cerco il segnale…`;
   if (!Number.isFinite(tgt.stop.lat)) return `Posizione accesa ${tgt.why}.`;
@@ -342,6 +376,8 @@ export function gpsLine(s = J, now = Date.now()) {
   return d <= Math.max(60, gpsFix.acc) ? `Sei a ${tgt.stop.name}.` : `Sei a circa ${d >= 1000 ? (d / 1000).toFixed(1).replace('.', ',') + ' km' : d + ' m'} da ${tgt.stop.name}.`;
 }
 export const gpsOn = () => gpsId != null;
+// v34: posizione del viaggio recente e precisa (per «Ricalcola da qui» quando la mappa non ha la tua posizione), altrimenti null
+export const lastFix = (now = Date.now()) => (gpsFix && now - gpsFix.at <= 90e3 && gpsFix.acc <= 100 ? { lat: gpsFix.lat, lng: gpsFix.lon } : null);
 
 // ---- aggiornamento in tempo reale della corsa che conta adesso ----
 function currentRide(now = Date.now()) {
@@ -407,19 +443,20 @@ const bgTxt = s => (s.mode === 'push'
 const PH_IC = { esci: 'walk', sali: 'clock', cambio: 'swap', bordo: 'next', scendi: 'pin', piedi: 'walk', fine: 'check' };
 export function viewHtml(now = Date.now()) {
   const s = J; if (!s) return '';
-  const ph = phase(s, now);
+  const ph = phase(s, now), gw = gpsOn() ? gpsWarn(s, gpsHist, now) : null;
   const lockTxt = !lockSupported() ? 'Questo browser non permette di tenere acceso lo schermo: le notifiche ti avvisano comunque.'
     : lockWanted() ? (lock ? 'Schermo tenuto acceso finché l\'app è davanti.' : 'Il browser per ora non lo concede: riprovo al prossimo tocco. Le notifiche ti avvisano comunque.') : 'Lo schermo si spegne come al solito.';
-  return `<div class="vg" data-ph="${esc(ph.key)}">`
+  return `<div class="vg" data-ph="${esc(ph.key)}" data-gw="${esc(gw || '')}">`
     + `<p class="vg-route"><span class="vg-od">${icon('route', 'sm')}${esc(fromLabel(s))} ${icon('next', 'sm')} ${esc(toLabel(s))}</span></p>`
     + `<div class="vg-now" data-kind="${ph.kind}" role="status" aria-live="polite"><span class="vg-ic">${icon(PH_IC[ph.kind] || 'next')}</span><div><b class="vg-t">${esc(ph.title)}</b>`
     + `${ph.when ? `<span class="vg-c" data-when="${ph.when}">${esc(inTxt(ph.when, now))}</span>` : ''}<small class="vg-sub">${esc(ph.sub)}</small></div></div>`
     + (ph.warn ? `<p class="vg-warn">${icon('warn', 'sm')}<span>${esc(ph.warn)}</span></p>` : '')
+    + (gw ? `<p class="vg-warn vg-gw" role="alert">${icon('locate', 'sm')}<span>${esc(gw)}</span></p>` : '')
     + `<ol class="vg-steps">${stepsHtml(s, ph, now)}</ol>`
     + `<p class="vg-note">${icon('bell', 'sm')}<span>${esc(s.notif || 'Attivo gli avvisi…')}${s.mode === 'push' && /android/i.test(navigator.userAgent) ? ' Se arrivano in ritardo, togli il browser dalle app in sospensione nelle impostazioni della batteria.' : ''}</span></p>`
     + (gpsSupported() ? `<p class="vg-gps">${icon('locate', 'sm')}<span class="vg-gpst">${esc(gpsLine(s, now))}</span></p>` : '')
     + `<p class="vg-gps">${icon('info', 'sm')}<span>${esc(bgTxt(s))}</span></p>`
-    + (gpsSupported() ? `<label class="vg-lock"><input type="checkbox" class="vg-gpscb"${gpsWanted() ? ' checked' : ''}><span><b>Usa la posizione durante il viaggio</b><small>Solo a piedi verso la fermata, nei cambi a piedi e prima di scendere; resta sul telefono.</small></span></label>` : '')
+    + (gpsSupported() ? `<label class="vg-lock"><input type="checkbox" class="vg-gpscb"${gpsWanted() ? ' checked' : ''}><span><b>Usa la posizione durante il viaggio</b><small>A piedi verso la fermata, nei cambi a piedi, prima di scendere e per pochi minuti dopo salita e discesa (per accorgersi di un mezzo perso o di una discesa mancata); resta sul telefono.</small></span></label>` : '')
     + `<label class="vg-lock"><input type="checkbox" class="vg-lockcb"${lockWanted() ? ' checked' : ''}${lockSupported() ? '' : ' disabled'}><span><b>Schermo sempre acceso</b><small>${esc(lockTxt)} Consuma più batteria; si spegne a fine viaggio.</small></span></label>`
     + `<div class="vg-acts"><button type="button" class="btn vg-recalc">${icon('route', 'sm')}<span>Ricalcola da qui</span></button>`
     + `<button type="button" class="btn vg-end">${icon('close', 'sm')}<span>Termina viaggio</span></button></div></div>`;
@@ -428,6 +465,7 @@ export function viewHtml(now = Date.now()) {
 export function updateView(root, now = Date.now()) {
   const v = root.querySelector('.vg'); if (!v || !J) return false;
   const ph = phase(J, now); if (v.dataset.ph !== ph.key) return false;
+  if ((v.dataset.gw || '') !== ((gpsOn() ? gpsWarn(J, gpsHist, now) : null) || '')) return false;   // avviso dalla posizione comparso o sparito
   const c = v.querySelector('.vg-c'); if (c && ph.when) c.textContent = inTxt(ph.when, now);
   const g = v.querySelector('.vg-gpst'); if (g) g.textContent = gpsLine(J, now);
   return true;

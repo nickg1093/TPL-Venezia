@@ -9,7 +9,7 @@
 // Anche gli indici restano salvati: SENZA RETE si usano gli ultimi file verificati (la marea, invece, serve dalla rete o già caricata).
 // Nessun calcolo e nessuna richiesta in più al server oltre ai file statici.
 // Livelli «automatici» (scelta predefinita): accesi con la marea in città da +80 cm (allagamento) e, in stagione, passerelle posate.
-import { $, esc, hm, seguiScheda, altezzaUtile } from './util.js';
+import { $, esc, hm, seguiScheda, altezzaUtile, romeP } from './util.js';
 import * as Tide from './tide.js';
 import * as Fissi from './fissi.js';
 import * as X from './acqua.js';
@@ -23,7 +23,7 @@ let imgLayer = null, imgCm = null, passLayer = null, passSig = '', svgR = null, 
 try { const p = JSON.parse(localStorage.getItem(KEY) || 'null'); if (p && typeof p === 'object') for (const k of ['all', 'pass']) if (['auto', 'on', 'off'].includes(p[k])) pref[k] = p[k]; if (p && ['ora', 'colmo'].includes(p.q)) pref.q = p.q; } catch { /* memoria non disponibile */ }
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(pref)); } catch { /* facoltativo */ } };
 const fmt = cm => `${cm > 0 ? '+' : cm < 0 ? '−' : ''}${Math.abs(Math.round(cm))}`;
-const dayTag = ms => { const a = new Date(ms), b = new Date(); return a.toDateString() === b.toDateString() ? '' : a.toLocaleDateString('it-IT', { weekday: 'short' }) + ' '; };
+const dayTag = ms => (romeP(ms).iso === romeP().iso ? '' : new Date(ms).toLocaleDateString('it-IT', { weekday: 'short', timeZone: 'Europe/Rome' }) + ' ');
 
 // ---------------- dati: indice, quote e passerelle (verificati, salvati sul telefono) ----------------
 export function carica() {

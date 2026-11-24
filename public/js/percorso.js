@@ -3,7 +3,7 @@
 // scelto, con la distanza calcolata qui: lungo le strade (camminata.js, rete pedonale di OpenStreetMap scaricata dal CDN, fino a 30 minuti
 // a passo svelto) o, se la rete non è disponibile, in linea d'aria come prima. Anche i tratti a piedi sulla mappa seguono le strade. Ogni tratta in mezzo usa gli stessi orari, simboli e diciture del pannello fermata,
 // e si apre nel pannello del mezzo (con «indietro» al percorso).
-import { esc, icon, badge, colorInfo, lum, delayInfo, etaText, api, srcIcon, vehName, localDate, ritenta, riuscito, NON_ORA } from './util.js';
+import { esc, icon, badge, colorInfo, lum, delayInfo, etaText, api, srcIcon, vehName, localDate, ritenta, riuscito, NON_ORA, romeP } from './util.js';
 import { zones, zoneOf, norm, snorm, groups, aliasOf } from './zones.js';
 import * as Fav from './fav.js';
 import * as Scegli from './scegli.js';
@@ -520,7 +520,7 @@ function renderForm() {
   }
   if (S.from && S.to && !S.formOpen && !S.showOpz) { X.chips.innerHTML = miniHtml(); return; }
   const at = S.when !== 'now', by = S.when === 'by';
-  if (at && !S.time) { const d = new Date(Date.now() + (by ? 60 : 10) * 60000); d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5); S.time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }
+  if (at && !S.time) { const d = romeP(Math.ceil((Date.now() + (by ? 60 : 10) * 60000) / 300000) * 300000); S.time = `${String(d.h).padStart(2, '0')}:${String(d.mi).padStart(2, '0')}`; }
   if (at) S.date = clampDate(S.date);
   // QUANDO: interruttore a tre voci (come nelle app di mappe e trasporti): Adesso · Partenza · Arrivo; con un orario scelto, giorno e ora
   // compaiono accanto. Le date ammesse sono quelle con gli orari in archivio (le stesse della modalità «Programmato»).
@@ -742,7 +742,8 @@ function tideHtml(o, sn) {
   const mose = liv.mose ? ` Con il MOSE ${ms === 'programmato' ? 'previsto' : 'in funzione'} in città il livello dovrebbe restare sotto circa ${XA.LIV_MOSE + 2} cm.` : ms === 'sollevata' || ms === 'sollevamento' ? ' Il MOSE è in funzione.' : '';
   const calc = Livelli.pronti() && liv.cm >= XA.MIN_ACQUA ? ' I tratti a piedi evitano dove possibile le zone potenzialmente allagabili e usano le passerelle del piano comunale (posa prevista dal livello indicato, non verificata in tempo reale): i dettagli sono in ogni tratto.' : ' Nei tratti a piedi le zone più basse (come San Marco) possono essere allagate: controlla passerelle e calzature.';
   const tot = acqSol.get(acqKey(o)), riep = tot ? `<span class="pp-acqt">${esc(tot)}</span>` : '';
-  return `<p class="pp-tide">${icon('tide', 'sm')}<span><b>${p.prova ? `Prova in locale: marea ${p.cm} cm` : `Marea ${p.kind === 'previsto' ? 'prevista' : 'misurata'} ${p.cm} cm verso le ${hm}`}</b>${liv.mose ? '' : calc}${mose}${riep}</span></p>`;
+  const vm = p.prova ? null : Tide.staleMin(), vec = vm != null ? ` <b>Dati della marea non aggiornati</b> (ultimo di ${vm >= 120 ? Math.round(vm / 60) + ' ore' : vm + ' minuti'} fa): controlla il Centro Maree prima di partire.` : '';
+  return `<p class="pp-tide">${icon('tide', 'sm')}<span><b>${p.prova ? `Prova in locale: marea ${p.cm} cm` : `Marea ${p.kind === 'previsto' ? 'prevista' : 'misurata'} ${p.cm} cm verso le ${hm}`}</b>${liv.mose ? '' : calc}${mose}${vec}${riep}</span></p>`;
 }
 const shareLink = sn => {
   const u = new URL('/', location.origin), c = { da: epCode(S.from), a: epCode(S.to) };
@@ -798,7 +799,7 @@ function renderBody() {
   if (!r) { X.plist.innerHTML = ''; return; }
   if (S.det) return renderDetail(S.det, live);
   const nf = opzCount();
-  const head = noticeHtml() + strikeOf(r.soluzioni) + `<p class="pp-meta muted">${live ? `In tempo reale · aggiornato alle ${new Date(r.aggiornato).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}` : r.entro ? `Orari programmati · arrivo entro le ${esc(r.entro)}` : `Orari programmati · partenza dalle ${esc(r.ora)}`}`
+  const head = noticeHtml() + strikeOf(r.soluzioni) + `<p class="pp-meta muted">${live ? `In tempo reale · aggiornato alle ${new Date(r.aggiornato).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' })}` : r.entro ? `Orari programmati · arrivo entro le ${esc(r.entro)}` : `Orari programmati · partenza dalle ${esc(r.ora)}`}`
     + (mezziTxt() ? ` · ${mezziTxt()}` : '') + (nf ? ` · <button type="button" class="nlink pp-opzlink">${nf} ${nf > 1 ? 'opzioni attive' : 'opzione attiva'}</button>` : '') + '</p>';
   // «tutto a piedi» in cima all'elenco: se nessun mezzo conviene, se dura poco più del mezzo più rapido (5 minuti) o se FA ARRIVARE PRIMA di
   // qualsiasi mezzo (con «arrivo entro»: fa partire più tardi), anche quando il mezzo dura meno ma parte tra un po'
@@ -1007,6 +1008,7 @@ async function startVg(o) {
 // punto da cui ripartire: la posizione (se c'è), altrimenti la fermata dove ti trovi secondo il viaggio, altrimenti la partenza
 function vgFrom(j) {
   if (X.me()) return meEp(X.me());
+  const fx = Viaggio.lastFix(); if (fx) return meEp(fx);           // v34: la posizione del viaggio (es. ancora al pontile dopo aver perso il mezzo)
   const ph = Viaggio.phase(j), R = j.legs.filter(l => l.t === 'r');
   const st = ph.kind === 'cambio' ? R[ph.idx - 1]?.a : ph.kind === 'bordo' || ph.kind === 'scendi' ? R[ph.idx]?.a : null, s0 = st && X.stopById.get(st.id);
   return s0 ? stopEp(s0[0], s0[1], s0[4]) : j.from && j.from.kind !== 'me' ? { ...j.from } : null;
@@ -1065,7 +1067,9 @@ function onClick(e) {
   if (t.closest('.pp-svtrip')) {
     const sn = snapOf(S.det); if (!sn) return;
     const r = Viaggio.toggleSaved(sn);
-    if (r.error) X.toast?.(r.error, 5000); else X.toast?.(r.saved ? 'Salvato in «I miei viaggi»: lo trovi aprendo il pianificatore.' : 'Tolto da «I miei viaggi».', 3500);
+    if (r.error) X.toast?.(r.error, 5000);
+    else if (r.volatile) X.toast?.('Memoria del browser piena o non disponibile: il viaggio resta in «I miei viaggi» solo finché non chiudi l\'app. Usa «Condividi» per tenerne una copia.', 7000);
+    else X.toast?.(r.saved ? 'Salvato in «I miei viaggi»: lo trovi aprendo il pianificatore.' : 'Tolto da «I miei viaggi».', 3500);
     renderBody(); return;
   }
   if (t.closest('.pp-txt')) {

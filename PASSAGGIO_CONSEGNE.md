@@ -1,4 +1,4 @@
-# Passaggio di consegne — Venezia TPL live v33.13 (22/11/2026)
+# Passaggio di consegne — Venezia TPL live v34 (24/11/2026)
 
 Documento autonomo per riprendere il progetto in una nuova conversazione. Dopo questo leggere `STATO.md` (stato e regole), `CRITERI.md`
 (regole obbligatorie per ogni modifica) e, quando serve un dettaglio, `README.md` (riferimento completo a sezioni numerate).
@@ -18,7 +18,7 @@ potenzialmente allagabili e passerelle dell'Atlante del Comune), preferiti, perc
 | Codice | https://github.com/nickg1093/TPL-Venezia (pubblico). Rami: `main` (codice), `dati` (file per i telefoni via CDN jsDelivr), `archivio-avvisi`, `archivio-marea` (archivi dei workflow), `ripristino-v33.10` (punto di ripristino prima dell'audit) |
 | PC dell'utente | `D:\Downloads\TPL-Venezia` = clone di GitHub (quello che va online). `D:\Downloads\TPL-Venezia-LOCALE` = copia di lavoro locale (contiene anche i dati solo locali sotto) |
 | Solo sul PC, mai su GitHub | `dati-ramses/curve-livello-shp.zip` (rilievo RAMSES di Insula, 333 MB), `dati-passerelle/*.pdf` (Atlante passerelle), `tmp-atlante/` |
-| Versione | `ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js` (tutte **v33.13**); `GUIDA_VER` in `public/js/guida.js` (`v33.12`) |
+| Versione | `ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js` (tutte **v34**, ramo locale `audit-v34` non pubblicato; su `main` v33.13); `GUIDA_VER` in `public/js/guida.js` (`v33.12`) |
 
 ## 3. Architettura
 - **Server** Node.js 22, nessun framework né database, nessuna scrittura su disco tranne l'archivio GTFS; dipendenze solo `leaflet` e
@@ -134,10 +134,24 @@ testi sull'acqua alta sempre «potenzialmente allagabili», mai allagamento cert
   pubblici hanno il segno «ponte»; i 5 senza sono 4 ponti `access=private` e la carreggiata del Ponte della Libertà (`foot=no`), esclusi apposta dalla rete.
 - **Prove**: `npm test` 316/316; `tests/ui/passerelle.py` (DATI_DIR), `acqua.py` (anche `TESTO=1.3`), `offline.py`, `run.py`.
 
+## 9 quater. Audit funzionale e simulazioni sul campo (24/11/2026, v34, ramo `audit-v34` NON pubblicato)
+- **Rapporto completo**: `tests/collaudo/RAPPORTO.md` (inventario e copertura, scenari, problemi con gravità/causa/correzione, misure,
+  limiti). Commit solo locali sul ramo `audit-v34` (correzione di `dati.yml` compresa): push e deploy solo con l'autorizzazione dell'utente.
+- **Avvisi e percorsi**: gli avvisi testuali (fermata sospesa, nebbia, acqua alta) non cambiano i percorsi, per scelta: ACTV lascia la
+  corsa negli orari. Il server esclude solo ciò che il GTFS-RT dichiara (corse soppresse, fermate saltate). Ora lo si dice in modo chiaro
+  ovunque (pianificatore, viaggio, pannello della fermata) e gli avvisi generali che possono far saltare corse entrano nel viaggio.
+- **Viaggio guidato sul campo**: `checkRide`/`gpsWarn` in `viaggio.js` (mezzo perso, discesa mancata; solo suggerimenti, mai azioni
+  automatiche); «Ricalcola da qui» usa la posizione del viaggio. Il GPS resta spento a bordo dopo i primi 4 minuti e con l'app nascosta.
+- **Prove**: `npm test` (con `notifiche-catena.test.js`, catena push isolata con iscrizioni di prova e invio intercettato) e
+  `tests/ui/tutte.sh` / `tutte.ps1` (13 prove d'interfaccia, anche `TESTO=1.3`). Il server di prova tiene i file statici in memoria:
+  dopo una modifica a `public/` va **riavviato** prima delle prove d'interfaccia. Le prove usano un IP diverso per persona simulata
+  (`X-Forwarded-For` con `TRUST_PROXY=1`), altrimenti scattano i limiti di frequenza («Troppe richieste»), che è il comportamento giusto.
+
 ## 10. Limiti noti e verifiche da fare
 - Non provati su dispositivi veri: Safari iOS (installata e non), Android, Firefox e Safari desktop. Su iPhone le notifiche esistono solo
   con l'app nella schermata Home; «Schermo intero» non c'è (Fullscreen API non disponibile).
-- Lo zoom con due dita è disattivato (`user-scalable=no`) per non interferire con la mappa; al suo posto c'è «Dimensione del testo».
+- Lo zoom con due dita è disattivato (`user-scalable=no`) per non interferire con la mappa; al suo posto c'è «Dimensione del testo» (fino al
+  130%). WCAG 1.4.4 chiede il testo leggibile al 200%: decisione dell'utente (vedi `STATO.md` §8).
 - Avvisi aperti di CodeQL: da controllare in GitHub → Security (non leggibili dall'IA senza accesso autenticato).
 - Ramo `dependabot/npm_and_yarn/adm-zip-0.6.1` obsoleto (adm-zip non è più usato): da eliminare a mano su GitHub.
 - Passerelle non georeferenziate dalle tavole (San Marco 1.3–1.11, isole) restano ricostruite sulle calli; quote di posa del piano, non posa reale.
