@@ -1,7 +1,7 @@
 {
  "formato": 1,
- "commit": "334a740d6db0c8ea393de1f89c31321293e7b6d7",
- "creato": "2026-11-23T23:59:32.849Z",
+ "commit": "a479809b7da32a998593a675f9f2ec8675e3054c",
+ "creato": "2026-11-24T22:23:39.535Z",
  "fissi": [
   "nav/38eed93361c1",
   "nav/c63c4b6a58c0",
@@ -15,8 +15,8 @@
   "aut/f72e67310aa5"
  ],
  "pedoni": {
-  "v": "b2f1bb3e30622032",
-  "indice": "6b0c04aae90dbfad4ff9f14645bade7c0edf3cf922cf7053386dda2295abdebc",
+  "v": "0c08e9e1872ec4d5",
+  "indice": "cb6aa8dd420fc970dcf6e6fc17c21b2fe4f231d53da9180ff919282303a36966",
   "lat": 0.01,
   "lon": 0.014
  }
