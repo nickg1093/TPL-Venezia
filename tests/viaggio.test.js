@@ -155,11 +155,26 @@ test('avvisi per un viaggio: legati al giorno e alle ore del viaggio (non alla p
     it('fermata', { dated: true, from: now, to: now + 72 * H, stops: ['aut:162'] }),
     it('sciopero', { dated: true, effect: 'strike', from: Date.parse('2026-11-17T00:00:00+01:00'), to: Date.parse('2026-11-17T23:59:00+01:00') }),
     it('risolto', { dated: true, resolved: true, effect: 'resolved', from: now, to: now + 72 * H, lines: [{ s: 'aut', n: '2' }] }),
-    it('orari-rete', { dated: true, general: true, from: now, to: now + 72 * H, lines: [{ s: 'aut', n: '2' }] })] });
+    it('orari-rete', { dated: true, general: true, effect: 'modified', from: now, to: now + 72 * H, lines: [{ s: 'aut', n: '2' }] })] });
   const ids = (a, b, t = now) => A.forJourney({ ...trip, fromMs: a, toMs: b }, t).map(x => x.id).sort();
   assert.deepEqual(ids(day2, day2 + H), ['fermata', 'lavori-17', 'sciopero']);              // viaggio di martedì: niente lavori di lunedì né guasto di adesso
   assert.deepEqual(ids(now + H, now + 2 * H), ['fermata', 'guasto-ora']);                     // viaggio tra un'ora: il guasto in corso conta
   assert.deepEqual(ids(now + 5 * H, now + 6 * H), ['fermata']);                               // stasera: il guasto di adesso no
+  // v34: avvisi generali che possono far saltare corse o fermate (nebbia, acqua alta) entrano nel viaggio, dopo quelli specifici e segnati;
+  // i generali informativi (nuovi orari) no. Fermate di salita/discesa sospese: frase esplicita «il mezzo potrebbe non fermarsi».
+  A._setData({ items: [
+    it('sospesa', { dated: true, effect: 'no_service', severity: 'severe', from: now, to: now + 72 * H, stops: ['aut:162'] }),
+    it('nebbia', { dated: false, general: true, effect: 'reduced', title: 'Nebbia: navigazione rallentata', from: now - H, to: now + 4 * H }),
+    it('acqua', { dated: true, general: true, effect: 'water', from: now, to: now + 6 * H }),
+    it('nuovi-orari', { dated: true, general: true, effect: 'modified', from: now, to: now + 72 * H })] });
+  const av = A.forJourney({ ...trip, fromMs: now + H, toMs: now + 2 * H }, now);
+  assert.deepEqual(av.map(x => x.id), ['sospesa', 'nebbia', 'acqua']);
+  assert.ok(av[1].generale && av[2].generale && !av[0].generale);
+  const sosp = A.fermateSospese(av, [{ id: 'aut:510', name: 'VENEZIA' }, { id: 'aut:162', name: 'Mestre FS' }]);
+  assert.deepEqual(sosp.map(f => [f.id, f.label]), [['aut:162', 'sospesa']]);
+  assert.match(A.sospesaTxt(sosp[0]), /Mestre FS.*sospesa.*potrebbe non fermarsi/);
+  assert.match(A.NOTA_INCERTA, /acqua alta, nebbia/);
+  assert.deepEqual(A.forJourney({ ...trip, fromMs: now + 10 * H, toMs: now + 11 * H }, now).map(x => x.id), ['sospesa'], 'nebbia di adesso: non per stasera');
 });
 
 test('posizione durante il viaggio: accesa solo a piedi verso la fermata, nei cambi a piedi e prima di scendere; spenta a bordo', async () => {

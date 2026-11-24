@@ -1377,3 +1377,9 @@ body.busy #panel:not([hidden])::before,body.busy .dock::before{content:"";positi
 .ip-news{margin:0 0 12px;padding-left:18px}.ip-news li{margin:0 0 8px}.ip-news .nt{display:block;font-weight:700}.ip-news .k,.ip-news .ic{vertical-align:-3px}
 .off-note{margin:8px 12px 6px}
 .vupd.na{color:var(--muted);font-style:italic}   /* mezzo che non trasmette l'ora della posizione (v33.12) */
+/* v34: fermata della soluzione segnalata sospesa o spostata; nota sull'incertezza di orari e passaggi */
+.pp-sosp{display:flex;gap:6px;align-items:flex-start;margin:6px 0;padding:8px 10px;border-radius:10px;font-size:var(--fs-sm);line-height:1.4;background:color-mix(in srgb,var(--late) 12%,transparent);border-left:3px solid var(--late)}
+.pp-sosp .ic{flex:none;color:var(--late);margin-top:2px}
+.pp-incerto{display:flex;gap:6px;align-items:flex-start;margin:6px 0 2px;font-size:var(--fs-xs);line-height:1.4;color:var(--muted)}
+.pp-incerto .ic{flex:none;margin-top:1px}
+.vg-sosp{margin:8px 0}

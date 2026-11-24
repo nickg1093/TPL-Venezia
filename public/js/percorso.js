@@ -466,7 +466,7 @@ function renderVg() {
   X.pbadge.innerHTML = `<span class="pp-hic">${icon('route')}</span>`; X.pname.innerHTML = '<span>In viaggio</span>'; X.psub.textContent = ''; X.pstatus.textContent = '';
   X.plist.innerHTML = `<div class="pp-dhead"><button type="button" class="linkback vg-plan">${icon('back', 'sm')}<span>Pianifica un altro percorso</span></button>`
     + `<button type="button" class="ibtn sm pp-tall" aria-pressed="${S.tall}" aria-label="${S.tall ? 'Abbassa il pannello e mostra di più la mappa' : 'Alza il pannello per leggere tutte le tappe'}" title="${S.tall ? 'Più mappa' : 'Più tappe'}">${icon(S.tall ? 'down' : 'up', 'sm')}</button></div>`
-    + vgAltHtml() + Viaggio.viewHtml();
+    + vgAltHtml() + vgAvHtml(true) + Viaggio.viewHtml() + vgAvHtml();
   if (vgTop) { vgTop = false; X.plist.scrollTop = 0; }
 }
 function leaveVg(other = false) {
@@ -715,10 +715,15 @@ const solLines = o => o.tratte.filter(t => t.tipo === 'mezzo').map(t => ({ s: t.
 const solStops = o => o.tratte.filter(t => t.tipo === 'mezzo').flatMap(t => [t.da.id, t.a.id]);
 const avvisiOf = (o, sn) => (sn ? Avvisi.forJourney({ lines: solLines(o), stops: solStops(o), fromMs: sn.leaveMs, toMs: sn.arriveMs }) : []);
 // riga compatta sulla scheda: l'avviso più importante (o quanti sono)
+// fermate di salita e discesa della soluzione (id e nome) e quelle segnalate sospese o spostate da un avviso
+const solStopsN = o => o.tratte.filter(t => t.tipo === 'mezzo').flatMap(t => [{ id: t.da.id, name: t.da.name }, { id: t.a.id, name: t.a.name }]);
 function avLine(o) {
   const av = avvisiOf(o, snapOf(o)); if (!av.length) return '';
-  const a = av[0], txt = av.length === 1 ? `${a.effectLabel || 'Avviso'}: ${a.title}` : `${av.length} avvisi per questo viaggio · ${a.effectLabel || a.title}`;
-  return `<span class="pp-avl" data-sev="${esc(a.severity || 'warning')}">${icon(a.severity === 'info' ? 'info' : 'warn', 'sm')}<span>${esc(txt)}</span></span>`;
+  const sosp = Avvisi.fermateSospese(av, solStopsN(o));
+  if (sosp.length) return `<span class="pp-avl" data-sev="severe">${icon('warn', 'sm')}<span>${esc(`Fermata ${sosp[0].label}: ${sosp[0].name}${sosp.length > 1 ? ` e altre ${sosp.length - 1}` : ''} · il mezzo potrebbe non fermarsi`)}</span></span>`;
+  const sp = av.filter(a => !a.generale), a = sp[0] || av[0];
+  const txt = sp.length === 1 && av.length === 1 ? `${a.effectLabel || 'Avviso'}: ${a.title}` : sp.length ? `${av.length} avvisi per questo viaggio · ${a.effectLabel || a.title}` : `Avviso su tutta la rete: ${a.effectLabel || a.title}`;
+  return `<span class="pp-avl" data-sev="${esc(a.generale ? 'warning' : a.severity || 'warning')}">${icon(a.severity === 'info' && !a.generale ? 'info' : 'warn', 'sm')}<span>${esc(txt)}</span></span>`;
 }
 // zone della città storica (con Giudecca e Murano) dove l'acqua alta allaga i percorsi a piedi
 const inVenice = (lat, lon) => lat >= 45.420 && lat <= 45.462 && lon >= 12.300 && lon <= 12.370;
@@ -860,15 +865,36 @@ function renderDetail(o, live) {
   X.plist.innerHTML = `<div class="pp-dhead"><button type="button" class="linkback pp-back">${icon('back', 'sm')}<span>Tutte le soluzioni</span></button>`
     + `<button type="button" class="ibtn sm pp-tall" aria-pressed="${S.tall}" aria-label="${S.tall ? 'Abbassa il pannello e mostra di più la mappa' : 'Alza il pannello per leggere tutte le tappe'}" title="${S.tall ? 'Più mappa' : 'Più tappe'}">${icon(S.tall ? 'down' : 'up', 'sm')}</button></div>`
     + `<div class="pp-dsum"><span class="pp-times"><b>${esc(o.parti)}</b>${icon('next', 'sm')}<b>${esc(o.arrivi)}</b></span><span class="muted">${minTxt(o.minuti)} · ${cambiTxt(o)}${o.piedi ? ` · ${o.piedi} min a piedi` : ''}</span>${riskLine(o)}</div>`
-    + strikeOf([o]) + actsHtml(o, snapOf(o)) + detAvHtml(o) + tideHtml(o, snapOf(o))
+    + strikeOf([o]) + sospHtml(o) + actsHtml(o, snapOf(o)) + detAvHtml(o) + tideHtml(o, snapOf(o))
     + `<ol class="pp-steps"><li class="pp-step start"><span class="pp-sic">${S.from.kind === 'me' ? icon('locate') : icon('pin')}</span><div><b>Partenza alle ${esc(o.parti)}</b><small>${esc(epName(S.from))}</small></div></li>${steps.join('')}</ol>`
     + '<section class="pp-alts" aria-live="polite"></section>';
   renderAlts(); loadAlts(o); fillAcqua([o]);
 }
+// dettaglio: fermate sospese in evidenza, poi gli avvisi; con avvisi o marea alta la nota che orari e passaggi possono non bastare
 function detAvHtml(o) {
-  const av = avvisiOf(o, snapOf(o)); if (!av.length) return '';
+  const av = avvisiOf(o, snapOf(o));
+  const alta = (() => { const sn = snapOf(o), p = sn && Livelli.picco(sn.leaveMs, sn.arriveMs); return !!p && p.cm >= 110; })();
+  if (!av.length && !alta) return '';
   const only = new Set(solLines(o).map(l => Avvisi.keyOf(l.s, l.n)));
-  return `<div class="pp-avs"><p class="pp-avh">${icon('warn', 'sm')}<span>Avvisi per questo viaggio</span></p>${av.map(a => Avvisi.rowHtml(a, only)).join('')}</div>`;
+  return `<div class="pp-avs">`
+    + (av.length ? `<p class="pp-avh">${icon('warn', 'sm')}<span>Avvisi per questo viaggio</span></p>${av.map(a => Avvisi.rowHtml(a, only)).join('')}` : '')
+    + `<p class="pp-incerto">${icon('info', 'sm')}<span>${esc(Avvisi.NOTA_INCERTA)}</span></p></div>`;
+}
+// fermate di salita o discesa segnalate sospese: sopra «Inizia il viaggio», perché decidono se partire così
+function sospHtml(o) {
+  const sosp = Avvisi.fermateSospese(avvisiOf(o, snapOf(o)), solStopsN(o));
+  return sosp.map(f => `<p class="pp-sosp" role="note">${icon('warn', 'sm')}<span>${esc(Avvisi.sospesaTxt(f))}</span></p>`).join('');
+}
+// schermata «In viaggio»: avvisi del viaggio salvato (fermate sospese in evidenza), aggiornati con l'elenco degli avvisi
+function vgAvHtml(soloSospese = false) {
+  const s = Viaggio.active(); if (!s) return '';
+  const R = s.legs.filter(l => l.t === 'r'), stops = R.flatMap(l => [{ id: l.da.id, name: l.da.name }, { id: l.a.id, name: l.a.name }]);
+  const av = Avvisi.forJourney({ lines: R.map(l => ({ s: l.src, n: l.line })), stops: stops.map(x => x.id), fromMs: s.leaveMs, toMs: s.arriveMs }); if (!av.length) return '';
+  const sosp = Avvisi.fermateSospese(av, stops), only = new Set(R.map(l => Avvisi.keyOf(l.src, l.line)));
+  if (soloSospese) return sosp.map(f => `<p class="pp-sosp vg-sosp" role="note">${icon('warn', 'sm')}<span>${esc(Avvisi.sospesaTxt(f))}</span></p>`).join('');   // in cima, sopra l'indicazione
+  return `<div class="pp-avs vg-avs">`
+    + `<p class="pp-avh">${icon('warn', 'sm')}<span>Avvisi per questo viaggio</span></p>${av.map(a => Avvisi.rowHtml(a, only)).join('')}`
+    + `<p class="pp-incerto">${icon('info', 'sm')}<span>${esc(Avvisi.NOTA_INCERTA)}</span></p></div>`;
 }
 // alternative nel dettaglio
 function renderAlts() {

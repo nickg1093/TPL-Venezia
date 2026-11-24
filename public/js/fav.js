@@ -98,20 +98,33 @@ window.addEventListener('storage', ev => { if (ev.key === KEY_R) routes = loadR(
 
 // COPIA DI SICUREZZA (pannello Preferiti): file JSON con fermate e percorsi preferiti. Il ripristino UNISCE (non cancella nulla) e ricontrolla
 // ogni voce come se arrivasse dalla memoria del browser: il file può essere stato modificato a mano.
-export function exportData() { return { app: 'tpl-venezia', v: 1, creato: new Date().toISOString(), fermate: list, percorsi: routes }; }
+export function exportData() { return { app: 'tpl-venezia', v: 1, creato: new Date().toISOString(), fermate: list.map(x => ({ ...x })), percorsi: routes.map(x => ({ ...x })) }; }
+// Tutto o niente (v34): le voci nuove si preparano a parte e si scrivono insieme; se la memoria rifiuta la scrittura, si rimette com'era
+// e l'elenco in uso non cambia. Si contano solo le voci davvero aggiunte (tetto: 100 fermate, 30 percorsi; quelle presenti hanno la precedenza).
+const KEY_OK = /^(stop|zone):(nav|aut)[:|][^<>\s\u0000-\u001f]{1,150}$/;
 export function importData(d) {
-  if (!d || typeof d !== 'object' || d.app !== 'tpl-venezia' || d.v !== 1) throw new Error('file non riconosciuto');
-  let nf = 0, nr = 0;
-  for (const x of Array.isArray(d.fermate) ? d.fermate.slice(0, 100) : []) {
-    if (!x || typeof x.k !== 'string' || x.k.length > 220 || !/^(stop|zone):/.test(x.k) || typeof x.name !== 'string' || list.some(y => y.k === x.k)) continue;
-    list.push({ k: x.k, name: x.name.slice(0, 160), src: x.src === 'nav' ? 'nav' : 'aut', at: Number(x.at) || Date.now() }); nf++;
+  if (!d || typeof d !== 'object' || d.app !== 'tpl-venezia' || d.v !== 1) throw new Error('file non riconosciuto (non è una copia dei preferiti di questa app)');
+  const nl = list.slice(), nrt = routes.slice(); let nf = 0, nr = 0;
+  for (const x of Array.isArray(d.fermate) ? d.fermate.slice(0, 500) : []) {
+    if (nl.length >= 100) break;
+    if (!x || typeof x.k !== 'string' || !KEY_OK.test(x.k) || typeof x.name !== 'string' || !x.name.trim() || nl.some(y => y.k === x.k)) continue;
+    nl.push({ k: x.k, name: x.name.replace(/[\u0000-\u001f]/g, '').slice(0, 160), src: x.src === 'nav' ? 'nav' : 'aut', at: Number.isFinite(+x.at) && +x.at > 0 ? +x.at : Date.now() }); nf++;
   }
-  for (const x of Array.isArray(d.percorsi) ? d.percorsi.slice(0, 30) : []) {
+  for (const x of Array.isArray(d.percorsi) ? d.percorsi.slice(0, 200) : []) {
+    if (nrt.length >= 30) break;
     if (!x || !epOk(x.from) || !epOk(x.to)) continue;
-    const r = routeClean(x); if (routes.some(y => y.k === r.k)) continue; routes.push(r); nr++;
+    const r = routeClean(x); if (r.from && r.to && epKey(r.from) === epKey(r.to)) continue;
+    if (nrt.some(y => y.k === r.k)) continue; nrt.push(r); nr++;
   }
-  list = list.slice(0, 100); routes = routes.slice(0, 30);
-  if (!save() || !saveR()) throw new Error('memoria del browser non disponibile');
+  if (!nf && !nr) return { fermate: 0, percorsi: 0 };
+  let old1 = null, old2 = null;
+  try { old1 = localStorage.getItem(KEY); old2 = localStorage.getItem(KEY_R); } catch { throw new Error('memoria del browser non disponibile'); }
+  try { localStorage.setItem(KEY, JSON.stringify({ v: 1, items: nl })); localStorage.setItem(KEY_R, JSON.stringify({ v: 1, items: nrt })); }
+  catch {
+    try { old1 == null ? localStorage.removeItem(KEY) : localStorage.setItem(KEY, old1); old2 == null ? localStorage.removeItem(KEY_R) : localStorage.setItem(KEY_R, old2); } catch { /* com'era */ }
+    throw new Error('memoria del browser piena o non disponibile: nulla è stato cambiato');
+  }
+  list = nl; routes = nrt;
   try { navigator.storage?.persist?.(); } catch { /* facoltativo */ }
   return { fermate: nf, percorsi: nr };
 }

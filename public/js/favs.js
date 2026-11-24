@@ -65,8 +65,13 @@ function exportFile() {
 async function importFile(f) {
   if (!f) return;
   if (f.size > 200000) { X.toast('File troppo grande: non è una copia dei preferiti.', 5000); return; }
-  try { const r = Fav.importData(JSON.parse(await f.text())); X.toast(`Ripristinati ${r.fermate} ${r.fermate === 1 ? 'fermata' : 'fermate'} e ${r.percorsi} ${r.percorsi === 1 ? 'percorso' : 'percorsi'} (quelli già presenti restano).`, 6000); X.changed?.(); }
-  catch (e) { X.toast('Ripristino non riuscito: ' + e.message + '.', 6000); }
+  let d;
+  try { d = JSON.parse(await f.text()); } catch { X.toast('Ripristino non riuscito: il file è rovinato o non è una copia dei preferiti. I preferiti presenti non sono cambiati.', 6000); render(); return; }
+  try {
+    const r = Fav.importData(d);
+    X.toast(r.fermate + r.percorsi ? `Ripristinati ${r.fermate} ${r.fermate === 1 ? 'fermata' : 'fermate'} e ${r.percorsi} ${r.percorsi === 1 ? 'percorso' : 'percorsi'} (quelli già presenti restano).` : 'Niente di nuovo da ripristinare: le voci del file sono già presenti, non valide o oltre il massimo (100 fermate, 30 percorsi).', 6000);
+    X.changed?.();
+  } catch (e) { X.toast('Ripristino non riuscito: ' + e.message + '. I preferiti presenti non sono cambiati.', 6000); }
   render();
 }
 

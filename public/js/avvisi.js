@@ -71,20 +71,46 @@ export const forLines = list => uniq(list.flatMap(l => byLine.get(lineKey(l.s, l
 //  · sciopero: avviso di rete (senza linee), vale per ogni viaggio nel suo periodo; esclusi gli avvisi risolti e quelli generali.
 // Il server pubblica gli avvisi in corso e quelli che iniziano entro 3 giorni: per viaggi più lontani l'elenco può essere incompleto.
 const SEV_ORD = { severe: 0, warning: 1, info: 2 };
+// v34: anche gli avvisi GENERALI che possono far saltare corse o fermate (acqua alta, nebbia, sospensioni, servizio ridotto, deviazioni,
+// ritardi diffusi), segnati con «generale: true» e messi dopo quelli specifici del viaggio. Gli avvisi non cambiano le soluzioni: orari e
+// passaggi restano quelli dei dati ACTV, che spesso non tolgono una fermata sospesa; il pianificatore lo dice (fermateSospese).
+const GEN_EFF = new Set(['water', 'no_service', 'reduced', 'detour', 'delays', 'stop_moved', 'restoring']);
+const genRilevante = a => GEN_EFF.has(a.effect) || /nebbia|visibilit|maltempo|bora|vento forte/i.test(`${a.title || ''} ${a.text || ''}`);
 export function forJourney({ lines = [], stops = [], fromMs, toMs }, t = now()) {
   const lk = new Set(lines.map(l => lineKey(l.s, l.n))), sk = new Set(stops), out = [];
   for (const a of data?.items || []) {
     if (a.resolved || a.effect === 'resolved') continue;
     const strike = a.effect === 'strike';
-    if (a.general && !strike) continue;
+    if (a.general && !strike) {
+      if (!genRilevante(a)) continue;
+      if (a.dated || a.source === 'auto' ? !overlaps(a, fromMs, toMs) : !(a.from <= t && a.to >= t && fromMs <= t + 3 * 3600e3 && a.to >= fromMs)) continue;
+      out.push({ ...a, generale: true }); continue;
+    }
     const byL = a.ambito !== 'fermate' && (a.lines || []).some(l => lk.has(lineKey(l.s, l.n)));   // avviso di fermata: solo se la soluzione usa quella fermata
     if (!(strike ? a.dated : byL || (a.stops || []).some(id => sk.has(id)))) continue;
     if (a.dated || a.source === 'auto') { if (!overlaps(a, fromMs, toMs)) continue; }
     else if (!(a.from <= t && a.to >= t && fromMs <= t + 3 * 3600e3 && a.to >= fromMs)) continue;
     out.push(a);
   }
-  return out.sort((a, b) => (SEV_ORD[a.severity] ?? 1) - (SEV_ORD[b.severity] ?? 1) || a.from - b.from).slice(0, 6);
+  return out.sort((a, b) => (a.generale ? 1 : 0) - (b.generale ? 1 : 0) || (SEV_ORD[a.severity] ?? 1) - (SEV_ORD[b.severity] ?? 1) || a.from - b.from).slice(0, 6);
 }
+// fermate di salita o discesa di un viaggio segnalate come sospese, spostate o chiuse da un avviso (tra quelli di forJourney):
+// [{ id, name, label }] — i dati ACTV di solito NON tolgono il passaggio: l'orario resta, ma il mezzo può non fermarsi.
+export function fermateSospese(av, stops) {
+  const out = [];
+  for (const st of stops) {
+    const a = av.find(x => !x.generale && (x.effect === 'no_service' || x.effect === 'stop_moved') && (x.stops || []).includes(st.id));
+    if (a && !out.some(o => o.id === st.id)) out.push({ id: st.id, name: st.name || '', label: a.effect === 'stop_moved' ? 'spostata' : 'sospesa', av: a.id });
+  }
+  return out;
+}
+// frase unica per pianificatore e viaggio guidato
+export function sospesaTxt(f) {
+  return f.label === 'spostata'
+    ? `${f.name || 'Una fermata'}: un avviso la segnala spostata. L'orario resta quello della fermata solita: controlla l'avviso per sapere dove salire o scendere.`
+    : `${f.name || 'Una fermata'}: un avviso la segnala sospesa. Il passaggio resta in orario, ma il mezzo potrebbe non fermarsi: controlla l'avviso e scegli un'alternativa se serve.`;
+}
+export const NOTA_INCERTA = 'Gli orari, anche in tempo reale, non sempre tolgono una fermata sospesa o una corsa saltata: con acqua alta, nebbia, scioperi o altri motivi una fermata o una corsa può non esserci. Controlla gli avvisi e il pontile prima di partire.';
 // triangolo (mappa, titolo della fermata, riga del passaggio): solo avvisi gravi o di attenzione, non quelli informativi
 const isAlarm = a => isWarn(a) && a.severity !== 'info';
 export const lineHasAlert = (s, n) => (byLine.get(lineKey(s, n)) || []).some(isAlarm);
@@ -98,7 +124,7 @@ export const waterAlertId = () => { const l = (data?.items || []).filter(a => a.
 // riga cliccabile (pannello fermata e pannello mezzo): apre l'avviso nella finestra. "only" = linee da citare (quelle della fermata o del mezzo)
 export const rowHtml = (a, only = null) => {
   const ls = (a.lines || []).filter(l => !only || only.has(lineKey(l.s, l.n))).map(l => l.n);
-  const ln = ls.length ? `${ls.length === 1 ? 'Linea' : 'Linee'} ${ls.slice(0, 4).join(', ')}${ls.length > 4 ? '…' : ''} · ` : '';
+  const ln = a.generale ? 'Tutta la rete · ' : ls.length ? `${ls.length === 1 ? 'Linea' : 'Linee'} ${ls.slice(0, 4).join(', ')}${ls.length > 4 ? '…' : ''} · ` : '';
   return `<button type="button" class="alert-row" data-av="${esc(a.id)}" data-sev="${esc(a.severity || 'warning')}">${sevIcon(a)}<span>${effTag(a)}<b>${esc(a.title)}</b><small>${esc(ln + validity(a))} · tocca per leggere</small></span></button>`;
 };
 export const keyOf = lineKey;

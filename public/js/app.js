@@ -787,7 +787,10 @@ function renderDepartures() {
   // chi usa la tastiera non perde il punto in cui era (titolo «Partiti da poco», gruppo, interruttore della vista) a ogni aggiornamento
   const fa = document.activeElement, fsel = fa && plist.contains(fa) ? (fa.matches('[data-past]') ? '[data-past]' : fa.dataset.g ? `.grp[data-g="${CSS.escape(fa.dataset.g)}"]` : fa.dataset.view ? `[data-view="${CSS.escape(fa.dataset.view)}"]` : null) : null;
   const offNote = lastDeps.offline ? '<p class="av-note off-note" role="status"><b>Senza connessione:</b> solo gli orari programmati di oggi salvati nel telefono, senza ritardi, mezzi né soppressioni.</p>' : '';
-  plist.innerHTML = offNote + Avvisi.strikeNoteHtml(Avvisi.strikeFor(Date.now(), Date.now() + 3 * 3600e3)) + al.list.map(a => Avvisi.rowHtml(a, al.keys)).join('') + depListHtml(rows, z, live);
+  // v34: fermata segnalata sospesa o spostata da un avviso: i passaggi restano (i dati ACTV di solito non li tolgono), ma va detto chiaramente
+  const ids = new Set(stopIds(current)), sosp = al.list.find(a => (a.effect === 'no_service' || a.effect === 'stop_moved') && (a.stops || []).some(id => ids.has(id)));
+  const sospNote = sosp ? `<p class="pp-sosp" role="note">${icon('warn', 'sm')}<span>${sosp.effect === 'stop_moved' ? 'Un avviso segnala questa fermata come spostata: i passaggi sono quelli della fermata solita, controlla l\'avviso per sapere dove salire.' : 'Un avviso segnala questa fermata come sospesa: i passaggi restano in elenco, ma i mezzi potrebbero non fermarsi.'}</span></p>` : '';
+  plist.innerHTML = offNote + sospNote + Avvisi.strikeNoteHtml(Avvisi.strikeFor(Date.now(), Date.now() + 3 * 3600e3)) + al.list.map(a => Avvisi.rowHtml(a, al.keys)).join('') + depListHtml(rows, z, live);
   if (fsel) plist.querySelector(fsel)?.focus({ preventScroll: true });
   if (live && !guidePanelWait && !Guida.active() && plist.querySelector('.dep.d3')) {   // prima fermata aperta: guida del pannello (una volta)
     guidePanelWait = setTimeout(() => { guidePanelWait = null; if (!panel.hidden && current && (current.t === 'stop' || current.t === 'zone') && mode === 'live') Guida.panelReady(); }, 800);
