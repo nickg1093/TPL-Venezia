@@ -1,6 +1,6 @@
 # STATO DEL PROGETTO — da leggere per primo in ogni nuova conversazione
 
-Aggiornato il **24/11/2026** (v34 sul ramo locale `audit-v34`, non pubblicata: audit funzionale, avvisi chiari su fermate sospese e corse incerte, controlli sul campo con la posizione, correzione di `dati.yml`; su `main` la v33.13; online la v33.10; vedi PASSAGGIO_CONSEGNE.md §9 quater e `tests/collaudo/RAPPORTO.md`). Questo file dice dove siamo, come si lavora e dove guardare.
+Aggiornato il **24/11/2026** (v34 su `main` e sul ramo `audit-v34`, pubblicata su GitHub il 24/11 alle 23:14: audit funzionale, avvisi chiari su fermate sospese e corse incerte, controlli sul campo con la posizione, correzione di `dati.yml`; deploy su Render fatto dall'utente; vedi PASSAGGIO_CONSEGNE.md §9 quater e `tests/collaudo/RAPPORTO.md`). Questo file dice dove siamo, come si lavora e dove guardare.
 I dettagli stanno in **README.md** (riferimento completo, con sezioni numerate) e **CRITERI.md** (regole obbligatorie): qui non si ripetono,
 si indica la sezione. Chi modifica il progetto aggiorna anche questo file (sezioni 5, 8 e 9).
 
@@ -16,7 +16,7 @@ di percorso con viaggio guidato, avvisi di arrivo (notifiche push), avvisi di se
 | Sito | https://veneziatpl.onrender.com (Render, piano gratuito, 512 MB, regione Virginia) |
 | Codice | https://github.com/nickg1093/TPL-Venezia, ramo `main` (repository pubblico) |
 | Copia sul PC dell'utente | `D:\Downloads\TPL-Venezia` (Windows, clone git, aggiornata con GitHub Desktop) |
-| Versione | **v34** sul ramo locale `audit-v34` / v33.13 su `main` / v33.10 online (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v33.12`) |
+| Versione | **v34** su `main` (e ramo `audit-v34`) / online: la v34 dopo il deploy manuale dell'utente, prima v33.10 (`ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js`; `GUIDA_VER` in `public/js/guida.js` è `v33.12`) |
 | Tecnologia | Node.js 22, **nessun framework, nessun database**; dipendenze: solo `leaflet` e `protobufjs` |
 
 ## 2. Regole di lavoro (non negoziabili)
@@ -79,7 +79,7 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 
 ## 5. Stato attuale
 
-- **v34 (24/11/2026, audit funzionale, ramo locale `audit-v34`)**: fermate sospese e avvisi generali (nebbia, acqua/bassa marea) detti
+- **v34 (24/11/2026, audit funzionale)**: fermate sospese e avvisi generali (nebbia, acqua/bassa marea) detti
   chiaramente nel pianificatore, nel viaggio e nella fermata («il mezzo potrebbe non fermarsi»); viaggio guidato con controlli sul campo
   (mezzo perso, discesa mancata) e «Ricalcola da qui» dalla posizione; marea vecchia dichiarata; ripristino dei preferiti tutto-o-niente;
   `dati.yml` robusto ai 404 di Geofabrik. Rapporto: `tests/collaudo/RAPPORTO.md`; prove: `tests/ui/tutte.sh`/`tutte.ps1`.
@@ -246,7 +246,7 @@ intestazione e §12 del README, CHANGELOG.md; `GUIDA_VER` solo se si aggiungono 
     130%; WCAG 1.4.4 chiede il testo usabile al 200%. Opzioni: (a) lasciare così; (b) portare «Dimensione del testo» fino al 200% (va
     provata tutta l'interfaccia); (c) riattivare lo zoom della pagina (la mappa ha già i suoi gesti, ma i pannelli si ingrandirebbero con lo
     zoom del browser). Non deciso.
-14. **Push e audit v34**: correzione di `dati.yml` e ramo `audit-v34` in attesa dell'autorizzazione al push; nessun deploy.
+14. **Deploy della v34**: codice su `main` dal 24/11; il deploy su Render lo fa l'utente a mano (README §11).
 12. Pulizia consigliata e non confermata: variabili `ACTV_CENTRALE*` su Render, ramo `dependabot/...adm-zip`, impostazioni di GitHub (README §7.4).
 
 ## 9. Per iniziare una nuova conversazione

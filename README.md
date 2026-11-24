@@ -591,7 +591,7 @@ GitHub Desktop → *History* → tasto destro sul commit → *Revert changes in 
 ## 12. Novità della v33 (e v34)
 
 Pubblicata online dalla **v33.10** (21/11/2026). Le voci qui sotto erano state sviluppate in locale e sono ora tutte su `main`.
-- **v34 (24/11/2026, audit funzionale; ramo locale `audit-v34`, non pubblicata)**:
+- **v34 (24/11/2026, audit funzionale)**:
   - *Avvisi nel viaggio* (`public/js/avvisi.js`): `forJourney` include gli avvisi generali rilevanti (`GEN_EFF`: water, no_service,
     reduced, detour, delays, stop_moved, restoring, oppure nebbia/visibilità/maltempo/bora/vento/bassa marea/acqua alta nel testo) segnati
     `generale` e messi dopo quelli specifici (in corso adesso e viaggio entro 3 ore, o con date che si sovrappongono); `fermateSospese`,

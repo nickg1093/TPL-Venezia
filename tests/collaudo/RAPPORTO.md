@@ -1,6 +1,6 @@
 # Audit funzionale v34 — rapporto (24/11/2026)
 
-Base: v33.13 (`c76ea34`) + correzione `dati.yml`. Ramo **locale** `audit-v34` (nessun push, nessun deploy). Ambiente: server di prova con
+Base: v33.13 (`c76ea34`) + correzione `dati.yml`. Ramo `audit-v34`, poi `main` (push del 24/11/2026 autorizzato dall'utente; deploy su Render a cura dell'utente). Ambiente: server di prova con
 feed simulato (`tests/fakefeed.js`, mezzi, avvisi e marea finti), Chromium headless (Playwright 1.63) su schermi da 320 a 1440 px, rete
 pedonale e dati del ramo `dati` copiati in locale (`DATI_DIR`). Nessun dato reale modificato, nessuna notifica a utenti reali (la catena
 push è provata con iscrizioni generate nella prova e invio intercettato), nessun servizio esterno nuovo, nessuna dipendenza nuova.

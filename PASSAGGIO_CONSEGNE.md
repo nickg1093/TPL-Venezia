@@ -18,7 +18,7 @@ potenzialmente allagabili e passerelle dell'Atlante del Comune), preferiti, perc
 | Codice | https://github.com/nickg1093/TPL-Venezia (pubblico). Rami: `main` (codice), `dati` (file per i telefoni via CDN jsDelivr), `archivio-avvisi`, `archivio-marea` (archivi dei workflow), `ripristino-v33.10` (punto di ripristino prima dell'audit) |
 | PC dell'utente | `D:\Downloads\TPL-Venezia` = clone di GitHub (quello che va online). `D:\Downloads\TPL-Venezia-LOCALE` = copia di lavoro locale (contiene anche i dati solo locali sotto) |
 | Solo sul PC, mai su GitHub | `dati-ramses/curve-livello-shp.zip` (rilievo RAMSES di Insula, 333 MB), `dati-passerelle/*.pdf` (Atlante passerelle), `tmp-atlante/` |
-| Versione | `ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js` (tutte **v34**, ramo locale `audit-v34` non pubblicato; su `main` v33.13); `GUIDA_VER` in `public/js/guida.js` (`v33.12`) |
+| Versione | `ABOUT_VERSION` in `server.js`, `VERSION` in `public/sw.js` e `public/js/sistema.js` (tutte **v34**, su `main` dal 24/11/2026); `GUIDA_VER` in `public/js/guida.js` (`v33.12`) |
 
 ## 3. Architettura
 - **Server** Node.js 22, nessun framework né database, nessuna scrittura su disco tranne l'archivio GTFS; dipendenze solo `leaflet` e
@@ -134,9 +134,10 @@ testi sull'acqua alta sempre «potenzialmente allagabili», mai allagamento cert
   pubblici hanno il segno «ponte»; i 5 senza sono 4 ponti `access=private` e la carreggiata del Ponte della Libertà (`foot=no`), esclusi apposta dalla rete.
 - **Prove**: `npm test` 316/316; `tests/ui/passerelle.py` (DATI_DIR), `acqua.py` (anche `TESTO=1.3`), `offline.py`, `run.py`.
 
-## 9 quater. Audit funzionale e simulazioni sul campo (24/11/2026, v34, ramo `audit-v34` NON pubblicato)
+## 9 quater. Audit funzionale e simulazioni sul campo (24/11/2026, v34)
 - **Rapporto completo**: `tests/collaudo/RAPPORTO.md` (inventario e copertura, scenari, problemi con gravità/causa/correzione, misure,
-  limiti). Commit solo locali sul ramo `audit-v34` (correzione di `dati.yml` compresa): push e deploy solo con l'autorizzazione dell'utente.
+  limiti). Tre commit su `main` il 24/11/2026 (correzione di `dati.yml` compresa), con l'autorizzazione dell'utente; il ramo
+  `audit-v34` resta su GitHub come punto di ripristino. Il deploy su Render lo fa l'utente a mano.
 - **Avvisi e percorsi**: gli avvisi testuali (fermata sospesa, nebbia, acqua alta) non cambiano i percorsi, per scelta: ACTV lascia la
   corsa negli orari. Il server esclude solo ciò che il GTFS-RT dichiara (corse soppresse, fermate saltate). Ora lo si dice in modo chiaro
   ovunque (pianificatore, viaggio, pannello della fermata) e gli avvisi generali che possono far saltare corse entrano nel viaggio.
