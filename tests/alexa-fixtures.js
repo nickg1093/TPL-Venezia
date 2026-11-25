@@ -95,6 +95,6 @@ function richiesta(intent, slots = {}, { adesso = ADESSO, attributi = {}, scherm
     request: { type: tipo, requestId: 'amzn1.echo-api.request.' + n, timestamp: new Date(ts ?? adesso).toISOString(), locale, ...(tipo === 'IntentRequest' ? { intent: { name: intent, slots: sl } } : {}) }
   };
 }
-const parlato = r => (r && r.body && r.body.response && r.body.response.outputSpeech ? r.body.response.outputSpeech.ssml : '').replace(/<[^>]+>/g, '').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+const parlato = r => require('../alexa/parlato').senzaTag(r && r.body && r.body.response && r.body.response.outputSpeech ? r.body.response.outputSpeech.ssml : '');
 const Dir = require('../alexa/diretti');
 module.exports = { gtfs, conG, secsDi, SKILL_ID, stops, routes, ADESSO, MS, partenza, zona, marea, estremo, avviso, mose, soluzione, percorso, ambiente, richiesta, parlato };

@@ -30,7 +30,10 @@ const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 const speak = inner => `<speak>${inner}</speak>`;
 const pausa = (ms = 350) => `<break time="${ms}ms"/>`;
 // testo semplice (schede e cartoline): senza tag
-const senzaTag = s => String(s ?? '').replace(/<[^>]+>/g, '').replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+// toglie i tag <…> scorrendo i caratteri (niente espressioni regolari: nessun residuo tipo «<scr<b>ipt>»)
+const togliTag = s => { let o = '', dentro = false; for (const c of String(s ?? '')) { if (c === '<') dentro = true; else if (c === '>' && dentro) dentro = false; else if (!dentro) o += c; } return o; };
+const ENT = { apos: "'", quot: '"', lt: '<', gt: '>', amp: '&' };
+const senzaTag = s => togliTag(s).replace(/&(apos|quot|lt|gt|amp);/g, (m, n) => ENT[n]).replace(/\s+/g, ' ').trim();
 
 // ---- orari ----
 const hm = s => { const m = /^(\d{1,2}):(\d{2})/.exec(String(s || '')); return m ? [+m[1] % 24, +m[2]] : null; };
@@ -112,7 +115,7 @@ function nomeParlato(nome) {
     .replace(/\bS\.\s?([A-Za-zÀ-ÿ]+)/g, (m, p) => santo(p))
     .replace(/\bA RICHIEST[A]?\b/g, 'a richiesta')
     .replace(/\s*-\s*/g, ', ')
-    .replace(/\bFerry\b/g, 'Ferry');
+    ;
   return s;
 }
 // «Rialto "D"» -> { base: 'Rialto', pontile: 'D' }
@@ -136,7 +139,7 @@ function elenco(v) {
   const ult = a[a.length - 1];
   return a.slice(0, -1).join(', ') + (/^e/i.test(P_senza(ult)) ? ' ed ' : ' e ') + ult;
 }
-const P_senza = s => String(s ?? '').replace(/<[^>]+>/g, '').trim();
+const P_senza = s => togliTag(s).trim();
 const maiuscola = s => (s ? s[0].toUpperCase() + s.slice(1) : s);
 // frase di un avviso ACTV ripulita per la voce: niente indirizzi, hashtag, emoji, sigle in maiuscolo prolungate, lunghezza limitata
 function frasePulita(t, max = 160) {
@@ -148,5 +151,5 @@ function frasePulita(t, max = 160) {
 
 // giorno della settimana di una data «20261125» -> «mercoledì»
 const giornoSettimana = ymd => GIORNI[ymdDate(ymd).getUTCDay()];
-module.exports = { delleOra, dalleOra, parole, giornoSettimana, esc, speak, pausa, senzaTag, oraParlata, oraSenzaPrep, minutiParlati, attesa, durata, giornoParlato, diffGiorni, lineaParlata,
+module.exports = { delleOra, dalleOra, parole, giornoSettimana, esc, speak, pausa, senzaTag, togliTag, oraParlata, oraSenzaPrep, minutiParlati, attesa, durata, giornoParlato, diffGiorni, lineaParlata,
   nomeParlato, dividiPontile, fermataParlata, destinazioneParlata, elenco, maiuscola, frasePulita, MESI, GIORNI, LETTERE, hm };

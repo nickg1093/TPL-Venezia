@@ -26,7 +26,7 @@ function rich(intent, slots = {}, extra = {}) {
 // ogni prova usa un «indirizzo» diverso (X-Forwarded-For, con TRUST_PROXY=1) così i limiti di frequenza di una non incidono sulle altre
 let IP = '10.0.0.1'; const nuovoIp = () => (IP = '10.0.' + Math.floor(Math.random() * 250) + '.' + (1 + Math.floor(Math.random() * 250)));
 const chiedi = (base, corpo, token = TOKEN) => fetch(base + '/api/alexa', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': IP, ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: typeof corpo === 'string' ? corpo : JSON.stringify(corpo) });
-const parlato = j => (j.response.outputSpeech.ssml || '').replace(/<[^>]+>/g, '').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+const parlato = j => require('../alexa/parlato').senzaTag(j.response.outputSpeech.ssml || '');
 
 let S, SENZA;
 test.before(async () => { [S, SENZA] = await Promise.all([avvia({ ALEXA_TOKEN: TOKEN }), avvia({ ALEXA_TOKEN: '' })]); });

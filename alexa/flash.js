@@ -9,7 +9,7 @@ const S = require('./servizio');
 const M = require('./marea');
 
 let memo = null;
-const testo = s => P.senzaTag(String(s)).replace(/&apos;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim().slice(0, 4000);
+const testo = s => P.senzaTag(String(s)).slice(0, 4000);
 
 async function costruisci(ambiente) {
   const adesso = (ambiente.adesso || Date.now)(), C = await Ctx.crea({ ...ambiente, adesso: ambiente.adesso || Date.now });

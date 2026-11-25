@@ -131,9 +131,9 @@ const SLOT = {
   for (const [k, sp] of Object.entries(L.LUOGHI_SPECIALI)) { for (const c of sp.chiavi || []) { if (!alias.has(c)) alias.set(c, new Set()); alias.get(c).add(k); } }
   const fermate = idx.gruppi.map(g => {
     const sin = [g.nome, g.nome.replace(/\s+/g, ' ').toLowerCase(), ...(alias.get(g.chiave) || [])];
-    return valore(g.parlato.replace(/<[^>]+>/g, ''), g.chiave, sin);
+    return valore(P.togliTag(g.parlato), g.chiave, sin);
   });
-  for (const [k, sp] of Object.entries(L.LUOGHI_SPECIALI)) fermate.push(valore(sp.nome.replace(/<[^>]+>/g, ''), 'speciale:' + k, [k]));
+  for (const [k, sp] of Object.entries(L.LUOGHI_SPECIALI)) fermate.push(valore(P.togliTag(sp.nome), 'speciale:' + k, [k]));
   // LINEA: nome come nei dati (4.1, 5.2, N, T1, 12E…) + forma detta a voce
   const nomiLinea = [...new Set(Object.values(routes).map(r => String(r.name || '').trim()).filter(Boolean))];
   const linee = nomiLinea.map(n => { const parlato = P.senzaTag(P.lineaParlata(n)); return valore(parlato, n, [n, /^\d+\.\d+$/.test(n) ? n.replace('.', ' e ') : null, /^\d+\.\d+$/.test(n) ? n.replace('.', ' ') : null, /^\d+$/.test(n) ? `linea ${n}` : null]); });
