@@ -35,6 +35,10 @@ const LAG_DROP_MS = 20 * 60e3;      // rilevamento più vecchio di 20 min: mezzo
 const OLD_FLAG_MS = 3 * 60e3;       // più vecchio di 3 min: si disegna ma segnalato come non aggiornato
 const FUTURE_TS_MS = 60e3;          // timestamp nel futuro oltre 1 min: orologio del feed sballato, si usa l'ora di arrivo
 const MAX_DELAY_S = 4 * 3600;       // ritardi oltre 4 ore: dato incoerente, ignorato
+const ERR_SHOW_MS = 45e3;          // errore di lettura mostrato agli utenti solo se l'ultimo dato buono è più vecchio di così (o dopo 3 errori di fila)
+// messaggio di errore in italiano e senza dettagli interni («The operation was aborted due to timeout» -> «ACTV non risponde»)
+const erroreLeggibile = e => (e && (e.name === 'TimeoutError' || e.name === 'AbortError' || /aborted|timeout/i.test(e.message || '')) ? 'ACTV non risponde (tempo scaduto)'
+  : /fetch failed|ECONN|ENOTFOUND|EAI_AGAIN|socket/i.test((e && (e.message + ' ' + (e.cause && e.cause.code || ''))) || '') ? 'connessione ad ACTV non riuscita' : (e && e.message) || 'errore');
 const SIM_AFTER_ERRORS = 3;         // errori consecutivi di lettura prima di passare alle posizioni da orario...
 const SIM_AFTER_MS = 3 * 60e3;      // ...oppure nessun dato valido da 3 minuti
 const START_TOL_S = 600;            // tolleranza fra l'orario di partenza dichiarato dal feed e quello della corsa trovata per codice
@@ -156,7 +160,7 @@ async function pull(id, name) {
   const s8 = S[id], c = (s8.cache[name] ||= {}), h = {};
   if (c.etag) h['If-None-Match'] = c.etag;
   if (c.lm) h['If-Modified-Since'] = c.lm;
-  const res = await fetch(RT[id] + name, { signal: AbortSignal.timeout(8000), headers: h });
+  const res = await fetch(RT[id] + name, { signal: AbortSignal.timeout(12000), headers: h });
   const len = +res.headers.get('content-length') || 0;
   if (len > MAX_FEED_BYTES) throw new Error(`${name}: risposta troppo grande (${len} byte)`);
   if (res.status === 304 && c.ents) return { ents: c.ents, headerTs: c.headerTs, changed: false };
@@ -179,7 +183,7 @@ async function refresh(id) {
   try {
     const [P, U] = await Promise.all([pull(id, 'vehiclePositions'), pull(id, 'tripUpdates')]);
     const G = D[id], now = Date.now(), pos = P.ents, upd = U.ents;
-    s8.errCount = 0; s8.feedTs = P.headerTs ? P.headerTs * 1000 : null;
+    s8.errCount = 0; s8.error = null; s8.lastError = null; s8.feedTs = P.headerTs ? P.headerTs * 1000 : null;
     if (P.changed) {   // ritmo con cui ACTV pubblica davvero nuovi dati: si legge ~3 volte più spesso, senza sprechi
       if (s8.lastChange) { const iv = Math.min(60000, Math.max(500, now - s8.lastChange)); s8.pubMs = s8.pubMs ? 0.7 * s8.pubMs + 0.3 * iv : iv; }
       s8.lastChange = now;
@@ -267,7 +271,10 @@ async function refresh(id) {
     const idle = verifyTrips(id, tuOfVeh), vacated = applyTurni(id, vehOfTu, now);
     pickOwners(id); chooseTU(id, tuCand, idle, vacated, now); dedupePassages(id, now); buildStates(id); events.emit('push', true);
   } catch (err) {
-    s8.errCount++; s8.error = `${id}: ${err.message}`;
+    // Un errore isolato (ACTV lenta per qualche secondo) NON si mostra: i dati di pochi secondi prima restano validi e il giro dopo di solito
+    // riesce. L'errore diventa pubblico (banner) solo dopo 3 letture fallite di fila o se l'ultimo dato buono ha più di 45 secondi.
+    s8.errCount++; s8.lastError = `${id}: ${erroreLeggibile(err)}`;
+    s8.error = s8.errCount >= 3 || Date.now() - (s8.goodAt || 0) > ERR_SHOW_MS ? s8.lastError : null;
     // I dati reali restano finché sono recenti; solo dopo vari errori (o 3 minuti senza dati) si passa alle posizioni da orario, dichiarate come tali.
     if (s8.sim || (s8.errCount >= SIM_AFTER_ERRORS || Date.now() - s8.goodAt > SIM_AFTER_MS)) {
       try {
