@@ -1,11 +1,17 @@
 'use strict';
-// SKILLA ALEXA «Venezia TPL»: riceve la richiesta di Alexa (JSON), sceglie il gestore, costruisce la risposta (SSML + scheda APL).
+// SKILL ALEXA «Venezia TPL»: riceve la richiesta di Alexa (JSON), sceglie il gestore, costruisce la risposta (SSML + scheda APL).
 // Nessuna persistenza: tutto il contesto del dialogo sta negli attributi di sessione, che Alexa restituisce a ogni turno e dimentica a fine
 // sessione. Nessun identificativo (utente, dispositivo) viene letto, registrato o salvato; nessuna frase pronunciata viene scritta nei log.
+//
+// Contesto strutturato (att.ctx): la richiesta completa (intento, luogo, destinazione, mezzo, linea, data, ora, quantità, preferenze) e le
+// corse già dette (identità della corsa, non posizione nell'elenco). I seguiti («e quello dopo?», «e domani?», «e alle sette?», «no, verso
+// Venezia», «solo vaporetti», «senza cambi», «e al ritorno?», «e l'ultimo?») cambiano SOLO il parametro detto; una domanda completa nuova
+// sostituisce il contesto. Una richiesta non riuscita per caricamento o carico del server resta in att.riprova: «riprova» o «sì» la ripetono.
 const P = require('./parlato');
 const L = require('./luoghi');
 const T = require('./tempo');
 const U = require('./util');
+const MSG = require('./messaggi');
 const Ctx = require('./contesto');
 const APL = require('./apl');
 const D = require('./partenze');
@@ -13,13 +19,16 @@ const I = require('./itinerari');
 const M = require('./marea');
 const S = require('./servizio');
 const R = require('./riepilogo');
+const cal = require('../calendar');
 
 const MAX_SSML = 6500;          // limite Alexa 8000 caratteri: margine per i tag
 const MAX_ATTRIBUTI = 9000;     // byte di sessione: oltre, si tiene solo lo stretto necessario
 const TOLLERANZA_MS = 150e3;    // Amazon: richieste con marca temporale più vecchia di 150 s = rifiutate
-
-const AIUTO = 'Puoi chiedermi le prossime partenze, per esempio: quando passa il due alle Zattere. Oppure un percorso: come arrivo a Rialto da Piazzale Roma. Oppure la marea, il MOSE, gli avvisi di servizio o il riepilogo della mattina. Cosa vuoi sapere?';
-const BENVENUTO = 'Venezia T P L, un servizio indipendente, non ufficiale A C T V. Chiedimi partenze, percorsi, marea o avvisi. Per esempio: quando passa il due alle Zattere?';
+const BENVENUTO = MSG.benvenuto, AIUTO = MSG.aiuto;
+// domanda finale: no (risposte brevi, microfono aperto per i seguiti). Per la certificazione dello store, se Amazon chiede una domanda
+// esplicita quando la sessione resta aperta, basta mettere true: la domanda di riserva viene detta in coda.
+const DOMANDA_FINALE = false;
+const RIPROMPT = { partenze: 'Vuoi la corsa successiva?', ultima: 'Vuoi sapere altro?', prima: 'Vuoi sapere altro?', itinerario: 'Vuoi i dettagli, o il ritorno?', avvisi: 'Vuoi sapere altro?' };
 
 // ---- risposta ----
 const ssml = inner => `<speak>${inner}</speak>`;
@@ -31,15 +40,19 @@ function limita(v) {
 function risposta(env, { voce, reprompt = null, fine = true, scheda = null, attributi = {} }) {
   voce = limita(voce);
   const out = { version: '1.0', sessionAttributes: stringaOk(attributi), response: { outputSpeech: { type: 'SSML', ssml: ssml(voce) }, shouldEndSession: !!fine } };
-  if (!fine) out.response.reprompt = { outputSpeech: { type: 'SSML', ssml: ssml(P.esc(reprompt || 'Cosa vuoi sapere?')) } };
+  if (!fine) out.response.reprompt = { outputSpeech: { type: 'SSML', ssml: ssml(P.esc(reprompt || MSG.cosaVuoi)) } };
   if (scheda) { const d = APL.direttiva(scheda, env); if (d) out.response.directives = [d]; }
   return out;
 }
 function stringaOk(a) {
   let s = JSON.stringify(a);
-  if (s.length > MAX_ATTRIBUTI) { const { ultimo, ...resto } = a; s = JSON.stringify(resto); if (s.length > MAX_ATTRIBUTI) return {}; return resto; }
-  return a;
+  if (s.length <= MAX_ATTRIBUTI) return a;
+  const { ultimo, ...resto } = a; s = JSON.stringify(resto);
+  if (s.length <= MAX_ATTRIBUTI) return resto;
+  if (resto.ctx) { const { visti, ...c } = resto.ctx; resto.ctx = c; }
+  return JSON.stringify(resto).length <= MAX_ATTRIBUTI ? resto : {};
 }
+const testo = (t, extra = {}) => ({ voce: P.esc(t), ...extra });
 
 // ---- slot ----
 function slot(intent, nome) {
@@ -51,10 +64,21 @@ function slot(intent, nome) {
   if (!raw && !v) return null;
   return { raw, id: v ? v.id : null, nome: v ? v.name : null };
 }
-const testoSlot = (intent, nome) => { const s = slot(intent, nome); return s ? (s.nome || s.raw) : null; };
-const MEZZI = { nav: 'nav', aut: 'aut', tram: 'aut', bus: 'aut' };
-const mezzoDa = (intent) => { const s = slot(intent, 'mezzo'); if (!s) return null; return MEZZI[s.id] || MEZZI[String(s.raw || '').toLowerCase()] || null; };
-const lineaDa = (intent) => { const s = slot(intent, 'linea'); if (!s) return null; return L.parseLinea(s.id || s.nome || s.raw || ''); };
+// testo di un luogo: il nome risolto da Alexa, ma se l'utente ha detto anche il pontile o il numero («San Marco Cattaneo uno») si tiene ciò che ha detto
+// Per una fermata conta l'identificativo risolto da Alexa (chiave del gruppo nei dati), salvo quando ciò che è stato detto contiene più
+// parole del valore risolto (Alexa ha scelto un nome più corto: «San Marco Cattaneo» non è «San Marco») o un pontile/numero.
+const nParole = s => L.normalizza(s).split(' ').filter(Boolean).length;
+function testoSlot(intent, nome) {
+  const s = slot(intent, nome); if (!s) return null;
+  if (s.raw && etichettaDetta(s.raw)) return s.raw;
+  if (s.raw && s.nome && nParole(s.raw) > nParole(s.nome)) return s.raw;
+  if (s.id && nome !== 'direzione') { const k = s.id.startsWith('speciale:') ? s.id.slice(9) : s.id.replace(/_/g, ' '); return { chiave: k, testo: s.nome || s.raw }; }
+  return s.nome || s.raw;
+}
+const MEZZI_SLOT = { nav: 'nav', aut: 'aut', bus: 'bus', tram: 'tram', vaporetto: 'nav', vaporetti: 'nav', battello: 'nav', battelli: 'nav', autobus: 'bus' };
+const mezzoDa = intent => { const s = slot(intent, 'mezzo'); if (!s) return null; return MEZZI_SLOT[s.id] || MEZZI_SLOT[String(s.raw || '').toLowerCase()] || null; };
+const lineaDa = intent => { const s = slot(intent, 'linea'); if (!s) return null; return L.parseLinea(s.id || s.nome || s.raw || ''); };
+const numeroDa = intent => { const s = slot(intent, 'numero'); const v = s && (s.id || s.raw); return v != null && /^\d+$/.test(String(v)) ? Math.max(1, Math.min(+v, 6)) : null; };
 const quandoDa = (C, intent, entro = false) => T.quando({ data: slot(intent, 'data')?.raw, ora: slot(intent, 'ora')?.raw, adesso: C.adesso(), entro });
 // «oggi» detto senza ora = il resto della giornata (per marea e avvisi)
 function quandoGiorno(C, intent) {
@@ -62,44 +86,62 @@ function quandoGiorno(C, intent) {
   if (q.adesso && d && T.risolviData(d)) return { adesso: false, ymd: q.ymd, secs: 0, hhmm: '00:00', conOra: false, oggi: q.ymd, tipoData: 'giorno' };
   return q;
 }
-const prefDa = (intent) => { const s = slot(intent, 'preferenza'); const v = (s && (s.id || s.raw) || '').toLowerCase(); return v === 'veloce' || v === 'cambi' || v === 'piedi' ? v : null; };
+const prefDa = intent => { const s = slot(intent, 'preferenza'); const v = (s && (s.id || s.raw) || '').toLowerCase(); return v === 'veloce' || v === 'cambi' || v === 'piedi' ? v : null; };
+
+// pontile o numero detto insieme al nome: «Rialto pontile C», «San Marco Cattaneo uno», «Zattere B»
+const NUMERI = { uno: '1', due: '2', tre: '3', quattro: '4', cinque: '5', sei: '6', primo: '1', secondo: '2', terzo: '3' };
+function etichettaDetta(t) {
+  const m = /(?:\b(?:pontile|corsia|fermata|lato|palo)\s+([a-z]\d?|\d{1,2}|uno|due|tre|quattro|cinque|sei)|\s(\d{1,2}|uno|due|tre|quattro|primo|secondo|terzo|[a-h]))$/i.exec(String(t || '').trim());
+  if (!m) return null;
+  const v = (m[1] || m[2]).toLowerCase();
+  return { etichetta: (NUMERI[v] || v).toUpperCase(), base: String(t).trim().slice(0, m.index).trim() };
+}
 
 // ---- luoghi: risoluzione, ambiguità, dati mancanti ----
-const CAMPI = { luogo: 'la fermata', da: 'la partenza', a: 'la destinazione', dir: 'la direzione' };
-const DOMANDE = {
-  partenze: 'Da quale fermata?', ritardo: 'Di quale linea o fermata?', ultima: 'Da quale fermata?', stivali: null, passerelle: null,
-  itinerario: { da: 'Da dove parti?', a: 'Dove vuoi andare?' }
-};
+const DOMANDE = { partenze: MSG.fermataMancante, ultima: MSG.fermataMancante, prima: MSG.fermataMancante, linee: MSG.fermataMancante, itinerario: { da: MSG.origineMancante, a: MSG.destinazioneMancante } };
 function risolviCampo(C, req, campo) {
   const v = req[campo]; if (v == null) return { ok: null };
-  if (typeof v === 'object' && v.chiave) { const g = C.luoghi.gruppoPerChiave(v.chiave); return g ? { ok: g } : { nessuno: v.chiave }; }
-  const r = C.luoghi.cerca(String(v), { mezzo: req.mezzo || null });
+  if (typeof v === 'object' && v.chiave) {
+    const g = C.luoghi.gruppoPerChiave(v.chiave);
+    if (g) return { ok: g, ids: v.ids || null };
+    if (!v.testo) return { nessuno: v.chiave };
+    return risolviCampo(C, { ...req, [campo]: v.testo }, campo);
+  }
+  const e = etichettaDetta(v);
+  const src = req.mezzo ? (D.mezzoInfo(req.mezzo) || {}).src || null : null;
+  let r = C.luoghi.cerca(String(v), { mezzo: src });
+  // il pontile o il numero detti restringono le fermate del luogo (solo se esistono davvero con quell'etichetta)
+  if (e) {
+    const r2 = C.luoghi.cerca(e.base, { mezzo: src }), g = (r2.ok || r.ok);
+    if (g && C.zone) { const ids = g.ids.filter(id => (C.zone.etichetta(id) || (C.luoghi.stopPerId(id) || {}).pontile || '').toUpperCase() === e.etichetta); if (ids.length) return { ok: g, ids }; }
+    if (r2.ok) r = r2;
+  }
   if (r.ok) return { ok: r.ok };
   if (r.ambiguo) return { ambiguo: r.ambiguo.slice(0, 4) };
   return { nessuno: String(v) };
 }
-function elencoOpzioni(g) { return P.elenco(g.map(x => x.parlato)); }
+const elencoOpzioni = g => P.elenco(g.map(x => x.parlato));
 
 // ---- esecuzione di una richiesta ----
-// req: { tipo, luogo|da|a|dir (testo o {chiave}), linea, mezzo, quando, cambi, pref, indice, off, ... }
+// req: { tipo, luogo|da|a (testo o {chiave, ids}), dirTesto, linea, mezzo, quando, n, cambi, pref, indice, visti, dopoMs, dopoSecs, dettagli, quale, ... }
 async function esegui(C, env, req, att) {
   const tipo = req.tipo;
-  const campiNecessari = { partenze: ['luogo'], ultima: ['luogo'], itinerario: ['da', 'a'], ritardo: [], stivali: [], passerelle: [], avvisi: [] }[tipo] || [];
-  const gruppi = {};
+  const campiNecessari = { partenze: ['luogo'], ultima: ['luogo'], prima: ['luogo'], linee: ['luogo'], itinerario: ['da', 'a'] }[tipo] || [];
+  const gruppi = {}, idsScelti = {};
   for (const campo of ['luogo', 'da', 'a']) {
     if (req[campo] == null) continue;
     const r = risolviCampo(C, req, campo);
     if (r.ambiguo) {
       att.pend = { req: { ...req, [campo]: undefined }, campo, opzioni: r.ambiguo.map(g => g.chiave) };
-      const v = `Ho trovato più fermate: ${elencoOpzioni(r.ambiguo)}. Quale intendi? Puoi dire il nome, oppure il numero, da uno a ${P.parole(r.ambiguo.length)}.`;
-      return { voce: P.esc(v).replace(/&apos;/g, "'"), reprompt: `Quale intendi? ${elencoOpzioni(r.ambiguo)}.`, fine: false, attributi: att, pendente: true };
+      const v = r.ambiguo.length === 2 ? `Intendi ${r.ambiguo[0].parlato} o ${r.ambiguo[1].parlato}?` : `Intendi ${elencoOpzioni(r.ambiguo).replace(/ e ([^,]+)$/, ' o $1')}?`;
+      return { voce: P.esc(v), reprompt: v, fine: false, attributi: att, pendente: true };
     }
     if (r.nessuno) {
       att.pend = { req: { ...req, [campo]: undefined }, campo };
-      const v = `Non conosco la fermata «${P.senzaTag(String(r.nessuno)).slice(0, 40)}». Prova con un altro nome, per esempio una fermata vicina.`;
+      const v = `Non conosco la fermata ${P.senzaTag(String(r.nessuno)).slice(0, 40)}. Prova con un altro nome, per esempio una fermata vicina.`;
       return { voce: P.esc(v), reprompt: 'Dimmi un altro nome.', fine: false, attributi: att, pendente: true };
     }
-    gruppi[campo] = r.ok;
+    gruppi[campo] = r.ok; if (r.ids) idsScelti[campo] = r.ids;
   }
   for (const campo of campiNecessari) {
     if (!gruppi[campo]) {
@@ -110,37 +152,64 @@ async function esegui(C, env, req, att) {
   }
   if (tipo === 'ritardo' && !req.linea && !gruppi.luogo) {
     att.pend = { req: { ...req }, campo: 'lineaOLuogo' };
-    return { voce: P.esc('Di quale linea o fermata?'), reprompt: 'Di quale linea o fermata?', fine: false, attributi: att, pendente: true };
+    return { voce: P.esc(MSG.lineaOFermata), reprompt: MSG.lineaOFermata, fine: false, attributi: att, pendente: true };
   }
   delete att.pend;
   const mezzo = req.mezzo || null;
+  // destinazione detta come luogo d'arrivo («da Rialto a Piazzale Roma») o come direzione («verso Venezia»)
+  const dir = req.dirTesto || (gruppi.a && tipo !== 'itinerario' ? gruppi.a : null);
   let r;
-  switch (tipo) {
-    case 'partenze': r = await D.partenze(C, { gruppo: gruppi.luogo, linea: req.linea || null, mezzo, dir: req.dirTesto || null, dirNome: req.dirTesto || null, off: req.off || 0, quando: req.quando || null }); break;
-    case 'ritardo': r = await D.ritardo(C, { gruppo: gruppi.luogo || null, linea: req.linea || null, mezzo }); break;
-    case 'ultima': r = await D.ultima(C, { gruppo: gruppi.luogo, linea: req.linea || null, mezzo, dir: req.dirTesto || null }); break;
-    case 'itinerario': r = await I.itinerario(C, { da: gruppi.da, a: gruppi.a, quando: req.quando || null, mezzo, cambi: req.cambi ?? null, pref: req.pref || null, indice: req.indice || 0 }); break;
-    case 'marea': r = await M.marea(C); break;
-    case 'colmo': r = await M.colmo(C); break;
-    case 'acquaalta': r = await M.acquaAlta(C, { quando: req.quando || null }); break;
-    case 'mose': r = await M.mose(C); break;
-    case 'stivali': r = await M.stivali(C, { gruppo: gruppi.luogo || null }); break;
-    case 'passerelle': r = await M.passerelle(C, { gruppo: gruppi.luogo || null }); break;
-    case 'avvisi': r = await S.avvisi(C, { linea: req.linea || null, gruppo: gruppi.luogo || null, dataRichiesta: req.dataRichiesta || null, soloSciopero: !!req.soloSciopero, tutti: !!req.tutti }); break;
-    case 'riepilogo': r = await R.riepilogo(C, { momento: req.momento || null, gruppo: gruppi.luogo || null }); break;
-    default: return { voce: P.esc('Non ho capito.'), fine: false, attributi: att };
-  }
-  // contesto per i seguiti: la richiesta (testo o chiavi) e ciò che è stato detto
-  att.ctx = { ...(r.ctx || {}), req: richiestaCompatta(req, gruppi) };
-  att.ultimo = r.voce;
-  const reprompt = r.reprompt || (r.vuoto ? 'Vuoi provare con altro?' : null);
-  return { voce: r.voce, scheda: r.scheda || null, reprompt, fine: !reprompt, attributi: att };
+  try {
+    switch (tipo) {
+      case 'partenze': r = await D.partenze(C, { gruppo: gruppi.luogo, ids: idsScelti.luogo, linea: req.linea || null, mezzo, dir, escludiDir: req.escludiDir || null, n: req.n || 1, visti: req.visti, dopoMs: req.dopoMs, dopoSecs: req.dopoSecs, quando: req.quando || null }); break;
+      case 'ritardo': r = await D.ritardo(C, { gruppo: gruppi.luogo || null, ids: idsScelti.luogo, linea: req.linea || null, mezzo, dir }); break;
+      case 'ultima': case 'prima': r = await D.estremo(C, { quale: tipo, gruppo: gruppi.luogo, ids: idsScelti.luogo, linea: req.linea || null, mezzo, dir, verso: !!req.dirTesto, quando: req.quando || null }); break;
+      case 'linee': r = await D.linee(C, { gruppo: gruppi.luogo, mezzo }); break;
+      case 'itinerario': r = await I.itinerario(C, { da: gruppi.da, a: gruppi.a, quando: req.quando || null, mezzo, cambi: req.cambi ?? null, pref: req.pref || null, indice: req.indice || 0, dettagli: !!req.dettagli }); break;
+      case 'marea': r = await M.marea(C); break;
+      case 'colmo': r = await M.colmo(C, { minimo: !!req.minimo }); break;
+      case 'acquaalta': r = await M.acquaAlta(C, { quando: req.quando || null }); break;
+      case 'mose': r = await M.mose(C); break;
+      case 'stivali': r = await M.stivali(C, { gruppo: gruppi.luogo || null }); break;
+      case 'passerelle': r = await M.passerelle(C, { gruppo: gruppi.luogo || null }); break;
+      case 'avvisi': r = await S.avvisi(C, { linea: req.linea || null, gruppo: gruppi.luogo || null, mezzo, dataRichiesta: req.dataRichiesta || null, soloSciopero: !!req.soloSciopero, tutti: !!req.tutti }); break;
+      case 'riepilogo': r = await R.riepilogo(C, { momento: req.momento || null, gruppo: gruppi.luogo || null, mezzo, dir: req.dirTesto || null }); break;
+      default: return { voce: P.esc(MSG.nonCapito), fine: false, attributi: att };
+    }
+  } catch (e) { return erroreRichiesta(C, req, e, att); }
+  delete att.riprova;
+  // contesto per i seguiti: la richiesta (luoghi come chiavi) e ciò che è stato detto
+  const rc = richiestaCompatta(req, gruppi, idsScelti);
+  if (r.ctx && r.ctx.visti) { rc.visti = r.ctx.visti; rc.dopoMs = r.ctx.dopoMs; rc.dopoSecs = r.ctx.dopoSecs; }
+  if (r.ctx && r.ctx.dirEffettiva) { rc.dirTesto = r.ctx.dirEffettiva; delete rc.escludiDir; }
+  att.ctx = { ...(r.ctx || {}), req: rc };
+  delete att.ctx.visti; delete att.ctx.dopoMs; delete att.ctx.dopoSecs; delete att.ctx.dirEffettiva;
+  if (r.proponi) att.proponi = r.proponi; else delete att.proponi;
+  att.ultimo = r.voce; att.ultimoLive = ['partenze', 'ritardo', 'riepilogo'].includes(tipo) && !(req.quando && !req.quando.adesso);
+  // la sessione resta aperta per i seguiti («e il prossimo?»), senza una domanda in coda a ogni risposta; il riepilogo (routine) chiude
+  const reprompt = r.reprompt || (r.proponi ? 'Vuoi che cerchi un percorso con cambi?' : tipo === 'riepilogo' ? null : (RIPROMPT[tipo] || 'Vuoi sapere altro?'));
+  const voce = DOMANDA_FINALE && reprompt && !r.reprompt && !r.proponi ? `${r.voce} ${P.esc(reprompt)}` : r.voce;
+  return { voce, scheda: r.scheda || null, reprompt, fine: !reprompt, attributi: att };
 }
-function richiestaCompatta(req, gruppi) {
+function richiestaCompatta(req, gruppi, ids) {
   const o = { tipo: req.tipo };
-  for (const k of ['luogo', 'da', 'a']) if (gruppi[k]) o[k] = { chiave: gruppi[k].chiave };
-  for (const k of ['linea', 'mezzo', 'cambi', 'pref', 'indice', 'quando', 'dirTesto', 'dataRichiesta', 'soloSciopero', 'momento']) if (req[k] != null) o[k] = req[k];
+  for (const k of ['luogo', 'da', 'a']) if (gruppi[k]) o[k] = ids[k] ? { chiave: gruppi[k].chiave, ids: ids[k] } : { chiave: gruppi[k].chiave };
+  for (const k of ['linea', 'mezzo', 'cambi', 'pref', 'indice', 'quando', 'dirTesto', 'escludiDir', 'dataRichiesta', 'soloSciopero', 'momento', 'n', 'minimo']) if (req[k] != null) o[k] = req[k];
   return o;
+}
+// errori ripetibili: la richiesta resta pronta per «riprova» / «sì»
+function erroreRichiesta(C, req, e, att) {
+  const code = e && e.code;
+  const ripetibile = code === 409 || code === 503 || code === 429 || (e && e.busy);
+  if (!ripetibile) return { voce: P.esc(U.erroreParlato(e)), reprompt: MSG.cosaVuoi, fine: false, attributi: att };
+  const giaInCorso = att.riprova && JSON.stringify(att.riprova) === JSON.stringify(req) && code === 409;
+  att.riprova = req;
+  if (code === 409) {
+    const oggi = T.adessoRoma(C.adesso()).ymd, ymd = req.quando && !req.quando.adesso ? req.quando.ymd : oggi;
+    const t = (giaInCorso ? MSG.caricamentoAncora : MSG.caricamento).replace('{giorno}', P.giornoParlato(ymd, oggi));
+    return { voce: P.esc(t), reprompt: MSG.vuoiRiprovare, fine: false, attributi: att };
+  }
+  return { voce: P.esc(MSG.occupato), reprompt: MSG.vuoiRiprovare, fine: false, attributi: att };
 }
 
 // ---- gestori per intento ----
@@ -148,96 +217,163 @@ const QUANDO_SERIALE = q => (q && !q.adesso ? { adesso: false, ymd: q.ymd, secs:
 
 function richiestaDa(C, intent, nome, att) {
   const luogo = testoSlot(intent, 'luogo'), da = testoSlot(intent, 'partenza'), a = testoSlot(intent, 'arrivo'), dir = testoSlot(intent, 'direzione');
-  const linea = lineaDa(intent), mezzo = mezzoDa(intent);
+  const linea = lineaDa(intent), mezzo = mezzoDa(intent), n = numeroDa(intent);
   const entro = /Entro/.test(nome);
+  const c = att.ctx && att.ctx.req;
+  // domanda senza fermata dopo una risposta su una fermata («e l'ultimo?», «quali linee passano?»): luogo, direzione e filtri dal contesto
+  const eredita = req => {
+    if (req.luogo || !c || !c.luogo) return req;
+    const out = { ...req, luogo: c.luogo };
+    if (!req.dirTesto && !req.a) { if (c.dirTesto) out.dirTesto = c.dirTesto; if (c.a) out.a = c.a; }
+    if (!req.linea && !req.mezzo) { if (c.linea) out.linea = c.linea; if (c.mezzo) out.mezzo = c.mezzo; }
+    return out;
+  };
   switch (nome) {
-    case 'PartenzeIntent': return { tipo: 'partenze', luogo, linea, mezzo, dirTesto: dir, quando: QUANDO_SERIALE(quandoDa(C, intent)) };
-    case 'RitardoIntent': return { tipo: 'ritardo', luogo, linea, mezzo };
-    case 'UltimaCorsaIntent': return { tipo: 'ultima', luogo, linea, mezzo, dirTesto: dir };
+    case 'PartenzeIntent': case 'ProssimaCorsaIntent': {
+      const q = quandoDa(C, intent);
+      return eredita({ tipo: 'partenze', luogo: luogo || da, a: a || null, linea, mezzo, dirTesto: dir, n: n || (nome === 'ProssimaCorsaIntent' ? 1 : 3), quando: QUANDO_SERIALE(q) });
+    }
+    case 'RitardoIntent': return { tipo: 'ritardo', luogo, linea, mezzo, dirTesto: dir };
+    case 'UltimaCorsaIntent': case 'PrimaCorsaIntent': {
+      const q = quandoDa(C, intent);
+      return eredita({ tipo: nome === 'UltimaCorsaIntent' ? 'ultima' : 'prima', luogo: luogo || da, a: a || null, linea, mezzo, dirTesto: dir, quando: QUANDO_SERIALE(q) });
+    }
+    case 'LineeIntent': return eredita({ tipo: 'linee', luogo, mezzo });
     case 'ItinerarioIntent': case 'ItinerarioEntroIntent': {
       const q = quandoDa(C, intent, entro && !!slot(intent, 'ora'));
-      const c = slot(intent, 'cambi'); const nc = c && c.raw != null && /^\d+$/.test(c.raw) ? +c.raw : null;
+      const cs = slot(intent, 'cambi'); const nc = cs && cs.raw != null && /^\d+$/.test(cs.raw) ? +cs.raw : null;
       return { tipo: 'itinerario', da, a, mezzo, quando: QUANDO_SERIALE(q), cambi: nc, pref: prefDa(intent) };
     }
     case 'MareaIntent': return { tipo: 'marea' };
     case 'ColmoIntent': return { tipo: 'colmo' };
+    case 'MinimoIntent': return { tipo: 'colmo', minimo: true };
     case 'AcquaAltaIntent': return { tipo: 'acquaalta', quando: QUANDO_SERIALE(quandoGiorno(C, intent)) };
     case 'MoseIntent': return { tipo: 'mose' };
     case 'StivaliIntent': return { tipo: 'stivali', luogo };
     case 'PasserelleIntent': return { tipo: 'passerelle', luogo };
-    case 'AvvisiIntent': return { tipo: 'avvisi', luogo, linea, dataRichiesta: slot(intent, 'data')?.raw || null };
-    case 'ScioperoIntent': return { tipo: 'avvisi', linea, soloSciopero: true, dataRichiesta: slot(intent, 'data')?.raw || null };
-    case 'RiepilogoIntent': return { tipo: 'riepilogo', luogo, momento: /mattina/i.test(String(slot(intent, 'momento')?.raw || '')) ? 'mattina' : null };
+    case 'AvvisiIntent': return { tipo: 'avvisi', luogo, linea, mezzo, dataRichiesta: slot(intent, 'data')?.raw || null };
+    case 'ScioperoIntent': return { tipo: 'avvisi', linea, mezzo, soloSciopero: true, dataRichiesta: slot(intent, 'data')?.raw || null };
+    case 'RiepilogoIntent': return { tipo: 'riepilogo', luogo, mezzo, dirTesto: dir, momento: /mattina/i.test(String(slot(intent, 'momento')?.raw || slot(intent, 'momento')?.id || '')) ? 'mattina' : null };
     default: return null;
   }
 }
 
-// seguiti: modificano l'ultima richiesta
+const addGiorni = (C, n) => { const d = cal.addDays(T.adessoRoma(C.adesso()).ymd, n); return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`; };
+const quandoGiornoDa = (C, data) => { const q = T.quando({ data, ora: null, adesso: C.adesso() }); return q.adesso && T.risolviData(data) ? { adesso: false, ymd: q.ymd, secs: 0, hhmm: '00:00', conOra: false, oggi: q.ymd, tipoData: 'giorno' } : q; };
+const ORARI = ['partenze', 'itinerario', 'ultima', 'prima'];
+const ricomincia = req => { const r = { ...req }; delete r.visti; delete r.dopoMs; delete r.dopoSecs; r.indice = 0; return r; };
+
+// seguiti: modificano solo il parametro detto dell'ultima richiesta
 async function seguito(C, env, intent, att, nome) {
   const c = att.ctx && att.ctx.req;
-  const manca = () => ({ voce: P.esc('Prima dimmi cosa cerchi, per esempio: quando passa il due alle Zattere.'), reprompt: 'Cosa vuoi sapere?', fine: false, attributi: att });
+  const manca = () => ({ voce: P.esc(MSG.contestoAssente), reprompt: MSG.cosaVuoi, fine: false, attributi: att });
   if (!c) return manca();
   const req = { ...c };
-  if (nome === 'AMAZON.NextIntent' || nome === 'AltreCorseIntent') {
-    if (c.tipo === 'partenze') { req.off = att.ctx.off || 0; return esegui(C, env, req, att); }
-    if (c.tipo === 'itinerario') { req.indice = (att.ctx.indice || 1); return esegui(C, env, req, att); }
-    if (c.tipo === 'avvisi') { req.tutti = true; return esegui(C, env, req, att); }
-    return { voce: P.esc('Non ho altro da aggiungere. Chiedimi pure qualcos\'altro.').replace(/&apos;/g, "'"), reprompt: 'Cosa vuoi sapere?', fine: false, attributi: att };
+  switch (nome) {
+    case 'AMAZON.NextIntent': case 'AltreCorseIntent': {
+      if (c.tipo === 'partenze') { req.n = nome === 'AltreCorseIntent' ? Math.max(3, numeroDa(intent) || 3) : 1; return esegui(C, env, req, att); }
+      if (c.tipo === 'itinerario') { req.indice = att.ctx.indice || 1; delete req.dettagli; return esegui(C, env, req, att); }
+      if (c.tipo === 'avvisi') { req.tutti = true; return esegui(C, env, req, att); }
+      if (c.tipo === 'ultima' || c.tipo === 'prima') return esegui(C, env, ricomincia({ ...req, tipo: 'partenze', n: 3 }), att);
+      return testo('Non ho altro da aggiungere. Chiedimi pure qualcos\'altro.', { reprompt: MSG.cosaVuoi, fine: false, attributi: att });
+    }
+    case 'RitornoIntent':
+      if (c.tipo === 'itinerario') { const r = ricomincia(req); [r.da, r.a] = [req.a, req.da]; return esegui(C, env, r, att); }
+      if (['partenze', 'ultima', 'prima'].includes(c.tipo) && c.a) { const r = ricomincia(req); [r.luogo, r.a] = [c.a, c.luogo]; delete r.dirTesto; return esegui(C, env, r, att); }
+      return testo('Per il ritorno dimmi da dove parti e dove vai, per esempio: come arrivo a Piazzale Roma da Rialto.', { reprompt: 'Da dove parti e dove vai?', fine: false, attributi: att });
+    case 'DomaniIntent': {
+      const dataDetta = slot(intent, 'data')?.raw, oraDetta = slot(intent, 'ora')?.raw;
+      if (ORARI.includes(c.tipo)) {
+        const base = c.quando && !c.quando.adesso ? `${c.quando.ymd.slice(0, 4)}-${c.quando.ymd.slice(4, 6)}-${c.quando.ymd.slice(6, 8)}` : null;
+        const data = dataDetta || (oraDetta ? base : addGiorni(C, 1));
+        const ora = oraDetta || (dataDetta || !oraDetta ? (c.quando && c.quando.conOra ? c.quando.hhmm : null) : null);
+        const q = T.quando({ data, ora, adesso: C.adesso(), entro: !!(c.quando && c.quando.entro) });
+        const r = ricomincia(req); r.quando = QUANDO_SERIALE(q);
+        if (r.tipo === 'partenze' && !r.quando) r.n = c.n || 1;
+        return esegui(C, env, r, att);
+      }
+      if (c.tipo === 'acquaalta' || ['marea', 'colmo', 'mose', 'stivali'].includes(c.tipo)) { req.tipo = 'acquaalta'; req.quando = QUANDO_SERIALE(quandoGiornoDa(C, dataDetta || addGiorni(C, 1))); return esegui(C, env, req, att); }
+      if (c.tipo === 'avvisi') { req.dataRichiesta = dataDetta || addGiorni(C, 1); return esegui(C, env, req, att); }
+      return manca();
+    }
+    case 'SenzaCambiIntent':
+      if (c.tipo === 'itinerario') { const r = ricomincia(req); r.cambi = 0; return esegui(C, env, r, att); }
+      if (['partenze', 'ultima', 'prima'].includes(c.tipo)) return testo('Le partenze che ti ho detto sono già corse dirette da quella fermata.', { reprompt: MSG.cosaVuoi, fine: false, attributi: att });
+      return manca();
+    case 'AlternativaIntent': {
+      if (c.tipo !== 'itinerario') return manca();
+      const pref = prefDa(intent), r = { ...req }; delete r.dettagli;
+      if (pref) { r.pref = pref; r.indice = 0; r.cambi = pref === 'cambi' ? null : r.cambi ?? null; } else r.indice = att.ctx.indice || 1;
+      return esegui(C, env, r, att);
+    }
+    case 'CorrezioneIntent': {
+      // «no, verso Venezia», «solo vaporetti», «con la linea due», «no, intendevo Rialto»: cambia solo ciò che è detto
+      const dir = testoSlot(intent, 'direzione'), luogo = testoSlot(intent, 'luogo'), mezzo = mezzoDa(intent), linea = lineaDa(intent);
+      if (!dir && !luogo && !mezzo && !linea) return manca();
+      const r = ricomincia(req);
+      if (dir) { if (c.tipo === 'itinerario') r.a = dir; else { r.dirTesto = dir; delete r.a; delete r.escludiDir; } }
+      if (luogo) { if (c.tipo === 'itinerario') r.da = luogo; else r.luogo = luogo; }
+      if (mezzo) { r.mezzo = mezzo; if (!linea) delete r.linea; }
+      if (linea) r.linea = linea;
+      return esegui(C, env, r, att);
+    }
+    case 'AltraDirezioneIntent': {
+      if (!['partenze', 'ultima', 'prima'].includes(c.tipo)) return manca();
+      const r = ricomincia(req);
+      if (c.a) { [r.luogo, r.a] = [c.a, c.luogo]; return esegui(C, env, r, att); }
+      if (!c.dirTesto) return testo('In quale direzione?', { reprompt: 'Dimmi la direzione, per esempio: verso Lido.', fine: false, attributi: att });
+      // direzione opposta: le corse che NON vanno verso la direzione detta prima
+      r.escludiDir = c.dirTesto; delete r.dirTesto;
+      return esegui(C, env, r, att);
+    }
+    case 'DettagliIntent':
+      if (c.tipo === 'itinerario') { const r = { ...req, dettagli: true, indice: Math.max(0, (att.ctx.indice || 1) - 1) }; return esegui(C, env, r, att); }
+      if (c.tipo === 'partenze') { const r = ricomincia(req); r.n = 3; return esegui(C, env, r, att); }
+      if (c.tipo === 'avvisi') { req.tutti = true; return esegui(C, env, req, att); }
+      return testo('Non ho altri dettagli su questa risposta.', { reprompt: MSG.cosaVuoi, fine: false, attributi: att });
+    case 'AggiornaIntent':
+      return esegui(C, env, ricomincia(req), att);
+    default: return manca();
   }
-  if (nome === 'RitornoIntent') {
-    if (c.tipo === 'itinerario') { [req.da, req.a] = [req.a, req.da]; req.indice = 0; return esegui(C, env, req, att); }
-    return { voce: P.esc('Per il ritorno dimmi da dove parti e dove vai, per esempio: come arrivo a Piazzale Roma da Rialto.'), reprompt: 'Da dove parti e dove vai?', fine: false, attributi: att };
-  }
-  if (nome === 'DomaniIntent') {
-    const q = T.quando({ data: slot(intent, 'data')?.raw || addGiorni(C, 1), ora: slot(intent, 'ora')?.raw || (c.quando && c.quando.conOra ? c.quando.hhmm : null), adesso: C.adesso(), entro: !!(c.quando && c.quando.entro) });
-    if (['partenze', 'itinerario', 'ultima'].includes(c.tipo)) { req.quando = QUANDO_SERIALE(q); req.indice = 0; req.off = 0; if (c.tipo === 'ultima') return { voce: P.esc('Per le ultime corse di domani non posso dirti di più: gli orari programmati cambiano giorno per giorno. Chiedimi le partenze di domani sera.'), fine: false, reprompt: 'Cosa vuoi sapere?', attributi: att }; return esegui(C, env, req, att); }
-    if (['acquaalta'].includes(c.tipo)) { req.quando = QUANDO_SERIALE(quandoGiornoDa(C, slot(intent, 'data')?.raw || addGiorni(C, 1))); return esegui(C, env, req, att); }
-    if (c.tipo === 'avvisi') { req.dataRichiesta = slot(intent, 'data')?.raw || addGiorni(C, 1); return esegui(C, env, req, att); }
-    if (['marea', 'colmo', 'mose', 'stivali'].includes(c.tipo)) { req.tipo = 'acquaalta'; req.quando = QUANDO_SERIALE(quandoGiornoDa(C, addGiorni(C, 1))); return esegui(C, env, req, att); }
-    return manca();
-  }
-  if (nome === 'SenzaCambiIntent') {
-    if (c.tipo !== 'itinerario') return manca();
-    req.cambi = 0; req.indice = 0; return esegui(C, env, req, att);
-  }
-  if (nome === 'AlternativaIntent') {
-    if (c.tipo !== 'itinerario') return manca();
-    const pref = prefDa(intent);
-    if (pref) { req.pref = pref; req.indice = 0; req.cambi = pref === 'cambi' ? null : req.cambi ?? null; } else req.indice = att.ctx.indice || 1;
-    return esegui(C, env, req, att);
-  }
-  return manca();
 }
-const addGiorni = (C, n) => { const d = T.adessoRoma(C.adesso()).ymd; const y = +d.slice(0, 4), m = +d.slice(4, 6) - 1, g = +d.slice(6, 8), dt = new Date(Date.UTC(y, m, g + n)); return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`; };
-const quandoGiornoDa = (C, data) => { const q = T.quando({ data, ora: null, adesso: C.adesso() }); return q.adesso && T.risolviData(data) ? { adesso: false, ymd: q.ymd, secs: 0, hhmm: '00:00', conOra: false, oggi: q.ymd, tipoData: 'giorno' } : q; };
 
 // risposta dell'utente a una domanda in sospeso (fermata mancante o ambigua)
 async function rispostaInSospeso(C, env, intent, att, nome) {
   const pend = att.pend; if (!pend) return null;
-  let testo = null;
-  if (nome === 'LuogoIntent') testo = testoSlot(intent, 'luogo');
+  let t = null;
+  if (nome === 'LuogoIntent') t = testoSlot(intent, 'luogo');
   else if (nome === 'SceltaIntent') {
     const n = slot(intent, 'numero') || slot(intent, 'ordinale'), v = n ? (n.id || n.raw) : null, i = v != null && /^\d+$/.test(String(v)) ? +v : null;
     if (pend.opzioni && i && i >= 1 && i <= pend.opzioni.length) return esegui(C, env, { ...pend.req, [pend.campo]: { chiave: pend.opzioni[i - 1] } }, att);
-    return { voce: P.esc(`Dimmi un numero da uno a ${P.parole((pend.opzioni || []).length || 1)}, oppure il nome della fermata.`), reprompt: 'Quale intendi?', fine: false, attributi: att };
-  } else if (nome === 'PartenzeIntent' || nome === 'ItinerarioIntent') testo = null;   // nuova richiesta completa: vince
-  if (!testo) return null;
-  if (pend.campo === 'lineaOLuogo') {
-    const ln = L.parseLinea(testo);
-    if (ln && L.infoLinea(C.routes, ln).length) return esegui(C, env, { ...pend.req, linea: ln }, att);
-    return esegui(C, env, { ...pend.req, luogo: testo }, att);
+    return testo(`Dimmi il nome della fermata, oppure un numero da uno a ${P.parole((pend.opzioni || []).length || 1)}.`, { reprompt: 'Quale intendi?', fine: false, attributi: att });
   }
-  return esegui(C, env, { ...pend.req, [pend.campo]: testo }, att);
+  if (!t) return null;
+  if (pend.campo === 'lineaOLuogo') {
+    const ln = L.parseLinea(t);
+    if (ln && L.infoLinea(C.routes, ln).length) return esegui(C, env, { ...pend.req, linea: ln }, att);
+    return esegui(C, env, { ...pend.req, luogo: t }, att);
+  }
+  return esegui(C, env, { ...pend.req, [pend.campo]: t }, att);
+}
+
+// aiuto, presentazione e guida (stessi testi della funzione Lambda, che li dice anche con il server irraggiungibile)
+function aiuto(intent, nome, att) {
+  if (nome === 'PresentatiIntent') return testo(MSG.presentazione, { reprompt: MSG.cosaVuoi, fine: false, attributi: att });
+  if (nome === 'TuttiComandiIntent') return testo(MSG.tuttiComandi, { reprompt: MSG.aiutoRiprompt, fine: false, attributi: att });
+  const s = nome === 'AiutoIntent' ? slot(intent, 'categoria') : null, cat = s && (s.id || String(s.raw || '').toLowerCase());
+  if (cat && MSG.aiutoCategoria[cat]) return testo(MSG.aiutoCategoria[cat], { reprompt: MSG.cosaVuoi, fine: false, attributi: att });
+  return testo(AIUTO, { reprompt: MSG.aiutoRiprompt, fine: false, attributi: att });
 }
 
 // intenti propri equivalenti ai predefiniti (non dipendono dal supporto dei predefiniti nella lingua)
 const ALIAS_INTENTI = { RipetiIntent: 'AMAZON.RepeatIntent', ProssimoIntent: 'AMAZON.NextIntent', ConfermaIntent: 'AMAZON.YesIntent', RifiutoIntent: 'AMAZON.NoIntent' };
+const SEGUITI = ['AMAZON.NextIntent', 'AltreCorseIntent', 'RitornoIntent', 'DomaniIntent', 'SenzaCambiIntent', 'AlternativaIntent', 'CorrezioneIntent', 'AltraDirezioneIntent', 'DettagliIntent', 'AggiornaIntent'];
 
 // richieste contemporanee (il server gratuito ha 512 MB e una CPU ridotta: la skill non deve toglierli a mappa e notifiche)
 const MAX_CONTEMPORANEE = 6; let inCorso = 0;
 
 // ---- punto d'ingresso ----
-// env: { call, stops, routes, versione?, adesso?, skillId?, verificaApplicationId? }
+// env: { call, stops, routes, diretti?, versione?, adesso?, skillId?, occupato? }
 async function gestisci(envelope, ambiente) {
   inCorso++;
   try { return await gestisciInterna(envelope, ambiente); } finally { inCorso--; }
@@ -250,41 +386,52 @@ async function gestisciInterna(envelope, ambiente) {
   const ts = Date.parse(rich.timestamp);
   if (!Number.isFinite(ts) || Math.abs(adesso() - ts) > TOLLERANZA_MS) return { status: 400 };
   const att = { ...(envelope.session && envelope.session.attributes || {}) };
-  delete att.errori;
-  if (rich.type === 'IntentRequest' && (inCorso > MAX_CONTEMPORANEE || (ambiente.occupato && ambiente.occupato()))) return { status: 200, body: risposta(envelope, { voce: P.esc(U.erroreParlato({ code: 503 })), reprompt: 'Vuoi riprovare?', fine: false, attributi: att }) };
+  delete att.errori; delete att.rifai;
   if (rich.type === 'SessionEndedRequest') return { status: 200, body: { version: '1.0', response: {} } };
   const locale = String(rich.locale || 'it-IT');
-  if (!/^it(-|$)/i.test(locale)) return { status: 200, body: risposta(envelope, { voce: P.esc('Questa skill funziona solo in italiano.'), fine: true }) };
-  if (rich.type === 'LaunchRequest') return { status: 200, body: risposta(envelope, { voce: P.esc(BENVENUTO), reprompt: 'Cosa vuoi sapere?', fine: false, attributi: {} }) };
-  if (rich.type !== 'IntentRequest' || !rich.intent) return { status: 200, body: risposta(envelope, { voce: P.esc('Non ho capito.'), fine: true }) };
+  if (!/^it(-|$)/i.test(locale)) return { status: 200, body: risposta(envelope, { voce: P.esc(MSG.soloItaliano), fine: true }) };
+  if (rich.type === 'LaunchRequest') return { status: 200, body: risposta(envelope, { voce: P.esc(BENVENUTO), reprompt: MSG.cosaVuoi, fine: false, attributi: {} }) };
+  if (rich.type !== 'IntentRequest' || !rich.intent) return { status: 200, body: risposta(envelope, { voce: P.esc(MSG.nonCapito), fine: true }) };
   const intent = rich.intent, nome = ALIAS_INTENTI[String(intent.name || '')] || String(intent.name || '');
+  // chiusura e aiuto: sempre, anche con il server sotto carico
+  if (['AMAZON.StopIntent', 'AMAZON.CancelIntent', 'AMAZON.NavigateHomeIntent'].includes(nome) || (nome === 'AMAZON.NoIntent' && !att.pend)) return { status: 200, body: risposta(envelope, { voce: P.esc(MSG.chiusura), fine: true }) };
+  if (['AMAZON.HelpIntent', 'AiutoIntent', 'PresentatiIntent', 'TuttiComandiIntent'].includes(nome)) return { status: 200, body: risposta(envelope, aiuto(intent, nome, att)) };
+  if (inCorso > MAX_CONTEMPORANEE || (ambiente.occupato && ambiente.occupato())) return { status: 200, body: risposta(envelope, { voce: P.esc(MSG.occupato), reprompt: MSG.vuoiRiprovare, fine: false, attributi: att }) };
   let C;
   try { C = await Ctx.crea({ ...ambiente, adesso }); }
   catch (e) { return { status: 200, body: risposta(envelope, { voce: P.esc(U.erroreParlato(e)), fine: true, attributi: att }) }; }
   try {
     let out = null;
-    if (nome === 'AMAZON.StopIntent' || nome === 'AMAZON.CancelIntent' || nome === 'AMAZON.NavigateHomeIntent' || nome === 'AMAZON.NoIntent') return { status: 200, body: risposta(envelope, { voce: P.esc('A presto!'), fine: true }) };
-    if (nome === 'AMAZON.HelpIntent') out = { voce: P.esc(AIUTO), reprompt: 'Cosa vuoi sapere?', fine: false, attributi: att };
-    else if (nome === 'AMAZON.RepeatIntent') out = att.ultimo ? { voce: att.ultimo, reprompt: 'Vuoi altro?', fine: false, attributi: att } : { voce: P.esc('Non ho niente da ripetere. Cosa vuoi sapere?'), reprompt: 'Cosa vuoi sapere?', fine: false, attributi: att };
-    else if (nome === 'AMAZON.YesIntent') out = { voce: P.esc('Dimmi pure cosa vuoi sapere.'), reprompt: 'Cosa vuoi sapere?', fine: false, attributi: att };
-    else if (['AMAZON.NextIntent', 'AltreCorseIntent', 'RitornoIntent', 'DomaniIntent', 'SenzaCambiIntent', 'AlternativaIntent'].includes(nome)) out = await seguito(C, envelope, intent, att, nome);
+    if (nome === 'AMAZON.RepeatIntent') {
+      out = att.ultimo ? { voce: (att.ultimoLive ? P.esc('Ripeto la risposta di prima.') + ' ' : '') + att.ultimo, reprompt: att.ultimoLive ? 'Per i dati aggiornati, dimmi: aggiorna.' : MSG.cosaVuoi, fine: false, attributi: att }
+        : testo(MSG.nienteDaRipetere, { reprompt: MSG.cosaVuoi, fine: false, attributi: att });
+    } else if (nome === 'RiprovaIntent' || nome === 'AMAZON.YesIntent') {
+      if (att.riprova) out = await esegui(C, envelope, att.riprova, att);
+      else if (nome === 'AMAZON.YesIntent' && att.proponi) { const p = att.proponi; delete att.proponi; out = await esegui(C, envelope, p, att); }
+      else if (nome === 'RiprovaIntent' && att.ctx && att.ctx.req) out = await esegui(C, envelope, ricomincia(att.ctx.req), att);
+      else if (nome === 'AMAZON.YesIntent' && att.pend) out = testo(att.pend.opzioni ? 'Quale intendi? Dimmi il nome.' : 'Dimmi il nome della fermata.', { reprompt: 'Quale fermata?', fine: false, attributi: att });
+      else out = testo(nome === 'RiprovaIntent' ? MSG.nessunaRichiesta : 'Dimmi pure cosa vuoi sapere.', { reprompt: MSG.cosaVuoi, fine: false, attributi: att });
+    } else if (nome === 'AMAZON.NoIntent') { delete att.pend; out = testo(MSG.chiusura, { fine: true, attributi: att }); }
+    else if (nome === 'NonSupportatoIntent') out = testo(MSG.nonSupportato, { reprompt: MSG.cosaVuoi, fine: false, attributi: att });
+    else if (nome === 'CorrezioneIntent' && att.pend && slot(intent, 'luogo')) out = await rispostaInSospeso(C, envelope, { ...intent, name: 'LuogoIntent' }, att, 'LuogoIntent');
+    else if (SEGUITI.includes(nome)) out = await seguito(C, envelope, intent, att, nome);
     else if (nome === 'LuogoIntent' || nome === 'SceltaIntent') {
       out = await rispostaInSospeso(C, envelope, intent, att, nome);
-      if (!out && nome === 'LuogoIntent') out = await esegui(C, envelope, { tipo: 'partenze', luogo: testoSlot(intent, 'luogo') }, att);   // un nome detto da solo = partenze da lì
-      if (!out) out = { voce: P.esc('Non ho capito. ' + AIUTO), reprompt: 'Cosa vuoi sapere?', fine: false, attributi: att };
+      if (!out && nome === 'LuogoIntent') out = await esegui(C, envelope, { tipo: 'partenze', luogo: testoSlot(intent, 'luogo'), n: 1 }, att);   // un nome detto da solo = prossima partenza da lì
+      if (!out) out = testo(MSG.nonCapito, { reprompt: MSG.cosaVuoi, fine: false, attributi: att });
     } else if (nome === 'AMAZON.FallbackIntent') {
       const n = (att.fallback || 0) + 1; att.fallback = n;
-      out = { voce: P.esc(n >= 2 ? 'Scusa, non ho ancora capito. Prova a dire: partenze dalle Zattere, oppure: com\'è la marea.' : 'Non ho capito. Puoi chiedermi partenze, percorsi, marea o avvisi.').replace(/&apos;/g, "'"), reprompt: 'Cosa vuoi sapere?', fine: false, attributi: att };
+      out = testo(n >= 2 ? MSG.nonCapitoAncora : MSG.nonCapito, { reprompt: MSG.cosaVuoi, fine: false, attributi: att });
     } else {
       const req = richiestaDa(C, intent, nome, att);
-      if (!req) out = { voce: P.esc('Non ho capito. ' + AIUTO), reprompt: 'Cosa vuoi sapere?', fine: false, attributi: att };
-      else { delete att.pend; out = await esegui(C, envelope, req, att); }
+      if (!req) out = testo(MSG.nonCapito, { reprompt: MSG.cosaVuoi, fine: false, attributi: att });
+      else { delete att.pend; delete att.riprova; out = await esegui(C, envelope, req, att); }
     }
     if (out && nome !== 'AMAZON.FallbackIntent') delete att.fallback;
     return { status: 200, body: risposta(envelope, { ...out, attributi: out.attributi || att }) };
   } catch (e) {
-    return { status: 200, body: risposta(envelope, { voce: P.esc(U.erroreParlato(e)), reprompt: 'Vuoi riprovare?', fine: false, attributi: att }) };
+    return { status: 200, body: risposta(envelope, { voce: P.esc(U.erroreParlato(e)), reprompt: MSG.vuoiRiprovare, fine: false, attributi: att }) };
   }
 }
 
-module.exports = { gestisci, slot, richiestaDa, BENVENUTO, AIUTO, TOLLERANZA_MS };
+module.exports = { gestisci, slot, richiestaDa, etichettaDetta, BENVENUTO, AIUTO, TOLLERANZA_MS };

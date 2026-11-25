@@ -40,7 +40,9 @@ const LUOGHI_SPECIALI = {
   'ca oro': { nome: "Ca' d'Oro", chiavi: ['ca oro'], src: 'nav' },
   'maria elisabetta': { nome: 'Lido', chiavi: ['lido maria elisabetta'], src: 'nav' },
   'roma': { nome: 'Piazzale Roma', chiavi: ['piazzale roma'] },
-  'arsenale': { nome: 'Arsenale', chiavi: ['arsenale'], src: 'nav' }
+  'arsenale': { nome: 'Arsenale', chiavi: ['arsenale'], src: 'nav' },
+  // «Venezia» detto come direzione (da Mestre, dal Lido, dalle isole): il centro storico, cioè le fermate principali dove arrivano tram, autobus e vaporetti
+  'venezia': { nome: 'Venezia', chiavi: ['piazzale roma', 'venezia', 'ferrovia', 'marco zaccaria', 'marco vallaresso', 'rialto', 'fondamente nove', 'zattere', 'tronchetto'] }
 };
 // Levenshtein sulle stringhe corte: tollera errori di riconoscimento vocale («zatere», «rialtto»)
 function distanza(a, b) {
@@ -145,7 +147,7 @@ const stessaLinea = (a, b) => lineaBase(a) === lineaBase(b);
 // colore e servizi di una linea
 function infoLinea(routes, nome) {
   const out = [];
-  for (const [id, r] of Object.entries(routes || {})) if (stessaLinea(r.name, nome)) out.push({ id, src: r.src, color: r.color, name: r.name });
+  for (const [id, r] of Object.entries(routes || {})) if (stessaLinea(r.name, nome)) out.push({ id, src: r.src, color: r.color, name: r.name, type: r.type ?? null });
   return out;
 }
 

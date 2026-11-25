@@ -107,7 +107,7 @@ async function build(srcId, pick, sel, days = null) {
   const G = empty(), { routes, trips, stops, stopLoc, shapePts, nameToStopIds, stopBaseNames, stopIsRequest } = G;
   const usedShapes = new Set(), shapesByRoute = {};
 
-  await eachRow(read('routes.txt'), ['route_id', 'route_short_name', 'route_long_name', 'route_color'], r => {
+  await eachRow(read('routes.txt'), ['route_id', 'route_short_name', 'route_long_name', 'route_color', 'route_type'], r => {
     routes[r.route_id] = { name: r.route_short_name || r.route_long_name || r.route_id, color: r.route_color ? '#' + r.route_color : null, type: r.route_type === '' || r.route_type == null ? null : +r.route_type };
   });
   

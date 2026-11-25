@@ -84,8 +84,14 @@ async function sintesi(C) {
 }
 
 // ---- PROSSIMO COLMO ----
-async function colmo(C) {
+async function colmo(C, ric = {}) {
   const t = await leggiMarea(C), ex = await estremi(C, t), adesso = C.adesso();
+  if (ric.minimo) {                                   // «e il minimo?»
+    const min = ex.filter(e => e.type === 'min' && e.ts > adesso - 5 * 60e3)[0];
+    if (!min) return { voce: P.esc('Non ho una previsione del prossimo minimo. Il livello misurato adesso è ' + cmParlato(t.cm) + '.'), fine: false, ctx: { tipo: 'marea' } };
+    const v = `Il prossimo minimo è previsto ${momento(C, min.ts)}, a ${cmParlato(min.cm)}. È una previsione del Centro Maree.`;
+    return { voce: P.esc(v).replace(/&apos;/g, "'"), scheda: { titolo: 'Prossimo minimo', sottotitolo: 'Previsione, Punta della Salute', grande: cmScheda(min.cm), righe: [], nota: 'Previsione: può cambiare.', fonte: FONTE_MAREA }, ctx: { tipo: 'colmo' }, fine: false };
+  }
   const max = ex.filter(e => e.type === 'max' && e.ts > adesso - 5 * 60e3).slice(0, 2);
   if (!max.length) return { voce: P.esc('Non ho previsioni di colmo per le prossime ore. Il livello misurato adesso è ' + cmParlato(t.cm) + '.'), fine: false, ctx: { tipo: 'marea' } };
   const f = (e, primo) => `${primo ? 'Il prossimo colmo' : 'Il successivo'} è previsto ${momento(C, e.ts)}: circa ${cmParlato(e.cm)}${e.cm >= SOGLIA_ALTA ? ', cioè acqua alta' : e.cm >= SOGLIA_BASSA ? ', marea sostenuta' : ''}.`;
@@ -104,28 +110,30 @@ function finestra(C, q) {
   const ymd = q.ymd;
   const fasce = { MO: [6, 12], AF: [12, 18], EV: [18, 24], NI: [0, 6] };
   let da, a, nome;
-  if (q.fascia) { const [h0, h1] = fasce[q.fascia]; da = T.inizioMs(ymd, h0 * 3600); a = T.inizioMs(ymd, h1 * 3600); nome = `${P.giornoParlato(ymd, n.ymd)} ${q.nomeFascia}`; }
+  if (q.fascia) { const [h0, h1] = fasce[q.fascia]; da = T.inizioMs(ymd, h0 * 3600); a = T.inizioMs(ymd, h1 * 3600); nome = ymd === n.ymd ? ({ mattina: 'stamattina', pomeriggio: 'oggi pomeriggio', sera: 'stasera', notte: 'stanotte' })[q.nomeFascia] : `${P.giornoParlato(ymd, n.ymd)} ${q.nomeFascia}`; }
   else if (q.conOra && q.hhmm) { da = T.inizioMs(ymd, q.secs - 5400); a = T.inizioMs(ymd, q.secs + 5400); nome = `${P.giornoParlato(ymd, n.ymd)} intorno ${P.oraParlata(q.hhmm)}`; }
   else { da = T.inizioMs(ymd, 0); a = T.inizioMs(ymd, 86400); nome = P.giornoParlato(ymd, n.ymd); }
   return { t0: Math.max(da, adesso), t1: a, testo: nome, passato: a < adesso };
 }
 
 // ---- ACQUA ALTA IN UNA FINESTRA ----
+// «l'uno», «l'otto», «l'undici», «l'ottanta», altrimenti «il venti»
+const artPerc = n => { const w = P.parole(n); return /^[aeiouàèéìòù]/i.test(w) ? `l'${w}` : `il ${w}`; };
 async function acquaAlta(C, ric) {
   const t = await leggiMarea(C), ex = await estremi(C, t), adesso = C.adesso(), w = finestra(C, ric.quando);
   if (w.passato) return { voce: P.esc('Quel momento è già passato.'), fine: false, ctx: { tipo: 'marea' } };
   const mx = massimoPrevisto(ex, w.t0, w.t1);
   const cap = ex.length ? ex[ex.length - 1].ts : null;
   if (!mx || mx.cm == null) {
-    const v = cap ? `Per ${w.testo} non ho una previsione: arrivo ${fino(momento(C, cap))}.` : `Non ho previsioni di marea per ${w.testo}.`;
+    const v = cap ? `Per ${w.testo} non ho ancora una previsione: quella disponibile arriva ${fino(momento(C, cap))}.` : `Non ho previsioni di marea per ${w.testo}.`;
     return { voce: P.esc(v + ' Adesso la marea misurata è ' + cmParlato(t.cm) + '.'), fine: false, ctx: { tipo: 'marea' } };
   }
   const A = await C.acqua(), perc = A?.Q ? A.Q.percento(mx.cm) : null;
   let v = `Per ${w.testo} il massimo previsto è ${cmParlato(mx.cm)}, ${momento(C, mx.ts)}.`;
   const cls = classe(mx.cm);
   if (cls === 'normale') v += ` Non è prevista acqua alta: sotto i ${P.parole(SOGLIA_BASSA)} centimetri le zone più basse restano di norma asciutte.`;
-  else if (cls === 'sostenuta') v += ` È prevista marea sostenuta: i punti più bassi possono allagarsi${perc != null && perc >= 0.5 ? `, circa il ${P.parole(Math.max(1, Math.round(perc)))} per cento della città storica` : ''}.`;
-  else v += ` È prevista acqua alta${perc != null ? `: circa il ${P.parole(Math.round(perc))} per cento della città storica potenzialmente allagabile` : ''}${cls === 'eccezionale' ? ', una marea eccezionale' : ''}.`;
+  else if (cls === 'sostenuta') v += ` È prevista marea sostenuta: i punti più bassi possono allagarsi${perc != null && perc >= 0.5 ? `, circa ${artPerc(Math.max(1, Math.round(perc)))} per cento della città storica` : ''}.`;
+  else v += ` È prevista acqua alta${perc != null ? `: circa ${artPerc(Math.round(perc))} per cento della città storica potenzialmente allagabile` : ''}${cls === 'eccezionale' ? ', una marea eccezionale' : ''}.`;
   if (cls !== 'normale' && mx.cm >= SOGLIA_ALTA) v += ' La previsione è calcolata senza MOSE: con le barriere sollevate in città il livello resta più basso.';
   if (mx.parziale || (cap && w.t1 > cap)) v += ` Attenzione: la previsione copre solo ${fino(momento(C, cap))}.`;
   v += ' Sono previsioni e possono cambiare.';
@@ -185,7 +193,7 @@ async function stivali(C, ric) {
   }
   if (uso < 60 && !(locale != null && uso >= locale)) { v = `No, per ora non servono: la marea è ${cmParlato(r.misurato)}${r.previsto != null && r.previsto >= SOGLIA_BASSA ? `, ma è previsto un massimo di ${cmParlato(r.previsto)} ${momento(C, r.tsPrev)}` : ''}.` + (v ? ' ' + v.trim() : ''); }
   else if (uso < SOGLIA_BASSA && !(locale != null && uso >= locale)) { v = `Di solito non servono: la marea è ${cmParlato(r.misurato)}${r.previsto != null ? ` e nelle prossime ore arriva a ${cmParlato(r.previsto)}` : ''}; sotto gli ottanta centimetri solo pochi punti molto bassi si bagnano.` + (v ? ' ' + v.trim() : ''); }
-  else { stato = 'ritardo'; v = `Sì, conviene averli${uso >= SOGLIA_ALTA ? ', meglio se alti' : ''}: la marea è ${cmParlato(r.misurato)}${r.previsto != null && r.previsto > r.misurato ? `, con un massimo previsto di ${cmParlato(r.previsto)} ${momento(C, r.tsPrev)}` : ''}${perc != null && perc >= 0.5 ? `, e circa il ${P.parole(Math.max(1, Math.round(perc)))} per cento della città storica è potenzialmente allagabile` : ''}.` + (v ? ' ' + v.trim() : ''); }
+  else { stato = 'ritardo'; v = `Sì, conviene averli${uso >= SOGLIA_ALTA ? ', meglio se alti' : ''}: la marea è ${cmParlato(r.misurato)}${r.previsto != null && r.previsto > r.misurato ? `, con un massimo previsto di ${cmParlato(r.previsto)} ${momento(C, r.tsPrev)}` : ''}${perc != null && perc >= 0.5 ? `, e circa ${artPerc(Math.max(1, Math.round(perc)))} per cento della città storica è potenzialmente allagabile` : ''}.` + (v ? ' ' + v.trim() : ''); }
   if (locale == null) v += ' Sono stime sul livello di marea, non una garanzia sulla singola calle.';
   const righe = [{ badge: cmScheda(r.misurato), colore: '#4A5A6A', testo: 'Misurata ora', dett: 'Punta della Salute', ora: '', attesa: '', stato: 'ok' }];
   if (r.previsto != null) righe.push({ badge: cmScheda(r.previsto), colore: '#4A5A6A', testo: 'Massimo previsto, 6 ore', dett: momento(C, r.tsPrev), ora: orariOra(r.tsPrev), attesa: '', stato: 'prog' });

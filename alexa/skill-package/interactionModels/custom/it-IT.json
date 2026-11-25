@@ -31,6 +31,80 @@
               "type": "FERMATA"
             },
             {
+              "name": "arrivo",
+              "type": "FERMATA"
+            },
+            {
+              "name": "linea",
+              "type": "LINEA"
+            },
+            {
+              "name": "direzione",
+              "type": "FERMATA"
+            },
+            {
+              "name": "mezzo",
+              "type": "MEZZO"
+            },
+            {
+              "name": "numero",
+              "type": "AMAZON.NUMBER"
+            },
+            {
+              "name": "data",
+              "type": "AMAZON.DATE"
+            },
+            {
+              "name": "ora",
+              "type": "AMAZON.TIME"
+            }
+          ],
+          "samples": [
+            "prossimi {mezzo} da {luogo}",
+            "prossimi {mezzo} a {luogo}",
+            "i prossimi {mezzo} da {luogo}",
+            "i prossimi {numero} {mezzo} da {luogo}",
+            "prossimi {numero} {mezzo} da {luogo} per {arrivo}",
+            "i prossimi {numero} {mezzo} da {luogo} a {arrivo}",
+            "prossime partenze da {luogo}",
+            "prossime partenze a {luogo}",
+            "le prossime {numero} partenze da {luogo}",
+            "prossime {numero} corse da {luogo}",
+            "partenze da {luogo}",
+            "partenze {luogo}",
+            "partenze da {luogo} per {direzione}",
+            "partenze da {luogo} verso {direzione}",
+            "cosa passa a {luogo}",
+            "cosa passa da {luogo}",
+            "orari del {linea} a {luogo}",
+            "orari del {linea} da {luogo}",
+            "orari {luogo}",
+            "dammi le partenze da {luogo}",
+            "prossimi {mezzo} da {luogo} per {arrivo}",
+            "prossimi {mezzo} da {luogo} verso {direzione}",
+            "partenze da {luogo} {data}",
+            "partenze da {luogo} alle {ora}",
+            "partenze da {luogo} {data} alle {ora}",
+            "partenze da {luogo} {data} dalle {ora}",
+            "quali sono gli orari {data} dalle {ora} da {luogo}",
+            "orari da {luogo} {data} dalle {ora}",
+            "orari del {linea} {data} da {luogo}",
+            "quando passano i {mezzo} a {luogo}",
+            "quando passano i prossimi {mezzo} da {luogo}"
+          ]
+        },
+        {
+          "name": "ProssimaCorsaIntent",
+          "slots": [
+            {
+              "name": "luogo",
+              "type": "FERMATA"
+            },
+            {
+              "name": "arrivo",
+              "type": "FERMATA"
+            },
+            {
               "name": "linea",
               "type": "LINEA"
             },
@@ -61,34 +135,52 @@
             "quando passa il {linea} da {luogo} per {direzione}",
             "il {linea} per {direzione} da {luogo}",
             "il {linea} verso {direzione} da {luogo}",
-            "prossimi {mezzo} da {luogo}",
-            "prossimi {mezzo} a {luogo}",
-            "i prossimi {mezzo} da {luogo}",
-            "prossime partenze da {luogo}",
-            "prossime partenze a {luogo}",
-            "partenze da {luogo}",
-            "partenze {luogo}",
-            "partenze da {luogo} per {direzione}",
-            "cosa passa a {luogo}",
-            "cosa passa da {luogo}",
-            "quali linee passano a {luogo}",
+            "quando passa il prossimo {linea} a {luogo}",
             "quando parte il prossimo {mezzo} da {luogo}",
             "quando passa il prossimo {mezzo} da {luogo}",
             "quando passa il prossimo {mezzo} a {luogo}",
+            "quando passa il prossimo {mezzo} alla fermata {luogo}",
+            "tra quanto passa il prossimo {mezzo} alla fermata {luogo} in direzione {direzione}",
+            "tra quanto passa il prossimo {mezzo} a {luogo} in direzione {direzione}",
+            "tra quanto passa il prossimo {mezzo} a {luogo} verso {direzione}",
+            "tra quanto passa il {mezzo} a {luogo}",
+            "tra quanto passa il {linea} a {luogo}",
+            "tra quanto passa il prossimo {mezzo} da {luogo} per {direzione}",
+            "quando passa il prossimo {mezzo} da {luogo} per {arrivo}",
+            "quando passa il prossimo {mezzo} da {luogo} verso {direzione}",
             "prossimo {mezzo} per {direzione}",
             "quando passa il prossimo {mezzo} per {direzione}",
             "prossimo {mezzo} per {direzione} da {luogo}",
             "il prossimo {mezzo} verso {direzione}",
-            "orari del {linea} a {luogo}",
-            "orari del {linea} da {luogo}",
-            "orari {luogo}",
-            "dammi le partenze da {luogo}",
-            "partenze da {luogo} {data}",
-            "partenze da {luogo} alle {ora}",
-            "partenze da {luogo} {data} alle {ora}",
+            "prossimo {mezzo} da {luogo}",
+            "prossimo {mezzo} da {luogo} a {arrivo}",
             "quando passa il {linea} a {luogo} {data}",
             "quando passa il {linea} a {luogo} alle {ora}",
-            "quando passa il {linea} a {luogo} {data} alle {ora}"
+            "quando passa il {linea} a {luogo} {data} alle {ora}",
+            "quando c'è il prossimo {mezzo} da {luogo} a {arrivo}",
+            "a che ora passa il {linea} a {luogo}"
+          ]
+        },
+        {
+          "name": "LineeIntent",
+          "slots": [
+            {
+              "name": "luogo",
+              "type": "FERMATA"
+            },
+            {
+              "name": "mezzo",
+              "type": "MEZZO"
+            }
+          ],
+          "samples": [
+            "che linee passano da {luogo}",
+            "quali linee passano a {luogo}",
+            "quali linee passano da {luogo}",
+            "quali {mezzo} passano da {luogo}",
+            "quali linee passano",
+            "che linee ci sono a {luogo}",
+            "linee di {luogo}"
           ]
         },
         {
@@ -134,6 +226,10 @@
               "type": "FERMATA"
             },
             {
+              "name": "arrivo",
+              "type": "FERMATA"
+            },
+            {
               "name": "linea",
               "type": "LINEA"
             },
@@ -144,6 +240,10 @@
             {
               "name": "mezzo",
               "type": "MEZZO"
+            },
+            {
+              "name": "data",
+              "type": "AMAZON.DATE"
             }
           ],
           "samples": [
@@ -159,7 +259,72 @@
             "ultima corsa da {luogo}",
             "ultima partenza da {luogo}",
             "ultima corsa del {linea}",
-            "ultimo {mezzo} per {direzione}"
+            "ultimo {mezzo} per {direzione}",
+            "qual è l'ultimo {mezzo} da {luogo} a {arrivo}",
+            "ultimo {mezzo} da {luogo} a {arrivo}",
+            "ultimo {mezzo} {data} da {luogo} a {arrivo}",
+            "ultimo {mezzo} da {luogo} a {arrivo} {data}",
+            "qual è l'ultimo {mezzo} {data} da {luogo}",
+            "ultima corsa {data} da {luogo}",
+            "e l'ultimo",
+            "e l'ultima",
+            "l'ultima corsa",
+            "qual è l'ultima corsa",
+            "e l'ultima corsa {data}",
+            "ultima corsa del {linea} per {direzione}",
+            "a che ora è l'ultimo {linea} da {luogo} per {direzione}"
+          ]
+        },
+        {
+          "name": "PrimaCorsaIntent",
+          "slots": [
+            {
+              "name": "luogo",
+              "type": "FERMATA"
+            },
+            {
+              "name": "arrivo",
+              "type": "FERMATA"
+            },
+            {
+              "name": "linea",
+              "type": "LINEA"
+            },
+            {
+              "name": "direzione",
+              "type": "FERMATA"
+            },
+            {
+              "name": "mezzo",
+              "type": "MEZZO"
+            },
+            {
+              "name": "data",
+              "type": "AMAZON.DATE"
+            },
+            {
+              "name": "ora",
+              "type": "AMAZON.TIME"
+            }
+          ],
+          "samples": [
+            "prima corsa da {luogo}",
+            "primo {mezzo} da {luogo}",
+            "primo {mezzo} da {luogo} per {direzione}",
+            "primo {mezzo} {data} da {luogo}",
+            "a che ora parte il primo {mezzo} da {luogo}",
+            "a che ora parte il primo {mezzo} da {luogo} a {arrivo}",
+            "prima corsa domattina da {luogo}",
+            "prima corsa {data} da {luogo}",
+            "primo {linea} da {luogo}",
+            "prima corsa del {linea}",
+            "e il primo",
+            "e la prima",
+            "la prima corsa",
+            "qual è la prima corsa {data}",
+            "primo {mezzo} da {luogo} a {arrivo} {data}",
+            "primo {mezzo} {data} dopo le {ora} da {luogo}",
+            "prima corsa dopo le {ora} da {luogo}"
           ]
         },
         {
@@ -283,7 +448,15 @@
         },
         {
           "name": "AltreCorseIntent",
+          "slots": [
+            {
+              "name": "numero",
+              "type": "AMAZON.NUMBER"
+            }
+          ],
           "samples": [
+            "altre {numero} corse",
+            "dimmene altre {numero}",
             "altre corse",
             "altre partenze",
             "dimmi altre corse",
@@ -528,6 +701,10 @@
               "type": "LINEA"
             },
             {
+              "name": "mezzo",
+              "type": "MEZZO"
+            },
+            {
               "name": "data",
               "type": "AMAZON.DATE"
             }
@@ -563,6 +740,10 @@
               "type": "LINEA"
             },
             {
+              "name": "mezzo",
+              "type": "MEZZO"
+            },
+            {
               "name": "data",
               "type": "AMAZON.DATE"
             }
@@ -594,6 +775,14 @@
             {
               "name": "luogo",
               "type": "FERMATA"
+            },
+            {
+              "name": "mezzo",
+              "type": "MEZZO"
+            },
+            {
+              "name": "direzione",
+              "type": "FERMATA"
             }
           ],
           "samples": [
@@ -614,6 +803,193 @@
           ]
         },
         {
+          "name": "MinimoIntent",
+          "samples": [
+            "e il minimo",
+            "quando è il minimo",
+            "prossimo minimo",
+            "quando è la bassa marea",
+            "a che ora è la minima",
+            "quando c'è la bassa marea",
+            "a che ora è il prossimo minimo"
+          ]
+        },
+        {
+          "name": "AiutoIntent",
+          "slots": [
+            {
+              "name": "categoria",
+              "type": "CATEGORIA"
+            }
+          ],
+          "samples": [
+            "aiuto {categoria}",
+            "aiuto per {categoria}",
+            "aiuto sulle {categoria}",
+            "aiuto sui {categoria}",
+            "aiuto sulla {categoria}",
+            "aiuto sugli {categoria}",
+            "come chiedo {categoria}",
+            "come chiedo gli {categoria}",
+            "come chiedo le {categoria}",
+            "spiegami {categoria}",
+            "come funzionano le {categoria}",
+            "come funziona la {categoria}",
+            "che cosa posso chiederti",
+            "cosa posso chiederti",
+            "cosa sai fare",
+            "che cosa sai fare",
+            "come funzioni"
+          ]
+        },
+        {
+          "name": "PresentatiIntent",
+          "samples": [
+            "presentati",
+            "che cos'è venezia t. p. l.",
+            "chi sei",
+            "cosa sei",
+            "sei ufficiale",
+            "sei dell'actv",
+            "sei un servizio ufficiale",
+            "che cos'è questa skill",
+            "di chi sei",
+            "da dove prendi i dati"
+          ]
+        },
+        {
+          "name": "TuttiComandiIntent",
+          "samples": [
+            "tutti i comandi",
+            "elenco dei comandi",
+            "quali comandi ci sono",
+            "tutti i comandi disponibili",
+            "la guida completa",
+            "dimmi tutti i comandi",
+            "lista dei comandi"
+          ]
+        },
+        {
+          "name": "RiprovaIntent",
+          "samples": [
+            "riprova",
+            "prova di nuovo",
+            "riprova adesso",
+            "prova ancora",
+            "ritenta",
+            "riprova per favore"
+          ]
+        },
+        {
+          "name": "AggiornaIntent",
+          "samples": [
+            "aggiorna",
+            "e adesso",
+            "aggiornami",
+            "dati aggiornati",
+            "ricontrolla",
+            "aggiorna per favore",
+            "adesso com'è"
+          ]
+        },
+        {
+          "name": "DettagliIntent",
+          "samples": [
+            "dimmi i dettagli",
+            "mi dici i dettagli",
+            "dettagli",
+            "più dettagli",
+            "tutti i passaggi",
+            "leggi l'avviso",
+            "spiegami meglio",
+            "i dettagli",
+            "dammi i dettagli"
+          ]
+        },
+        {
+          "name": "CorrezioneIntent",
+          "slots": [
+            {
+              "name": "direzione",
+              "type": "FERMATA"
+            },
+            {
+              "name": "luogo",
+              "type": "FERMATA"
+            },
+            {
+              "name": "mezzo",
+              "type": "MEZZO"
+            },
+            {
+              "name": "linea",
+              "type": "LINEA"
+            }
+          ],
+          "samples": [
+            "no verso {direzione}",
+            "verso {direzione}",
+            "e verso {direzione}",
+            "no in direzione {direzione}",
+            "in direzione {direzione}",
+            "no per {direzione}",
+            "e per {direzione}",
+            "no intendevo {luogo}",
+            "intendevo da {luogo}",
+            "no da {luogo}",
+            "solo {mezzo}",
+            "solo i {mezzo}",
+            "e per i {mezzo}",
+            "e in {mezzo}",
+            "e con il {mezzo}",
+            "con il {linea}",
+            "e il {linea}",
+            "solo la linea {linea}",
+            "e la linea {linea}",
+            "no il {linea}"
+          ]
+        },
+        {
+          "name": "AltraDirezioneIntent",
+          "samples": [
+            "e nell'altra direzione",
+            "nell'altra direzione",
+            "e dall'altra parte",
+            "direzione opposta",
+            "e al contrario",
+            "e nella direzione opposta",
+            "l'altra direzione"
+          ]
+        },
+        {
+          "name": "NonSupportatoIntent",
+          "slots": [
+            {
+              "name": "linea",
+              "type": "LINEA"
+            },
+            {
+              "name": "luogo",
+              "type": "FERMATA"
+            }
+          ],
+          "samples": [
+            "avvisami quando arriva il {linea}",
+            "avvisami quando passa",
+            "mandami una notifica",
+            "salva questa fermata",
+            "aggiungi ai preferiti",
+            "i miei preferiti",
+            "portami a {luogo}",
+            "navigatore per {luogo}",
+            "guidami a piedi fino a {luogo}",
+            "compra il biglietto",
+            "quanto costa il biglietto",
+            "dove compro il biglietto",
+            "dov'è il vaporetto adesso"
+          ]
+        },
+        {
           "name": "LuogoIntent",
           "slots": [
             {
@@ -627,7 +1003,8 @@
             "da {luogo}",
             "vicino a {luogo}",
             "quello di {luogo}",
-            "intendo {luogo}"
+            "intendo {luogo}",
+            "fermata {luogo}"
           ]
         },
         {
@@ -759,7 +1136,8 @@
                   "s. marco-san zaccaria",
                   "marco",
                   "marco zaccaria",
-                  "zaccaria"
+                  "zaccaria",
+                  "venezia"
                 ]
               }
             },
@@ -822,7 +1200,9 @@
               "id": "tronchetto",
               "name": {
                 "value": "Tronchetto",
-                "synonyms": []
+                "synonyms": [
+                  "venezia"
+                ]
               }
             },
             {
@@ -839,7 +1219,8 @@
                 "synonyms": [
                   "P.le Roma",
                   "p.le roma",
-                  "roma"
+                  "roma",
+                  "venezia"
                 ]
               }
             },
@@ -851,7 +1232,8 @@
                   "lucia",
                   "venezia lucia",
                   "treni",
-                  "stazione"
+                  "stazione",
+                  "venezia"
                 ]
               }
             },
@@ -895,7 +1277,9 @@
               "id": "rialto",
               "name": {
                 "value": "Rialto",
-                "synonyms": []
+                "synonyms": [
+                  "venezia"
+                ]
               }
             },
             {
@@ -956,7 +1340,9 @@
               "id": "zattere",
               "name": {
                 "value": "Zattere",
-                "synonyms": []
+                "synonyms": [
+                  "venezia"
+                ]
               }
             },
             {
@@ -983,7 +1369,8 @@
                 "synonyms": [
                   "S. Marco Vallaresso",
                   "s. marco vallaresso",
-                  "marco"
+                  "marco",
+                  "venezia"
                 ]
               }
             },
@@ -1021,7 +1408,8 @@
                 "value": "Fondamente Nove",
                 "synonyms": [
                   "F.te Nove",
-                  "f.te nove"
+                  "f.te nove",
+                  "venezia"
                 ]
               }
             },
@@ -10124,13 +10512,6 @@
               }
             },
             {
-              "id": "venezia_corsia_c",
-              "name": {
-                "value": "Venezia Corsia C",
-                "synonyms": []
-              }
-            },
-            {
               "id": "marittima_cruise_termina",
               "name": {
                 "value": "Marittima (Cruise Termina",
@@ -10333,14 +10714,16 @@
             {
               "id": "N",
               "name": {
-                "value": "N",
-                "synonyms": []
+                "value": "enne",
+                "synonyms": [
+                  "N"
+                ]
               }
             },
             {
               "id": "NLN",
               "name": {
-                "value": "N L N",
+                "value": "enne elle enne",
                 "synonyms": [
                   "NLN"
                 ]
@@ -10349,7 +10732,7 @@
             {
               "id": "NMU",
               "name": {
-                "value": "N M U",
+                "value": "enne emme u",
                 "synonyms": [
                   "NMU"
                 ]
@@ -10427,35 +10810,41 @@
             {
               "id": "A",
               "name": {
-                "value": "A",
+                "value": "a",
                 "synonyms": []
               }
             },
             {
               "id": "B",
               "name": {
-                "value": "B",
-                "synonyms": []
+                "value": "bi",
+                "synonyms": [
+                  "B"
+                ]
               }
             },
             {
               "id": "C",
               "name": {
-                "value": "C",
-                "synonyms": []
+                "value": "ci",
+                "synonyms": [
+                  "C"
+                ]
               }
             },
             {
               "id": "V",
               "name": {
-                "value": "V",
-                "synonyms": []
+                "value": "vu",
+                "synonyms": [
+                  "V"
+                ]
               }
             },
             {
               "id": "10E",
               "name": {
-                "value": "dieci E",
+                "value": "dieci e",
                 "synonyms": [
                   "10E"
                 ]
@@ -10464,7 +10853,7 @@
             {
               "id": "11E",
               "name": {
-                "value": "undici E",
+                "value": "undici e",
                 "synonyms": [
                   "11E"
                 ]
@@ -10473,7 +10862,7 @@
             {
               "id": "12E",
               "name": {
-                "value": "dodici E",
+                "value": "dodici e",
                 "synonyms": [
                   "12E"
                 ]
@@ -10482,7 +10871,7 @@
             {
               "id": "14E",
               "name": {
-                "value": "quattordici E",
+                "value": "quattordici e",
                 "synonyms": [
                   "14E"
                 ]
@@ -10491,7 +10880,7 @@
             {
               "id": "16E",
               "name": {
-                "value": "sedici E",
+                "value": "sedici e",
                 "synonyms": [
                   "16E"
                 ]
@@ -10500,7 +10889,7 @@
             {
               "id": "17E",
               "name": {
-                "value": "diciassette E",
+                "value": "diciassette e",
                 "synonyms": [
                   "17E"
                 ]
@@ -10509,7 +10898,7 @@
             {
               "id": "2E",
               "name": {
-                "value": "due E",
+                "value": "due e",
                 "synonyms": [
                   "2E"
                 ]
@@ -10518,7 +10907,7 @@
             {
               "id": "3E",
               "name": {
-                "value": "tre E",
+                "value": "tre e",
                 "synonyms": [
                   "3E"
                 ]
@@ -10527,7 +10916,7 @@
             {
               "id": "4E",
               "name": {
-                "value": "quattro E",
+                "value": "quattro e",
                 "synonyms": [
                   "4E"
                 ]
@@ -10536,7 +10925,7 @@
             {
               "id": "5E",
               "name": {
-                "value": "cinque E",
+                "value": "cinque e",
                 "synonyms": [
                   "5E"
                 ]
@@ -10545,7 +10934,7 @@
             {
               "id": "6E",
               "name": {
-                "value": "sei E",
+                "value": "sei e",
                 "synonyms": [
                   "6E"
                 ]
@@ -10554,7 +10943,7 @@
             {
               "id": "7E",
               "name": {
-                "value": "sette E",
+                "value": "sette e",
                 "synonyms": [
                   "7E"
                 ]
@@ -10563,7 +10952,7 @@
             {
               "id": "8E",
               "name": {
-                "value": "otto E",
+                "value": "otto e",
                 "synonyms": [
                   "8E"
                 ]
@@ -10572,7 +10961,7 @@
             {
               "id": "8AE",
               "name": {
-                "value": "otto A E",
+                "value": "otto a e",
                 "synonyms": [
                   "8AE"
                 ]
@@ -10581,7 +10970,7 @@
             {
               "id": "9E",
               "name": {
-                "value": "nove E",
+                "value": "nove e",
                 "synonyms": [
                   "9E"
                 ]
@@ -10590,7 +10979,7 @@
             {
               "id": "53E",
               "name": {
-                "value": "cinquantatré E",
+                "value": "cinquantatré e",
                 "synonyms": [
                   "53E"
                 ]
@@ -10599,7 +10988,7 @@
             {
               "id": "54E",
               "name": {
-                "value": "cinquantaquattro E",
+                "value": "cinquantaquattro e",
                 "synonyms": [
                   "54E"
                 ]
@@ -10608,7 +10997,7 @@
             {
               "id": "55E",
               "name": {
-                "value": "cinquantacinque E",
+                "value": "cinquantacinque e",
                 "synonyms": [
                   "55E"
                 ]
@@ -10617,7 +11006,7 @@
             {
               "id": "55SE",
               "name": {
-                "value": "cinquantacinque S E",
+                "value": "cinquantacinque esse e",
                 "synonyms": [
                   "55SE"
                 ]
@@ -10626,7 +11015,7 @@
             {
               "id": "56E",
               "name": {
-                "value": "cinquantasei E",
+                "value": "cinquantasei e",
                 "synonyms": [
                   "56E"
                 ]
@@ -10635,7 +11024,7 @@
             {
               "id": "57E",
               "name": {
-                "value": "cinquantasette E",
+                "value": "cinquantasette e",
                 "synonyms": [
                   "57E"
                 ]
@@ -10644,7 +11033,7 @@
             {
               "id": "58E",
               "name": {
-                "value": "cinquantotto E",
+                "value": "cinquantotto e",
                 "synonyms": [
                   "58E"
                 ]
@@ -10653,7 +11042,7 @@
             {
               "id": "58RE",
               "name": {
-                "value": "cinquantotto R E",
+                "value": "cinquantotto erre e",
                 "synonyms": [
                   "58RE"
                 ]
@@ -10662,7 +11051,7 @@
             {
               "id": "59E",
               "name": {
-                "value": "cinquantanove E",
+                "value": "cinquantanove e",
                 "synonyms": [
                   "59E"
                 ]
@@ -10671,7 +11060,7 @@
             {
               "id": "60E",
               "name": {
-                "value": "sessanta E",
+                "value": "sessanta e",
                 "synonyms": [
                   "60E"
                 ]
@@ -10680,7 +11069,7 @@
             {
               "id": "66E",
               "name": {
-                "value": "sessantasei E",
+                "value": "sessantasei e",
                 "synonyms": [
                   "66E"
                 ]
@@ -10689,7 +11078,7 @@
             {
               "id": "67E",
               "name": {
-                "value": "sessantasette E",
+                "value": "sessantasette e",
                 "synonyms": [
                   "67E"
                 ]
@@ -10698,7 +11087,7 @@
             {
               "id": "67RE",
               "name": {
-                "value": "sessantasette R E",
+                "value": "sessantasette erre e",
                 "synonyms": [
                   "67RE"
                 ]
@@ -10707,7 +11096,7 @@
             {
               "id": "72E",
               "name": {
-                "value": "settantadue E",
+                "value": "settantadue e",
                 "synonyms": [
                   "72E"
                 ]
@@ -10716,7 +11105,7 @@
             {
               "id": "73E",
               "name": {
-                "value": "settantatré E",
+                "value": "settantatré e",
                 "synonyms": [
                   "73E"
                 ]
@@ -10725,7 +11114,7 @@
             {
               "id": "81E",
               "name": {
-                "value": "ottantuno E",
+                "value": "ottantuno e",
                 "synonyms": [
                   "81E"
                 ]
@@ -10734,7 +11123,7 @@
             {
               "id": "82E",
               "name": {
-                "value": "ottantadue E",
+                "value": "ottantadue e",
                 "synonyms": [
                   "82E"
                 ]
@@ -10743,7 +11132,7 @@
             {
               "id": "83E",
               "name": {
-                "value": "ottantatré E",
+                "value": "ottantatré e",
                 "synonyms": [
                   "83E"
                 ]
@@ -10752,7 +11141,7 @@
             {
               "id": "12L",
               "name": {
-                "value": "dodici L",
+                "value": "dodici elle",
                 "synonyms": [
                   "12L"
                 ]
@@ -10871,7 +11260,7 @@
             {
               "id": "7L",
               "name": {
-                "value": "sette L",
+                "value": "sette elle",
                 "synonyms": [
                   "7L"
                 ]
@@ -10899,7 +11288,7 @@
             {
               "id": "81F",
               "name": {
-                "value": "ottantuno F",
+                "value": "ottantuno effe",
                 "synonyms": [
                   "81F"
                 ]
@@ -10928,7 +11317,7 @@
             {
               "id": "N1",
               "name": {
-                "value": "N uno",
+                "value": "enne uno",
                 "synonyms": [
                   "N1"
                 ]
@@ -10937,7 +11326,7 @@
             {
               "id": "N2",
               "name": {
-                "value": "N due",
+                "value": "enne due",
                 "synonyms": [
                   "N2"
                 ]
@@ -10946,7 +11335,7 @@
             {
               "id": "GSB",
               "name": {
-                "value": "G S B",
+                "value": "gi esse bi",
                 "synonyms": [
                   "GSB"
                 ]
@@ -10955,7 +11344,7 @@
             {
               "id": "GSG",
               "name": {
-                "value": "G S G",
+                "value": "gi esse gi",
                 "synonyms": [
                   "GSG"
                 ]
@@ -10964,7 +11353,7 @@
             {
               "id": "4L",
               "name": {
-                "value": "quattro L",
+                "value": "quattro elle",
                 "synonyms": [
                   "4L"
                 ]
@@ -10973,7 +11362,7 @@
             {
               "id": "T1",
               "name": {
-                "value": "T uno",
+                "value": "ti uno",
                 "synonyms": [
                   "T1"
                 ]
@@ -11002,7 +11391,7 @@
             {
               "id": "45H",
               "name": {
-                "value": "quarantacinque H",
+                "value": "quarantacinque acca",
                 "synonyms": [
                   "45H"
                 ]
@@ -11011,7 +11400,7 @@
             {
               "id": "6L",
               "name": {
-                "value": "sei L",
+                "value": "sei elle",
                 "synonyms": [
                   "6L"
                 ]
@@ -11020,7 +11409,7 @@
             {
               "id": "24H",
               "name": {
-                "value": "ventiquattro H",
+                "value": "ventiquattro acca",
                 "synonyms": [
                   "24H"
                 ]
@@ -11029,7 +11418,7 @@
             {
               "id": "34H",
               "name": {
-                "value": "trentaquattro H",
+                "value": "trentaquattro acca",
                 "synonyms": [
                   "34H"
                 ]
@@ -11038,7 +11427,7 @@
             {
               "id": "33H",
               "name": {
-                "value": "trentatré H",
+                "value": "trentatré acca",
                 "synonyms": [
                   "33H"
                 ]
@@ -11047,7 +11436,7 @@
             {
               "id": "4DE",
               "name": {
-                "value": "quattro D E",
+                "value": "quattro di e",
                 "synonyms": [
                   "4DE"
                 ]
@@ -11056,7 +11445,7 @@
             {
               "id": "7DE",
               "name": {
-                "value": "sette D E",
+                "value": "sette di e",
                 "synonyms": [
                   "7DE"
                 ]
@@ -11065,7 +11454,7 @@
             {
               "id": "T2",
               "name": {
-                "value": "T due",
+                "value": "ti due",
                 "synonyms": [
                   "T2"
                 ]
@@ -11074,7 +11463,7 @@
             {
               "id": "47H",
               "name": {
-                "value": "quarantasette H",
+                "value": "quarantasette acca",
                 "synonyms": [
                   "47H"
                 ]
@@ -11093,7 +11482,7 @@
             {
               "id": "54RE",
               "name": {
-                "value": "cinquantaquattro R E",
+                "value": "cinquantaquattro erre e",
                 "synonyms": [
                   "54RE"
                 ]
@@ -11102,7 +11491,7 @@
             {
               "id": "31H",
               "name": {
-                "value": "trentuno H",
+                "value": "trentuno acca",
                 "synonyms": [
                   "31H"
                 ]
@@ -11111,7 +11500,7 @@
             {
               "id": "32H",
               "name": {
-                "value": "trentadue H",
+                "value": "trentadue acca",
                 "synonyms": [
                   "32H"
                 ]
@@ -11120,7 +11509,7 @@
             {
               "id": "HE",
               "name": {
-                "value": "H E",
+                "value": "acca e",
                 "synonyms": [
                   "HE"
                 ]
@@ -11129,7 +11518,7 @@
             {
               "id": "48H",
               "name": {
-                "value": "quarantotto H",
+                "value": "quarantotto acca",
                 "synonyms": [
                   "48H"
                 ]
@@ -11138,7 +11527,7 @@
             {
               "id": "10S",
               "name": {
-                "value": "dieci S",
+                "value": "dieci esse",
                 "synonyms": [
                   "10S"
                 ]
@@ -11157,7 +11546,7 @@
             {
               "id": "OMN1",
               "name": {
-                "value": "O M N uno",
+                "value": "o emme enne uno",
                 "synonyms": [
                   "OMN1"
                 ]
@@ -11166,7 +11555,7 @@
             {
               "id": "OMN2",
               "name": {
-                "value": "O M N due",
+                "value": "o emme enne due",
                 "synonyms": [
                   "OMN2"
                 ]
@@ -11175,7 +11564,7 @@
             {
               "id": "OMN3",
               "name": {
-                "value": "O M N tre",
+                "value": "o emme enne tre",
                 "synonyms": [
                   "OMN3"
                 ]
@@ -11184,7 +11573,7 @@
             {
               "id": "PK1",
               "name": {
-                "value": "P K uno",
+                "value": "pi K uno",
                 "synonyms": [
                   "PK1"
                 ]
@@ -11193,7 +11582,7 @@
             {
               "id": "PM",
               "name": {
-                "value": "P M",
+                "value": "pi emme",
                 "synonyms": [
                   "PM"
                 ]
@@ -11202,7 +11591,7 @@
             {
               "id": "9S",
               "name": {
-                "value": "nove S",
+                "value": "nove esse",
                 "synonyms": [
                   "9S"
                 ]
@@ -11211,7 +11600,7 @@
             {
               "id": "15E",
               "name": {
-                "value": "quindici E",
+                "value": "quindici e",
                 "synonyms": [
                   "15E"
                 ]
@@ -11242,7 +11631,7 @@
               }
             },
             {
-              "id": "aut",
+              "id": "bus",
               "name": {
                 "value": "autobus",
                 "synonyms": [
@@ -11250,8 +11639,7 @@
                   "corriera",
                   "corriere",
                   "pullman",
-                  "filobus",
-                  "mezzo su gomma"
+                  "filobus"
                 ]
               }
             },
@@ -11261,7 +11649,88 @@
                 "value": "tram",
                 "synonyms": [
                   "tranvia",
-                  "metro di superficie"
+                  "tramvia",
+                  "il tram"
+                ]
+              }
+            },
+            {
+              "id": "aut",
+              "name": {
+                "value": "mezzi su gomma",
+                "synonyms": [
+                  "autobus e tram",
+                  "mezzi di terra",
+                  "gomma"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "CATEGORIA",
+          "values": [
+            {
+              "id": "partenze",
+              "name": {
+                "value": "partenze",
+                "synonyms": [
+                  "orari",
+                  "corse",
+                  "partenza",
+                  "orario",
+                  "vaporetti",
+                  "autobus",
+                  "ultima corsa"
+                ]
+              }
+            },
+            {
+              "id": "percorsi",
+              "name": {
+                "value": "percorsi",
+                "synonyms": [
+                  "percorso",
+                  "itinerari",
+                  "itinerario",
+                  "viaggi",
+                  "come arrivare"
+                ]
+              }
+            },
+            {
+              "id": "marea",
+              "name": {
+                "value": "marea",
+                "synonyms": [
+                  "maree",
+                  "acqua alta",
+                  "mose",
+                  "livello dell'acqua"
+                ]
+              }
+            },
+            {
+              "id": "avvisi",
+              "name": {
+                "value": "avvisi",
+                "synonyms": [
+                  "avviso",
+                  "scioperi",
+                  "sciopero",
+                  "problemi",
+                  "disservizi"
+                ]
+              }
+            },
+            {
+              "id": "riepilogo",
+              "name": {
+                "value": "riepilogo",
+                "synonyms": [
+                  "riepiloghi",
+                  "routine",
+                  "riassunto"
                 ]
               }
             }

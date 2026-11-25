@@ -80,7 +80,8 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 
 ## 5. Stato attuale
 
-- **Skill Alexa (25/11/2026, ramo `feature/alexa`, NON pubblicata)**: cartella `alexa/` (guida `alexa/README.md`, stato `alexa/STATO.md`). Ponte Alexa-hosted gratuito → `POST /api/alexa` → logica in processo che riusa le API della PWA; spenta senza `ALEXA_TOKEN`. Prove verdi; da fare dall'utente: account Amazon, creazione skill, import del modello, token, prove su Echo. Non toccati: Web Push, PWA, versione (resta v34).
+- **Skill Alexa, revisione 2 (25/11/2026, ramo `feature/alexa-voce`, NON pubblicata)**: prima/ultima corsa sull'intero GTFS, direzione verificata, dialogo e voce rivisti (vedi `alexa/STATO.md`); corretto `route_type` in `gtfs.js`.
+- **Skill Alexa (25/11/2026, pubblicata su `main` dall'utente)**: cartella `alexa/` (guida `alexa/README.md`, stato `alexa/STATO.md`). Ponte Alexa-hosted gratuito → `POST /api/alexa` → logica in processo che riusa le API della PWA; spenta senza `ALEXA_TOKEN`. Prove verdi; da fare dall'utente: account Amazon, creazione skill, import del modello, token, prove su Echo. Non toccati: Web Push, PWA, versione (resta v34).
 - **v34 (24/11/2026, audit funzionale)**: fermate sospese e avvisi generali (nebbia, acqua/bassa marea) detti
   chiaramente nel pianificatore, nel viaggio e nella fermata («il mezzo potrebbe non fermarsi»); viaggio guidato con controlli sul campo
   (mezzo perso, discesa mancata) e «Ricalcola da qui» dalla posizione; marea vecchia dichiarata; ripristino dei preferiti tutto-o-niente;

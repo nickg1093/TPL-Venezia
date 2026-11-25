@@ -3,6 +3,23 @@
 Riepilogo per versione delle modifiche che contano per chi usa o mantiene l'app. I dettagli tecnici sono in `README.md` §12; lo storico per
 gli utenti è nell'app (Informazioni → Novità, generato da `public/js/guida.js`).
 
+## Skill Alexa — revisione 2 — 25/11/2026 (ramo `feature/alexa-voce`, non pubblicata; l'app resta alla v34)
+- **Prima e ultima corsa, orari di altri giorni, linee di una fermata** cercati sull'intero GTFS della data (`alexa/diretti.js`): calendario
+  ed eccezioni, orari oltre le 24, sequenza delle fermate, niente salita al capolinea d'arrivo, soppressioni del tempo reale. Prima si deduceva
+  l'ultima corsa dal pannello delle partenze (finestre di due ore).
+- **Direzione verificata** sulle fermate successive della corsa («tram a San Marco Cattaneo verso Venezia» → fermata 1); **mezzo** da `route_type`
+  (vaporetto, autobus, tram); etichette dei pali uguali alla PWA (`public/js/zones.js`).
+- **Dialogo**: una corsa per le domande al singolare, tre al plurale, il numero detto; seguiti che cambiano un solo parametro («e quello dopo?»
+  senza ripetere né saltare corse, «e domani alle sette?», «nell'altra direzione», «solo vaporetti», «e l'ultimo?», «dimmi i dettagli», «aggiorna»,
+  «riprova»); percorsi detti in breve (dettagli su richiesta); benvenuto «Ciao! Cosa vuoi sapere?», aiuto per categoria, «presentati», «tutti i comandi».
+- **Affidabilità**: orari in caricamento detti con il giorno e ripetibili con «riprova»; occupato, non raggiungibile e configurazione distinti (tolto
+  «si sta svegliando» quando la causa non è nota); risposta progressiva «Sto controllando gli orari» dalla Lambda.
+- **Frasi fisse in un solo file** (`alexa/messaggi.js`, copia generata nella Lambda); catalogo delle risposte effettive generato
+  (`alexa/FRASI_STANDARD_ALEXA_VENEZIA_TPL.md` § 11); guida `alexa/GUIDA_COMANDI.md`; elenco breve dei comandi in *Informazioni → Skill Alexa*.
+- **Correzione nel server**: `gtfs.js` non leggeva `route_type` (in `/api/routes` era sempre vuoto): ora tram e autobus sono distinti anche nel
+  pianificatore della PWA (filtro «tram»).
+- Prove nuove: `tests/alexa-dialogo.test.js`, confronto con una ricerca indipendente sui GTFS veri (`tests/alexa-gtfs-reale.js`).
+
 ## Skill Alexa «Venezia TPL» — 25/11/2026 (ramo `feature/alexa`, non pubblicata; l'app resta alla v34)
 - **Nuova skill vocale in italiano** (cartella `alexa/`, guida in `alexa/README.md`): partenze e ritardi, ultima corsa, percorsi con il motore
   RAPTOR della PWA, marea/colmo/acqua alta/MOSE/passerelle, avvisi e scioperi, riepilogo della mattina, seguiti («e il prossimo?», «e al

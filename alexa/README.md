@@ -9,7 +9,7 @@ non duplica GTFS, feed o archivi. Stato e decisioni: [`STATO.md`](STATO.md).
 | Dici | Risposta |
 |---|---|
 | «quando passa il due alle Zattere», «prossimo vaporetto da Rialto», «e il prossimo?» | prime tre partenze: destinazione, pontile, attesa, ora, ritardo; distingue tempo reale, stima, orario, dato vecchio, corsa soppressa |
-| «il 5.2 è in ritardo?», «ultimo vaporetto per il Lido» | ritardo della linea; ultima corsa (anche dopo mezzanotte) |
+| «il 5.2 è in ritardo?», «ultimo vaporetto da Rialto a Piazzale Roma», «prima corsa domattina da Lido», «che linee passano da Rialto?» | ritardo della linea; prima e ultima corsa cercate sull'intero GTFS della data (anche dopo mezzanotte, festivi, date esplicite) |
 | «come arrivo a Rialto da Piazzale Roma», «devo arrivare a San Marco entro le nove», «senza cambi», «e al ritorno?», «e domani?» | percorsi con il motore RAPTOR della PWA: cambi, coincidenze strette, alternative, avvisi lungo la strada |
 | «com'è la marea», «quando è il colmo», «ci sarà acqua alta stasera», «com'è il MOSE», «servono gli stivali a San Marco», «passerelle a Rialto» | livello, tendenza, picchi previsti, stato del MOSE, età del dato; misura, previsione e stima sempre distinte; le passerelle non sono mai date per posate |
 | «ci sono avvisi», «sciopero domani», «avvisi sulla linea 1» | avvisi di servizio della PWA, con validità, linee, fermate, fasce di garanzia e limite di copertura |
@@ -37,7 +37,7 @@ Alexa ──► Funzione Lambda (Alexa-hosted, gratuita) ──► POST https://
   dialogo («e il prossimo?») vive solo negli attributi di sessione di Alexa. Informativa aggiornata in *Informazioni → Privacy* dell'app.
 * **Costo**: 0 €. Alexa-hosted e Render gratuito; nessun servizio a pagamento, nessun modello linguistico in esecuzione.
 * **Render gratuito si addormenta** dopo 15 minuti e si risveglia in 30–50 s, più degli ~8 s concessi da Alexa. Contromisure: all'apertura
-  la funzione «sveglia» Render in anticipo; se non risponde entro 6 s Alexa dice «si sta svegliando, riprova»; per una skill usata spesso
+  la funzione «sveglia» Render in anticipo; se non risponde entro 6,5 s Alexa dice «Il servizio non risponde ancora. Riprova tra poco» e «riprova» ripete la stessa domanda; per una skill usata spesso
   (o per la certificazione) conviene un controllo esterno gratuito su `/healthz` (vedi README principale §8).
 
 ## 3. Cosa devi fare tu (una tantum) — passo per passo
@@ -74,17 +74,17 @@ Tieni il valore: serve al Passo 5.
 
 ### Passo 5 — Codice della funzione
 1. Scheda **Code**. Nella cartella `lambda`:
-   * sostituisci il contenuto di `index.js` con quello di `alexa\lambda\index.js`;
+   * sostituisci tutto il contenuto di `index.js` con quello di `alexa\lambda\index.js` (le frasi fisse sono già dentro: è l'unico file da copiare);
    * sostituisci `package.json` con `alexa\lambda\package.json`;
-   * crea un nuovo file `segreto.js` (tasto destro sulla cartella `lambda` → *New file*) copiando `alexa\lambda\segreto.esempio.js` e riempiendo: `url` (resta `https://veneziatpl.onrender.com/api/alexa`), `token` (il valore del Passo 1), `skillId` (la scheda **Build** o l'elenco delle skill mostra «Copy Skill ID»: `amzn1.ask.skill.…`).
+   * `segreto.js` resta quello già creato (indirizzo, token, ID della skill). La prima volta: tasto destro su `lambda` → *New file* → `segreto.js`, copiando `alexa\lambda\segreto.esempio.js`.
 2. **Deploy**. Attendi «Deployment successful».
 `segreto.js` resta nel deposito privato della tua skill su Amazon: **non** copiarlo nel repository (è in `.gitignore`).
-3. (Consigliato) Su Render aggiungi anche `ALEXA_SKILL_ID` = lo stesso ID: il server rifiuta richieste di altre skill.
+3. (Consigliato) Su Render `ALEXA_SKILL_ID` = lo stesso ID: il server rifiuta richieste di altre skill.
 
 ### Passo 6 — Provare
 1. Scheda **Test** → in alto scegli **Development** → scrivi o di' «apri venezia t. p. l.» (il simulatore parla italiano `it-IT`).
 2. Prova: «quando passa il due alle Zattere», «com'è la marea», «ci sono avvisi», «come arrivo a Rialto da Piazzale Roma», «riepilogo della mattina», «e il prossimo?».
-3. Sul dispositivo (Echo o app Alexa, stesso account): «Alexa, apri venezia t. p. l.». In *Test* con una prima richiesta lenta è normale sentire «si sta svegliando, riprova»: ripeti dopo 30 secondi.
+3. Sul dispositivo (Echo o app Alexa, stesso account): «Alexa, apri venezia t. p. l.». In *Test* con una prima richiesta lenta è normale sentire «il servizio non risponde ancora»: di' «riprova» dopo 30 secondi.
 4. Se la prima volta risponde «problema di configurazione», il token di Render e quello di `segreto.js` non coincidono.
 
 ### Passo 7 — Routine (riepilogo ogni mattina)
@@ -107,10 +107,11 @@ Prima della certificazione tieni il server sveglio (un avvio a freddo può far f
 | Situazione | Cosa fare |
 |---|---|
 | Cambiano fermate/linee (nuovo GTFS ACTV) | `node alexa/scripts/genera-modello.js https://veneziatpl.onrender.com` (da PowerShell, cartella del progetto), poi ripeti il Passo 4 con il nuovo `it-IT.json`. Le fermate nuove prima di questo passo non sono riconosciute a voce (le altre funzionano). |
-| Cambiano le frasi o la logica | Modifica `alexa/*.js`, `npm test`, deploy del server. Se cambia `alexa/lambda/index.js` rifai il Passo 5. |
+| Cambiano le frasi fisse (benvenuto, aiuto, errori) | Modifica solo `alexa/messaggi.js`, poi `node alexa/scripts/prepara-lambda.js` (le copia nella Lambda), `node alexa/scripts/catalogo.js` (aggiorna il catalogo), `npm test`, deploy del server e Passo 5. |
+| Cambiano le altre frasi o la logica | Modifica `alexa/*.js`, `node alexa/scripts/catalogo.js`, `npm test`, deploy del server. |
 | Sospetti che il token sia trapelato | Nuovo token (Passo 1) su Render **e** in `segreto.js` (Deploy). |
 | Spegnere subito la skill | Render → *Environment* → cancella `ALEXA_TOKEN` (o `ALEXA_SKILL_ID` sbagliato): `/api/alexa` risponde 404, la PWA non cambia. |
-| «Si sta svegliando» a ogni richiesta | Render dorme: aspetta 30–50 s e riprova; considera il controllo esterno su `/healthz`. |
+| «Il servizio non risponde ancora» a ogni richiesta | Render dorme: aspetta 30–50 s e riprova; considera il controllo esterno su `/healthz`. |
 | Alexa dice «problema di configurazione» | token diverso tra Render e `segreto.js`. |
 | Alexa dice «richiesta non valida» | `skillId` in `segreto.js` diverso da quello della skill. |
 | Il modello non si compila | l'editor JSON mostra la riga: di solito un nome di invocazione non accettato; correggi e ricostruisci. |
@@ -120,10 +121,11 @@ Prima della certificazione tieni il server sveglio (un avvio a freddo può far f
 
 ```powershell
 npm test                                     # tutte le prove (le skill: tests/alexa-*.test.js)
-node --test tests/alexa-skill.test.js        # intenti, dialogo, orari, marea +105/+120 cm, MOSE, scioperi, notte, APL, errori
+node --test tests/alexa-dialogo.test.js      # motore delle corse, direzione, singolare/plurale, seguiti, prima/ultima corsa, 409 e riprova, aiuto
+node --test tests/alexa-skill.test.js        # marea +105/+120 cm, MOSE, scioperi, sicurezza, SSML, APL
 node --test tests/alexa-modello.test.js      # modello di interazione e manifesto
 node --test tests/alexa-lambda.test.js       # funzione Lambda con server finto: privacy, timeout, 401/503
-node --test tests/alexa-server.test.js       # server vero con feed simulato: sicurezza, confronto con la PWA, latenza, memoria
+node --test tests/alexa-server.test.js       # server vero (GTFS veri, feed simulato): sicurezza, confronto con ricerca indipendente sui GTFS, latenza, memoria
 node --test tests/alexa-unita.test.js        # date/ore (ora legale, cambio giorno), numeri e nomi parlati, flash briefing
 ```
 Prova a mano contro il server locale (feed simulato): vedi `tests/alexa-server.test.js` per la forma della richiesta.

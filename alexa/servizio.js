@@ -67,6 +67,11 @@ async function avvisi(C, ric = {}) {
   let filtro = '';
   if (ric.linea) { lista = lista.filter(it => toccaLinea(it, ric.linea, srcs) || (it.effect === 'strike' && generali(it)) || (generali(it) && it.severity !== 'info')); filtro = `sulla linea ${P.lineaParlata(ric.linea)}`; }
   else if (ric.gruppo) { lista = lista.filter(it => toccaGruppo(it, ric.gruppo) || (it.effect === 'strike' && generali(it))); filtro = `per ${ric.gruppo.parlato}`; }
+  if (ric.mezzo) {                                   // «e per i vaporetti?»: avvisi di quel servizio e generali
+    const src = ric.mezzo === 'nav' ? 'nav' : 'aut';
+    lista = lista.filter(it => generali(it) || (it.lines || []).some(l => l.s === src));
+    filtro = `${filtro ? filtro + ' ' : ''}per ${src === 'nav' ? 'i vaporetti' : ric.mezzo === 'tram' ? 'il tram' : 'autobus e tram'}`;
+  }
   lista.sort((x, y) => GRAVI[x.severity] - GRAVI[y.severity] || inizio(x) - inizio(y));
   const dati = U.frasEta(A.updated, adesso, 45, 'Gli avvisi');
   const limite = per.a > T.adessoRoma(adesso + COPERTURA_GIORNI * 86400e3).ymd ? ` Considero solo gli avvisi in corso e dei prossimi ${P.parole(COPERTURA_GIORNI)} giorni: oltre non ho dati.` : '';
@@ -75,17 +80,17 @@ async function avvisi(C, ric = {}) {
   const scheda = { titolo: ric.soloSciopero ? 'Scioperi' : 'Avvisi di servizio', sottotitolo: filtro.replace(/^per |^sulla /, ''), righe: [], nota: '', fonte: 'Avvisi ACTV (sito e canale Telegram) · servizio indipendente, non ufficiale' };
 
   if (!lista.length) {
-    let v = ric.soloSciopero ? `Non risultano scioperi comunicati${filtro ? ' ' + filtro : ''}${quando}.` : `Non risultano avvisi ${filtro || 'di servizio'}${quando}.`;
+    let v = ric.soloSciopero ? `Non risultano scioperi comunicati${filtro ? ' ' + filtro : ''}${quando}.` : `Non risultano avvisi ${filtro || 'di servizio'}${quando}, nei dati disponibili.`;
     v += limite || ` Controllo gli avvisi in corso e dei prossimi ${P.parole(COPERTURA_GIORNI)} giorni.`;
     if (A.stale) v += ' Attenzione: gli avvisi non si aggiornano da un po\': potrebbero mancare le ultime comunicazioni.';
     else if (dati) v += ' ' + dati;
     scheda.nota = v;
     return { voce: P.esc(v).replace(/&apos;/g, "'"), scheda, ctx, fine: false, vuoto: true };
   }
-  const mostra = lista.slice(0, ric.tutti ? 5 : ric.breve ? 2 : 3);
+  const mostra = lista.slice(0, ric.tutti ? 5 : ric.breve ? 1 : 3);
   const parti = [];
-  const intro = lista.length === 1 ? `C'è un avviso ${filtro}${quando}.` : `Ci sono ${P.parole(lista.length)} avvisi ${filtro}${quando}${lista.length > mostra.length ? `: ti dico i primi ${P.parole(mostra.length)}` : ''}.`;
-  parti.push(P.esc(intro).replace(/&apos;/g, "'").replace(/\s+\./g, '.'));
+  const intro = ric.breve ? (lista.length === 1 ? 'C\'è un avviso.' : `Ci sono ${P.parole(lista.length)} avvisi; il più importante:`) : lista.length === 1 ? `C'è un avviso ${filtro}${quando}.` : `Ci sono ${P.parole(lista.length)} avvisi ${filtro}${quando}${lista.length > mostra.length ? `: ti dico i primi ${P.parole(mostra.length)}` : ''}.`;
+  parti.push(P.esc(intro).replace(/&apos;/g, "'").replace(/\s+([.:;])/g, '$1'));
   for (const it of mostra) {
     const et = ETICHETTA[it.effect] || 'avviso', linee = (it.lines || []).filter(l => l.s === 'nav' || l.s).map(l => l.n);
     const chi = linee.length && linee.length <= 3 && !ric.linea ? ` linea ${P.elenco(linee.map(P.lineaParlata))}` : '';

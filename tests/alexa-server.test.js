@@ -138,3 +138,44 @@ test('flash briefing: feed JSON valido con testi brevi, senza dati personali (GE
   assert.ok(voci.length >= 1);
   for (const v of voci) { assert.ok(v.uid && v.updateDate && v.titleText && v.mainText); assert.ok(v.mainText.length <= 4500); assert.doesNotMatch(v.mainText, /https?:|<\w+[^>]*>/); }
 });
+
+// ---- confronto con una ricerca indipendente sui GTFS veri (stessa data, stessi file di data/gtfs) ----
+const Reale = require('./alexa-gtfs-reale');
+const romaOggi = () => { const p = require('../calendar').romeParts(); return p.secs < 4 * 3600 ? require('../calendar').addDays(p.ymd, -1) : p.ymd; };
+const isoDi = ymd => `${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}`;
+test('GTFS veri: ultima e prima corsa Rialto → Piazzale Roma coincidono con una ricerca indipendente (oggi, domani e un giorno con eccezioni di calendario)', async () => {
+  nuovoIp();
+  const g = await Reale.carica('nav');
+  const da = new Set(Object.keys(g.stops).filter(s => /^Rialto "/.test(g.stops[s]))), a = new Set(Object.keys(g.stops).filter(s => /^P\.le Roma/.test(g.stops[s])));
+  const cal = require('../calendar'), oggi = romaOggi(), domani = cal.addDays(cal.romeYmd(), 1);
+  const eccezione = Object.keys(g.ex).sort().find(d => d > domani && Object.values(g.ex[d]).length);
+  const giorni = [[oggi, null], [domani, isoDi(domani)]].concat(eccezione ? [[eccezione, isoDi(eccezione)]] : []);
+  for (const [ymd, data] of giorni) {
+    const atteso = Reale.diretti(g, ymd, da, a);
+    const j = await (await chiedi(S.base, rich('UltimaCorsaIntent', { luogo: 'Rialto', arrivo: 'Piazzale Roma', ...(data ? { data } : {}) }))).json();
+    const c = j.sessionAttributes && j.sessionAttributes.ctx;
+    if (!atteso.length) { assert.match(parlato(j), /Non risultano/); continue; }
+    assert.ok(c && c.dep != null, `${ymd}: ${parlato(j)}`);
+    assert.equal(c.dep, atteso.at(-1).dep, `${ymd}: ultima ${parlato(j)}`);
+    assert.equal(c.trip.split(':')[1], atteso.at(-1).tid);
+  }
+  const atteso = Reale.diretti(g, domani, da, a);
+  const j = await (await chiedi(S.base, rich('PrimaCorsaIntent', { luogo: 'Rialto', arrivo: 'Piazzale Roma', data: isoDi(domani) }))).json();
+  assert.equal(j.sessionAttributes.ctx.dep, atteso[0].dep, parlato(j));
+});
+test('GTFS veri: tram T1 da San Marco Cattaneo verso Venezia sale dalla fermata giusta (1) secondo la sequenza delle fermate', async () => {
+  nuovoIp();
+  const g = await Reale.carica('aut');
+  const sm = new Set(Object.keys(g.stops).filter(s => /^San Marco Cattaneo$/i.test(g.stops[s].trim()))), ve = new Set(Object.keys(g.stops).filter(s => /^(Piazzale Roma|Venezia)\b/i.test(g.stops[s].trim())));
+  const verso = Reale.diretti(g, romaOggi(), sm, ve, { tipo: 0 });
+  assert.ok(verso.length, 'nessun tram verso Venezia nei dati');
+  const fermate = [...new Set(verso.map(x => x.da))];
+  assert.equal(fermate.length, 1, 'verso Venezia si sale da una sola delle due fermate');
+  const j = await (await chiedi(S.base, rich('UltimaCorsaIntent', { mezzo: 'tram', luogo: 'San Marco Cattaneo', direzione: 'Venezia' }))).json();
+  const t = parlato(j);
+  // etichetta della PWA (zones.js): pali con lo stesso nome numerati per codice; quello verso Venezia
+  const tutte = [...sm].sort((x, y) => x.localeCompare(y, 'it', { numeric: true })), n = tutte.indexOf(fermate[0]) + 1;
+  assert.match(t, new RegExp(`San Marco Cattaneo ${n}\\b`), t);
+  assert.equal(j.sessionAttributes.ctx.dep, verso.at(-1).dep, t);
+  assert.match(t, /tram ti uno/);
+});

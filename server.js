@@ -241,7 +241,19 @@ function sendTagged(req, res, body, gz, etag, cc = 'no-cache') {
 let stopsTag = null, routesMemo = null;
 // ambiente della skill Alexa: esegue in processo le API in lettura già esposte (stesse regole di budget CPU e memoria del pianificatore)
 const ALEXA_API = new Set(['/api/zone', '/api/vehicles', '/api/trip', '/api/avvisi', '/api/tide', '/api/mose', '/api/percorso']);
+// corse dirette sull'intero GTFS di una data (alexa/diretti.js): la versione dei GTFS è quella della modalità «Programmato» della PWA;
+// per oggi e domani basta quella in memoria (stessa impronta). Se la data va caricata, si attende al massimo 4 s, poi «in caricamento» (409).
+async function gtfsAlexa(i, ymd) {
+  const G0 = D[i], days = G0?.meta?.days;
+  if (Array.isArray(days) && days.includes(ymd) && (ymd === require('./calendar').romeYmd() || live.hashFor(i, ymd) === G0.meta.hash)) return G0;
+  const fine = Date.now() + 4000;
+  for (;;) {
+    try { const r = gtfsFor(i, ymd); return r.none ? null : r.G; } catch (e) { if (e.code !== 409 || Date.now() > fine) throw e; await new Promise(ok => setTimeout(ok, 250)); }
+  }
+}
+const alexaMotore = { G: gtfsAlexa, serviceActive: schedule.serviceActive, equivalentStops, live: i => S[i]?.live || null, oggi: () => require('./calendar').romeYmd() };
 const alexaAmbiente = {
+  diretti: q => require('./alexa/diretti').cerca(alexaMotore, q),
   skillId: ALEXA_SKILL_ID,
   stops: async () => stopsOut(), routes: async () => routesOut(), versione: () => live.version(),
   occupato: () => sec.cpuBusy() || memoria.critico(),

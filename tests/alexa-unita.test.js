@@ -46,7 +46,7 @@ test('parlato: numeri, attese e durate in italiano corrente', () => {
   assert.equal(P.oraParlata('08:15'), 'alle otto e quindici'); assert.equal(P.oraParlata('01:00'), 'all\'una'); assert.equal(P.oraParlata('00:10'), 'a mezzanotte e dieci');
 });
 test('parlato: linee e fermate veneziane (punto decimale, pontile, abbreviazioni, apostrofo)', () => {
-  assert.equal(P.lineaParlata('4.1'), 'quattro punto uno'); assert.equal(P.lineaParlata('5.2'), 'cinque punto due'); assert.equal(P.lineaParlata('6'), 'sei'); assert.equal(P.lineaParlata('T1'), 'T uno');
+  assert.equal(P.lineaParlata('4.1'), 'quattro punto uno'); assert.equal(P.lineaParlata('5.2'), 'cinque punto due'); assert.equal(P.lineaParlata('6'), 'sei'); assert.equal(P.lineaParlata('T1'), 'ti uno'); assert.equal(P.lineaParlata('N'), 'enne'); assert.equal(P.destinazioneParlata('VENEZIA CORSIA C'), 'Venezia');
   assert.equal(P.fermataParlata('S. Marco-San Zaccaria "F"'), 'San Marco, San Zaccaria, pontile F');
   assert.equal(P.fermataParlata('Lido S.M.E. "B"'), 'Lido Santa Maria Elisabetta, pontile B');
   assert.equal(P.fermataParlata('P.le Roma "C"'), 'Piazzale Roma, pontile C');

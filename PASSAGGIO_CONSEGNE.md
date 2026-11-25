@@ -156,6 +156,10 @@ dipendenza nuova, nessun dato personale salvato. Modifiche al server: solo `POST
 (estratte dai gestori esistenti) e due ingressi API; `security.js`: limite `alexa: 90`. Push e tempo reale non toccati. Da verificare solo con
 Amazon e un Echo: compilazione del modello (1328 fermate), pronuncia, schede APL, risveglio di Render al primo uso.
 
+Revisione 2 (ramo `feature/alexa-voce`): `alexa/diretti.js` (corse dirette sull'intero GTFS della data, via `gtfsAlexa` in `server.js`),
+`alexa/zone.js` (etichette dei pali dalla PWA), `alexa/messaggi.js` (frasi fisse, copiate nella Lambda da `alexa/scripts/prepara-lambda.js`),
+catalogo generato da `alexa/scripts/catalogo.js`. In `gtfs.js` si legge ora `route_type`.
+
 ## 10. Limiti noti e verifiche da fare
 - Non provati su dispositivi veri: Safari iOS (installata e non), Android, Firefox e Safari desktop. Su iPhone le notifiche esistono solo
   con l'app nella schermata Home; «Schermo intero» non c'è (Fullscreen API non disponibile).

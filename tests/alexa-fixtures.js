@@ -9,13 +9,15 @@ const stops = [
   ['nav:1301', 'S. Marco-San Zaccaria "F"', 45.4333, 12.3438, 'nav'], ['nav:1302', 'S. Marco Vallaresso "A"', 45.4331, 12.3393, 'nav'],
   ['nav:1401', 'Murano Colonna "A"', 45.4586, 12.3534, 'nav'], ['nav:1402', 'Murano Faro "B"', 45.4631, 12.3571, 'nav'], ['nav:1403', 'Murano Museo "A"', 45.4570, 12.3520, 'nav'],
   ['nav:1501', 'Lido S.M.E. "B"', 45.4064, 12.3636, 'nav'], ['nav:1601', 'Ferrovia "D"', 45.4410, 12.3208, 'nav'],
-  ['aut:2301', 'Mestre FS "C"', 45.4825, 12.2318, 'aut'], ['aut:2302', 'Mestre Via Dante', 45.4900, 12.2400, 'aut']
+  ['aut:2301', 'Mestre FS "C"', 45.4825, 12.2318, 'aut'], ['aut:2302', 'Mestre Via Dante', 45.4900, 12.2400, 'aut'],
+  ['aut:6057', 'San Marco Cattaneo', 45.490131, 12.251319, 'aut'], ['aut:6058', 'San Marco Cattaneo', 45.490158, 12.251495, 'aut'], ['aut:3001', 'Monte Celo Favaro', 45.5100, 12.2900, 'aut']
 ];
 const routes = {
   'nav:R1': { name: '1', color: '#F4C20D', src: 'nav' }, 'nav:R2': { name: '2', color: '#E1342A', src: 'nav' }, 'nav:R51': { name: '5.1', color: '#8FD2BF', src: 'nav' },
   'nav:R52': { name: '5.2', color: '#8FD2BF', src: 'nav' }, 'nav:R41': { name: '4.1', color: '#4A90D9', src: 'nav' }, 'nav:RN': { name: 'N', color: '#25408D', src: 'nav' },
   'aut:B6': { name: '6', color: '#00A0A0', src: 'aut' }, 'aut:B6E': { name: '6E', color: '#00A0A0', src: 'aut' }, 'aut:T1': { name: 'T1', color: '#B0003A', src: 'aut' }
 };
+for (const [k, r] of Object.entries(routes)) r.type = r.src === 'nav' ? 4 : r.name === 'T1' ? 0 : 3;   // route_type GTFS: 4 battello, 0 tram, 3 autobus
 // ora fissa: mercoledì 25 novembre 2026, 08:10 a Venezia (UTC+1)
 const MS = (y, m, d, h = 0, mi = 0) => Date.UTC(y, m - 1, d, h, mi);
 const ADESSO = MS(2026, 11, 25, 7, 10);
@@ -42,15 +44,46 @@ function soluzione(o = {}) {
 }
 const percorso = (sols, extra = {}) => ({ aggiornato: ADESSO, live: true, ora: '08:10', data: '20261125', entro: null, piedi: null, senzaFermate: null, preferenza: 'equilibrata', soluzioni: sols, ...extra });
 
+// GTFS SINTETICO per le prove del motore delle corse dirette (alexa/diretti.js), con le stesse strutture di gtfs.js.
+// corse: { nav: [{ id, route: 'R1', service: 'FER', headsign, stops: [['1101', '08:15'], …] }], aut: […] } (orari anche oltre le 24:00)
+// servizi: { '20261125': ['FER'], … } · live: { nav: { tripId: { cancelled, skipped: Set } } }
+const secsDi = h => { const [a, b] = h.split(':').map(Number); return a * 3600 + b * 60; };
+function gtfs(corse, servizi = {}, live = {}) {
+  const G = {};
+  for (const src of ['nav', 'aut']) {
+    const g = { stopIndex: {}, stopTimes: new Map(), trips: {}, routes: {}, stops: {}, stopBaseNames: new Map(), tripIds: [] };
+    for (const [id, nome, , , s] of stops) if (s === src) { const sid = id.slice(src.length + 1); g.stops[sid] = nome; g.stopBaseNames.set(sid, nome.replace(/\s+"\w"$/, '')); g.stopIndex[sid] = []; }
+    for (const [k, r] of Object.entries(routes)) if (r.src === src) g.routes[k.slice(src.length + 1)] = { name: r.name, color: r.color, type: r.type };
+    for (const c of corse[src] || []) {
+      g.trips[c.id] = { route: c.route, headsign: c.headsign || null, service: c.service || 'FER' };
+      const s = c.stops.map(x => x[0]), a = Int32Array.from(c.stops.map(x => secsDi(x[1]))), d = Int32Array.from(c.stops.map(x => secsDi(x[2] || x[1])));
+      g.stopTimes.set(c.id, { s, a, d, start: d[0], end: a[a.length - 1] });
+      const n = g.tripIds.push(c.id) - 1;
+      s.forEach((sid, i) => (g.stopIndex[sid] ||= []).push(n, i));
+    }
+    G[src] = g;
+  }
+  return { G, motore: { G: async src => G[src] || null, serviceActive: (g, svc, ymd) => (servizi[ymd] || []).includes(svc), equivalentStops: (g, s) => [s], live: src => live[src] || null, oggi: () => '20261125' } };
+}
+// riga di /api/zone con la versione dei GTFS collegata (come nel server: proprietà non enumerabile _G)
+const conG = (d, G, seq) => { Object.defineProperty(d, '_G', { value: G, enumerable: false }); d.seq = seq; return d; };
+
 // ambiente simulato: ogni API risponde con la funzione dello scenario (u = URL della richiesta); le altre sono errore 404
-function ambiente(scen = {}, { adesso = ADESSO, occupato = false } = {}) {
+// opzioni: gtfs = risultato di gtfs() (motore delle corse dirette); errDiretti = errore da lanciare (es. 409) prima del motore
+function ambiente(scen = {}, { adesso = ADESSO, occupato = false, gtfs: gt = null, errDiretti = null } = {}) {
   const chiamate = [];
   const call = async pq => {
     const u = new URL(pq, 'http://x'); chiamate.push(pq);
     const f = scen[u.pathname]; if (!f) { const e = new Error('non trovato'); e.code = 404; throw e; }
     const r = typeof f === 'function' ? await f(u) : f; if (r instanceof Error) throw r; return r;
   };
-  return { call, stops: async () => stops, routes: async () => routes, versione: () => 'test', adesso: () => adesso, skillId: SKILL_ID, occupato: () => occupato, chiamate };
+  const amb = { call, stops: async () => stops, routes: async () => routes, versione: () => 'test', adesso: () => adesso, skillId: SKILL_ID, occupato: () => occupato, chiamate, richiesteDirette: [] };
+  amb.diretti = async q => {
+    amb.richiesteDirette.push(q);
+    const e = typeof errDiretti === 'function' ? errDiretti(q) : errDiretti; if (e) throw e;
+    return Dir.cerca(gt ? gt.motore : { G: async () => null }, q);
+  };
+  return amb;
 }
 // richiesta Alexa simulata
 let n = 0;
@@ -63,4 +96,5 @@ function richiesta(intent, slots = {}, { adesso = ADESSO, attributi = {}, scherm
   };
 }
 const parlato = r => (r && r.body && r.body.response && r.body.response.outputSpeech ? r.body.response.outputSpeech.ssml : '').replace(/<[^>]+>/g, '').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
-module.exports = { SKILL_ID, stops, routes, ADESSO, MS, partenza, zona, marea, estremo, avviso, mose, soluzione, percorso, ambiente, richiesta, parlato };
+const Dir = require('../alexa/diretti');
+module.exports = { gtfs, conG, secsDi, SKILL_ID, stops, routes, ADESSO, MS, partenza, zona, marea, estremo, avviso, mose, soluzione, percorso, ambiente, richiesta, parlato };

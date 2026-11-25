@@ -47,6 +47,10 @@ function oraSenzaPrep(s) {
   const [h, m] = t, base = h === 0 ? 'mezzanotte' : h === 12 ? 'mezzogiorno' : h === 1 ? "l'una" : 'le ' + parole(h);
   return m === 0 ? base : `${base} e ${parole(m)}`;
 }
+// «08:15» -> «dalle otto e quindici»; 01:00 -> «dall'una»; 00:10 -> «da mezzanotte e dieci»
+const dalleOra = s => oraParlata(s).replace(/^alle /, 'dalle ').replace(/^all'/, "dall'").replace(/^a /, 'da ');
+// «alle otto» -> «delle otto»; «all'una» -> «dell'una»; «a mezzanotte» -> «di mezzanotte»
+const delleOra = s => oraParlata(s).replace(/^alle /, 'delle ').replace(/^all'/, "dell'").replace(/^a /, 'di ');
 const minutiParlati = n => { n = Math.round(n); return n === 1 ? 'un minuto' : `${parole(n)} minuti`; };
 // attesa: «adesso», «tra un minuto», «tra cinque minuti» (n = minuti da adesso, anche negativo)
 function attesa(n) {
@@ -80,15 +84,15 @@ function giornoParlato(ymd, oggi) {
 }
 
 // ---- linee ----
-const LETTERE = { a: 'a', b: 'bi', c: 'ci', d: 'di', e: 'e', f: 'effe', g: 'gi', h: 'acca', i: 'i', l: 'elle', m: 'emme', n: 'enne', o: 'o', p: 'pi', r: 'erre', s: 'esse', t: 't', u: 'u', v: 'vu', z: 'zeta' };
-// «4.1» -> «quattro punto uno»; «T1» -> «T uno»; «5.2» -> «cinque punto due»; «2/» -> «due barrato»; «N» -> «N»; «12E» -> «dodici E»
+const LETTERE = { a: 'a', b: 'bi', c: 'ci', d: 'di', e: 'e', f: 'effe', g: 'gi', h: 'acca', i: 'i', l: 'elle', m: 'emme', n: 'enne', o: 'o', p: 'pi', r: 'erre', s: 'esse', t: 'ti', u: 'u', v: 'vu', z: 'zeta' };
+// «4.1» -> «quattro punto uno»; «T1» -> «ti uno»; «N» -> «enne»; «5.2» -> «cinque punto due»; «2/» -> «due barrato»; «N» -> «N»; «12E» -> «dodici E»
 function lineaParlata(nome) {
   const s = String(nome ?? '').trim();
   if (!s) return '';
   const out = [];
   for (const m of s.matchAll(/(\d+)|([A-Za-z])|(\.)|(\/)/g)) {
     if (m[1]) out.push(parole(+m[1]));
-    else if (m[2]) out.push(m[2].toUpperCase());
+    else if (m[2]) out.push(LETTERE[m[2].toLowerCase()] || m[2].toUpperCase());
     else if (m[3]) out.push('punto');
     else if (m[4]) out.push('barrato');
   }
@@ -113,8 +117,9 @@ function nomeParlato(nome) {
 }
 // «Rialto "D"» -> { base: 'Rialto', pontile: 'D' }
 function dividiPontile(nome) {
-  const m = /^(.*?)\s+"([A-Za-z0-9]{1,2})"$/.exec(String(nome ?? '').trim());
-  return m ? { base: m[1].trim(), pontile: m[2].toUpperCase() } : { base: String(nome ?? '').trim(), pontile: null };
+  const s = String(nome ?? '').trim();
+  const m = /^(.*?)\s+"([A-Za-z0-9]{1,2})"$/.exec(s) || /^(.*?)\s+corsia\s+([A-Za-z0-9]{1,3})$/i.exec(s);
+  return m ? { base: m[1].trim(), pontile: m[2].toUpperCase() } : { base: s, pontile: null };
 }
 // la fermata con il pontile: «Rialto, pontile D»
 function fermataParlata(nome) {
@@ -128,8 +133,10 @@ const destinazioneParlata = nome => nomeParlato(dividiPontile(nome).base);
 function elenco(v) {
   const a = v.filter(Boolean);
   if (a.length <= 1) return a[0] || '';
-  return a.slice(0, -1).join(', ') + ' e ' + a[a.length - 1];
+  const ult = a[a.length - 1];
+  return a.slice(0, -1).join(', ') + (/^e/i.test(P_senza(ult)) ? ' ed ' : ' e ') + ult;
 }
+const P_senza = s => String(s ?? '').replace(/<[^>]+>/g, '').trim();
 const maiuscola = s => (s ? s[0].toUpperCase() + s.slice(1) : s);
 // frase di un avviso ACTV ripulita per la voce: niente indirizzi, hashtag, emoji, sigle in maiuscolo prolungate, lunghezza limitata
 function frasePulita(t, max = 160) {
@@ -139,5 +146,7 @@ function frasePulita(t, max = 160) {
   return s;
 }
 
-module.exports = { parole, esc, speak, pausa, senzaTag, oraParlata, oraSenzaPrep, minutiParlati, attesa, durata, giornoParlato, diffGiorni, lineaParlata,
+// giorno della settimana di una data «20261125» -> «mercoledì»
+const giornoSettimana = ymd => GIORNI[ymdDate(ymd).getUTCDay()];
+module.exports = { delleOra, dalleOra, parole, giornoSettimana, esc, speak, pausa, senzaTag, oraParlata, oraSenzaPrep, minutiParlati, attesa, durata, giornoParlato, diffGiorni, lineaParlata,
   nomeParlato, dividiPontile, fermataParlata, destinazioneParlata, elenco, maiuscola, frasePulita, MESI, GIORNI, LETTERE, hm };

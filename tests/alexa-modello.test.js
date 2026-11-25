@@ -83,3 +83,12 @@ test('manifesto: esempi di frasi tratti dagli esempi del modello, categoria vali
   }
   assert.doesNotMatch(fs.readFileSync(path.join(dir, 'skill.json'), 'utf8'), /Bearer|token|secret|password/i);
 });
+test('catalogo delle risposte effettive aggiornato (alexa/FRASI_STANDARD_ALEXA_VENEZIA_TPL.md § 11)', () => {
+  const r = require('child_process').spawnSync(process.execPath, [path.join(__dirname, '..', 'alexa', 'scripts', 'catalogo.js'), '--verifica'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, (r.stderr || '') + ' → esegui: node alexa/scripts/catalogo.js');
+});
+test('modello: ogni intento gestito dalla skill e dalla Lambda esiste nel modello it-IT', () => {
+  const nomi = new Set(M.intents.map(i => i.name));
+  const src = fs.readFileSync(path.join(__dirname, '..', 'alexa', 'skill.js'), 'utf8') + fs.readFileSync(path.join(__dirname, '..', 'alexa', 'lambda', 'index.js'), 'utf8');
+  for (const m of src.matchAll(/'([A-Z][A-Za-z]+Intent)'/g)) if (!m[1].startsWith('AMAZON')) assert.ok(nomi.has(m[1]), m[1] + ' manca nel modello');
+});

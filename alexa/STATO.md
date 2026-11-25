@@ -1,19 +1,23 @@
 # Skill Alexa — stato e decisioni (da leggere per primo per riprendere il lavoro)
 
-Aggiornato il **25/11/2026**. Ramo: `feature/alexa` (derivato dalla v34; **non** pubblicato su `main`, Render o store). Guida per l'utente: [`README.md`](README.md).
+Aggiornato il **25/11/2026**. Versione pubblicata (prima revisione): su `main` e su Render, configurata dall'utente nella console Amazon.
+**Revisione 2** (motore orari, dialogo, voce): ramo `feature/alexa-voce`, non pubblicata. Guida: [`README.md`](README.md) · comandi:
+[`GUIDA_COMANDI.md`](GUIDA_COMANDI.md) · specifica e catalogo delle frasi: [`FRASI_STANDARD_ALEXA_VENEZIA_TPL.md`](FRASI_STANDARD_ALEXA_VENEZIA_TPL.md).
 
 ## 1. Stato
 
 | Parte | Stato |
 |---|---|
-| Logica della skill (`alexa/*.js`) | fatta: partenze, ritardo, ultima corsa, percorsi (RAPTOR), marea/colmo/acqua alta/MOSE/stivali/passerelle, avvisi/scioperi, riepilogo, seguiti («e il prossimo?», «e al ritorno?», «e domani?», «senza cambi», «altre corse»), ripeti/aiuto/stop, APL, flash briefing |
-| Server (`server.js`, `security.js`) | fatto: `POST /api/alexa`, `GET /api/alexa/flash`, limite `alexa: 90`, `stopsOut()`/`routesOut()` estratte; spento senza `ALEXA_TOKEN` |
-| Funzione Lambda (`lambda/`) | fatta e provata con server finto |
-| Modello `it-IT` + manifesto + icone | fatti (modello generato dal server con `scripts/genera-modello.js`) |
-| Prove | `tests/alexa-*.test.js` (skill, modello, lambda, server, unità): tutte verdi; `npm test` completo verde |
-| Privacy/attribuzioni | aggiunte in `public/index.html` (Note legali → «Skill Alexa»; Privacy → «Skill Alexa») |
-| **Da fare dall'utente** | account Amazon, creazione skill, import del modello, codice+segreto, token su Render, prove su Echo, routine, (facoltativi) Flash Briefing e pubblicazione: vedi `README.md` §3 |
-| **Non verificato** | tutto ciò che richiede Amazon: compilazione del modello, pronuncia, riconoscimento reale delle fermate, comportamento sul dispositivo, schermate della console, certificazione |
+| Motore orari (`diretti.js` + `gtfsAlexa` in `server.js`) | prima/ultima corsa, orari programmati, linee di una fermata: ricerca sull'intero GTFS della data (calendario, eccezioni, orari oltre le 24, sequenza delle fermate, salita non al capolinea, soppressioni del tempo reale) |
+| Direzione | verificata sulla sequenza GTFS della corsa (righe di `/api/zone` in processo con `_G`); a testo solo se il luogo non è una fermata nota |
+| Mezzo | vaporetto / autobus / tram da `route_type` (corretto `gtfs.js`, che non leggeva `route_type`) |
+| Etichette dei pali | quelle della PWA (`public/js/zones.js` caricato così com'è): «San Marco Cattaneo 1», «pontile C», «corsia A1» |
+| Dialogo | contesto strutturato, seguiti che cambiano un solo parametro, corse già dette per identità, «riprova/aggiorna/ripeti/dettagli/nell'altra direzione/solo vaporetti/e l'ultimo?» |
+| Voce | frasi fisse in `messaggi.js` (copia generata nella Lambda), benvenuto «Ciao! Cosa vuoi sapere?», aiuto per categoria, presentazione, risposte brevi; catalogo effettivo generato (`scripts/catalogo.js`) |
+| Affidabilità | 409 con attesa breve nel server (≤ 4 s) e poi «Sto caricando gli orari di …», 429/503/timeout distinti, richiesta conservata per «riprova», risposta progressiva nella Lambda |
+| Prove | `tests/alexa-*.test.js` (dialogo, skill, modello, lambda, server con GTFS veri, unità): `npm test` verde |
+| **Da fare dall'utente** | pubblicare il ramo e fare il deploy; nella console Amazon reimportare il modello e incollare la nuova `lambda/index.js`; provare sul simulatore e su Echo |
+| **Non verificato** | compilazione del nuovo modello nella console, pronunce e riconoscimento reale, risposta progressiva su un dispositivo vero, tempi su Render |
 
 ## 2. Decisioni (e perché)
 
@@ -29,13 +33,29 @@ Aggiornato il **25/11/2026**. Ramo: `feature/alexa` (derivato dalla v34; **non**
 10. **Flash Briefing separato**: feed pubblico `GET /api/alexa/flash` (2 voci: avvisi e marea, in memoria 60 s), senza dati personali.
 11. **Routine**: create dall'utente nell'app Alexa (l'API Routines Kit è dismessa). La frase «riepilogo della mattina» è pensata per quello.
 
-## 3. Misure (feed simulato, server locale, Linux)
+12. **Prima/ultima corsa dall'intero GTFS** (revisione 2): mai dal pannello. `diretti.js` scorre solo le corse delle fermate di partenza
+    (`stopIndex`), per la versione dei GTFS della data (per oggi e domani quella in memoria, se ha la stessa impronta; altrimenti quella della
+    modalità «Programmato», `live.dataFor`). Nessun archivio in più in memoria oltre a quello che la PWA già carica per le altre date.
+13. **`pickup_type`/`drop_off_type` non sono letti dal server** (non sono in memoria): si esclude solo la salita al capolinea d'arrivo e la
+    discesa prima della salita. Le fermate «a richiesta» restano valide (come nella PWA).
+14. **Ultima corsa «di oggi» = giornata di servizio** (orari GTFS oltre le 24:00 compresi, detti come «nella notte tra … e …»). Prima delle
+    04:00 vale la giornata precedente (regola già usata da tutta la skill); se l'ultima è già passata lo dice.
+15. **Microfono aperto senza domanda finale** dopo le risposte, per i seguiti; il riepilogo chiude (routine). Se la certificazione dello store
+    chiedesse una domanda esplicita: `DOMANDA_FINALE = true` in `skill.js`.
+16. **Risposta progressiva** («Sto controllando gli orari») solo dalla Lambda, solo se il server non ha risposto entro 1,2 s; il token di Alexa
+    resta nella Lambda. Il limite complessivo di ~8 s non cambia: timeout dell'inoltro 6,5 s.
+17. **Errori**: nessuna causa inventata («si sta svegliando» tolto): «non risponde ancora» (timeout/rete/502/504), «momentaneamente occupato»
+    (429/503), «problema di configurazione» (401/403/404). La richiesta resta in sessione (`rifai` nella Lambda, `riprova` nel server).
 
-* Latenza di `/api/alexa` su 40 richieste (partenze e marea): mediana ≈ 15 ms, 95° percentile ≈ 60 ms, massimo ≈ 250 ms. In produzione si aggiungono la rete Lambda→Render (Irlanda→Virginia, stima ~100 ms, non misurata) e, dopo 15 minuti di inattività, l'avvio a freddo di Render (30–50 s: coperto da «si sta svegliando, riprova»).
-* Memoria del server: ≈ 230 MB prima, ≈ 240 MB dopo 60 richieste simultanee (limite Render 512 MB, soglie interne 400/450 MB).
-* 60 richieste simultanee: nessun crash, solo 200 (o 429/503 con messaggio); il server resta vivo.
-* Durante il carico della skill la PWA risponde (`/healthz`, `/api/vehicles`) entro 2 s.
-* Costi verificati: Alexa-hosted, console e simulatore gratuiti, nessun account AWS né carta richiesti per creare la skill ([documentazione ufficiale](https://developer.amazon.com/en-US/docs/alexa/hosted-skills/build-a-skill-end-to-end-using-an-alexa-hosted-skill.html)); Render invariato (piano gratuito).
+## 3. Misure (server locale con GTFS veri e feed simulato, Linux)
+
+* Partenze adesso e marea: mediana ≈ 15 ms, 95° percentile ≈ 60 ms (40 richieste).
+* Ultima/prima corsa sull'intero GTFS di oggi (Rialto → Piazzale Roma, tram a San Marco Cattaneo, linee di Piazzale Roma): 60–170 ms.
+* Prima corsa in una data da caricare (20 dicembre, versione dei GTFS da caricare): ≈ 0,6 s (attesa del caricamento compresa).
+* Memoria del server ≈ 255 MB dopo le prove (limite Render 512 MB, soglie interne 400/450 MB); nessuna struttura nuova permanente.
+* 60 richieste simultanee: nessun crash, solo 200 o 429/503 con messaggio; la PWA risponde entro 2 s; `push.js` e `watch.js` non toccati.
+* In produzione si aggiungono la rete Lambda → Render (stima ~100 ms, non misurata) e l'eventuale avvio a freddo di Render.
+* Costi: 0 € (Alexa-hosted, console e simulatore gratuiti; Render invariato; nessun modello linguistico).
 
 ## 4. Limiti noti / possibili lavori futuri
 
