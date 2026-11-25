@@ -46,6 +46,11 @@ Aggiornato il **25/11/2026**. Versione pubblicata (prima revisione): su `main` e
     resta nella Lambda. Il limite complessivo di ~8 s non cambia: timeout dell'inoltro 6,5 s.
 17. **Errori**: nessuna causa inventata («si sta svegliando» tolto): «non risponde ancora» (timeout/rete/502/504), «momentaneamente occupato»
     (429/503), «problema di configurazione» (401/403/404). La richiesta resta in sessione (`rifai` nella Lambda, `riprova` nel server).
+18. **Ultima corsa = linee diurne** (non N, partenza prima delle 03:00 del giorno dopo); il servizio notturno si cita a parte.
+19. **Frequenza dagli intervalli reali** degli orari programmati (mediana e intervallo; con poche corse «irregolari»), mai inventata.
+20. **Nomi parziali e slot fusi**: la skill sceglie tra i valori proposti da Alexa con mezzo/linea e orari di oggi, divide «X per Y» in due
+    luoghi noti, prende la linea anche dallo slot del mezzo; se resta ambiguo chiede quale fermata.
+21. **Arrivo entro**: prima le soluzioni senza cambi a rischio, poi quelle con più margine per il cambio.
 
 ## 3. Misure (server locale con GTFS veri e feed simulato, Linux)
 

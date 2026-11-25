@@ -134,6 +134,26 @@
             }
           ],
           "samples": [
+            "quanto devo aspettare il {mezzo}",
+            "quanto devo aspettare il {mezzo} per {direzione}",
+            "quanto devo aspettare il {mezzo} a {luogo}",
+            "quanto devo aspettare il {linea}",
+            "quanto devo aspettare il {linea} a {luogo}",
+            "quanto manca al prossimo {mezzo}",
+            "quanto manca al prossimo {mezzo} da {luogo}",
+            "quanto manca al {linea}",
+            "quanto manca al prossimo {linea} a {luogo}",
+            "quando ho il prossimo {mezzo} da {luogo}",
+            "quando ho il prossimo {mezzo}",
+            "quando ho il {linea}",
+            "fra quanto passa il {linea}",
+            "fra quanto passa il {mezzo} a {luogo}",
+            "tra quanto arriva il {mezzo} a {luogo}",
+            "quando arriva il {linea} a {luogo}",
+            "quando arriva il prossimo {mezzo} a {luogo}",
+            "quando passa il {mezzo} da {luogo}",
+            "quando passa il {mezzo} a {luogo}",
+            "quando passa il {mezzo}",
             "prossimo {mezzo} da {luogo} per {direzione}",
             "il prossimo {mezzo} da {luogo} per {direzione}",
             "prossimo {mezzo} da {luogo} verso {direzione}",
@@ -175,6 +195,126 @@
             "quando passa il {linea} a {luogo} {data} alle {ora}",
             "quando c'è il prossimo {mezzo} da {luogo} a {arrivo}",
             "a che ora passa il {linea} a {luogo}"
+          ]
+        },
+        {
+          "name": "FrequenzaIntent",
+          "slots": [
+            {
+              "name": "luogo",
+              "type": "FERMATA"
+            },
+            {
+              "name": "arrivo",
+              "type": "FERMATA"
+            },
+            {
+              "name": "linea",
+              "type": "LINEA"
+            },
+            {
+              "name": "direzione",
+              "type": "FERMATA"
+            },
+            {
+              "name": "mezzo",
+              "type": "MEZZO"
+            },
+            {
+              "name": "data",
+              "type": "AMAZON.DATE"
+            },
+            {
+              "name": "ora",
+              "type": "AMAZON.TIME"
+            }
+          ],
+          "samples": [
+            "ogni quanto passa il {linea}",
+            "ogni quanto passa il {linea} a {luogo}",
+            "ogni quanto passa il {linea} da {luogo}",
+            "ogni quanto passa il {linea} da {luogo} per {direzione}",
+            "ogni quanto passa la linea {linea}",
+            "ogni quanto passa {linea}",
+            "ogni quanti minuti passa il {linea}",
+            "ogni quanti minuti passa il {linea} a {luogo}",
+            "ogni quanti minuti passa la linea {linea} a {luogo}",
+            "ogni quanti minuti passa il {mezzo} a {luogo}",
+            "ogni quanti minuti passa il {mezzo}",
+            "ogni quanto passa il {mezzo} a {luogo}",
+            "ogni quanto passa il {mezzo} da {luogo}",
+            "ogni quanto passa il {mezzo} da {luogo} per {direzione}",
+            "ogni quanto passa il {mezzo} da {luogo} verso {direzione}",
+            "ogni quanto passa il {mezzo} per {direzione}",
+            "ogni quanto c'è un {mezzo} da {luogo} a {arrivo}",
+            "ogni quanto passa il {mezzo} da {luogo} a {arrivo}",
+            "ogni quanto passa",
+            "ogni quanto passano",
+            "e ogni quanto passa",
+            "ogni quanti minuti passa",
+            "ogni quanto ce n'è uno",
+            "ogni quanto passano i {mezzo} da {luogo}",
+            "ogni quanto passano i {mezzo}",
+            "ogni quanto c'è un {mezzo} da {luogo}",
+            "ogni quanto c'è il {linea}",
+            "qual è la frequenza del {linea}",
+            "frequenza del {linea} a {luogo}",
+            "con che frequenza passa il {linea}",
+            "con che frequenza passano i {mezzo} da {luogo}",
+            "quanto spesso passa il {linea}",
+            "quanto spesso passano i {mezzo} da {luogo}",
+            "quanto spesso passa il {mezzo} a {luogo}",
+            "ogni quanto passa il {linea} {data}",
+            "ogni quanto passa il {linea} alle {ora}",
+            "ogni quanto passa il {linea} {data} alle {ora}",
+            "ogni quanto passa il {linea} a {luogo} {data}",
+            "ogni quanto passa il {mezzo} {data} {ora}",
+            "ogni quanto passano {data}"
+          ]
+        },
+        {
+          "name": "DurataIntent",
+          "slots": [
+            {
+              "name": "partenza",
+              "type": "FERMATA"
+            },
+            {
+              "name": "arrivo",
+              "type": "FERMATA"
+            },
+            {
+              "name": "mezzo",
+              "type": "MEZZO"
+            },
+            {
+              "name": "data",
+              "type": "AMAZON.DATE"
+            },
+            {
+              "name": "ora",
+              "type": "AMAZON.TIME"
+            }
+          ],
+          "samples": [
+            "quanto ci metto da {partenza} a {arrivo}",
+            "quanto ci metto da {partenza} al {arrivo}",
+            "quanto ci metto da {partenza} alla {arrivo}",
+            "quanto ci metto ad andare da {partenza} a {arrivo}",
+            "quanto ci metto ad arrivare a {arrivo} da {partenza}",
+            "quanto ci vuole da {partenza} a {arrivo}",
+            "quanto ci vuole da {partenza} al {arrivo}",
+            "quanto tempo ci vuole da {partenza} a {arrivo}",
+            "quanto tempo ci vuole per andare da {partenza} a {arrivo}",
+            "quanto tempo ci metto da {partenza} a {arrivo}",
+            "quanto ci si mette da {partenza} a {arrivo}",
+            "quanto dura il viaggio da {partenza} a {arrivo}",
+            "in quanto tempo arrivo a {arrivo} da {partenza}",
+            "quanto ci metto per arrivare a {arrivo}",
+            "quanto ci metto a {arrivo} da {partenza}",
+            "quanto ci metto ad arrivare al {arrivo} da {partenza}",
+            "quanto ci metto in {mezzo} da {partenza} a {arrivo}",
+            "quanto ci metto da {partenza} a {arrivo} {data} alle {ora}"
           ]
         },
         {
@@ -263,6 +403,17 @@
             }
           ],
           "samples": [
+            "e l'ultimo della sera",
+            "l'ultimo della sera",
+            "e l'ultimo di stasera",
+            "l'ultima corsa di stasera",
+            "ultimo {mezzo} della sera",
+            "ultimo {mezzo} stasera da {luogo}",
+            "qual è l'ultimo {mezzo} che mi porta da {luogo} a {arrivo}",
+            "l'ultimo {mezzo} che va da {luogo} a {arrivo}",
+            "fino a che ora passa il {linea}",
+            "fino a che ora ci sono {mezzo} da {luogo}",
+            "fino a che ora passano i {mezzo} da {luogo}",
             "ultimo {mezzo} da {luogo} per {arrivo}",
             "ultimo {mezzo} {data} da {luogo} per {arrivo}",
             "l'ultimo {mezzo} {data} da {luogo} a {arrivo}",
@@ -330,6 +481,10 @@
             }
           ],
           "samples": [
+            "da che ora passa il {linea}",
+            "da che ora ci sono {mezzo} da {luogo}",
+            "a che ora inizia il servizio da {luogo}",
+            "il primo {mezzo} di domattina da {luogo}",
             "primo {mezzo} {data} da {luogo} a {arrivo}",
             "il primo {mezzo} {data} da {luogo} a {arrivo}",
             "primo {mezzo} {data} da {luogo} per {arrivo}",
@@ -388,6 +543,18 @@
             }
           ],
           "samples": [
+            "come arrivo da {partenza} al {arrivo}",
+            "come arrivo da {partenza} alla {arrivo}",
+            "come arrivo da {partenza} alle {arrivo}",
+            "da {partenza} al {arrivo}",
+            "dal {partenza} a {arrivo}",
+            "dalla {partenza} a {arrivo}",
+            "dalle {partenza} a {arrivo}",
+            "devo andare a {arrivo} partendo da {partenza}",
+            "voglio andare al {arrivo} da {partenza}",
+            "come faccio ad andare da {partenza} a {arrivo}",
+            "come faccio ad arrivare a {arrivo} da {partenza}",
+            "che mezzi prendo da {partenza} a {arrivo}",
             "come arrivo a {arrivo} partendo da {partenza}",
             "come arrivo a {arrivo} partendo dalle {partenza}",
             "come arrivo a {arrivo} partendo dal {partenza}",
@@ -448,6 +615,14 @@
             }
           ],
           "samples": [
+            "a che ora devo partire da {partenza} se devo arrivare a {arrivo} alle {ora}",
+            "a che ora devo partire da {partenza} per arrivare a {arrivo} alle {ora}",
+            "a che ora devo partire da {partenza} per arrivare alle {arrivo} alle {ora}",
+            "a che ora parto da {partenza} per essere a {arrivo} alle {ora}",
+            "a che ora devo partire per arrivare a {arrivo} alle {ora}",
+            "devo arrivare a {arrivo} alle {ora} da {partenza}",
+            "devo arrivare alle {arrivo} alle {ora} partendo da {partenza}",
+            "a che ora devo partire da {partenza} se devo arrivare a {arrivo} alle {ora} {data}",
             "devo essere a {arrivo} entro le {ora} partendo da {partenza}",
             "devo essere a {arrivo} entro le {ora} partendo dalle {partenza}",
             "devo essere a {arrivo} entro le {ora} partendo dal {partenza}",
@@ -476,6 +651,12 @@
         {
           "name": "ProssimoIntent",
           "samples": [
+            "posso partire più tardi",
+            "e più tardi",
+            "una soluzione più tardi",
+            "e dopo quello",
+            "quello successivo",
+            "il prossimo ancora",
             "e il prossimo",
             "il prossimo",
             "dimmi il prossimo",
@@ -574,6 +755,15 @@
             }
           ],
           "samples": [
+            "e domani mattina alle {ora}",
+            "e domattina",
+            "e domattina alle {ora}",
+            "e stasera",
+            "e stasera alle {ora}",
+            "e alle {ora} di sera",
+            "e alle {ora} di mattina",
+            "e {data} mattina",
+            "e {data} sera",
             "e domani",
             "e per domani",
             "e dopodomani",
@@ -11421,7 +11611,14 @@
               "name": {
                 "value": "ti uno",
                 "synonyms": [
-                  "T1"
+                  "T1",
+                  "t 1",
+                  "t uno",
+                  "ti 1",
+                  "t one",
+                  "tram uno",
+                  "tram 1",
+                  "il tram uno"
                 ]
               }
             },
@@ -11513,7 +11710,14 @@
               "name": {
                 "value": "ti due",
                 "synonyms": [
-                  "T2"
+                  "T2",
+                  "t 2",
+                  "t due",
+                  "ti 2",
+                  "t two",
+                  "tram due",
+                  "tram 2",
+                  "il tram due"
                 ]
               }
             },

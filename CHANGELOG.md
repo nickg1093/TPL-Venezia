@@ -3,6 +3,18 @@
 Riepilogo per versione delle modifiche che contano per chi usa o mantiene l'app. I dettagli tecnici sono in `README.md` §12; lo storico per
 gli utenti è nell'app (Informazioni → Novità, generato da `public/js/guida.js`).
 
+## Skill Alexa — revisione 3: collaudo e linguaggio naturale — 25/11/2026 (non pubblicata)
+- **Frequenza** («ogni quanto passa il T1?», «ogni quanti minuti passa il tram a San Marco Cattaneo?»): nuovo `FrequenzaIntent`, intervalli
+  reali degli orari programmati per linea e capolinea, anche come seguito e per domani mattina.
+- **Durata** («quanto ci metto da Rialto al Lido?»): nuovo `DurataIntent`, la durata per prima e poi il percorso.
+- **Attesa** («quanto devo aspettare il tram per Venezia?», «quando ho il prossimo tram da Cattaneo?») come prossima corsa.
+- **Linee dette male** dal riconoscimento («ti uno», «t. one», «tram uno», «cinque.due») ricondotte alla linea esistente; linea letta anche
+  dallo slot del mezzo. **Nomi parziali** («Cattaneo»): si sceglie la fermata servita dal mezzo chiesto, altrimenti si chiede quale.
+- **Percorsi**: linea con capolinea, minuti a piedi fino a una salita diversa, cambi detti anche nell'arrivo entro; per l'arrivo entro prima
+  le soluzioni con cambi sicuri; «posso partire più tardi?» propone le partenze successive. Prima/ultima corsa: «nell'altra direzione».
+- Modello: 45 intenti, 713 esempi. Lambda: progressive response anche per frequenza e durata. Campione inedito e script di collaudo in
+  `alexa/tests/`; rapporto in `alexa/tests/RAPPORTO_COLLAUDO.md`.
+
 ## Skill Alexa — correzioni dalle prove nel simulatore — 25/11/2026 (non pubblicate)
 - **Direzione**: «verso Venezia» detto per il tram usava la prima fermata di vaporetto restituita da Alexa (Ferrovia) e una destinazione senza
   fermate di quel mezzo lasciava passare tutte le corse, anche nell'altro senso (T1 per Favaro). Ora «Venezia», «San Marco», «Lido» valgono come

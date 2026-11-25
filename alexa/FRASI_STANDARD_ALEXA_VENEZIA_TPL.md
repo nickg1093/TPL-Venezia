@@ -213,7 +213,7 @@ illustrativi. Rigenerare dopo ogni modifica alle frasi; la prova `tests/alexa-mo
 |---|---|
 | Apertura senza domanda | Ciao! Cosa vuoi sapere? |
 | Aiuto | Puoi chiedermi partenze, percorsi, marea o avvisi. Su cosa vuoi una mano? |
-| Aiuto partenze | Puoi dire: quando passa il due alle Zattere? Oppure: qual è l'ultimo vaporetto da Rialto a Piazzale Roma? |
+| Aiuto partenze | Puoi dire: quando passa il due alle Zattere? Ogni quanto passa il tram a San Marco Cattaneo? Oppure: qual è l'ultimo vaporetto da Rialto a Piazzale Roma? |
 | Aiuto percorsi | Prova a dire: come arrivo a Rialto da Piazzale Roma? Oppure: quando devo partire per arrivare a Rialto entro le nove? |
 | Aiuto marea | Puoi chiedermi il livello attuale, il prossimo colmo, il MOSE o la previsione di acqua alta. |
 | Aiuto avvisi | Puoi chiedere: ci sono problemi sulla linea uno? Oppure: ci sono scioperi domani? |
@@ -245,10 +245,19 @@ illustrativi. Rigenerare dopo ogni modifica alle frasi; la prova `tests/alexa-mo
 | Fermata sconosciuta | Non conosco la fermata Xyzzy. Prova con un altro nome, per esempio una fermata vicina. |
 | Linee di una fermata | Oggi da Rialto passano le linee uno, cinque punto uno ed enne. |
 
+#### Frequenza
+
+| Condizione | Risposta effettiva |
+|---|---|
+| «Ogni quanto passa il tram a San Marco Cattaneo verso Venezia?» | Nelle prossime due ore, da San Marco Cattaneo verso Venezia: il tram ti uno ha una sola corsa, alle otto e quindici. Secondo gli orari programmati. |
+| «Ogni quanto passa?» come seguito di una corsa detta | Nelle prossime due ore, da San Marco Cattaneo verso Venezia: il tram ti uno ha una sola corsa, alle otto e quindici. Secondo gli orari programmati. |
+| Frequenza senza fermata | Da quale fermata? |
+
 #### Prima e ultima corsa
 
 | Condizione | Risposta effettiva |
 |---|---|
+| «E nell'altra direzione?» dopo l'ultima corsa | L'ultima corsa da San Marco Cattaneo parte alle otto e quattordici, con il tram ti uno per Monte Celo Favaro, dalla fermata San Marco Cattaneo 2. È un orario programmato. |
 | Ultimo collegamento diretto (dopo mezzanotte) | L'ultimo collegamento diretto parte alle ventitré e trenta, con la linea uno per Piazzale Roma, dal pontile C. Arriva alle ventitré e quarantacinque. Di notte c'è anche la linea enne: l'ultima corsa parte all'una e dieci, nella notte tra mercoledì e giovedì. È un orario programmato. |
 | «E domani?» dopo l'ultima corsa | Domani, l'ultimo collegamento diretto parte alle ventitré e trenta, con la linea uno per Piazzale Roma, dal pontile C. Arriva alle ventitré e quarantacinque. Di notte c'è anche la linea enne: l'ultima corsa parte all'una e dieci, nella notte tra giovedì e venerdì. È un orario programmato. |
 | Ultima corsa già passata | L'ultima corsa programmata da Rialto a Piazzale Roma era alle ventitré e trenta. Non ne risultano altre per oggi. |
@@ -261,9 +270,10 @@ illustrativi. Rigenerare dopo ogni modifica alle frasi; la prova `tests/alexa-mo
 
 | Condizione | Risposta effettiva |
 |---|---|
-| Percorso sintetico | Ti consiglio la linea due, alle otto e quattordici, dal pontile B. Arriverai alle otto e trentatré, tra circa ventuno minuti. Parte con due minuti di ritardo. |
+| Percorso sintetico | Ti consiglio la linea due per San Marco, San Zaccaria, alle otto e quattordici, dal pontile B. Arriverai alle otto e trentatré, tra circa ventuno minuti. Parte con due minuti di ritardo. |
+| «Quanto ci metto da Zattere a San Marco?» | Ci vogliono circa ventuno minuti. Ti consiglio la linea due per San Marco, San Zaccaria, alle otto e quattordici, dal pontile B. Arriverai alle otto e trentatré. Parte con due minuti di ritardo. |
 | «Dimmi i dettagli» | Cammina un minuto fino a Zattere, pontile B. Prendi la linea due per San Marco, San Zaccaria da Zattere, pontile B, alle otto e quattordici, con due minuti di ritardo. Scendi a San Marco Vallaresso, pontile A, alle otto e trentuno. Poi cammina due minuti fino a destinazione. In tutto ventuno minuti, di cui tre minuti a piedi, stimati in linea d'aria. Altre partenze utili: alle otto e ventisette, con arrivo alle otto e quarantotto. |
-| Arrivo entro un orario | Ti consiglio di partire alle otto e dodici con la linea due, dal pontile B. Arriverai alle otto e trentatré, con dodici minuti di margine. Parte con due minuti di ritardo. È un orario programmato. |
+| Arrivo entro un orario | Ti consiglio di partire alle otto e dodici con la linea due per San Marco, San Zaccaria, dal pontile B. Arriverai alle otto e trentatré, con dodici minuti di margine. Parte con due minuti di ritardo. È un orario programmato. |
 | Destinazione mancante | Dove vuoi arrivare? |
 | Nessuna soluzione | Non trovo un collegamento da Zattere a San Marco nelle prossime ore. |
 

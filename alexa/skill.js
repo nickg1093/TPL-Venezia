@@ -28,7 +28,7 @@ const BENVENUTO = MSG.benvenuto, AIUTO = MSG.aiuto;
 // domanda finale: no (risposte brevi, microfono aperto per i seguiti). Per la certificazione dello store, se Amazon chiede una domanda
 // esplicita quando la sessione resta aperta, basta mettere true: la domanda di riserva viene detta in coda.
 const DOMANDA_FINALE = false;
-const RIPROMPT = { partenze: 'Vuoi la corsa successiva?', ultima: 'Vuoi sapere altro?', prima: 'Vuoi sapere altro?', itinerario: 'Vuoi i dettagli, o il ritorno?', avvisi: 'Vuoi sapere altro?' };
+const RIPROMPT = { frequenza: 'Vuoi sapere altro?', partenze: 'Vuoi la corsa successiva?', ultima: 'Vuoi sapere altro?', prima: 'Vuoi sapere altro?', itinerario: 'Vuoi i dettagli, o il ritorno?', avvisi: 'Vuoi sapere altro?' };
 
 // ---- risposta ----
 const ssml = inner => `<speak>${inner}</speak>`;
@@ -62,7 +62,8 @@ function slot(intent, nome) {
   const v = ok && ok.values && ok.values[0] && ok.values[0].value;
   const raw = s.value != null && String(s.value).trim() ? String(s.value).trim() : null;
   if (!raw && !v) return null;
-  return { raw, id: v ? v.id : null, nome: v ? v.name : null };
+  const alt = ok && ok.values ? ok.values.map(x => x.value).filter(Boolean) : [];
+  return { raw, id: v ? v.id : null, nome: v ? v.name : null, alt };
 }
 // testo di un luogo: il nome risolto da Alexa, ma se l'utente ha detto anche il pontile o il numero («San Marco Cattaneo uno») si tiene ciò che ha detto
 // Per una fermata conta l'identificativo risolto da Alexa (chiave del gruppo nei dati), salvo quando ciò che è stato detto contiene più
@@ -76,7 +77,14 @@ function testoSlot(intent, nome) {
   if (sp && L.LUOGHI_SPECIALI[sp]) return nome === 'direzione' ? s.raw : { chiave: sp, testo: L.LUOGHI_SPECIALI[sp].nome };
   if (s.raw && etichettaDetta(s.raw)) return s.raw;
   if (s.raw && s.nome && nParole(s.raw) > nParole(s.nome)) return s.raw;
-  if (s.id && nome !== 'direzione') { const k = s.id.startsWith('speciale:') ? s.id.slice(9) : s.id.replace(/_/g, ' '); return { chiave: k, testo: s.nome || s.raw }; }
+  const chiaveDi = id => (id.startsWith('speciale:') ? id.slice(9) : id.replace(/_/g, ' '));
+  if (s.id && nome !== 'direzione') {
+    // nome detto in parte («Cattaneo»): Alexa propone più fermate e mette per prima una qualsiasi; si sceglie dopo, con il mezzo o la linea
+    const parziale = s.raw && L.normalizza(s.raw) !== L.normalizza(s.nome || '') && s.alt.length > 1;
+    const simili = parziale ? s.alt.filter(x => L.normalizza(x.name || '').split(' ').some(w => L.normalizza(s.raw).split(' ').includes(w))) : [];
+    if (simili.length > 1) return { chiave: chiaveDi(s.id), testo: s.nome || s.raw, alt: simili.slice(0, 4).map(x => chiaveDi(x.id)) };
+    return { chiave: chiaveDi(s.id), testo: s.nome || s.raw };
+  }
   return s.nome || s.raw;
 }
 const MEZZI_SLOT = { nav: 'nav', aut: 'aut', bus: 'bus', tram: 'tram', vaporetto: 'nav', vaporetti: 'nav', battello: 'nav', battelli: 'nav', autobus: 'bus' };
@@ -86,7 +94,16 @@ const mezzoNumero = raw => { const m = /^(\d+|un|uno|una|due|tre|quattro|cinque|
 const MEZZI_TESTO = [[/^(vaporett|battell|barc|motonav|motoscaf|lanc)/, 'nav'], [/^(autobus|bus|corrier|pullman|filobus)/, 'bus'], [/^(tram|tranvi)/, 'tram']];
 const mezzoDaTesto = t => { const x = String(t || '').toLowerCase().replace(/^(il|lo|la|i|gli|le)\s+/, ''); if (MEZZI_SLOT[x]) return MEZZI_SLOT[x]; const m = MEZZI_TESTO.find(([re]) => re.test(x)); return m ? m[1] : null; };
 const mezzoDa = intent => { const s = slot(intent, 'mezzo'); if (!s) return null; const mn = mezzoNumero(s.raw); return MEZZI_SLOT[s.id] || mezzoDaTesto(s.raw) || (mn && mezzoDaTesto(mn.resto)) || null; };
-const lineaDa = intent => { const s = slot(intent, 'linea'); if (!s) return null; return L.parseLinea(s.id || s.nome || s.raw || ''); };
+// linea detta: valore di Alexa, poi ciò che è stato trascritto («t. one», «tram uno»), anche dentro lo slot del mezzo («il tram uno»);
+// tra le varianti possibili vale la prima che esiste davvero negli orari
+function lineaDa(intent, C) {
+  const s = slot(intent, 'linea'), m = slot(intent, 'mezzo');
+  const testi = [s && s.id, s && s.raw, s && s.nome, m && m.raw && /\d|\buno\b|\bdue\b|\btre\b/i.test(m.raw) ? m.raw : null].filter(Boolean);
+  const cand = [...new Set(testi.flatMap(t => L.candidatiLinea(t)))];
+  if (!cand.length) return null;
+  const esiste = c => !C || !C.routes || L.infoLinea(C.routes, c).length > 0;
+  return cand.find(esiste) || (s ? cand[0] : null);
+}
 const numeroDa = intent => {
   const s = slot(intent, 'numero'); const v = s && (s.id || s.raw);
   if (v != null && /^\d+$/.test(String(v))) return Math.max(1, Math.min(+v, 6));
@@ -132,7 +149,7 @@ function etichettaDetta(t) {
 }
 
 // ---- luoghi: risoluzione, ambiguità, dati mancanti ----
-const DOMANDE = { partenze: MSG.fermataMancante, ultima: MSG.fermataMancante, prima: MSG.fermataMancante, linee: MSG.fermataMancante, itinerario: { da: MSG.origineMancante, a: MSG.destinazioneMancante } };
+const DOMANDE = { frequenza: MSG.fermataMancante, partenze: MSG.fermataMancante, ultima: MSG.fermataMancante, prima: MSG.fermataMancante, linee: MSG.fermataMancante, itinerario: { da: MSG.origineMancante, a: MSG.destinazioneMancante } };
 function risolviCampo(C, req, campo) {
   const v = req[campo]; if (v == null) return { ok: null };
   if (typeof v === 'object' && v.chiave) {
@@ -155,16 +172,37 @@ function risolviCampo(C, req, campo) {
   return { nessuno: String(v) };
 }
 const elencoOpzioni = g => P.elenco(g.map(x => x.parlato));
+// più fermate proposte da Alexa per un nome detto in parte: restano quelle servite dal mezzo o dalla linea chiesti (orari di oggi);
+// una sola -> quella; più di una -> si chiede quale
+async function scegliAlternativa(C, req, campo) {
+  let gs = req[campo].alt.map(k => C.luoghi.gruppoPerChiave(k)).filter(Boolean);
+  if (gs.length < 2) return { ok: gs[0] || null };
+  const mz = req.mezzo ? D.mezzoInfo(req.mezzo) : null;
+  if (mz) gs = gs.filter(g => g.srcs.has(mz.src));
+  if ((mz && mz.tipi) || req.linea) {
+    const ymd = T.giornoDiServizio(C.adesso()).ymd, servite = [];
+    for (const g of gs) {
+      try { const r = await C.diretti({ da: C.luoghi.idsDi(g, mz ? mz.src : null), ymd, linee: req.linea ? [req.linea] : null, tipi: mz && mz.tipi ? mz.tipi : null, max: 1 }); if (r.righe.length) servite.push(g); } catch { servite.push(g); }
+    }
+    if (servite.length) gs = servite;
+  }
+  if (gs.length === 1) return { ok: gs[0] };
+  return gs.length ? { ambiguo: gs.slice(0, 3) } : { ok: null };
+}
 
 // ---- esecuzione di una richiesta ----
 // req: { tipo, luogo|da|a (testo o {chiave, ids}), dirTesto, linea, mezzo, quando, n, cambi, pref, indice, visti, dopoMs, dopoSecs, dettagli, quale, ... }
 async function esegui(C, env, req, att) {
   const tipo = req.tipo;
-  const campiNecessari = { partenze: ['luogo'], ultima: ['luogo'], prima: ['luogo'], linee: ['luogo'], itinerario: ['da', 'a'] }[tipo] || [];
+  req = { ...req };
+  const campiNecessari = { partenze: ['luogo'], ultima: ['luogo'], prima: ['luogo'], linee: ['luogo'], frequenza: ['luogo'], itinerario: ['da', 'a'] }[tipo] || [];
   const gruppi = {}, idsScelti = {};
   for (const campo of ['luogo', 'da', 'a']) {
     if (req[campo] == null) continue;
+    if (typeof req[campo] === 'object' && req[campo].alt) { const sc = await scegliAlternativa(C, req, campo); req = { ...req, [campo]: sc.ok ? { chiave: sc.ok.chiave } : { chiave: req[campo].chiave, testo: req[campo].testo } }; if (sc.ambiguo) { att.pend = { req: { ...req, [campo]: undefined }, campo, opzioni: sc.ambiguo.map(g => g.chiave) }; const v = sc.ambiguo.length === 2 ? `Intendi ${sc.ambiguo[0].parlato} o ${sc.ambiguo[1].parlato}?` : `Intendi ${elencoOpzioni(sc.ambiguo).replace(/ e ([^,]+)$/, ' o $1')}?`; return { voce: P.esc(v), reprompt: v, fine: false, attributi: att, pendente: true }; } }
     const r = risolviCampo(C, req, campo);
+    // nome che corrisponde a più fermate: prima si prova a scegliere con il mezzo o la linea chiesti
+    if (r.ambiguo && (req.mezzo || req.linea)) { const sc = await scegliAlternativa(C, { ...req, [campo]: { alt: r.ambiguo.map(g => g.chiave) } }, campo); if (sc.ok) { delete r.ambiguo; r.ok = sc.ok; } else if (sc.ambiguo) r.ambiguo = sc.ambiguo; }
     if (r.ambiguo) {
       att.pend = { req: { ...req, [campo]: undefined }, campo, opzioni: r.ambiguo.map(g => g.chiave) };
       const v = r.ambiguo.length === 2 ? `Intendi ${r.ambiguo[0].parlato} o ${r.ambiguo[1].parlato}?` : `Intendi ${elencoOpzioni(r.ambiguo).replace(/ e ([^,]+)$/, ' o $1')}?`;
@@ -197,9 +235,10 @@ async function esegui(C, env, req, att) {
     switch (tipo) {
       case 'partenze': r = await D.partenze(C, { gruppo: gruppi.luogo, ids: idsScelti.luogo, linea: req.linea || null, mezzo, dir, escludiDir: req.escludiDir || null, stessoCapolinea: req.stessoCapolinea || null, escludiCapolinea: req.escludiCapolinea || null, verso: !!req.dirTesto, n: req.n || 1, visti: req.visti, dopoMs: req.dopoMs, dopoSecs: req.dopoSecs, quando: req.quando || null }); break;
       case 'ritardo': r = await D.ritardo(C, { gruppo: gruppi.luogo || null, ids: idsScelti.luogo, linea: req.linea || null, mezzo, dir }); break;
-      case 'ultima': case 'prima': r = await D.estremo(C, { quale: tipo, gruppo: gruppi.luogo, ids: idsScelti.luogo, linea: req.linea || null, mezzo, dir, verso: !!req.dirTesto, quando: req.quando || null }); break;
+      case 'ultima': case 'prima': r = await D.estremo(C, { quale: tipo, gruppo: gruppi.luogo, ids: idsScelti.luogo, linea: req.linea || null, mezzo, dir, verso: !!req.dirTesto, escludiCapolinea: req.escludiCapolinea || null, quando: req.quando || null }); break;
       case 'linee': r = await D.linee(C, { gruppo: gruppi.luogo, mezzo }); break;
-      case 'itinerario': r = await I.itinerario(C, { da: gruppi.da, a: gruppi.a, quando: req.quando || null, mezzo, cambi: req.cambi ?? null, pref: req.pref || null, indice: req.indice || 0, dettagli: !!req.dettagli }); break;
+      case 'frequenza': r = await D.frequenza(C, { gruppo: gruppi.luogo, ids: idsScelti.luogo, linea: req.linea || null, mezzo, dir, verso: !!req.dirTesto, capolinea: req.capolinea || null, quando: req.quando || null }); break;
+      case 'itinerario': r = await I.itinerario(C, { da: gruppi.da, a: gruppi.a, quando: req.quando || null, mezzo, cambi: req.cambi ?? null, pref: req.pref || null, indice: req.indice || 0, dettagli: !!req.dettagli, durata: !!req.durata }); break;
       case 'marea': r = await M.marea(C); break;
       case 'colmo': r = await M.colmo(C, { minimo: !!req.minimo }); break;
       case 'acquaalta': r = await M.acquaAlta(C, { quando: req.quando || null }); break;
@@ -231,7 +270,7 @@ async function esegui(C, env, req, att) {
 function richiestaCompatta(req, gruppi, ids) {
   const o = { tipo: req.tipo };
   for (const k of ['luogo', 'da', 'a']) if (gruppi[k]) o[k] = ids[k] ? { chiave: gruppi[k].chiave, ids: ids[k] } : { chiave: gruppi[k].chiave };
-  for (const k of ['linea', 'mezzo', 'cambi', 'pref', 'indice', 'quando', 'dirTesto', 'escludiDir', 'escludiCapolinea', 'capolinea', 'dataRichiesta', 'soloSciopero', 'momento', 'n', 'minimo']) if (req[k] != null) o[k] = req[k];
+  for (const k of ['linea', 'mezzo', 'cambi', 'pref', 'indice', 'quando', 'durata', 'dirTesto', 'escludiDir', 'escludiCapolinea', 'capolinea', 'dataRichiesta', 'soloSciopero', 'momento', 'n', 'minimo']) if (req[k] != null) o[k] = req[k];
   return o;
 }
 // errori ripetibili: la richiesta resta pronta per «riprova» / «sì»
@@ -260,7 +299,7 @@ function richiestaDa(C, intent, nome, att) {
     const dv = dividiLuoghi(C, s.raw); if (!dv) continue;
     if (campo === 'luogo') { luogo = dv.da; if (dv.verso) dir = dv.a; else a = dv.a; } else { da = dv.da; a = dv.a; }
   }
-  const linea = lineaDa(intent), mezzo = mezzoDa(intent), n = numeroDa(intent);
+  const linea = lineaDa(intent, C), mezzo = mezzoDa(intent) || (lineaDa(intent, C) && /^T\d/.test(lineaDa(intent, C)) ? 'tram' : null), n = numeroDa(intent);
   const entro = /Entro/.test(nome);
   const c = att.ctx && att.ctx.req;
   // domanda senza fermata dopo una risposta su una fermata («e l'ultimo?», «quali linee passano?»): luogo, direzione e filtri dal contesto
@@ -285,10 +324,18 @@ function richiestaDa(C, intent, nome, att) {
       return eredita({ tipo: nome === 'UltimaCorsaIntent' ? 'ultima' : 'prima', luogo: luogo || da, a: a || null, linea, mezzo, dirTesto: dir, quando: QUANDO_SERIALE(q) });
     }
     case 'LineeIntent': return eredita({ tipo: 'linee', luogo, mezzo });
-    case 'ItinerarioIntent': case 'ItinerarioEntroIntent': {
+    case 'FrequenzaIntent': {
+      // «ogni quanto passa?» dopo una risposta: stessa fermata, linea, direzione (o lo stesso capolinea della corsa detta)
+      const q = quandoDa(C, intent);
+      const r = eredita({ tipo: 'frequenza', luogo: luogo || da, a: a || null, linea, mezzo, dirTesto: dir, quando: QUANDO_SERIALE(q) });
+      if (!luogo && !da && c && !r.dirTesto && !r.a && c.capolinea) r.capolinea = c.capolinea;
+      return r;
+    }
+    case 'ItinerarioIntent': case 'ItinerarioEntroIntent': case 'DurataIntent': {
       const q = quandoDa(C, intent, entro && !!slot(intent, 'ora'));
       const cs = slot(intent, 'cambi'); const nc = cs && cs.raw != null && /^\d+$/.test(cs.raw) ? +cs.raw : null;
-      return { tipo: 'itinerario', da, a, mezzo, quando: QUANDO_SERIALE(q), cambi: nc, pref: prefDa(intent) };
+      // «quanto ci metto da Rialto al Lido?»: lo stesso percorso, con la durata detta per prima
+      return { tipo: 'itinerario', da, a, mezzo, quando: QUANDO_SERIALE(q), cambi: nc, pref: prefDa(intent), ...(nome === 'DurataIntent' ? { durata: true } : {}) };
     }
     case 'MareaIntent': return { tipo: 'marea' };
     case 'ColmoIntent': return { tipo: 'colmo' };
@@ -306,7 +353,7 @@ function richiestaDa(C, intent, nome, att) {
 
 const addGiorni = (C, n) => { const d = cal.addDays(T.adessoRoma(C.adesso()).ymd, n); return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`; };
 const quandoGiornoDa = (C, data) => { const q = T.quando({ data, ora: null, adesso: C.adesso() }); return q.adesso && T.risolviData(data) ? { adesso: false, ymd: q.ymd, secs: 0, hhmm: '00:00', conOra: false, oggi: q.ymd, tipoData: 'giorno' } : q; };
-const ORARI = ['partenze', 'itinerario', 'ultima', 'prima'];
+const ORARI = ['partenze', 'itinerario', 'ultima', 'prima', 'frequenza'];
 const ricomincia = req => { const r = { ...req }; delete r.visti; delete r.dopoMs; delete r.dopoSecs; r.indice = 0; return r; };
 
 // seguiti: modificano solo il parametro detto dell'ultima richiesta
@@ -354,7 +401,7 @@ async function seguito(C, env, intent, att, nome) {
     }
     case 'CorrezioneIntent': {
       // «no, verso Venezia», «solo vaporetti», «con la linea due», «no, intendevo Rialto»: cambia solo ciò che è detto
-      const dir = testoSlot(intent, 'direzione'), luogo = testoSlot(intent, 'luogo'), mezzo = mezzoDa(intent), linea = lineaDa(intent);
+      const dir = testoSlot(intent, 'direzione'), luogo = testoSlot(intent, 'luogo'), mezzo = mezzoDa(intent), linea = lineaDa(intent, C);
       if (!dir && !luogo && !mezzo && !linea) return manca();
       const r = ricomincia(req);
       if (dir) { if (c.tipo === 'itinerario') r.a = dir; else { r.dirTesto = dir; delete r.a; delete r.escludiDir; } }
@@ -364,9 +411,11 @@ async function seguito(C, env, intent, att, nome) {
       return esegui(C, env, r, att);
     }
     case 'AltraDirezioneIntent': {
-      if (!['partenze', 'ultima', 'prima'].includes(c.tipo)) return manca();
+      if (!['partenze', 'ultima', 'prima', 'frequenza'].includes(c.tipo)) return manca();
       const r = ricomincia(req);
       if (c.a) { [r.luogo, r.a] = [c.a, c.luogo]; return esegui(C, env, r, att); }
+      // prima/ultima corsa: l'altra direzione è quella che non va al capolinea appena detto
+      if ((c.tipo === 'ultima' || c.tipo === 'prima') && att.ctx.capoEstremo) { r.escludiCapolinea = att.ctx.capoEstremo; delete r.dirTesto; delete r.escludiDir; return esegui(C, env, r, att); }
       if (!c.dirTesto && c.capolinea) { r.escludiCapolinea = c.capolinea; delete r.capolinea; return esegui(C, env, r, att); }
       if (!c.dirTesto) return testo('In quale direzione?', { reprompt: 'Dimmi la direzione, per esempio: verso Lido.', fine: false, attributi: att });
       // direzione opposta: le corse che NON vanno verso la direzione detta prima

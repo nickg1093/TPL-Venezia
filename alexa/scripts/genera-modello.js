@@ -31,6 +31,7 @@ const FR = {
   ],
   // una corsa: «quando passa il due alle Zattere», «tra quanto passa il prossimo tram a San Marco Cattaneo in direzione Venezia»
   ProssimaCorsaIntent: [
+    'quanto devo aspettare il {mezzo}', 'quanto devo aspettare il {mezzo} per {direzione}', 'quanto devo aspettare il {mezzo} a {luogo}', 'quanto devo aspettare il {linea}', 'quanto devo aspettare il {linea} a {luogo}', 'quanto manca al prossimo {mezzo}', 'quanto manca al prossimo {mezzo} da {luogo}', 'quanto manca al {linea}', 'quanto manca al prossimo {linea} a {luogo}', 'quando ho il prossimo {mezzo} da {luogo}', 'quando ho il prossimo {mezzo}', 'quando ho il {linea}', 'fra quanto passa il {linea}', 'fra quanto passa il {mezzo} a {luogo}', 'tra quanto arriva il {mezzo} a {luogo}', 'quando arriva il {linea} a {luogo}', 'quando arriva il prossimo {mezzo} a {luogo}', 'quando passa il {mezzo} da {luogo}', 'quando passa il {mezzo} a {luogo}', 'quando passa il {mezzo}',
     'prossimo {mezzo} da {luogo} per {direzione}', 'il prossimo {mezzo} da {luogo} per {direzione}', 'prossimo {mezzo} da {luogo} verso {direzione}', 'il prossimo {mezzo} da {luogo} a {arrivo}', 'quando passa il prossimo {mezzo} da {luogo} in direzione {direzione}', 'quando parte il prossimo {mezzo} da {luogo} per {direzione}', 'quando parte il prossimo {mezzo} da {luogo} a {arrivo}', 'il prossimo {linea} da {luogo} per {direzione}',
     'quando passa il {linea} a {luogo}', 'quando passa il {linea} alle {luogo}', 'quando passa il {linea} al {luogo}', 'quando passa il {linea} alla {luogo}', 'quando passa il {linea} da {luogo}', 'quando passa il {linea}',
     'quando passa il {linea} da {luogo} per {direzione}', 'il {linea} per {direzione} da {luogo}', 'il {linea} verso {direzione} da {luogo}', 'quando passa il prossimo {linea} a {luogo}',
@@ -40,12 +41,27 @@ const FR = {
     'prossimo {mezzo} per {direzione}', 'quando passa il prossimo {mezzo} per {direzione}', 'prossimo {mezzo} per {direzione} da {luogo}', 'il prossimo {mezzo} verso {direzione}', 'prossimo {mezzo} da {luogo}', 'prossimo {mezzo} da {luogo} a {arrivo}',
     'quando passa il {linea} a {luogo} {data}', 'quando passa il {linea} a {luogo} alle {ora}', 'quando passa il {linea} a {luogo} {data} alle {ora}', 'quando c\'è il prossimo {mezzo} da {luogo} a {arrivo}', 'a che ora passa il {linea} a {luogo}'
   ],
+  FrequenzaIntent: [
+    'ogni quanto passa il {linea}', 'ogni quanto passa il {linea} a {luogo}', 'ogni quanto passa il {linea} da {luogo}', 'ogni quanto passa il {linea} da {luogo} per {direzione}', 'ogni quanto passa la linea {linea}', 'ogni quanto passa {linea}',
+    'ogni quanti minuti passa il {linea}', 'ogni quanti minuti passa il {linea} a {luogo}', 'ogni quanti minuti passa la linea {linea} a {luogo}', 'ogni quanti minuti passa il {mezzo} a {luogo}', 'ogni quanti minuti passa il {mezzo}',
+    'ogni quanto passa il {mezzo} a {luogo}', 'ogni quanto passa il {mezzo} da {luogo}', 'ogni quanto passa il {mezzo} da {luogo} per {direzione}', 'ogni quanto passa il {mezzo} da {luogo} verso {direzione}', 'ogni quanto passa il {mezzo} per {direzione}', 'ogni quanto c\'è un {mezzo} da {luogo} a {arrivo}', 'ogni quanto passa il {mezzo} da {luogo} a {arrivo}',
+    'ogni quanto passa', 'ogni quanto passano', 'e ogni quanto passa', 'ogni quanti minuti passa', 'ogni quanto ce n\'è uno', 'ogni quanto passano i {mezzo} da {luogo}', 'ogni quanto passano i {mezzo}', 'ogni quanto c\'è un {mezzo} da {luogo}', 'ogni quanto c\'è il {linea}',
+    'qual è la frequenza del {linea}', 'frequenza del {linea} a {luogo}', 'con che frequenza passa il {linea}', 'con che frequenza passano i {mezzo} da {luogo}', 'quanto spesso passa il {linea}', 'quanto spesso passano i {mezzo} da {luogo}', 'quanto spesso passa il {mezzo} a {luogo}',
+    'ogni quanto passa il {linea} {data}', 'ogni quanto passa il {linea} alle {ora}', 'ogni quanto passa il {linea} {data} alle {ora}', 'ogni quanto passa il {linea} a {luogo} {data}', 'ogni quanto passa il {mezzo} {data} {ora}', 'ogni quanto passano {data}'
+  ],
+  DurataIntent: [
+    'quanto ci metto da {partenza} a {arrivo}', 'quanto ci metto da {partenza} al {arrivo}', 'quanto ci metto da {partenza} alla {arrivo}', 'quanto ci metto ad andare da {partenza} a {arrivo}', 'quanto ci metto ad arrivare a {arrivo} da {partenza}',
+    'quanto ci vuole da {partenza} a {arrivo}', 'quanto ci vuole da {partenza} al {arrivo}', 'quanto tempo ci vuole da {partenza} a {arrivo}', 'quanto tempo ci vuole per andare da {partenza} a {arrivo}', 'quanto tempo ci metto da {partenza} a {arrivo}',
+    'quanto ci si mette da {partenza} a {arrivo}', 'quanto dura il viaggio da {partenza} a {arrivo}', 'in quanto tempo arrivo a {arrivo} da {partenza}', 'quanto ci metto per arrivare a {arrivo}', 'quanto ci metto a {arrivo} da {partenza}', 'quanto ci metto ad arrivare al {arrivo} da {partenza}',
+    'quanto ci metto in {mezzo} da {partenza} a {arrivo}', 'quanto ci metto da {partenza} a {arrivo} {data} alle {ora}'
+  ],
   LineeIntent: ['che linee passano da {luogo}', 'quali linee passano a {luogo}', 'quali linee passano da {luogo}', 'quali {mezzo} passano da {luogo}', 'quali linee passano', 'che linee ci sono a {luogo}', 'linee di {luogo}'],
   RitardoIntent: [
     'il {linea} è in ritardo', 'il {linea} è in orario', 'c\'è ritardo sul {linea}', 'ci sono ritardi sul {linea}', 'com\'è il {linea}', 'come va il {linea}', 'ritardi del {linea}', 'ritardo del {linea}', 'dov\'è il {linea}',
     'il {linea} è in ritardo a {luogo}', 'ci sono ritardi a {luogo}', 'ritardi a {luogo}', 'è in ritardo il {linea}', 'quanto ritardo ha il {linea}', 'il {mezzo} è in ritardo', 'i {mezzo} sono in ritardo'
   ],
   UltimaCorsaIntent: [
+    'e l\'ultimo della sera', 'l\'ultimo della sera', 'e l\'ultimo di stasera', 'l\'ultima corsa di stasera', 'ultimo {mezzo} della sera', 'ultimo {mezzo} stasera da {luogo}', 'qual è l\'ultimo {mezzo} che mi porta da {luogo} a {arrivo}', 'l\'ultimo {mezzo} che va da {luogo} a {arrivo}', 'fino a che ora passa il {linea}', 'fino a che ora ci sono {mezzo} da {luogo}', 'fino a che ora passano i {mezzo} da {luogo}',
     'ultimo {mezzo} da {luogo} per {arrivo}', 'ultimo {mezzo} {data} da {luogo} per {arrivo}', 'l\'ultimo {mezzo} {data} da {luogo} a {arrivo}', 'l\'ultimo {mezzo} da {luogo} a {arrivo}', 'ultima corsa da {luogo} a {arrivo}', 'ultima corsa {data} da {luogo} a {arrivo}',
     'ultimo {mezzo}', 'ultimo {mezzo} da {luogo}', 'a che ora è l\'ultimo {mezzo} da {luogo}', 'a che ora passa l\'ultimo {mezzo} da {luogo}', 'ultima corsa del {linea} da {luogo}', 'ultimo {linea} da {luogo}',
     'l\'ultimo {mezzo} per {direzione} da {luogo}', 'quando passa l\'ultimo {linea} a {luogo}', 'quando passa l\'ultimo {mezzo} a {luogo}', 'ultima corsa da {luogo}', 'ultima partenza da {luogo}', 'ultima corsa del {linea}', 'ultimo {mezzo} per {direzione}',
@@ -53,12 +69,14 @@ const FR = {
     'e l\'ultimo', 'e l\'ultima', 'l\'ultima corsa', 'qual è l\'ultima corsa', 'e l\'ultima corsa {data}', 'ultima corsa del {linea} per {direzione}', 'a che ora è l\'ultimo {linea} da {luogo} per {direzione}'
   ],
   PrimaCorsaIntent: [
+    'da che ora passa il {linea}', 'da che ora ci sono {mezzo} da {luogo}', 'a che ora inizia il servizio da {luogo}', 'il primo {mezzo} di domattina da {luogo}',
     'primo {mezzo} {data} da {luogo} a {arrivo}', 'il primo {mezzo} {data} da {luogo} a {arrivo}', 'primo {mezzo} {data} da {luogo} per {arrivo}', 'primo {mezzo} da {luogo} a {arrivo}', 'prima corsa da {luogo} a {arrivo}', 'prima corsa {data} da {luogo} a {arrivo}',
     'prima corsa da {luogo}', 'primo {mezzo} da {luogo}', 'primo {mezzo} da {luogo} per {direzione}', 'primo {mezzo} {data} da {luogo}', 'a che ora parte il primo {mezzo} da {luogo}', 'a che ora parte il primo {mezzo} da {luogo} a {arrivo}',
     'prima corsa domattina da {luogo}', 'prima corsa {data} da {luogo}', 'primo {linea} da {luogo}', 'prima corsa del {linea}', 'e il primo', 'e la prima', 'la prima corsa', 'qual è la prima corsa {data}', 'primo {mezzo} da {luogo} a {arrivo} {data}',
     'primo {mezzo} {data} dopo le {ora} da {luogo}', 'prima corsa dopo le {ora} da {luogo}'
   ],
   ItinerarioIntent: [
+    'come arrivo da {partenza} al {arrivo}', 'come arrivo da {partenza} alla {arrivo}', 'come arrivo da {partenza} alle {arrivo}', 'da {partenza} al {arrivo}', 'dal {partenza} a {arrivo}', 'dalla {partenza} a {arrivo}', 'dalle {partenza} a {arrivo}', 'devo andare a {arrivo} partendo da {partenza}', 'voglio andare al {arrivo} da {partenza}', 'come faccio ad andare da {partenza} a {arrivo}', 'come faccio ad arrivare a {arrivo} da {partenza}', 'che mezzi prendo da {partenza} a {arrivo}',
     'come arrivo a {arrivo} partendo da {partenza}', 'come arrivo a {arrivo} partendo dalle {partenza}', 'come arrivo a {arrivo} partendo dal {partenza}', 'come arrivo a {arrivo} dalle {partenza}', 'come arrivo a {arrivo} dal {partenza}', 'come vado da {partenza} a {arrivo}', 'come arrivo da {partenza} a {arrivo}',
     'come arrivo a {arrivo} da {partenza}', 'come arrivo a {arrivo}', 'come vado a {arrivo} da {partenza}', 'come si va da {partenza} a {arrivo}', 'come si arriva a {arrivo} da {partenza}', 'percorso da {partenza} a {arrivo}', 'da {partenza} a {arrivo}',
     'voglio andare da {partenza} a {arrivo}', 'devo andare a {arrivo} da {partenza}', 'vorrei andare a {arrivo}', 'come arrivo a {arrivo} da {partenza} {data}', 'come arrivo a {arrivo} da {partenza} {data} alle {ora}', 'come arrivo a {arrivo} da {partenza} alle {ora}',
@@ -67,17 +85,20 @@ const FR = {
     'che {mezzo} devo prendere per {arrivo} da {partenza}', 'cosa prendo per andare a {arrivo} da {partenza}', 'itinerario da {partenza} a {arrivo}', 'pianifica un percorso da {partenza} a {arrivo}'
   ],
   ItinerarioEntroIntent: [
+    'a che ora devo partire da {partenza} se devo arrivare a {arrivo} alle {ora}', 'a che ora devo partire da {partenza} per arrivare a {arrivo} alle {ora}', 'a che ora devo partire da {partenza} per arrivare alle {arrivo} alle {ora}', 'a che ora parto da {partenza} per essere a {arrivo} alle {ora}', 'a che ora devo partire per arrivare a {arrivo} alle {ora}', 'devo arrivare a {arrivo} alle {ora} da {partenza}', 'devo arrivare alle {arrivo} alle {ora} partendo da {partenza}', 'a che ora devo partire da {partenza} se devo arrivare a {arrivo} alle {ora} {data}',
     'devo essere a {arrivo} entro le {ora} partendo da {partenza}', 'devo essere a {arrivo} entro le {ora} partendo dalle {partenza}', 'devo essere a {arrivo} entro le {ora} partendo dal {partenza}', 'devo essere a {arrivo} entro le {ora} da {partenza}', 'come arrivo a {arrivo} entro le {ora} partendo da {partenza}', 'devo essere a {arrivo} entro le {ora} {data} partendo da {partenza}',
     'come arrivo a {arrivo} entro le {ora}', 'come arrivo a {arrivo} da {partenza} entro le {ora}', 'voglio arrivare a {arrivo} entro le {ora}', 'devo essere a {arrivo} entro le {ora}', 'devo essere a {arrivo} per le {ora}', 'devo essere a {arrivo} per le {ora} da {partenza}',
     'arrivare a {arrivo} per le {ora}', 'arrivare a {arrivo} da {partenza} per le {ora}', 'da {partenza} a {arrivo} entro le {ora}', 'da {partenza} a {arrivo} entro le {ora} {data}', 'come arrivo a {arrivo} entro le {ora} {data}', 'come arrivo a {arrivo} da {partenza} entro le {ora} {data}',
     'a che ora devo partire per essere a {arrivo} entro le {ora}', 'a che ora devo partire da {partenza} per essere a {arrivo} per le {ora}', '{arrivo} entro le {ora}', '{arrivo} entro le {ora} {data}', 'devo essere a {arrivo} {data} entro le {ora}'
   ],
-  ProssimoIntent: ['e il prossimo', 'il prossimo', 'dimmi il prossimo', 'e dopo', 'e poi', 'quello dopo', 'e quello dopo', 'e il successivo', 'il successivo'],
+  ProssimoIntent: [
+    'posso partire più tardi', 'e più tardi', 'una soluzione più tardi', 'e dopo quello', 'quello successivo', 'il prossimo ancora','e il prossimo', 'il prossimo', 'dimmi il prossimo', 'e dopo', 'e poi', 'quello dopo', 'e quello dopo', 'e il successivo', 'il successivo'],
   AltreCorseIntent: ['altre {numero} corse', 'dimmene altre {numero}', 'altre corse', 'altre partenze', 'dimmi altre corse', 'altre', 'ce ne sono altre', 'e le altre', 'che altro', 'mostrami altre corse'],
   AlternativaIntent: ['alternativa', 'un\'alternativa', 'c\'è un\'alternativa', 'altra soluzione', 'un\'altra soluzione', 'altre soluzioni', 'un altro percorso', 'alternativa {preferenza}', 'l\'alternativa {preferenza}', 'un\'alternativa {preferenza}', 'e con {preferenza}', 'fammi vedere quella {preferenza}', 'dammi quella {preferenza}', 'la soluzione {preferenza}', 'voglio un percorso {preferenza}'],
   SenzaCambiIntent: ['senza cambi', 'e senza cambi', 'senza nessun cambio', 'senza cambiare', 'con un percorso diretto', 'percorso diretto', 'solo diretti', 'diretto'],
   RitornoIntent: ['e al ritorno', 'il ritorno', 'e per il ritorno', 'percorso di ritorno', 'e per tornare', 'e per ritornare', 'come torno', 'e il ritorno', 'e per il viaggio di ritorno'],
-  DomaniIntent: ['e domani', 'e per domani', 'e dopodomani', 'e {data}', 'e domani {ora}', 'e {data} alle {ora}', 'e alle {ora}', 'vale anche domani', 'e domani mattina', 'e domani sera', 'e per {data}', 'e per {data} alle {ora}'],
+  DomaniIntent: [
+    'e domani mattina alle {ora}', 'e domattina', 'e domattina alle {ora}', 'e stasera', 'e stasera alle {ora}', 'e alle {ora} di sera', 'e alle {ora} di mattina', 'e {data} mattina', 'e {data} sera','e domani', 'e per domani', 'e dopodomani', 'e {data}', 'e domani {ora}', 'e {data} alle {ora}', 'e alle {ora}', 'vale anche domani', 'e domani mattina', 'e domani sera', 'e per {data}', 'e per {data} alle {ora}'],
   MareaIntent: ['com\'è la marea', 'come è la marea', 'a quanto è la marea', 'livello della marea', 'a che livello è la marea', 'quanto è alta la marea', 'marea', 'la marea', 'marea a venezia', 'com\'è la marea adesso', 'che marea c\'è', 'la marea sta salendo', 'sta salendo o scendendo la marea', 'quanto è la marea', 'com\'è l\'acqua'],
   ColmoIntent: ['quando è il picco', 'quando è il colmo', 'prossimo colmo', 'a che ora è il picco di marea', 'quando arriva il picco', 'picco di marea', 'quando sarà la massima', 'a che ora è la massima', 'a che ora è il colmo', 'quando c\'è il picco di marea', 'quando è il prossimo picco', 'quando è la prossima alta marea', 'a che ora arriva la marea massima'],
   AcquaAltaIntent: ['ci sarà acqua alta', 'ci sarà acqua alta {data}', 'ci sarà acqua alta {ora}', 'ci sarà acqua alta {data} {ora}', 'ci sarà acqua alta nelle prossime ore', 'ci sarà l\'acqua alta {data}', 'c\'è acqua alta', 'c\'è acqua alta oggi', 'acqua alta', 'è prevista acqua alta', 'è prevista acqua alta {data}', 'è prevista acqua alta {ora}', '{data} ci sarà acqua alta', '{data} {ora} ci sarà acqua alta', 'alta marea {data}', 'alta marea {ora}', 'prevista alta marea', 'ci sarà alta marea {data}', 'ci sarà alta marea {ora}', 'c\'è acqua alta {data}', 'sale l\'acqua alta {data}'],
@@ -108,6 +129,8 @@ const SLOT = {
   PartenzeIntent: { luogo: 'FERMATA', arrivo: 'FERMATA', linea: 'LINEA', direzione: 'FERMATA', mezzo: 'MEZZO', numero: 'AMAZON.NUMBER', data: 'AMAZON.DATE', ora: 'AMAZON.TIME' },
   ProssimaCorsaIntent: { luogo: 'FERMATA', arrivo: 'FERMATA', linea: 'LINEA', direzione: 'FERMATA', mezzo: 'MEZZO', data: 'AMAZON.DATE', ora: 'AMAZON.TIME' },
   LineeIntent: { luogo: 'FERMATA', mezzo: 'MEZZO' },
+  FrequenzaIntent: { luogo: 'FERMATA', arrivo: 'FERMATA', linea: 'LINEA', direzione: 'FERMATA', mezzo: 'MEZZO', data: 'AMAZON.DATE', ora: 'AMAZON.TIME' },
+  DurataIntent: { partenza: 'FERMATA', arrivo: 'FERMATA', mezzo: 'MEZZO', data: 'AMAZON.DATE', ora: 'AMAZON.TIME' },
   RitardoIntent: { linea: 'LINEA', luogo: 'FERMATA', mezzo: 'MEZZO' },
   UltimaCorsaIntent: { luogo: 'FERMATA', arrivo: 'FERMATA', linea: 'LINEA', direzione: 'FERMATA', mezzo: 'MEZZO', data: 'AMAZON.DATE' },
   PrimaCorsaIntent: { luogo: 'FERMATA', arrivo: 'FERMATA', linea: 'LINEA', direzione: 'FERMATA', mezzo: 'MEZZO', data: 'AMAZON.DATE', ora: 'AMAZON.TIME' },
@@ -129,6 +152,9 @@ const SLOT = {
   SceltaIntent: { numero: 'AMAZON.NUMBER', ordinale: 'ORDINALE' }
 };
 
+// T1, T2: come le trascrive il riconoscimento vocale («ti uno», «t. one», «tram uno»)
+const INGL = ['zero', 'one', 'two', 'three'];
+const tramVarianti = n => { const m = /^T(\d)$/i.exec(n); if (!m) return []; const d = m[1], w = P.parole(+d); return [`t ${d}`, `t ${w}`, `ti ${w}`, `ti ${d}`, `t ${INGL[+d] || d}`, `tram ${w}`, `tram ${d}`, `il tram ${w}`]; };
 (async () => {
   const [stops, routes] = await Promise.all([get('/api/stops'), get('/api/routes')]);
   const idx = L.crea(stops, routes);
@@ -142,7 +168,7 @@ const SLOT = {
   for (const [k, sp] of Object.entries(L.LUOGHI_SPECIALI)) fermate.push(valore(P.togliTag(sp.nome), 'speciale:' + k, [k]));
   // LINEA: nome come nei dati (4.1, 5.2, N, T1, 12E…) + forma detta a voce
   const nomiLinea = [...new Set(Object.values(routes).map(r => String(r.name || '').trim()).filter(Boolean))];
-  const linee = nomiLinea.map(n => { const parlato = P.senzaTag(P.lineaParlata(n)); return valore(parlato, n, [n, /^\d+\.\d+$/.test(n) ? n.replace('.', ' e ') : null, /^\d+\.\d+$/.test(n) ? n.replace('.', ' ') : null, /^\d+$/.test(n) ? `linea ${n}` : null]); });
+  const linee = nomiLinea.map(n => { const parlato = P.senzaTag(P.lineaParlata(n)); return valore(parlato, n, [n, /^\d+\.\d+$/.test(n) ? n.replace('.', ' e ') : null, /^\d+\.\d+$/.test(n) ? n.replace('.', ' ') : null, /^\d+$/.test(n) ? `linea ${n}` : null, ...tramVarianti(n)]); });
   const tipi = [
     { name: 'FERMATA', values: unici(fermate).slice(0, MAX_VALORI) },
     { name: 'LINEA', values: unici(linee) },

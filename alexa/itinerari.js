@@ -64,7 +64,10 @@ async function itinerario(C, ric) {
   if (ric.da.chiave === ric.a.chiave) return { voce: P.esc('Partenza e destinazione coincidono.'), fine: false, ctx: null };
   const R = await C.call(costruisciQuery(C, ric));
   const w = ric.quando && !ric.quando.adesso ? ric.quando : null, oggi = T.adessoRoma(adesso).ymd;
-  const idx = Math.max(0, ric.indice || 0), sols = R.soluzioni || [];
+  const idx = Math.max(0, ric.indice || 0);
+  let sols = R.soluzioni || [];
+  // «arrivare entro»: prima le soluzioni con cambi sicuri (nessuna coincidenza a rischio), poi le altre
+  if (ric.quando && ric.quando.entro) { const rischio = x => (x.tratte || []).some(t => t.tipo === 'mezzo' && (t.aRischio || t.persa)); const slack = x => Math.min(99, ...(x.tratte || []).filter(t => t.tipo === 'mezzo' && t.cambioMin != null).map(t => t.cambioMin)); sols = [...sols.filter(x => !rischio(x)), ...sols.filter(rischio).sort((p, q) => slack(q) - slack(p))]; }
   const nome = { da: ric.da.parlato, a: ric.a.parlato };
   const ctx = { tipo: 'itinerario', da: ric.da.chiave, a: ric.a.chiave, quando: w ? { ymd: w.ymd, secs: w.secs, entro: !!w.entro } : null, mezzo: ric.mezzo || null, cambi: Number.isInteger(ric.cambi) ? ric.cambi : null, pref: ric.pref || null, indice: idx + 1, n: sols.length };
   const scheda0 = { titolo: `${P.senzaTag(nome.da)} → ${P.senzaTag(nome.a)}`, sottotitolo: '', righe: [], nota: '', fonte: 'Orari e tempo reale ACTV · servizio indipendente, non ufficiale' };
@@ -81,7 +84,12 @@ async function itinerario(C, ric) {
       v = `Non trovo un collegamento da ${nome.da} a ${nome.a}${w ? ` ${w.entro ? 'per arrivare entro ' + P.oraSenzaPrep(w.hhmm) : 'con partenza ' + P.oraParlata(w.hhmm)}${w.ymd !== oggi ? ' ' + P.giornoParlato(w.ymd, oggi) : ''}` : ' nelle prossime ore'}${ric.cambi === 0 ? ' senza cambi' : ''}.`;
       if (ric.cambi === 0 || ric.mezzo) v += ' Posso riprovare togliendo i limiti.';
       if (aPiedi) v += ' ' + aPiedi;
-    } else v = 'Non ho altre soluzioni da proporti per questo percorso.';
+    } else {
+      // «posso partire più tardi?»: le partenze successive dello stesso percorso
+      const poi = (sols[sols.length - 1].poi || [])[idx - sols.length];
+      if (poi) { const v2 = `Puoi partire anche ${P.oraParlata(poi.parti)}, con arrivo ${P.oraParlata(poi.arrivi)}, con lo stesso percorso.`; return { voce: P.esc(v2), scheda: { ...scheda0, nota: v2 }, ctx: { ...ctx, indice: idx + 1 }, fine: false }; }
+      v = 'Non ho altre soluzioni da proporti per questo percorso.';
+    }
     return { voce: P.esc(v), scheda: { ...scheda0, nota: v }, ctx: { ...ctx, indice: Math.min(idx, sols.length) }, fine: false, vuoto: true };
   }
   const s = sols[idx], parti = [];
@@ -103,15 +111,22 @@ async function itinerario(C, ric) {
     parti.push(P.esc(`In tutto ${P.durata(s.minuti)}${s.piedi >= 1 ? `, di cui ${P.minutiParlati(s.piedi)} a piedi, stimati in linea d'aria` : ''}.`));
     if (s.poi && s.poi.length) parti.push(P.esc(`Altre partenze utili: ${s.poi.slice(0, 2).map(x => `${P.oraParlata(x.parti)}, con arrivo ${P.oraParlata(x.arrivi)}`).join('; oppure ')}.`));
   } else {
+    if (ric.durata && s.minuti) parti.push(P.esc(`Ci vogliono circa ${P.durata(s.minuti)}${mezzi.length > 1 ? `, con ${mezzi.length === 2 ? 'un cambio' : P.parole(mezzi.length - 1) + ' cambi'}` : ''}.`));
     // risposta sintetica: partenza, linea, fermata o pontile di salita, cambi essenziali, arrivo e margine
     const m0 = mezzi[0], salita = m0 ? m0.da : null;
     const fe = salita && salita.id ? Dfe(C, salita.id) : null;
     const diversa = salita && salita.id && C.luoghi.gruppoDiId && (C.luoghi.gruppoDiId(salita.id) || {}).chiave !== ric.da.chiave;
-    const dove = !salita ? '' : diversa ? ` da ${nomeFermata(salita)}` : (fe && fe.con ? `, ${fe.con}` : '');
-    const lin = t => `${t.mode === 'tram' ? 'il tram' : 'la linea'} ${P.lineaParlata(t.line)}`;
+    // salita in un'altra fermata: si dice quanto camminare per arrivarci
+    const piedi0 = s.tratte[0] && s.tratte[0].tipo === 'piedi' && s.tratte[0].min >= 3 ? s.tratte[0].min : null;
+    const dove = !salita ? '' : diversa ? ` da ${nomeFermata(salita)}${piedi0 ? `, a ${P.minutiParlati(piedi0)} a piedi` : ''}` : (fe && fe.con ? `, ${fe.con}` : '');
+    // la linea con il capolinea, come sui pontili: sulle linee circolari («due») il verso conta
+    const lin = t => `${t.mode === 'tram' ? 'il tram' : 'la linea'} ${P.lineaParlata(t.line)}${t.headsign ? ` per ${P.destinazioneParlata(t.headsign)}` : ''}`;
     if (!mezzi.length) parti.push(P.esc(`Ti conviene andare a piedi: circa ${P.minutiParlati(s.minuti)}, stimati in linea d'aria. Per il percorso reale usa l'app.`));
-    else if (w && w.entro) parti.push(P.esc(`Ti consiglio di partire ${P.oraParlata(s.parti)} con ${lin(m0)}${dove}. Arriverai ${P.oraParlata(s.arrivi)}${s.margine != null ? `, con ${P.minutiParlati(s.margine)} di margine` : ''}.`));
-    else if (mezzi.length === 1) parti.push(P.esc(`${w ? P.maiuscola(P.giornoParlato(w.ymd, oggi)) + ', ti' : 'Ti'} consiglio ${lin(m0)}, ${P.oraParlata(m0.da.exp)}${dove}. Arriverai ${P.oraParlata(s.arrivi)}, tra circa ${P.durata(s.minuti)}${idx === 0 && !w ? '' : ''}.`));
+    else if (w && w.entro) {
+      const cambiE = mezzi.slice(1, 3).map(t => ` Cambia a ${nomeFermata(t.da)}${/, pontile /.test(nomeFermata(t.da)) ? ',' : ''} con ${lin(t)}.`).join('');
+      parti.push(P.esc(`Ti consiglio di partire ${P.oraParlata(s.parti)} con ${lin(m0)}${dove}.${cambiE} Arriverai ${P.oraParlata(s.arrivi)}${s.margine != null ? `, con ${P.minutiParlati(s.margine)} di margine` : ''}.`));
+    }
+    else if (mezzi.length === 1) parti.push(P.esc(`${w ? P.maiuscola(P.giornoParlato(w.ymd, oggi)) + ', ti' : 'Ti'} consiglio ${lin(m0)}, ${P.oraParlata(m0.da.exp)}${dove}. Arriverai ${P.oraParlata(s.arrivi)}${ric.durata ? '' : `, tra circa ${P.durata(s.minuti)}`}.`));
     else {
       const cambi = mezzi.slice(1, 3).map(t => `Cambia a ${nomeFermata(t.da)}${/, pontile /.test(nomeFermata(t.da)) ? ',' : ''} con ${lin(t)}`).join('. ');
       parti.push(P.esc(`${w ? P.maiuscola(P.giornoParlato(w.ymd, oggi)) + ', parti' : 'Parti'} ${P.oraParlata(m0.da.exp)} con ${lin(m0)}${dove}. ${cambi}.${mezzi.length > 3 ? ` In tutto ${P.parole(mezzi.length - 1)} cambi: il resto è nei dettagli.` : ''} Arrivo ${P.oraParlata(s.arrivi)}.`));

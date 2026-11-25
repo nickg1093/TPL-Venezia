@@ -10,7 +10,7 @@ const M = {
   aiutoRiprompt: 'Dimmi: partenze, percorsi, marea, avvisi o riepilogo.',
   presentazione: 'Sono Venezia TPL, un servizio indipendente di informazioni sui trasporti e sulla marea di Venezia. Non sono un servizio ufficiale ACTV. Uso gli orari e il tempo reale pubblicati da ACTV e i dati delle maree del Comune di Venezia.',
   aiutoCategoria: {
-    partenze: 'Puoi dire: quando passa il due alle Zattere? Oppure: qual è l\'ultimo vaporetto da Rialto a Piazzale Roma?',
+    partenze: 'Puoi dire: quando passa il due alle Zattere? Ogni quanto passa il tram a San Marco Cattaneo? Oppure: qual è l\'ultimo vaporetto da Rialto a Piazzale Roma?',
     percorsi: 'Prova a dire: come arrivo a Rialto da Piazzale Roma? Oppure: quando devo partire per arrivare a Rialto entro le nove?',
     marea: 'Puoi chiedermi il livello attuale, il prossimo colmo, il MOSE o la previsione di acqua alta.',
     avvisi: 'Puoi chiedere: ci sono problemi sulla linea uno? Oppure: ci sono scioperi domani?',

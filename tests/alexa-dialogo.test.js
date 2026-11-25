@@ -146,6 +146,49 @@ test('simulatore: «quando passa il due alle Zattere» → «e quello dopo» res
   const e = await d('UltimaCorsaIntent');
   assert.doesNotMatch(e.testo, /linea due.*linea due/, 'la linea non si ripete');
 });
+// ---------- revisione 3: frequenza, linee trascritte male, nomi parziali, durata ----------
+test('linee trascritte dal riconoscimento vocale: «t. one», «ti uno», «tram uno», «cinque.due»', () => {
+  const L = require('../alexa/luoghi');
+  for (const [t, v] of [['t. one', 'T1'], ['t uno', 'T1'], ['ti uno', 'T1'], ['t. un', 'T1'], ['t one', 'T1'], ['cinque.due', '5.2'], ['quattro punto uno', '4.1'], ['due barrato', '2/'], ['enne', 'N']]) assert.equal(L.parseLinea(t), v, t);
+  assert.deepEqual(L.candidatiLinea('tram uno'), ['T1', '1']);
+});
+test('frequenza: intervalli reali degli orari programmati, per linea e direzione; seguito «ogni quanto passa?» sulla corsa appena detta', async () => {
+  const T1 = [];
+  for (let k = 0; k < 8; k++) { const h = 8 + Math.floor((15 + k * 10) / 60), m = (15 + k * 10) % 60, hh = x => String(x).padStart(2, '0'); T1.push({ id: 'TF' + k, route: 'T1', headsign: 'Venezia', stops: [['3001', `${hh(h)}:${hh((m + 50) % 60)}`.replace(/^(\d\d):/, (x, y) => hh(Math.max(0, +y - (m + 50 >= 60 ? 0 : 1))) + ':')], ['6057', `${hh(h)}:${hh(m)}`], ['2201', `${hh(h)}:${hh(m)}`]] }); }
+  // orari semplici: partenze da San Marco Cattaneo 1 ogni 10 minuti dalle 08:15
+  const corse = { nav: CORSE.nav, aut: [...Array(8)].map((_, k) => { const t = 8 * 60 + 15 + k * 10, f = x => `${String(Math.floor(x / 60)).padStart(2, '0')}:${String(x % 60).padStart(2, '0')}`; return { id: 'TF' + k, route: 'T1', headsign: 'Venezia', stops: [['3001', f(t - 15)], ['6057', f(t)], ['2201', f(t + 20)]] }; }).concat([{ id: 'B1', route: 'B6', headsign: 'Piazzale Roma', stops: [['6057', '08:20'], ['2201', '08:45']] }, { id: 'B2', route: 'B6', headsign: 'Piazzale Roma', stops: [['6057', '09:05'], ['2201', '09:30']] }, { id: 'B3', route: 'B6', headsign: 'Piazzale Roma', stops: [['6057', '09:20'], ['2201', '09:45']] }]) };
+  void T1;
+  const amb = F.ambiente({ '/api/avvisi': { items: [] } }, { gtfs: F.gtfs(corse, SERVIZI, {}) }), d = dire(amb);
+  const a = await d('FrequenzaIntent', { linea: 'ti uno', luogo: 'San Marco Cattaneo' });
+  assert.equal(a.testo, 'Nelle prossime due ore, da San Marco Cattaneo: il tram ti uno per Venezia passa ogni dieci minuti. La prossima corsa è alle otto e quindici. Secondo gli orari programmati.');
+  const b = await d('FrequenzaIntent', { mezzo: 'autobus', luogo: 'San Marco Cattaneo' });
+  assert.match(b.testo, /la linea sei per Piazzale Roma passa a intervalli irregolari, da quindici a quarantacinque minuti/);
+  const c = await d('FrequenzaIntent', { luogo: 'San Marco Cattaneo', linea: 'quattro punto uno' });
+  assert.match(c.testo, /^Non risultano corse della linea quattro punto uno da San Marco Cattaneo nelle prossime due ore/);
+  const e = await d('FrequenzaIntent', { linea: 'ti uno' });
+  assert.equal(e.testo, 'Da quale fermata?', 'senza fermata e senza contesto si chiede');
+});
+test('nome detto in parte («Cattaneo»): con il mezzo si sceglie la fermata servita; senza, si chiede quale', async () => {
+  const gt = rete(), amb = F.ambiente({ '/api/zone': zonaCattaneo(gt.G), '/api/avvisi': { items: [] } }, { gtfs: gt }), d = dire(amb);
+  const res = { value: 'cattaneo', resolutions: { resolutionsPerAuthority: [{ status: { code: 'ER_SUCCESS_MATCH' }, values: [{ value: { id: 'zattere', name: 'Zattere Cattaneo' } }, { value: { id: 'marco_cattaneo', name: 'San Marco Cattaneo' } }] }] } };
+  const a = await d('ProssimaCorsaIntent', { mezzo: 'tram', luogo: res });
+  assert.match(a.testo, /^Il tram ti uno per /);
+  const b = await dire(amb)('ProssimaCorsaIntent', { luogo: res });
+  assert.match(b.testo, /^Intendi Zattere o San Marco Cattaneo\?$/);
+});
+test('«e nell\'altra direzione» dopo l\'ultima corsa: l\'altro capolinea, una sola risposta', async () => {
+  const gt = rete(), amb = F.ambiente({ '/api/zone': zonaCattaneo(gt.G), '/api/avvisi': { items: [] } }, { gtfs: gt }), d = dire(amb);
+  await d('UltimaCorsaIntent', { mezzo: 'tram', luogo: 'San Marco Cattaneo', direzione: 'Venezia' });
+  const b = await d('AltraDirezioneIntent');
+  assert.match(b.testo, /^L'ultima corsa da San Marco Cattaneo parte alle otto e quattordici, con il tram ti uno per Monte Celo Favaro/);
+  assert.doesNotMatch(b.testo, /Verso Venezia/);
+});
+test('durata: «quanto ci metto da Zattere a San Marco» dice prima quanto ci vuole', async () => {
+  const amb = F.ambiente({ '/api/percorso': F.percorso([F.soluzione()]), '/api/avvisi': { items: [] }, '/api/tide': F.marea() }), d = dire(amb);
+  const a = await d('DurataIntent', { partenza: 'Zattere', arrivo: 'San Marco' });
+  assert.match(a.testo, /^Ci vogliono circa ventuno minuti\. Ti consiglio la linea due/);
+  assert.doesNotMatch(a.testo, /tra circa/);
+});
 test('pontile o numero detto con il nome: «San Marco Cattaneo uno» usa solo quella fermata', async () => {
   assert.deepEqual(etichettaDetta('San Marco Cattaneo uno'), { etichetta: '1', base: 'San Marco Cattaneo' });
   assert.deepEqual(etichettaDetta('Rialto pontile C'), { etichetta: 'C', base: 'Rialto' });
@@ -295,7 +338,7 @@ test('itinerario sintetico; «dimmi i dettagli» dà le tappe; «e al ritorno» 
   const sol = F.soluzione();
   const amb = F.ambiente({ '/api/percorso': F.percorso([sol]), '/api/avvisi': { items: [] }, '/api/tide': F.marea() }), d = dire(amb);
   const a = await d('ItinerarioIntent', { partenza: 'Zattere', arrivo: 'San Marco' });
-  assert.equal(a.testo, 'Ti consiglio la linea due, alle otto e quattordici, dal pontile B. Arriverai alle otto e trentatré, tra circa ventuno minuti. Parte con due minuti di ritardo.');
+  assert.equal(a.testo, 'Ti consiglio la linea due per San Marco, San Zaccaria, alle otto e quattordici, dal pontile B. Arriverai alle otto e trentatré, tra circa ventuno minuti. Parte con due minuti di ritardo.');
   const b = await d('DettagliIntent');
   assert.match(b.testo, /Cammina un minuto fino a Zattere, pontile B\. Prendi la linea due/); assert.match(b.testo, /stimati in linea d'aria/);
   await d('RitornoIntent');
@@ -310,7 +353,7 @@ test('itinerario con cambio a rischio, arrivo entro un orario, acqua alta sul tr
   s.tratte.splice(2, 0, m2); s.cambi = 1; s.arrivi = '08:52';
   const amb = F.ambiente({ '/api/percorso': F.percorso([{ ...s, margine: 8 }]), '/api/avvisi': { items: [] }, '/api/tide': F.marea({ cm: 105, extremes: [F.estremo('max', 115, 1)] }) });
   const a = await dire(amb)('ItinerarioEntroIntent', { partenza: 'Zattere', arrivo: 'Lido', ora: '09:00' });
-  assert.match(a.testo, /^Ti consiglio di partire alle otto e dodici con la linea due, dal pontile B\. Arriverai alle otto e cinquantadue, con otto minuti di margine\./);
+  assert.match(a.testo, /^Ti consiglio di partire alle otto e dodici con la linea due per San Marco, San Zaccaria, dal pontile B\. Cambia a Rialto, pontile D, con la linea cinque punto due per Lido Santa Maria Elisabetta\. Arriverai alle otto e cinquantadue, con otto minuti di margine\./);
   assert.match(a.testo, /Attenzione: hai solo un minuto per il cambio a Rialto, pontile D\./);
   assert.match(a.testo, /alcuni tratti a piedi potrebbero essere allagati/);
 });

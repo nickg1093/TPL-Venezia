@@ -308,7 +308,8 @@ async function estremo(C, ric) {
   const scheda = { titolo: g.parlato, sottotitolo: `${quale === 'ultima' ? 'Ultima corsa' : 'Prima corsa'} · ${giorno}`, righe: [], nota: 'Orari programmati: possono cambiare con ritardi o variazioni.', fonte: 'Orari ACTV · servizio indipendente, non ufficiale' };
   const tratta = `${ric.linea ? `della linea ${P.lineaParlata(ric.linea)} ` : ''}${dest ? `da ${g.parlato} ${ric.verso ? 'verso' : 'a'} ${dest.nome}` : `da ${g.parlato}`}`;
   if (res.nessunGtfs.length && !res.righe.length) return { voce: P.esc(`Non ho ancora orari validi per ${giorno}.`), scheda, ctx: ctxBase, fine: false, vuoto: true };
-  const utili = res.righe.filter(r => !r.cancel);
+  const capoR = r => L.normalizza(P.senzaTag(P.destinazioneParlata(r.headsign || '')));
+  const utili = res.righe.filter(r => !r.cancel && (!ric.escludiCapolinea || capoR(r) !== L.normalizza(ric.escludiCapolinea)));
   if (!utili.length) {
     if (dest && dest.ids && dest.ids.length && !ric.verso) {
       const v = `Non risultano collegamenti diretti ${tratta} ${giorno}. Vuoi che cerchi un percorso con cambi?`;
@@ -330,7 +331,7 @@ async function estremo(C, ric) {
   // senza destinazione né linea: una risposta per direzione (al massimo due), la più tarda/presto per prima
   const scegli = list => (quale === 'ultima' ? list[list.length - 1] : list[0]);
   let gruppi;
-  if (dest || ric.linea) gruppi = [scegli(base)];
+  if (dest || ric.linea || ric.escludiCapolinea) gruppi = [scegli(base)];
   else {
     const per = new Map();
     for (const r of base) { const k = L.normalizza(P.destinazioneParlata(r.headsign || '')); const x = per.get(k); if (!x || (quale === 'ultima' ? r.dep > x.dep : r.dep < x.dep)) per.set(k, r); }
@@ -356,7 +357,56 @@ async function estremo(C, ric) {
   const soppressa = res.righe.find(r => r.cancel && (quale === 'ultima' ? r.dep > r0.dep : r.dep < r0.dep));
   if (soppressa) v += ` La corsa ${P.oraParlata(T.hhmmDa(soppressa.dep))} risulta soppressa.`;
   scheda.righe = gruppi.map(r => ({ badge: String(r.line), colore: U.colore(r.color), testo: P.senzaTag(P.destinazioneParlata(r.headsign || '')), dett: [fermataEsatta(C, r.from).breve, r.arr != null ? `arrivo ${T.hhmmDa(r.arr)}` : null, 'orario programmato'].filter(Boolean).map(P.maiuscola).join(' · '), ora: T.hhmmDa(r.dep), attesa: '', stato: 'prog' }));
-  return { voce: P.esc(v.replace(/\s{2,}/g, ' ').replace(/ ,/g, ',')), scheda, ctx: { ...ctxBase, dep: r0.dep, trip: `${r0.src}:${r0.tripId}` }, fine: false, dati: { corse: gruppi.map(r => ({ id: `${r.src}:${r.tripId}`, line: r.line, dep: r.dep, arr: r.arr, from: r.from, to: r.to })) } };
+  return { voce: P.esc(v.replace(/\s{2,}/g, ' ').replace(/ ,/g, ',')), scheda, ctx: { ...ctxBase, dep: r0.dep, trip: `${r0.src}:${r0.tripId}`, capoEstremo: P.senzaTag(P.destinazioneParlata(r0.headsign || '')) }, fine: false, dati: { corse: gruppi.map(r => ({ id: `${r.src}:${r.tripId}`, line: r.line, dep: r.dep, arr: r.arr, from: r.from, to: r.to })) } };
+}
+
+// ---- FREQUENZA («ogni quanto passa il T1 a San Marco Cattaneo?») ----
+// Intervalli reali tra le partenze programmate nella fascia chiesta (adesso: le prossime due ore; un'ora detta: due ore da lì; una fascia
+// come «mattina»: tre ore), per linea e capolinea. Intervalli regolari -> «ogni N minuti»; variabili -> valore tipico e intervallo reale.
+// Mai una frequenza inventata: con meno di due corse lo dice.
+async function frequenza(C, ric) {
+  const g = ric.gruppo, adesso = C.adesso(), mz = mezzoInfo(ric.mezzo), ds = T.giornoDiServizio(adesso);
+  const w = ric.quando && !ric.quando.adesso ? ric.quando : null;
+  const ymd = w ? w.ymd : ds.ymd, da = w ? w.secs : ds.secs, a = da + (w && w.fascia ? 3 : 2) * 3600;
+  let src = mz ? mz.src : null;
+  if (ric.linea && !src) { const sv = L.infoLinea(C.routes, ric.linea).map(x => x.src).filter(x => g.srcs.has(x)); if (new Set(sv).size === 1) src = sv[0]; }
+  const ids = ric.ids && ric.ids.length ? ric.ids : C.luoghi.idsDi(g, src);
+  const dest = destinazione(C, ric.dir, g);
+  const res = await direttiDa(C, { ids, dest, ymd, linea: ric.linea, mz, daSecs: da, aSecs: a });
+  const capo = r => P.senzaTag(P.destinazioneParlata(r.headsign || ''));
+  let righe = res.righe.filter(r => !r.cancel);
+  if (ric.capolinea) righe = righe.filter(r => L.normalizza(capo(r)) === L.normalizza(ric.capolinea));
+  const quando = w ? (w.conOra ? `${P.giornoParlato(ymd, T.adessoRoma(adesso).ymd) === 'oggi' ? '' : P.giornoParlato(ymd, T.adessoRoma(adesso).ymd) + ' '}${P.dalleOra(w.hhmm)}`.trim() : P.giornoParlato(ymd, T.adessoRoma(adesso).ymd)) : 'nelle prossime due ore';
+  const tratta = `da ${g.parlato}${dest ? ` ${ric.verso ? 'verso' : 'per'} ${dest.nome}` : ''}`;
+  const chi = ric.linea ? `${(righe[0] && righe[0].type === 0) || /^T\d/i.test(ric.linea) ? 'il tram' : 'la linea'} ${P.lineaParlata(ric.linea)}` : mz ? `i ${mz.plurale}` : 'le corse';
+  const scheda = { titolo: g.parlato, sottotitolo: 'Frequenza · orari programmati', righe: [], nota: 'Intervalli calcolati sugli orari programmati ACTV.', fonte: 'Orari ACTV · servizio indipendente, non ufficiale' };
+  const ctx = { tipo: 'frequenza' };
+  if (res.nessunGtfs.length && !righe.length) return { voce: P.esc(`Non ho ancora orari validi per ${P.giornoParlato(ymd, T.adessoRoma(adesso).ymd)}.`), scheda, ctx, fine: false, vuoto: true };
+  // gruppi: linea e capolinea (una sola partenza per corsa, anche se passa da più pontili del luogo)
+  const per = new Map();
+  for (const r of righe) { const k = `${r.line}|${dest ? '' : L.normalizza(capo(r))}`; let x = per.get(k); if (!x) per.set(k, x = { line: r.line, type: r.type, capo: capo(r), deps: new Set(), prima: r }); x.deps.add(r.dep); }
+  const gruppi = [...per.values()].map(x => ({ ...x, deps: [...x.deps].sort((p, q) => p - q) })).sort((p, q) => q.deps.length - p.deps.length);
+  if (!gruppi.length) return { voce: P.esc(`Non risultano corse ${ric.linea ? `della linea ${P.lineaParlata(ric.linea)} ` : ''}${tratta} ${quando}, secondo gli orari programmati.`), scheda, ctx, fine: false, vuoto: true };
+  const frase = (x, primo) => {
+    const lin = `${x.type === 0 ? 'il tram' : 'la linea'} ${P.lineaParlata(x.line)}${dest ? '' : ` per ${x.capo}`}`;
+    const prox = `${x.deps.length > 1 ? 'La prossima' : 'L\'unica'} è ${P.oraParlata(T.hhmmDa(x.deps[0]))}`;
+    if (x.deps.length < 2) return `${lin} ha una sola corsa, ${P.oraParlata(T.hhmmDa(x.deps[0]))}`;
+    const gaps = x.deps.slice(1).map((d, i) => Math.round((d - x.deps[i]) / 60)).filter(m => m > 0).sort((p, q) => p - q);
+    const med = gaps[Math.floor(gaps.length / 2)], min = gaps[0], max = gaps[gaps.length - 1];
+    const ogni = m => (m >= 55 && m <= 65 ? 'circa ogni ora' : m === 1 ? 'ogni minuto' : `ogni ${P.minutiParlati(m)}`);
+    const quanto = max - min <= 2 ? ogni(med) : gaps.length < 3 ? `a intervalli irregolari, da ${P.parole(min)} a ${P.minutiParlati(max)}` : `di solito ${ogni(med)}, con intervalli da ${P.parole(min)} a ${P.minutiParlati(max)}`;
+    void prox;
+    return `${lin} passa ${quanto}`;
+  };
+  const mostra = gruppi.slice(0, ric.linea || dest ? 2 : 3);
+  let v = `${P.maiuscola(quando)}, ${tratta}: ${mostra.map((x, i) => frase(x, i === 0)).join('; ')}.`;
+  if (!ric.linea && !dest && !mz) v = `${P.maiuscola(quando)}, ${tratta}, le linee più frequenti: ${mostra.map((x, i) => frase(x, false)).join('; ')}.`;
+  const prossima = Math.min(...mostra.map(x => x.deps[0]));
+  if ((!w || w.secs === ds.secs) && mostra.some(x => x.deps.length > 1)) v += ` La prossima corsa è ${P.oraParlata(T.hhmmDa(prossima))}.`;
+  v += ' Secondo gli orari programmati.';
+  void chi;
+  scheda.righe = mostra.map(x => ({ badge: String(x.line), colore: U.colore((L.infoLinea(C.routes, x.line)[0] || {}).color), testo: dest ? P.senzaTag(dest.nome) : x.capo, dett: `${x.deps.length} corse`, ora: T.hhmmDa(x.deps[0]), attesa: '', stato: 'prog' }));
+  return { voce: P.esc(v.replace(/\s{2,}/g, ' ')), scheda, ctx: { ...ctx, ymd }, fine: false };
 }
 
 // ---- LINEE DI UNA FERMATA (orari di oggi) ----
@@ -371,4 +421,4 @@ async function linee(C, ric) {
   return { voce: P.esc(v), scheda: { titolo: g.parlato, sottotitolo: 'Linee di oggi', righe: nomi.slice(0, 12).map(n => ({ badge: String(n), colore: U.colore((L.infoLinea(C.routes, n)[0] || {}).color), testo: '', dett: '', ora: '', attesa: '', stato: 'prog' })), nota: '', fonte: 'Orari ACTV · servizio indipendente, non ufficiale' }, ctx: { tipo: 'linee' }, fine: false };
 }
 
-module.exports = { partenze, ritardo, estremo, linee, frasePartenza, descriviStato, vaVerso, avvisiFermate, fermataEsatta, destinazione, mezzoInfo, MEZZI, tipoRiga };
+module.exports = { partenze, ritardo, estremo, frequenza, linee, frasePartenza, descriviStato, vaVerso, avvisiFermate, fermataEsatta, destinazione, mezzoInfo, MEZZI, tipoRiga };

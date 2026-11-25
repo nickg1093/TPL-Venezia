@@ -132,8 +132,11 @@ function crea(stops, routes = {}) {
 const PAROLE_NUM = (() => { const m = new Map(); for (let i = 0; i <= 99; i++) m.set(P.parole(i), String(i)); m.set('un', '1'); m.set('uno', '1'); return m; })();
 const LETTERE_PAROLE = { enne: 'N', notturno: 'N', ti: 'T', tram: 'T', elle: 'L', effe: 'F', acca: 'H', esse: 'S', erre: 'R', emme: 'M', di: 'D', pi: 'P', bi: 'B', ci: 'C', gi: 'G', vu: 'V', zeta: 'Z' };
 // «quattro punto uno» -> «4.1»; «t uno» -> «T1»; «cinque e due» -> «5.2»; «dodici e» -> «12E»; «2 barrato» -> «2/»; «enne» -> «N»
+const INGLESE = { one: 'uno', two: 'due', three: 'tre', four: 'quattro', five: 'cinque', six: 'sei', seven: 'sette', eight: 'otto', nine: 'nove', ten: 'dieci' };
 function parseLinea(testo) {
-  let t = senzaAccenti(testo).toLowerCase().replace(/[’']/g, ' ').replace(/\b(linea|il|lo|la|numero|n\.|autobus|bus|vaporetto|battello|tram)\b/g, ' ').replace(/\s+/g, ' ').trim();
+  // trascrizioni del riconoscimento vocale: «t. one», «t. un», «cinque.due», «ti 1»
+  let t = senzaAccenti(String(testo ?? '')).toLowerCase().replace(/\b([a-z])\.(?=\s|$)/g, '$1 ').replace(/([a-z])\.([a-z])/g, '$1 punto $2')
+    .replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\b/g, m => INGLESE[m]).replace(/[’']/g, ' ').replace(/\b(linea|il|lo|la|numero|n\.|autobus|bus|vaporetto|battello|tram)\b/g, ' ').replace(/\s+/g, ' ').trim();
   if (!t) return null;
   const tok = t.split(/[\s]+/).map(x => PAROLE_NUM.has(x) ? PAROLE_NUM.get(x) : x);
   let s = tok.join(' ').replace(/\s*(punto|virgola)\s*/g, '.').replace(/(\d)\s+e\s+(\d)/g, '$1.$2').replace(/\s*barrato\s*/g, '/');
@@ -151,4 +154,12 @@ function infoLinea(routes, nome) {
   return out;
 }
 
-module.exports = { crea, normalizza, parseLinea, lineaBase, stessaLinea, infoLinea, metri, simil, LUOGHI_SPECIALI, senzaAccenti };
+// varianti di una linea detta da cercare tra le linee esistenti: «tram uno» = T1, «uno» = 1
+function candidatiLinea(testo) {
+  const base = parseLinea(testo); if (!base) return [];
+  const out = [base];
+  if (/\btram\b|\btranvia\b/i.test(String(testo)) && /^\d$/.test(base)) out.unshift('T' + base);
+  if (/^T\.?\d$/.test(base)) out.push(base.replace('.', ''));
+  return [...new Set(out)];
+}
+module.exports = { crea, normalizza, parseLinea, candidatiLinea, lineaBase, stessaLinea, infoLinea, metri, simil, LUOGHI_SPECIALI, senzaAccenti };
