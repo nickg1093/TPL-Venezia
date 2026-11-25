@@ -51,6 +51,8 @@ Aggiornato il **25/11/2026**. Versione pubblicata (prima revisione): su `main` e
 20. **Nomi parziali e slot fusi**: la skill sceglie tra i valori proposti da Alexa con mezzo/linea e orari di oggi, divide «X per Y» in due
     luoghi noti, prende la linea anche dallo slot del mezzo; se resta ambiguo chiede quale fermata.
 21. **Arrivo entro**: prima le soluzioni senza cambi a rischio, poi quelle con più margine per il cambio.
+22. **Meteo**: la skill legge `/api/meteo` (cache del server, mai rete durante la risposta). Sintesi generiche dalle stazioni lagunari; aeroporto
+    solo se chiesto o se manca la laguna, sempre nominato; confronti tra misure fresche entro 15 minuti; raffica = massimo del periodo di misura.
 
 ## 3. Misure (server locale con GTFS veri e feed simulato, Linux)
 

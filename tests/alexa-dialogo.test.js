@@ -307,7 +307,7 @@ test('server occupato o sovraccarico → frase onesta, richiesta conservata; aiu
 test('apertura «Ciao! Cosa vuoi sapere?»; aiuto breve e per categoria; presentazione; tutti i comandi', async () => {
   const amb = F.ambiente({}), d = dire(amb);
   assert.equal((await d(null, {}, { tipo: 'LaunchRequest' })).testo, 'Ciao! Cosa vuoi sapere?');
-  assert.equal((await d('AMAZON.HelpIntent')).testo, 'Puoi chiedermi partenze, percorsi, marea o avvisi. Su cosa vuoi una mano?');
+  assert.equal((await d('AMAZON.HelpIntent')).testo, 'Puoi chiedermi partenze, percorsi, marea, meteo o avvisi. Su cosa vuoi una mano?');
   for (const [cat, re] of [['partenze', /quando passa il due alle Zattere/], ['percorsi', /come arrivo a Rialto da Piazzale Roma/], ['marea', /prossimo colmo, il MOSE/], ['avvisi', /scioperi domani/], ['riepilogo', /routine/]]) {
     const r = await d('AiutoIntent', { categoria: { value: cat, resolutions: { resolutionsPerAuthority: [{ status: { code: 'ER_SUCCESS_MATCH' }, values: [{ value: { id: cat, name: cat } }] }] } } });
     assert.match(r.testo, re, cat); assert.equal(r.fine, false);

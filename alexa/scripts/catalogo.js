@@ -71,6 +71,25 @@ const SCENARI = [
   ['Percorsi', 'Arrivo entro un orario', [['ItinerarioEntroIntent', { partenza: 'Zattere', arrivo: 'San Marco', ora: '09:00' }]], { percorso: F.percorso([{ ...F.soluzione(), margine: 12 }]) }],
   ['Percorsi', 'Destinazione mancante', [['ItinerarioIntent', { partenza: 'Zattere' }]]],
   ['Percorsi', 'Nessuna soluzione', [['ItinerarioIntent', { partenza: 'Zattere', arrivo: 'San Marco' }]], { percorso: F.percorso([]) }],
+  ['Meteo', '«Com\'è la visibilità in laguna?» (con nebbia in una stazione)', [['MeteoIntent', { grandezza: 'visibilità', stazione: 'laguna' }]]],
+  ['Meteo', '«C\'è nebbia a San Servolo?»', [['MeteoIntent', { grandezza: 'nebbia', stazione: 'San Servolo' }]]],
+  ['Meteo', '«Quanti metri di visibilità ci sono a Sant\'Andrea?»', [['MeteoIntent', { grandezza: 'visibilità', stazione: 'Sant\'Andrea' }]]],
+  ['Meteo', 'Visibilità senza visibilimetri recenti (solo aeroporto)', [['MeteoIntent', { grandezza: 'visibilità' }]], { meteo: { spente: ['veporto'], metar: 'METAR LIPZ 250650Z 02009KT CAVOK 09/08 Q1011' } }],
+  ['Meteo', '«Quanto vento c\'è a Venezia?»', [['MeteoIntent', { grandezza: 'vento', stazione: 'Venezia' }]]],
+  ['Meteo', '«Da dove soffia il vento?»', [['MeteoDirezioneIntent']]],
+  ['Meteo', '«A quanto arrivano le raffiche?»', [['MeteoIntent', { grandezza: 'raffiche' }]]],
+  ['Meteo', '«Dove soffia più forte?»', [['MeteoConfrontoIntent']]],
+  ['Meteo', '«Quanto vento c\'è a San Giorgio?» → «E le raffiche?» → «E a Marittima?»', [['MeteoIntent', { grandezza: 'vento', stazione: 'San Giorgio' }], ['MeteoSeguitoIntent', { grandezza: 'raffiche' }], ['CorrezioneIntent', { luogo: 'Marittima' }]]],
+  ['Meteo', 'Calma di vento', [['MeteoIntent', { grandezza: 'vento', stazione: 'Marittima' }]], { meteo: { vento: [['1047', '0 gradi, 0 m/s, 0.2 m/s']] } }],
+  ['Meteo', 'Misura vecchia', [['MeteoIntent', { grandezza: 'vento', stazione: 'Sant\'Andrea' }]], { meteo: { vento: [['1049', '50 gradi, 6 m/s, 8 m/s', 40]] } }],
+  ['Meteo', '«Che temperatura c\'è fuori?»', [['MeteoIntent', { grandezza: 'temperatura' }]]],
+  ['Meteo', '«Quanto è calda l\'acqua della laguna?»', [['MeteoIntent', { grandezza: 'acqua' }]]],
+  ['Meteo', '«Qual è l\'umidità?»', [['MeteoIntent', { grandezza: 'umidità' }]]],
+  ['Meteo', '«Com\'è la pressione atmosferica?»', [['MeteoIntent', { grandezza: 'pressione' }]]],
+  ['Meteo', '«Che tempo fa all\'aeroporto Marco Polo?»', [['MeteoIntent', { stazione: 'aeroporto' }]]],
+  ['Meteo', '«Quali sono le condizioni meteo in laguna?»', [['MeteoIntent', { grandezza: 'meteo', stazione: 'laguna' }]]],
+  ['Meteo', '«Qual è il dato più recente?»', [['MeteoRecenteIntent']]],
+  ['Meteo', 'Nessuna misura disponibile', [['MeteoIntent', { grandezza: 'vento' }]], { meteo: { spente: ['cpsm-vento', 'cpsm-temparia', 'cpsm-tempacqua', 'cpsm-umidita', 'cpsm-pressione', 'veporto', 'metar'] } }],
   ['Marea', 'Livello e prossimo colmo', [['MareaIntent']]],
   ['Marea', 'Prossimo colmo', [['ColmoIntent']]],
   ['Marea', 'Prossimo minimo', [['MinimoIntent']]],
@@ -94,6 +113,7 @@ async function genera() {
     if (o.zone) sc['/api/zone'] = F.zona(o.zone);
     if (o.percorso) sc['/api/percorso'] = o.percorso;
     if (o.avvisi) sc['/api/avvisi'] = { updated: F.ADESSO, items: o.avvisi };
+    sc['/api/meteo'] = await F.meteo(o.meteo || {}, { adesso: o.adesso || F.ADESSO });
     if (o.zoneErr) sc['/api/zone'] = () => Object.assign(new Error('x'), { code: o.zoneErr });
     const adesso = o.adesso || F.ADESSO;
     const amb = F.ambiente(sc, { gtfs: gt, adesso, occupato: !!o.occupato, errDiretti: o.err409 ? Object.assign(new Error('carico'), { code: 409 }) : null });

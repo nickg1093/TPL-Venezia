@@ -3,6 +3,18 @@
 Riepilogo per versione delle modifiche che contano per chi usa o mantiene l'app. I dettagli tecnici sono in `README.md` §12; lo storico per
 gli utenti è nell'app (Informazioni → Novità, generato da `public/js/guida.js`).
 
+## Meteo dal sistema di Intranet-BIS, API e skill Alexa — 25/11/2026 (non pubblicato)
+- **Server** (`meteo.js`, `meteo-parse.js`): acquisizione continua e indipendente per feed di Centro Maree (vento, pressione, temperatura aria e
+  acqua, umidità; UTC+1 fisso), vePORTO (visibilità San Servolo, Marittima, Sant'Andrea; con `VEPORTO_ENABLED=true`) e METAR LIPZ (visibilità,
+  vento, raffiche, temperatura, rugiada, QNH, umidità derivata, fenomeni, nubi). Polling adattivo con ETag/Last-Modified, timeout, attesa
+  crescente sugli errori, nessuna richiesta sovrapposta; ogni sensore si aggiorna appena cambia il suo orario. Solo l'ultima misura in RAM:
+  niente storico, disco, grafici, mappa o notifiche; la PWA non cambia.
+- **API**: `/api/meteo` e `/api/meteo/{visibilita,vento,temparia,tempacqua,umidita,pressione,metar}` (filtri `stazione`, `fonte`), con valore,
+  unità, direzione in gradi e per esteso su 16 settori, ora di misura e di acquisizione, anzianità, freschezza; `/api/meteo/diagnosi` riservata.
+- **Alexa**: visibilità e nebbia, vento, raffiche, direzione, stazione più ventosa, temperatura dell'aria e dell'acqua, umidità, pressione,
+  aeroporto Marco Polo, condizioni generali, dato più recente; seguiti («e le raffiche?», «e a Marittima?»); nel riepilogo solo nebbia o vento
+  forte. Modello: 50 intenti, 908 esempi.
+
 ## Skill Alexa — revisione 3: collaudo e linguaggio naturale — 25/11/2026 (non pubblicata)
 - **Frequenza** («ogni quanto passa il T1?», «ogni quanti minuti passa il tram a San Marco Cattaneo?»): nuovo `FrequenzaIntent`, intervalli
   reali degli orari programmati per linea e capolinea, anche come seguito e per domani mattina.

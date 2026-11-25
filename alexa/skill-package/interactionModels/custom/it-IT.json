@@ -779,6 +779,258 @@
           ]
         },
         {
+          "name": "MeteoIntent",
+          "slots": [
+            {
+              "name": "grandezza",
+              "type": "METEO_GRANDEZZA"
+            },
+            {
+              "name": "stazione",
+              "type": "METEO_STAZIONE"
+            }
+          ],
+          "samples": [
+            "com'è la {grandezza}",
+            "come è la {grandezza}",
+            "qual è la {grandezza}",
+            "qual è il {grandezza}",
+            "qual è l'{grandezza}",
+            "quanta {grandezza} c'è",
+            "quanto {grandezza} c'è",
+            "c'è {grandezza}",
+            "c'è la {grandezza}",
+            "c'è il {grandezza}",
+            "che {grandezza} c'è",
+            "che {grandezza} fa",
+            "dimmi la {grandezza}",
+            "dimmi il {grandezza}",
+            "dimmi l'{grandezza}",
+            "quali sono le {grandezza}",
+            "com'è l'{grandezza}",
+            "quanti metri di {grandezza} ci sono",
+            "a quanto arrivano le {grandezza}",
+            "quanto sono forti le {grandezza}",
+            "quanto è calda l'{grandezza}",
+            "quanto è fredda l'{grandezza}",
+            "a che temperatura è l'{grandezza}",
+            "c'è molto {grandezza}",
+            "c'è molta {grandezza}",
+            "tira {grandezza}",
+            "{grandezza} adesso",
+            "com'è la {grandezza} a {stazione}",
+            "com'è la {grandezza} in {stazione}",
+            "com'è la {grandezza} alla {stazione}",
+            "com'è la {grandezza} all'{stazione}",
+            "come è la {grandezza} a {stazione}",
+            "come è la {grandezza} in {stazione}",
+            "come è la {grandezza} alla {stazione}",
+            "come è la {grandezza} all'{stazione}",
+            "qual è la {grandezza} a {stazione}",
+            "qual è la {grandezza} in {stazione}",
+            "qual è la {grandezza} alla {stazione}",
+            "qual è la {grandezza} all'{stazione}",
+            "qual è il {grandezza} a {stazione}",
+            "qual è il {grandezza} in {stazione}",
+            "qual è il {grandezza} alla {stazione}",
+            "qual è il {grandezza} all'{stazione}",
+            "qual è l'{grandezza} a {stazione}",
+            "qual è l'{grandezza} in {stazione}",
+            "qual è l'{grandezza} alla {stazione}",
+            "qual è l'{grandezza} all'{stazione}",
+            "quanta {grandezza} c'è a {stazione}",
+            "quanta {grandezza} c'è in {stazione}",
+            "quanta {grandezza} c'è alla {stazione}",
+            "quanta {grandezza} c'è all'{stazione}",
+            "quanto {grandezza} c'è a {stazione}",
+            "quanto {grandezza} c'è in {stazione}",
+            "quanto {grandezza} c'è alla {stazione}",
+            "quanto {grandezza} c'è all'{stazione}",
+            "c'è {grandezza} a {stazione}",
+            "c'è {grandezza} in {stazione}",
+            "c'è {grandezza} alla {stazione}",
+            "c'è {grandezza} all'{stazione}",
+            "c'è la {grandezza} a {stazione}",
+            "c'è la {grandezza} in {stazione}",
+            "c'è la {grandezza} alla {stazione}",
+            "c'è la {grandezza} all'{stazione}",
+            "c'è il {grandezza} a {stazione}",
+            "c'è il {grandezza} in {stazione}",
+            "c'è il {grandezza} alla {stazione}",
+            "c'è il {grandezza} all'{stazione}",
+            "che {grandezza} c'è a {stazione}",
+            "che {grandezza} c'è in {stazione}",
+            "che {grandezza} c'è alla {stazione}",
+            "che {grandezza} c'è all'{stazione}",
+            "che {grandezza} fa a {stazione}",
+            "che {grandezza} fa in {stazione}",
+            "che {grandezza} fa alla {stazione}",
+            "che {grandezza} fa all'{stazione}",
+            "dimmi la {grandezza} a {stazione}",
+            "dimmi la {grandezza} in {stazione}",
+            "dimmi la {grandezza} alla {stazione}",
+            "dimmi la {grandezza} all'{stazione}",
+            "dimmi il {grandezza} a {stazione}",
+            "dimmi il {grandezza} in {stazione}",
+            "dimmi il {grandezza} alla {stazione}",
+            "dimmi il {grandezza} all'{stazione}",
+            "dimmi l'{grandezza} a {stazione}",
+            "dimmi l'{grandezza} in {stazione}",
+            "dimmi l'{grandezza} alla {stazione}",
+            "dimmi l'{grandezza} all'{stazione}",
+            "quali sono le {grandezza} a {stazione}",
+            "quali sono le {grandezza} in {stazione}",
+            "quali sono le {grandezza} alla {stazione}",
+            "quali sono le {grandezza} all'{stazione}",
+            "com'è l'{grandezza} a {stazione}",
+            "com'è l'{grandezza} in {stazione}",
+            "com'è l'{grandezza} alla {stazione}",
+            "com'è l'{grandezza} all'{stazione}",
+            "quanti metri di {grandezza} ci sono a {stazione}",
+            "quanti metri di {grandezza} ci sono in {stazione}",
+            "quanti metri di {grandezza} ci sono alla {stazione}",
+            "quanti metri di {grandezza} ci sono all'{stazione}",
+            "a quanto arrivano le {grandezza} a {stazione}",
+            "a quanto arrivano le {grandezza} in {stazione}",
+            "a quanto arrivano le {grandezza} alla {stazione}",
+            "a quanto arrivano le {grandezza} all'{stazione}",
+            "quanto sono forti le {grandezza} a {stazione}",
+            "quanto sono forti le {grandezza} in {stazione}",
+            "quanto sono forti le {grandezza} alla {stazione}",
+            "quanto sono forti le {grandezza} all'{stazione}",
+            "quanto è calda l'{grandezza} a {stazione}",
+            "quanto è calda l'{grandezza} in {stazione}",
+            "quanto è calda l'{grandezza} alla {stazione}",
+            "quanto è calda l'{grandezza} all'{stazione}",
+            "quanto è fredda l'{grandezza} a {stazione}",
+            "quanto è fredda l'{grandezza} in {stazione}",
+            "quanto è fredda l'{grandezza} alla {stazione}",
+            "quanto è fredda l'{grandezza} all'{stazione}",
+            "che tempo fa",
+            "che tempo fa {stazione}",
+            "che tempo fa a {stazione}",
+            "che tempo fa in {stazione}",
+            "che tempo fa alla {stazione}",
+            "che tempo fa all'{stazione}",
+            "che tempo fa al {stazione}",
+            "che tempo fa sulla {stazione}",
+            "che tempo fa verso {stazione}",
+            "com'è il tempo a {stazione}",
+            "com'è il tempo in {stazione}",
+            "com'è il tempo alla {stazione}",
+            "com'è il tempo all'{stazione}",
+            "meteo {stazione}",
+            "meteo a {stazione}",
+            "che {grandezza} c'è fuori",
+            "quanti gradi ci sono",
+            "quanti gradi ci sono a {stazione}",
+            "fa freddo fuori",
+            "fa caldo fuori",
+            "quanto fa fuori",
+            "si vede bene in laguna",
+            "si vede qualcosa a {stazione}",
+            "è nebbioso a {stazione}",
+            "{grandezza} a {stazione}",
+            "la {grandezza} a {stazione}",
+            "il {grandezza} a {stazione}",
+            "l'{grandezza} a {stazione}"
+          ]
+        },
+        {
+          "name": "MeteoSeguitoIntent",
+          "slots": [
+            {
+              "name": "grandezza",
+              "type": "METEO_GRANDEZZA"
+            },
+            {
+              "name": "stazione",
+              "type": "METEO_STAZIONE"
+            }
+          ],
+          "samples": [
+            "e le {grandezza}",
+            "e la {grandezza}",
+            "e il {grandezza}",
+            "e l'{grandezza}",
+            "e quanto {grandezza}",
+            "e com'è la {grandezza}",
+            "e a {stazione}",
+            "e alla {stazione}",
+            "e all'{stazione}",
+            "e le {grandezza} a {stazione}",
+            "e le {grandezza} in {stazione}",
+            "e le {grandezza} alla {stazione}",
+            "e le {grandezza} all'{stazione}",
+            "e il {grandezza} a {stazione}",
+            "e il {grandezza} in {stazione}",
+            "e il {grandezza} alla {stazione}",
+            "e il {grandezza} all'{stazione}",
+            "e invece a {stazione}"
+          ]
+        },
+        {
+          "name": "MeteoDirezioneIntent",
+          "slots": [
+            {
+              "name": "stazione",
+              "type": "METEO_STAZIONE"
+            }
+          ],
+          "samples": [
+            "da dove soffia il vento",
+            "da dove tira il vento",
+            "da dove viene il vento",
+            "da che parte soffia il vento",
+            "che direzione ha il vento",
+            "in che direzione soffia il vento",
+            "qual è la direzione del vento",
+            "da dove arriva il vento",
+            "da dove soffia il vento a {stazione}",
+            "da dove soffia il vento in {stazione}",
+            "da dove soffia il vento alla {stazione}",
+            "da dove soffia il vento all'{stazione}",
+            "qual è la direzione del vento a {stazione}",
+            "qual è la direzione del vento in {stazione}"
+          ]
+        },
+        {
+          "name": "MeteoConfrontoIntent",
+          "slots": [
+            {
+              "name": "grandezza",
+              "type": "METEO_GRANDEZZA"
+            }
+          ],
+          "samples": [
+            "dove soffia più forte",
+            "dove soffia più forte il vento",
+            "dove c'è più vento",
+            "dove tira più vento",
+            "in quale stazione c'è più vento",
+            "dove è più forte il vento",
+            "dove sono più forti le {grandezza}",
+            "dove c'è più {grandezza}",
+            "dove fa più {grandezza}",
+            "dove c'è meno {grandezza}",
+            "dove è peggiore la {grandezza}",
+            "qual è la stazione più ventosa",
+            "dove si vede peggio"
+          ]
+        },
+        {
+          "name": "MeteoRecenteIntent",
+          "samples": [
+            "qual è il dato più recente",
+            "qual è la misura più recente",
+            "il dato più recente",
+            "l'ultimo dato meteo",
+            "qual è il dato più aggiornato",
+            "ultima misura meteo",
+            "qual è l'ultima rilevazione"
+          ]
+        },
+        {
           "name": "MareaIntent",
           "samples": [
             "com'è la marea",
@@ -11929,6 +12181,255 @@
           ]
         },
         {
+          "name": "METEO_GRANDEZZA",
+          "values": [
+            {
+              "id": "meteo",
+              "name": {
+                "value": "meteo",
+                "synonyms": [
+                  "tempo",
+                  "condizioni meteo",
+                  "condizioni",
+                  "condizioni del tempo",
+                  "situazione meteo",
+                  "meteo attuale",
+                  "tempo che fa"
+                ]
+              }
+            },
+            {
+              "id": "visibilita",
+              "name": {
+                "value": "visibilità",
+                "synonyms": [
+                  "visibilita",
+                  "la visibilità",
+                  "quanto si vede"
+                ]
+              }
+            },
+            {
+              "id": "nebbia",
+              "name": {
+                "value": "nebbia",
+                "synonyms": [
+                  "foschia",
+                  "nebbione",
+                  "caligine",
+                  "banchi di nebbia"
+                ]
+              }
+            },
+            {
+              "id": "vento",
+              "name": {
+                "value": "vento",
+                "synonyms": [
+                  "venti",
+                  "vento forte",
+                  "aria"
+                ]
+              }
+            },
+            {
+              "id": "raffica",
+              "name": {
+                "value": "raffiche",
+                "synonyms": [
+                  "raffica",
+                  "folate",
+                  "raffiche di vento",
+                  "le raffiche"
+                ]
+              }
+            },
+            {
+              "id": "direzione",
+              "name": {
+                "value": "direzione del vento",
+                "synonyms": [
+                  "direzione",
+                  "provenienza del vento"
+                ]
+              }
+            },
+            {
+              "id": "temparia",
+              "name": {
+                "value": "temperatura",
+                "synonyms": [
+                  "temperatura dell'aria",
+                  "gradi",
+                  "temperatura esterna"
+                ]
+              }
+            },
+            {
+              "id": "freddo",
+              "name": {
+                "value": "freddo",
+                "synonyms": []
+              }
+            },
+            {
+              "id": "caldo",
+              "name": {
+                "value": "caldo",
+                "synonyms": []
+              }
+            },
+            {
+              "id": "tempacqua",
+              "name": {
+                "value": "acqua",
+                "synonyms": [
+                  "acqua della laguna",
+                  "temperatura dell'acqua",
+                  "temperatura del mare",
+                  "laguna",
+                  "mare"
+                ]
+              }
+            },
+            {
+              "id": "umidita",
+              "name": {
+                "value": "umidità",
+                "synonyms": [
+                  "umidita",
+                  "umidità relativa",
+                  "umido"
+                ]
+              }
+            },
+            {
+              "id": "pressione",
+              "name": {
+                "value": "pressione",
+                "synonyms": [
+                  "pressione atmosferica",
+                  "barometro",
+                  "pressione dell'aria"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "METEO_STAZIONE",
+          "values": [
+            {
+              "id": "san_servolo",
+              "name": {
+                "value": "San Servolo",
+                "synonyms": [
+                  "isola di San Servolo"
+                ]
+              }
+            },
+            {
+              "id": "marittima",
+              "name": {
+                "value": "Marittima",
+                "synonyms": [
+                  "stazione marittima",
+                  "porto",
+                  "la Marittima"
+                ]
+              }
+            },
+            {
+              "id": "santandrea",
+              "name": {
+                "value": "Sant'Andrea",
+                "synonyms": [
+                  "forte Sant'Andrea",
+                  "bocca di porto del Lido"
+                ]
+              }
+            },
+            {
+              "id": "san_giorgio",
+              "name": {
+                "value": "San Giorgio",
+                "synonyms": [
+                  "isola di San Giorgio",
+                  "San Giorgio Maggiore"
+                ]
+              }
+            },
+            {
+              "id": "misericordia",
+              "name": {
+                "value": "Misericordia",
+                "synonyms": [
+                  "sacca della Misericordia",
+                  "Cannaregio"
+                ]
+              }
+            },
+            {
+              "id": "palazzo_cavalli",
+              "name": {
+                "value": "Palazzo Cavalli",
+                "synonyms": [
+                  "Rialto",
+                  "centro storico",
+                  "Ca' Farsetti"
+                ]
+              }
+            },
+            {
+              "id": "punta_salute",
+              "name": {
+                "value": "Punta della Salute",
+                "synonyms": [
+                  "Salute",
+                  "Punta Salute",
+                  "Dogana"
+                ]
+              }
+            },
+            {
+              "id": "piattaforma",
+              "name": {
+                "value": "piattaforma Acqua Alta",
+                "synonyms": [
+                  "piattaforma",
+                  "piattaforma oceanografica"
+                ]
+              }
+            },
+            {
+              "id": "aeroporto",
+              "name": {
+                "value": "aeroporto",
+                "synonyms": [
+                  "aeroporto Marco Polo",
+                  "Marco Polo",
+                  "Tessera",
+                  "aeroporto di Venezia",
+                  "aeroporto di Tessera"
+                ]
+              }
+            },
+            {
+              "id": "laguna",
+              "name": {
+                "value": "laguna",
+                "synonyms": [
+                  "Venezia",
+                  "in laguna",
+                  "la laguna",
+                  "città",
+                  "fuori"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "CATEGORIA",
           "values": [
             {
@@ -11943,6 +12444,19 @@
                   "vaporetti",
                   "autobus",
                   "ultima corsa"
+                ]
+              }
+            },
+            {
+              "id": "meteo",
+              "name": {
+                "value": "meteo",
+                "synonyms": [
+                  "tempo",
+                  "vento",
+                  "visibilità",
+                  "nebbia",
+                  "temperatura"
                 ]
               }
             },

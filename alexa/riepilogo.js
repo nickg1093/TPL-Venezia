@@ -6,6 +6,7 @@ const U = require('./util');
 const S = require('./servizio');
 const M = require('./marea');
 const D = require('./partenze');
+const MT = require('./meteo');
 
 async function riepilogo(C, ric = {}) {
   const adesso = C.adesso(), parti = [], righe = [];
@@ -18,6 +19,9 @@ async function riepilogo(C, ric = {}) {
   // 2) marea
   try { const m = await M.sintesi(C); parti.push(m.voce); righe.push(m.riga); }
   catch (e) { parti.push(P.esc('Non riesco a leggere la marea in questo momento.')); }
+  // 2b) meteo, solo se rilevante (nebbia, vento forte): una frase
+  const mt = await MT.notevole(C).catch(() => null);
+  if (mt) { parti.push(mt.voce); righe.push(mt.riga); }
   // 3) avvisi di servizio
   const av = await S.avvisi(C, { breve: true });
   if (av.vuoto) { parti.push(P.esc('Non risultano avvisi di servizio, nei dati disponibili.')); righe.push({ badge: 'OK', colore: '#2E7D6B', testo: 'Nessun avviso di servizio', dett: '', ora: '', attesa: '', stato: 'ok' }); }

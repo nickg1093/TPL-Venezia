@@ -149,6 +149,7 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
   - viaggio guidato e riattivazione delle notifiche su un iPhone vero.
 
 ### Ultime versioni (dettagli in README §12)
+- **Meteo (25/11/2026, non pubblicato)**: `meteo.js`/`meteo-parse.js` portati da Intranet-BIS; cicli indipendenti per feed, ultima misura per sensore in RAM, API `/api/meteo*`, skill Alexa (intenti `Meteo*`). Nessuna modifica alla PWA. vePORTO solo con `VEPORTO_ENABLED=true`.
 - **v33.10 (pubblicazione online preparata il 21/11/2026: acqua alta, passerelle e rilievo RAMSES vanno online insieme al resto della v33)**: tavole dell'Atlante georeferenziate (32 tracciati), San Marco 2023, crediti 5 s, marea e avvisi salvati per l'uso senza rete. Vedi `PASSAGGIO_CONSEGNE.md`.
 - **v33.9**: donazioni tolte; Instagram (profilo dello sviluppatore) in alto nelle Informazioni, segnalazioni solo via email; crediti della mappa sempre visibili.
 - **v33.8**: tessere del rilievo a richiesta, pubblicabili con la fonte Insula; archivio originale fuori da GitHub.

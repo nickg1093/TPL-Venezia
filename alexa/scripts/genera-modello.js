@@ -99,6 +99,7 @@ const FR = {
   RitornoIntent: ['e al ritorno', 'il ritorno', 'e per il ritorno', 'percorso di ritorno', 'e per tornare', 'e per ritornare', 'come torno', 'e il ritorno', 'e per il viaggio di ritorno'],
   DomaniIntent: [
     'e domani mattina alle {ora}', 'e domattina', 'e domattina alle {ora}', 'e stasera', 'e stasera alle {ora}', 'e alle {ora} di sera', 'e alle {ora} di mattina', 'e {data} mattina', 'e {data} sera','e domani', 'e per domani', 'e dopodomani', 'e {data}', 'e domani {ora}', 'e {data} alle {ora}', 'e alle {ora}', 'vale anche domani', 'e domani mattina', 'e domani sera', 'e per {data}', 'e per {data} alle {ora}'],
+  MeteoIntent: null, MeteoSeguitoIntent: null, MeteoDirezioneIntent: null, MeteoConfrontoIntent: null, MeteoRecenteIntent: null,
   MareaIntent: ['com\'è la marea', 'come è la marea', 'a quanto è la marea', 'livello della marea', 'a che livello è la marea', 'quanto è alta la marea', 'marea', 'la marea', 'marea a venezia', 'com\'è la marea adesso', 'che marea c\'è', 'la marea sta salendo', 'sta salendo o scendendo la marea', 'quanto è la marea', 'com\'è l\'acqua'],
   ColmoIntent: ['quando è il picco', 'quando è il colmo', 'prossimo colmo', 'a che ora è il picco di marea', 'quando arriva il picco', 'picco di marea', 'quando sarà la massima', 'a che ora è la massima', 'a che ora è il colmo', 'quando c\'è il picco di marea', 'quando è il prossimo picco', 'quando è la prossima alta marea', 'a che ora arriva la marea massima'],
   AcquaAltaIntent: ['ci sarà acqua alta', 'ci sarà acqua alta {data}', 'ci sarà acqua alta {ora}', 'ci sarà acqua alta {data} {ora}', 'ci sarà acqua alta nelle prossime ore', 'ci sarà l\'acqua alta {data}', 'c\'è acqua alta', 'c\'è acqua alta oggi', 'acqua alta', 'è prevista acqua alta', 'è prevista acqua alta {data}', 'è prevista acqua alta {ora}', '{data} ci sarà acqua alta', '{data} {ora} ci sarà acqua alta', 'alta marea {data}', 'alta marea {ora}', 'prevista alta marea', 'ci sarà alta marea {data}', 'ci sarà alta marea {ora}', 'c\'è acqua alta {data}', 'sale l\'acqua alta {data}'],
@@ -146,6 +147,10 @@ const SLOT = {
   ScioperoIntent: { linea: 'LINEA', mezzo: 'MEZZO', data: 'AMAZON.DATE' },
   RiepilogoIntent: { momento: 'MOMENTO', luogo: 'FERMATA', mezzo: 'MEZZO', direzione: 'FERMATA' },
   AiutoIntent: { categoria: 'CATEGORIA' },
+  MeteoIntent: { grandezza: 'METEO_GRANDEZZA', stazione: 'METEO_STAZIONE' },
+  MeteoSeguitoIntent: { grandezza: 'METEO_GRANDEZZA', stazione: 'METEO_STAZIONE' },
+  MeteoDirezioneIntent: { stazione: 'METEO_STAZIONE' },
+  MeteoConfrontoIntent: { grandezza: 'METEO_GRANDEZZA' },
   NonSupportatoIntent: { linea: 'LINEA', luogo: 'FERMATA' },
   CorrezioneIntent: { direzione: 'FERMATA', luogo: 'FERMATA', mezzo: 'MEZZO', linea: 'LINEA' },
   LuogoIntent: { luogo: 'FERMATA' },
@@ -155,6 +160,27 @@ const SLOT = {
 // T1, T2: come le trascrive il riconoscimento vocale («ti uno», «t. one», «tram uno»)
 const INGL = ['zero', 'one', 'two', 'three'];
 const tramVarianti = n => { const m = /^T(\d)$/i.exec(n); if (!m) return []; const d = m[1], w = P.parole(+d); return [`t ${d}`, `t ${w}`, `ti ${w}`, `ti ${d}`, `t ${INGL[+d] || d}`, `tram ${w}`, `tram ${d}`, `il tram ${w}`]; };
+// METEO: frasi costruite combinando forme e preposizioni (non una per esempio): la grandezza e la stazione sono slot, il resto è la forma
+const PREP_ST = ['a {stazione}', 'in {stazione}', 'alla {stazione}', "all'{stazione}", 'al {stazione}', 'sulla {stazione}', 'verso {stazione}'];
+const FORME_G = ["com'è la {grandezza}", 'come è la {grandezza}', "qual è la {grandezza}", "qual è il {grandezza}", "qual è l'{grandezza}", 'quanta {grandezza} c\'è',
+  "quanto {grandezza} c'è", "c'è {grandezza}", "c'è la {grandezza}", "c'è il {grandezza}", "che {grandezza} c'è", 'che {grandezza} fa', 'dimmi la {grandezza}', 'dimmi il {grandezza}', "dimmi l'{grandezza}",
+  'quali sono le {grandezza}', 'com\'è l\'{grandezza}', 'quanti metri di {grandezza} ci sono', 'a quanto arrivano le {grandezza}', 'quanto sono forti le {grandezza}', 'quanto è calda l\'{grandezza}',
+  "quanto è fredda l'{grandezza}", "a che temperatura è l'{grandezza}", "c'è molto {grandezza}", "c'è molta {grandezza}", 'tira {grandezza}', '{grandezza} adesso'];
+const meteoFrasi = [
+  ...FORME_G, ...FORME_G.slice(0, 22).flatMap(f => PREP_ST.slice(0, 4).map(p => `${f} ${p}`)),
+  'che tempo fa', 'che tempo fa {stazione}', ...PREP_ST.map(p => `che tempo fa ${p}`), ...PREP_ST.slice(0, 4).map(p => `com'è il tempo ${p}`), 'meteo {stazione}', 'meteo a {stazione}',
+  "che {grandezza} c'è fuori", 'quanti gradi ci sono', 'quanti gradi ci sono a {stazione}', 'fa freddo fuori', 'fa caldo fuori', 'quanto fa fuori', 'si vede bene in laguna', 'si vede qualcosa a {stazione}',
+  'è nebbioso a {stazione}', '{grandezza} a {stazione}', 'la {grandezza} a {stazione}', 'il {grandezza} a {stazione}', "l'{grandezza} a {stazione}"
+];
+const meteoSeguito = ['e le {grandezza}', 'e la {grandezza}', 'e il {grandezza}', "e l'{grandezza}", 'e quanto {grandezza}', 'e com\'è la {grandezza}',
+  ...[0, 2, 3].map(i => `e ${PREP_ST[i]}`), ...PREP_ST.slice(0, 4).map(p => `e le {grandezza} ${p}`), ...PREP_ST.slice(0, 4).map(p => `e il {grandezza} ${p}`), 'e invece a {stazione}'];
+const meteoDirezione = ['da dove soffia il vento', 'da dove tira il vento', 'da dove viene il vento', 'da che parte soffia il vento', 'che direzione ha il vento', 'in che direzione soffia il vento',
+  'qual è la direzione del vento', 'da dove arriva il vento', ...PREP_ST.slice(0, 4).map(p => `da dove soffia il vento ${p}`), ...PREP_ST.slice(0, 2).map(p => `qual è la direzione del vento ${p}`)];
+const meteoConfronto = ['dove soffia più forte', 'dove soffia più forte il vento', "dove c'è più vento", 'dove tira più vento', "in quale stazione c'è più vento", 'dove è più forte il vento',
+  'dove sono più forti le {grandezza}', "dove c'è più {grandezza}", 'dove fa più {grandezza}', "dove c'è meno {grandezza}", 'dove è peggiore la {grandezza}', 'qual è la stazione più ventosa', 'dove si vede peggio'];
+const meteoRecente = ['qual è il dato più recente', 'qual è la misura più recente', 'il dato più recente', "l'ultimo dato meteo", 'qual è il dato più aggiornato', 'ultima misura meteo', "qual è l'ultima rilevazione"];
+
+Object.assign(FR, { MeteoIntent: meteoFrasi, MeteoSeguitoIntent: meteoSeguito, MeteoDirezioneIntent: meteoDirezione, MeteoConfrontoIntent: meteoConfronto, MeteoRecenteIntent: meteoRecente });
 (async () => {
   const [stops, routes] = await Promise.all([get('/api/stops'), get('/api/routes')]);
   const idx = L.crea(stops, routes);
@@ -173,7 +199,20 @@ const tramVarianti = n => { const m = /^T(\d)$/i.exec(n); if (!m) return []; con
     { name: 'FERMATA', values: unici(fermate).slice(0, MAX_VALORI) },
     { name: 'LINEA', values: unici(linee) },
     { name: 'MEZZO', values: [valore('vaporetto', 'nav', ['vaporetti', 'battello', 'battelli', 'barca', 'barche', 'motonave', 'motoscafo', 'lancia', 'acqua', 'linea d\'acqua', 'navigazione']), valore('autobus', 'bus', ['bus', 'corriera', 'corriere', 'pullman', 'filobus']), valore('tram', 'tram', ['tranvia', 'tramvia', 'il tram']), valore('mezzi su gomma', 'aut', ['autobus e tram', 'mezzi di terra', 'gomma'])] },
-    { name: 'CATEGORIA', values: [valore('partenze', 'partenze', ['orari', 'corse', 'partenza', 'orario', 'vaporetti', 'autobus', 'ultima corsa']), valore('percorsi', 'percorsi', ['percorso', 'itinerari', 'itinerario', 'viaggi', 'come arrivare']), valore('marea', 'marea', ['maree', 'acqua alta', 'mose', 'livello dell\'acqua']), valore('avvisi', 'avvisi', ['avviso', 'scioperi', 'sciopero', 'problemi', 'disservizi']), valore('riepilogo', 'riepilogo', ['riepiloghi', 'routine', 'riassunto'])] },
+    { name: 'METEO_GRANDEZZA', values: [valore('meteo', 'meteo', ['tempo', 'condizioni meteo', 'condizioni', 'condizioni del tempo', 'situazione meteo', 'meteo attuale', 'tempo che fa']),
+      valore('visibilità', 'visibilita', ['visibilita', 'la visibilità', 'quanto si vede']), valore('nebbia', 'nebbia', ['foschia', 'nebbione', 'caligine', 'banchi di nebbia']),
+      valore('vento', 'vento', ['venti', 'vento forte', 'aria']), valore('raffiche', 'raffica', ['raffica', 'folate', 'raffiche di vento', 'le raffiche']),
+      valore('direzione del vento', 'direzione', ['direzione', 'provenienza del vento']), valore('temperatura', 'temparia', ['temperatura dell\'aria', 'gradi', 'temperatura esterna']),
+      valore('freddo', 'freddo', []), valore('caldo', 'caldo', []),
+      valore('acqua', 'tempacqua', ['acqua della laguna', 'temperatura dell\'acqua', 'temperatura del mare', 'laguna', 'mare']), valore('umidità', 'umidita', ['umidita', 'umidità relativa', 'umido']),
+      valore('pressione', 'pressione', ['pressione atmosferica', 'barometro', 'pressione dell\'aria'])] },
+    { name: 'METEO_STAZIONE', values: [valore('San Servolo', 'san_servolo', ['isola di San Servolo']), valore('Marittima', 'marittima', ['stazione marittima', 'porto', 'la Marittima']),
+      valore('Sant\'Andrea', 'santandrea', ['forte Sant\'Andrea', 'bocca di porto del Lido']), valore('San Giorgio', 'san_giorgio', ['isola di San Giorgio', 'San Giorgio Maggiore']),
+      valore('Misericordia', 'misericordia', ['sacca della Misericordia', 'Cannaregio']), valore('Palazzo Cavalli', 'palazzo_cavalli', ['Rialto', 'centro storico', 'Ca\' Farsetti']),
+      valore('Punta della Salute', 'punta_salute', ['Salute', 'Punta Salute', 'Dogana']), valore('piattaforma Acqua Alta', 'piattaforma', ['piattaforma', 'piattaforma oceanografica']),
+      valore('aeroporto', 'aeroporto', ['aeroporto Marco Polo', 'Marco Polo', 'Tessera', 'aeroporto di Venezia', 'aeroporto di Tessera']),
+      valore('laguna', 'laguna', ['Venezia', 'in laguna', 'la laguna', 'città', 'fuori'])] },
+    { name: 'CATEGORIA', values: [valore('partenze', 'partenze', ['orari', 'corse', 'partenza', 'orario', 'vaporetti', 'autobus', 'ultima corsa']), valore('meteo', 'meteo', ['tempo', 'vento', 'visibilità', 'nebbia', 'temperatura']), valore('percorsi', 'percorsi', ['percorso', 'itinerari', 'itinerario', 'viaggi', 'come arrivare']), valore('marea', 'marea', ['maree', 'acqua alta', 'mose', 'livello dell\'acqua']), valore('avvisi', 'avvisi', ['avviso', 'scioperi', 'sciopero', 'problemi', 'disservizi']), valore('riepilogo', 'riepilogo', ['riepiloghi', 'routine', 'riassunto'])] },
     { name: 'PREFERENZA', values: [valore('più veloce', 'veloce', ['veloce', 'più rapida', 'rapida', 'più rapido', 'rapido', 'più breve', 'breve', 'che arriva prima', 'arrivo prima', 'più svelta']), valore('meno cambi', 'cambi', ['pochi cambi', 'con meno cambi', 'meno trasbordi', 'meno coincidenze']), valore('meno a piedi', 'piedi', ['meno strada a piedi', 'meno camminata', 'meno cammino', 'camminare meno', 'poca strada a piedi'])] },
     { name: 'MOMENTO', values: [valore('mattina', 'mattina', ['mattino', 'questa mattina', 'di mattina']), valore('sera', 'sera', ['serata', 'stasera']), valore('giornata', 'giornata', ['oggi', 'giorno'])] },
     { name: 'ORDINALE', values: [['primo', '1', ['prima', 'uno', 'il primo', 'la prima', 'quello in alto']], ['secondo', '2', ['seconda', 'due', 'il secondo', 'la seconda']], ['terzo', '3', ['terza', 'tre', 'il terzo', 'la terza']], ['quarto', '4', ['quarta', 'quattro', 'il quarto', 'la quarta', 'ultimo', 'ultima']]].map(([n, id, s]) => valore(n, id, s)) }

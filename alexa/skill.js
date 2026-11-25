@@ -17,6 +17,7 @@ const APL = require('./apl');
 const D = require('./partenze');
 const I = require('./itinerari');
 const M = require('./marea');
+const MT = require('./meteo');
 const S = require('./servizio');
 const R = require('./riepilogo');
 const cal = require('../calendar');
@@ -239,6 +240,7 @@ async function esegui(C, env, req, att) {
       case 'linee': r = await D.linee(C, { gruppo: gruppi.luogo, mezzo }); break;
       case 'frequenza': r = await D.frequenza(C, { gruppo: gruppi.luogo, ids: idsScelti.luogo, linea: req.linea || null, mezzo, dir, verso: !!req.dirTesto, capolinea: req.capolinea || null, quando: req.quando || null }); break;
       case 'itinerario': r = await I.itinerario(C, { da: gruppi.da, a: gruppi.a, quando: req.quando || null, mezzo, cambi: req.cambi ?? null, pref: req.pref || null, indice: req.indice || 0, dettagli: !!req.dettagli, durata: !!req.durata }); break;
+      case 'meteo': r = await MT.meteo(C, { grandezza: req.grandezza || null, stazione: req.stazione || null, confronto: !!req.confronto }); break;
       case 'marea': r = await M.marea(C); break;
       case 'colmo': r = await M.colmo(C, { minimo: !!req.minimo }); break;
       case 'acquaalta': r = await M.acquaAlta(C, { quando: req.quando || null }); break;
@@ -270,7 +272,7 @@ async function esegui(C, env, req, att) {
 function richiestaCompatta(req, gruppi, ids) {
   const o = { tipo: req.tipo };
   for (const k of ['luogo', 'da', 'a']) if (gruppi[k]) o[k] = ids[k] ? { chiave: gruppi[k].chiave, ids: ids[k] } : { chiave: gruppi[k].chiave };
-  for (const k of ['linea', 'mezzo', 'cambi', 'pref', 'indice', 'quando', 'durata', 'dirTesto', 'escludiDir', 'escludiCapolinea', 'capolinea', 'dataRichiesta', 'soloSciopero', 'momento', 'n', 'minimo']) if (req[k] != null) o[k] = req[k];
+  for (const k of ['linea', 'mezzo', 'cambi', 'pref', 'indice', 'quando', 'durata', 'dirTesto', 'escludiDir', 'escludiCapolinea', 'capolinea', 'dataRichiesta', 'soloSciopero', 'momento', 'n', 'minimo', 'grandezza', 'stazione', 'confronto']) if (req[k] != null) o[k] = req[k];
   return o;
 }
 // errori ripetibili: la richiesta resta pronta per «riprova» / «sì»
@@ -338,6 +340,20 @@ function richiestaDa(C, intent, nome, att) {
       return { tipo: 'itinerario', da, a, mezzo, quando: QUANDO_SERIALE(q), cambi: nc, pref: prefDa(intent), ...(nome === 'DurataIntent' ? { durata: true } : {}) };
     }
     case 'MareaIntent': return { tipo: 'marea' };
+    // METEO: grandezza (vento, raffiche, direzione, visibilità, nebbia, temperatura, acqua, umidità, pressione, condizioni) e stazione facoltative
+    case 'MeteoIntent': case 'MeteoConfrontoIntent': case 'MeteoRecenteIntent': case 'MeteoDirezioneIntent': {
+      const gs = slot(intent, 'grandezza'), ss = slot(intent, 'stazione');
+      const grandezza = nome === 'MeteoRecenteIntent' ? 'recente' : nome === 'MeteoDirezioneIntent' ? 'direzione' : (gs && (gs.id || MT.grandezzaDaTesto(gs.raw))) || null;
+      const stazione = (ss && (ss.id || MT.stazioneDaTesto(ss.raw))) || null;
+      return { tipo: 'meteo', grandezza, stazione, confronto: nome === 'MeteoConfrontoIntent' || undefined };
+    }
+    // «e le raffiche?», «e a Marittima?» dopo una risposta meteo: cambia solo ciò che è detto
+    case 'MeteoSeguitoIntent': {
+      const gs = slot(intent, 'grandezza'), ss = slot(intent, 'stazione');
+      const grandezza = (gs && (gs.id || MT.grandezzaDaTesto(gs.raw))) || null, stazione = (ss && (ss.id || MT.stazioneDaTesto(ss.raw))) || null;
+      const prima = c && c.tipo === 'meteo' ? c : {};
+      return { tipo: 'meteo', grandezza: grandezza || prima.grandezza || null, stazione: stazione || (grandezza ? prima.stazione : null) || null };
+    }
     case 'ColmoIntent': return { tipo: 'colmo' };
     case 'MinimoIntent': return { tipo: 'colmo', minimo: true };
     case 'AcquaAltaIntent': return { tipo: 'acquaalta', quando: QUANDO_SERIALE(quandoGiorno(C, intent)) };
@@ -400,6 +416,8 @@ async function seguito(C, env, intent, att, nome) {
       return esegui(C, env, r, att);
     }
     case 'CorrezioneIntent': {
+      // dopo una risposta meteo, «e a Marittima?» è un'altra stazione meteo, non una fermata
+      if (c.tipo === 'meteo') { const raw = (slot(intent, 'luogo') || slot(intent, 'direzione') || {}).raw; const st = raw && MT.stazioneDaTesto(raw); if (st) return esegui(C, env, { ...ricomincia(req), stazione: st }, att); }
       // «no, verso Venezia», «solo vaporetti», «con la linea due», «no, intendevo Rialto»: cambia solo ciò che è detto
       const dir = testoSlot(intent, 'direzione'), luogo = testoSlot(intent, 'luogo'), mezzo = mezzoDa(intent), linea = lineaDa(intent, C);
       if (!dir && !luogo && !mezzo && !linea) return manca();
@@ -513,7 +531,10 @@ async function gestisciInterna(envelope, ambiente) {
     else if (SEGUITI.includes(nome)) out = await seguito(C, envelope, intent, att, nome);
     else if (nome === 'LuogoIntent' || nome === 'SceltaIntent') {
       out = await rispostaInSospeso(C, envelope, intent, att, nome);
-      if (!out && nome === 'LuogoIntent') out = await esegui(C, envelope, { tipo: 'partenze', luogo: testoSlot(intent, 'luogo'), n: 1 }, att);   // un nome detto da solo = prossima partenza da lì
+      // un nome detto da solo dopo una risposta meteo = quella stazione meteo; altrimenti la prossima partenza da lì
+      const stMeteo = !out && nome === 'LuogoIntent' && att.ctx && att.ctx.tipo === 'meteo' ? MT.stazioneDaTesto((slot(intent, 'luogo') || {}).raw) : null;
+      if (stMeteo) out = await esegui(C, envelope, { tipo: 'meteo', grandezza: att.ctx.req && att.ctx.req.grandezza || null, stazione: stMeteo }, att);
+      if (!out && nome === 'LuogoIntent') out = await esegui(C, envelope, { tipo: 'partenze', luogo: testoSlot(intent, 'luogo'), n: 1 }, att);
       if (!out) out = testo(MSG.nonCapito, { reprompt: MSG.cosaVuoi, fine: false, attributi: att });
     } else if (nome === 'AMAZON.FallbackIntent') {
       const n = (att.fallback || 0) + 1; att.fallback = n;

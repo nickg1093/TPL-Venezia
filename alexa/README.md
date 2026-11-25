@@ -12,8 +12,9 @@ non duplica GTFS, feed o archivi. Stato e decisioni: [`STATO.md`](STATO.md).
 | «il 5.2 è in ritardo?», «ultimo vaporetto da Rialto a Piazzale Roma», «prima corsa domattina da Lido», «che linee passano da Rialto?» | ritardo della linea; prima e ultima corsa cercate sull'intero GTFS della data (anche dopo mezzanotte, festivi, date esplicite) |
 | «come arrivo a Rialto da Piazzale Roma», «devo arrivare a San Marco entro le nove», «senza cambi», «e al ritorno?», «e domani?» | percorsi con il motore RAPTOR della PWA: cambi, coincidenze strette, alternative, avvisi lungo la strada |
 | «com'è la marea», «quando è il colmo», «ci sarà acqua alta stasera», «com'è il MOSE», «servono gli stivali a San Marco», «passerelle a Rialto» | livello, tendenza, picchi previsti, stato del MOSE, età del dato; misura, previsione e stima sempre distinte; le passerelle non sono mai date per posate |
+| «com'è la visibilità in laguna», «c'è nebbia a San Servolo», «quanto vento c'è a San Giorgio», «da dove soffia il vento», «che temperatura c'è», «che tempo fa all'aeroporto», «e le raffiche?» | misure meteo (Centro Maree, vePORTO, METAR LIPZ) con ora di misura; mai previsioni |
 | «ci sono avvisi», «sciopero domani», «avvisi sulla linea 1» | avvisi di servizio della PWA, con validità, linee, fermate, fasce di garanzia e limite di copertura |
-| «riepilogo della mattina», «come sono i trasporti oggi» | avvisi + marea + partenze, in poche frasi (utilizzabile in una routine) |
+| «riepilogo della mattina», «come sono i trasporti oggi» | avvisi + marea + meteo se rilevante (nebbia, vento forte) + partenze, in poche frasi (utilizzabile in una routine) |
 
 Su Echo Show e simili compare anche una scheda (APL) adattata a schermo rotondo, piccolo, medio e grande; senza schermo la voce dice tutto.
 Non fa: percorsi a piedi precisi o sicuri con l'acqua alta, geolocalizzazione, acquisti, account.

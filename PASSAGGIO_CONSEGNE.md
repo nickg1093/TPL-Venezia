@@ -52,7 +52,7 @@ potenzialmente allagabili e passerelle dell'Atlante del Comune), preferiti, perc
 `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` (notifiche, `node scripts/vapid-keys.js`), `DIAG_TOKEN` e `ADMIN_TOKEN` (≥ 16 caratteri: API
 riservate, con `Authorization: Bearer`), `FORCE_HTTPS=1`, `TRUST_PROXY=1`, `APP_CONTACT` (email del titolare mostrata in Informazioni:
 necessaria per l'informativa privacy), facoltative `PUSH_CONTACT`, `RT_POLL_MS`, `AVVISI_ARCHIVIO`, `DATI_CDN`, `MEM_ALTO_MB`,
-`MEM_CRITICO_MB`, `DATI_REPO`, `MAREA_ARCHIVIO`; per la skill Alexa `ALEXA_TOKEN` (≥ 16 caratteri, stesso valore di `alexa/lambda/segreto.js`) e, facoltativa, `ALEXA_SKILL_ID`. Segreti di GitHub: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`. Tabella completa: README §6.
+`MEM_CRITICO_MB`, `DATI_REPO`, `MAREA_ARCHIVIO`, `VEPORTO_ENABLED` (`true` = visibilimetri vePORTO), `METEO` (`0` = meteo spento, prove); per la skill Alexa `ALEXA_TOKEN` (≥ 16 caratteri, stesso valore di `alexa/lambda/segreto.js`) e, facoltativa, `ALEXA_SKILL_ID`. Segreti di GitHub: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`. Tabella completa: README §6.
 
 ## 6. Comandi
 ```powershell
@@ -133,6 +133,14 @@ testi sull'acqua alta sempre «potenzialmente allagabili», mai allagamento cert
 - **Rete pedonale (ramo `dati`)**: versione `b2f1bb3e30622032` del 21/11/2026, 1.603 mattonelle; controllo su 83 ponti OSM: tutti i
   pubblici hanno il segno «ponte»; i 5 senza sono 4 ponti `access=private` e la carreggiata del Ponte della Libertà (`foot=no`), esclusi apposta dalla rete.
 - **Prove**: `npm test` 316/316; `tests/ui/passerelle.py` (DATI_DIR), `acqua.py` (anche `TESTO=1.3`), `offline.py`, `run.py`.
+
+## 9 quinquies. Meteo da Intranet-BIS (25/11/2026)
+`meteo-parse.js` riprende le regole di `cpsm-meteo.service.js`, `visibility.service.js` e `metar-visibility.service.js` (verificate con gli stessi
+campioni: stessi valori; unica differenza voluta, il vento calmo non ha direzione). Da `meteo-history.service.js` solo l'idea dei cicli per fonte:
+niente SQLite, niente storico. `meteo.js`: un ciclo per feed (7), polling adattivo (impara periodo e ritardo di pubblicazione, torna 30 s prima
+del dato atteso, poi ogni 30-60 s), 304 economici, attesa crescente sugli errori, una richiesta alla volta per feed. API `/api/meteo*` leggono
+solo la cache. Skill: `alexa/meteo.js`, intenti `MeteoIntent`, `MeteoSeguitoIntent`, `MeteoDirezioneIntent`, `MeteoConfrontoIntent`,
+`MeteoRecenteIntent`; tipi `METEO_GRANDEZZA`, `METEO_STAZIONE`. Prove: `tests/meteo.test.js`, `tests/alexa-meteo.test.js`.
 
 ## 9 quater. Audit funzionale e simulazioni sul campo (24/11/2026, v34)
 - **Rapporto completo**: `tests/collaudo/RAPPORTO.md` (inventario e copertura, scenari, problemi con gravità/causa/correzione, misure,

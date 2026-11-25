@@ -9,6 +9,7 @@ const live = require('./live');
 const schedule = require('./schedule');
 const gtfs = require('./gtfs');
 const tide = require('./tide');
+const meteo = require('./meteo');
 const avvisi = require('./avvisi');
 const watch = require('./watch');
 const sec = require('./security');
@@ -30,6 +31,13 @@ const ALEXA_TOKEN = process.env.ALEXA_TOKEN || '', ALEXA_SKILL_ID = process.env.
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const fail = (code, msg) => Object.assign(new Error(msg), { code });
 const q = (u, k) => u.searchParams.get(k);
+// filtri delle API meteo: stazione (lettere, spazi, apostrofo, trattino, max 40) e fonte (elenco chiuso)
+function meteoFiltri(u) {
+  const st = q(u, 'stazione'), fo = q(u, 'fonte');
+  if (st != null && !/^[\p{L}0-9 '’.-]{1,40}$/u.test(st)) throw fail(400, 'stazione non valida');
+  if (fo != null && !['cpsm', 'veporto', 'metar'].includes(fo)) throw fail(400, 'fonte non valida: cpsm, veporto o metar');
+  return { stazione: st || null, fonte: fo || null };
+}
 
 // ---- parametri comuni ----
 const wanted = u => { const s = q(u, 'src'); return s ? s.split(',').filter(x => IDS.includes(x)).slice(0, IDS.length) : IDS.slice(); };
@@ -240,7 +248,7 @@ function sendTagged(req, res, body, gz, etag, cc = 'no-cache') {
 }
 let stopsTag = null, routesMemo = null;
 // ambiente della skill Alexa: esegue in processo le API in lettura già esposte (stesse regole di budget CPU e memoria del pianificatore)
-const ALEXA_API = new Set(['/api/zone', '/api/vehicles', '/api/trip', '/api/avvisi', '/api/tide', '/api/mose', '/api/percorso']);
+const ALEXA_API = new Set(['/api/zone', '/api/vehicles', '/api/trip', '/api/avvisi', '/api/tide', '/api/mose', '/api/percorso', '/api/meteo']);
 // corse dirette sull'intero GTFS di una data (alexa/diretti.js): la versione dei GTFS è quella della modalità «Programmato» della PWA;
 // per oggi e domani basta quella in memoria (stessa impronta). Se la data va caricata, si attende al massimo 4 s, poi «in caricamento» (409).
 async function gtfsAlexa(i, ymd) {
@@ -410,6 +418,15 @@ const API = new Map(Object.entries({
   '/api/avvisi': { fn: () => avvisi.getAvvisi() },
   // STATO DEL MOSE (barriere alle bocche di porto) dall'Autorità per la Laguna di Venezia, con fonte e ora di lettura (mose.js)
   '/api/mose': { fn: async () => { await mose.refresh(); return mose.snapshot() || { error: 'Stato del MOSE non disponibile in questo momento' }; } },
+  // METEO (meteo.js): ultima osservazione di ciascun sensore, dalla cache in memoria (nessuna richiesta esterna durante la risposta, nessuno storico).
+  // Centro Maree (vento, pressione, temperatura aria e acqua, umidità), vePORTO (visibilità, se VEPORTO_ENABLED=true), METAR LIPZ (aeroporto).
+  // Filtri facoltativi: ?stazione=<parte del nome> e ?fonte=cpsm|veporto|metar. Diagnosi dei cicli di lettura riservata (DIAG_TOKEN).
+  '/api/meteo': { fn: u => meteo.snapshot(meteoFiltri(u)) },
+  ...Object.fromEntries(['visibilita', 'vento', 'temparia', 'tempacqua', 'umidita', 'pressione', 'metar'].map(c => ['/api/meteo/' + c, { fn: u => {
+    const f = meteoFiltri(u), m = meteo.misure({ ...f, categoria: c });
+    return { categoria: c, aggiornato: new Date().toISOString(), misure: m[c] };
+  } }])),
+  '/api/meteo/diagnosi': { auth: 'diag', fn: () => meteo.diagnosi() },
   // SKILL ALEXA «Venezia TPL» (alexa/): la richiesta di Alexa arriva dalla funzione Lambda gratuita di Alexa-hosted (alexa/lambda), con ALEXA_TOKEN.
   // Riusa in processo le API qui sopra (stessi dati, stessi calcoli della PWA); nessun dato personale letto né salvato; spenta senza ALEXA_TOKEN.
   '/api/alexa': { method: 'POST', limit: 'alexa', fn: async (u, req) => {
@@ -680,6 +697,7 @@ function nextSameLine(i, tid, stopFull) {
 }
 watch.init({ tripDetail: (i, tid) => live.tripDetail(i, tid, true), next: nextSameLine });   // mittente delle notifiche: push.subjectFrom (variabili d'ambiente)
 avvisi.start();
+if (process.env.METEO !== '0') meteo.start();   // letture meteo continue e indipendenti per fonte (METEO=0 le spegne, es. nelle prove)
 tide.start({ archivio: process.env.MAREA_ARCHIVIO === '0' ? null : { repo: DATI_REPO } });   // raccolta periodica del livello di marea; storia recuperata dall'archivio GitHub dopo un riavvio
 
 // KEEP-ALIVE Render (piano gratuito): si addormenta dopo 15 min senza richieste in ingresso.

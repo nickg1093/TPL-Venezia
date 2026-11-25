@@ -212,14 +212,15 @@ illustrativi. Rigenerare dopo ogni modifica alle frasi; la prova `tests/alexa-mo
 | Condizione | Risposta effettiva |
 |---|---|
 | Apertura senza domanda | Ciao! Cosa vuoi sapere? |
-| Aiuto | Puoi chiedermi partenze, percorsi, marea o avvisi. Su cosa vuoi una mano? |
+| Aiuto | Puoi chiedermi partenze, percorsi, marea, meteo o avvisi. Su cosa vuoi una mano? |
 | Aiuto partenze | Puoi dire: quando passa il due alle Zattere? Ogni quanto passa il tram a San Marco Cattaneo? Oppure: qual è l'ultimo vaporetto da Rialto a Piazzale Roma? |
 | Aiuto percorsi | Prova a dire: come arrivo a Rialto da Piazzale Roma? Oppure: quando devo partire per arrivare a Rialto entro le nove? |
 | Aiuto marea | Puoi chiedermi il livello attuale, il prossimo colmo, il MOSE o la previsione di acqua alta. |
 | Aiuto avvisi | Puoi chiedere: ci sono problemi sulla linea uno? Oppure: ci sono scioperi domani? |
+| Aiuto meteo | Puoi chiedere: com'è la visibilità in laguna? C'è nebbia a San Servolo? Quanto vento c'è a San Giorgio? Che temperatura c'è? Che tempo fa all'aeroporto? |
 | Aiuto riepilogo | Dimmi: riepilogo della mattina da Zattere, con la tua fermata. Puoi usare questa frase anche in una routine dell'app Alexa. |
-| Presentati / che cos'è Venezia TPL | Sono Venezia TPL, un servizio indipendente di informazioni sui trasporti e sulla marea di Venezia. Non sono un servizio ufficiale ACTV. Uso gli orari e il tempo reale pubblicati da ACTV e i dati delle maree del Comune di Venezia. |
-| Tutti i comandi | Posso spiegarti una categoria alla volta: partenze, percorsi, marea, avvisi o riepilogo. Quale vuoi? La guida completa è nell'app Venezia TPL, nella pagina Informazioni. |
+| Presentati / che cos'è Venezia TPL | Sono Venezia TPL, un servizio indipendente di informazioni sui trasporti e sulla marea di Venezia. Non sono un servizio ufficiale ACTV. Uso gli orari e il tempo reale pubblicati da ACTV e i dati delle maree e del meteo del Comune di Venezia, del porto e dell'aeroporto. |
+| Tutti i comandi | Posso spiegarti una categoria alla volta: partenze, percorsi, marea, meteo, avvisi o riepilogo. Quale vuoi? La guida completa è nell'app Venezia TPL, nella pagina Informazioni. |
 | Basta / Chiudi / Annulla | A presto! |
 | Richiesta non riconosciuta (prima volta) | Non ho capito. Dimmi una fermata, oppure chiedimi la marea. |
 | Richiesta non riconosciuta (seconda volta) | Scusa, non ho ancora capito. Prova a dire: quando passa il due alle Zattere? Oppure: com'è la marea? |
@@ -277,6 +278,30 @@ illustrativi. Rigenerare dopo ogni modifica alle frasi; la prova `tests/alexa-mo
 | Destinazione mancante | Dove vuoi arrivare? |
 | Nessuna soluzione | Non trovo un collegamento da Zattere a San Marco nelle prossime ore. |
 
+#### Meteo
+
+| Condizione | Risposta effettiva |
+|---|---|
+| «Com'è la visibilità in laguna?» (con nebbia in una stazione) | C'è nebbia a Marittima, con seicentocinquanta metri di visibilità. A San Servolo dodici chilometri e a Sant'Andrea 3500 metri. |
+| «C'è nebbia a San Servolo?» | No, a San Servolo non c'è nebbia: la visibilità è di dodici chilometri. |
+| «Quanti metri di visibilità ci sono a Sant'Andrea?» | A Sant'Andrea la visibilità è di 3500 metri, quindi ridotta. |
+| Visibilità senza visibilimetri recenti (solo aeroporto) | Non ho misure recenti dei visibilimetri in laguna. All'aeroporto Marco Polo la visibilità è di oltre dieci chilometri. |
+| «Quanto vento c'è a Venezia?» | Vento prevalente da Est-Nord-Est, tra undici e ventitré chilometri orari nelle stazioni della laguna; raffiche fino a trentadue a Sant'Andrea. |
+| «Da dove soffia il vento?» | In laguna il vento soffia soprattutto da Est-Nord-Est; a Sant'Andrea da Nord-Est. |
+| «A quanto arrivano le raffiche?» | Le raffiche più forti arrivano a trentadue chilometri orari a Sant'Andrea. |
+| «Dove soffia più forte?» | Il vento soffia più forte a Sant'Andrea: ventitré chilometri orari, raffiche fino a trentadue. Segue San Giorgio con venti. |
+| «Quanto vento c'è a San Giorgio?» → «E le raffiche?» → «E a Marittima?» | A Marittima le raffiche arrivano a ventidue chilometri orari, con vento medio a quindici chilometri orari. |
+| Calma di vento | A Marittima c'è calma di vento. |
+| Misura vecchia | L'ultima misura del vento a Sant'Andrea è delle sette e trenta, di quaranta minuti fa: non è aggiornata. |
+| «Che temperatura c'è fuori?» | A Venezia, a Palazzo Cavalli, ci sono nove gradi. |
+| «Quanto è calda l'acqua della laguna?» | L'acqua della laguna a Punta della Salute è a tredici gradi. |
+| «Qual è l'umidità?» | A Venezia, a Palazzo Cavalli, l'umidità è dell'ottantotto per cento. |
+| «Com'è la pressione atmosferica?» | A Venezia, a Palazzo Cavalli, la pressione è di 1012 ettopascal. |
+| «Che tempo fa all'aeroporto Marco Polo?» | All'aeroporto Marco Polo, osservazione delle sette e cinquanta: pioggia debole; visibilità nove chilometri; vento da Nord-Nord-Est a diciassette chilometri orari; nove gradi; umidità del novantatré per cento; pressione 1011 ettopascal. |
+| «Quali sono le condizioni meteo in laguna?» | A Venezia, a Palazzo Cavalli, ci sono nove gradi. Vento prevalente da Est-Nord-Est, tra undici e ventitré chilometri orari nelle stazioni della laguna; raffiche fino a trentadue a Sant'Andrea. C'è nebbia a Marittima, con seicentocinquanta metri di visibilità. A San Servolo dodici chilometri e a Sant'Andrea 3500 metri. All'aeroporto: pioggia debole. |
+| «Qual è il dato più recente?» | Il dato più recente è delle otto e otto. A Marittima la visibilità è di seicentocinquanta metri: c'è nebbia. |
+| Nessuna misura disponibile | Non ho misure recenti del vento in questo momento. |
+
 #### Marea
 
 | Condizione | Risposta effettiva |
@@ -298,7 +323,7 @@ illustrativi. Rigenerare dopo ogni modifica alle frasi; la prova `tests/alexa-mo
 
 | Condizione | Risposta effettiva |
 |---|---|
-| Riepilogo della mattina | La marea a Punta della Salute è settantadue centimetri, in crescita. Nelle prossime dodici ore è previsto un massimo di novantacinque centimetri alle dieci e dieci: marea sostenuta. Non risultano avvisi di servizio, nei dati disponibili. |
+| Riepilogo della mattina | La marea a Punta della Salute è settantadue centimetri, in crescita. Nelle prossime dodici ore è previsto un massimo di novantacinque centimetri alle dieci e dieci: marea sostenuta. Meteo: nebbia a Marittima, seicentocinquanta metri. Non risultano avvisi di servizio, nei dati disponibili. |
 
 #### Errori e attese
 

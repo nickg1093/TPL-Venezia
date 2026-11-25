@@ -60,7 +60,7 @@ test('lambda: Avvio «Ciao! Cosa vuoi sapere?» e sveglia il server; aiuto, cate
     const a = await handler(evento('LaunchRequest'));
     assert.equal(voce(a), `<speak>${'Ciao! Cosa vuoi sapere?'}</speak>`); assert.equal(a.response.shouldEndSession, false);
     await new Promise(r => setTimeout(r, 150)); assert.equal(st.sveglie, 1);
-    assert.match(voce(await handler(evento('IntentRequest', 'AMAZON.HelpIntent'))), /partenze, percorsi, marea o avvisi/);
+    assert.match(voce(await handler(evento('IntentRequest', 'AMAZON.HelpIntent'))), /partenze, percorsi, marea, meteo o avvisi/);
     const cat = evento('IntentRequest', 'AiutoIntent'); cat.request.intent.slots = { categoria: { name: 'categoria', value: 'orari', resolutions: { resolutionsPerAuthority: [{ status: { code: 'ER_SUCCESS_MATCH' }, values: [{ value: { id: 'partenze', name: 'partenze' } }] }] } } };
     assert.match(voce(await handler(cat)), /quando passa il due alle Zattere/);
     assert.match(voce(await handler(evento('IntentRequest', 'PresentatiIntent'))), /servizio indipendente/);

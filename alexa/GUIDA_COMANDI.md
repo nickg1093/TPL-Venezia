@@ -29,6 +29,18 @@ fermata saltata, fermata sospesa da un avviso. Mai «in orario» senza dati in t
 Intervalli regolari: «ogni dieci minuti». Variabili: «di solito ogni dodici minuti, con intervalli da otto a venti minuti»; con poche corse:
 «a intervalli irregolari». Con una sola corsa lo dice. Mai una frequenza inventata.
 
+## Meteo (`MeteoIntent`, `MeteoSeguitoIntent`, `MeteoDirezioneIntent`, `MeteoConfrontoIntent`, `MeteoRecenteIntent`)
+| Esempi | Note |
+|---|---|
+| com'è la visibilità in laguna? · c'è nebbia a San Servolo? · quanti metri di visibilità ci sono a Sant'Andrea? | visibilimetri vePORTO; senza di loro, l'aeroporto detto come tale. Nebbia sotto 1 km, ridotta fino a 5 km |
+| quanto vento c'è a Venezia? · da dove soffia il vento? · a quanto arrivano le raffiche? · dove soffia più forte? · quanto vento c'è a San Giorgio? | Centro Maree; direzione di provenienza per esteso (Nord-Nord-Est…); confronti solo tra misure fresche e vicine nel tempo |
+| che temperatura c'è fuori? · quanto è calda l'acqua della laguna? · qual è l'umidità? · com'è la pressione atmosferica? | Palazzo Cavalli, San Giorgio, Punta della Salute; aeroporto se chiesto |
+| che tempo fa all'aeroporto Marco Polo? · quali sono le condizioni meteo in laguna? · qual è il dato più recente? | METAR: fenomeni, visibilità, vento, temperatura, umidità calcolata, pressione QNH |
+| e le raffiche? · e a Marittima? · e la temperatura? | seguiti: cambia solo ciò che si dice |
+
+Solo misure, mai previsioni. Una misura vecchia si dice con la sua ora («non è aggiornata»); senza dati: «non ho misure recenti», mai
+«tutto normale». Nel riepilogo il meteo compare solo con nebbia o vento forte (raffiche da 50 km/h o media da 35 km/h).
+
 ## Prima e ultima corsa, linee (`UltimaCorsaIntent`, `PrimaCorsaIntent`, `LineeIntent`)
 | Esempi | Note |
 |---|---|

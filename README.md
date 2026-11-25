@@ -83,6 +83,7 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 | `avvisi-ai.js` | Interpretazione AI facoltativa degli avvisi (Cloudflare Workers AI): prompt, schema, validazione. | prompt o regole di validazione |
 | `watch.js`, `push.js` | Avvisi di arrivo e del viaggio guidato (ruoli esci/cambio/scendi): regole dei messaggi, ciclo di controllo, ripristino dopo un riavvio, invio Web Push cifrato (VAPID). | testi delle notifiche, tempi |
 | `tide.js` | Marea CPSM: livello, tendenza, estremi, storia. | soglie e testi della marea |
+| `meteo.js`, `meteo-parse.js` | **Meteo** (da Intranet-BIS): cicli di lettura indipendenti per Centro Maree (vento, pressione, temperatura aria e acqua, umidità), vePORTO (visibilità) e METAR LIPZ; ultima misura per sensore in RAM, niente storico. | fonti, soglie di freschezza, decodifica |
 | `flusso.js` | Flusso SSE dei mezzi: elenco completo all'apertura, poi solo le differenze, compresso. | raramente |
 | `feedaudit.js` | Diagnosi dei feed GTFS-RT (riservata). | mai |
 | `avvia-windows.bat`, `avvia.command`, `avvia.sh` | Avvio con doppio clic in locale (Windows, macOS, Linux). | mai |
@@ -371,11 +372,13 @@ personale resta sul dispositivo dell'utente (privacy) e ciò che è pubblico sta
 | `/api/percorso-simili?…&fam=…&rotte=…&arr=hh:mm` | GET | alternative di una soluzione; usata anche per ritrovare una proposta salvata o condivisa tra gli altri orari |
 | `/api/dates` | GET | date coperte dai GTFS in archivio |
 | `/api/avvisi`, `/api/tide`, `/api/about`, `/api/push-key` | GET | avvisi, marea, versione e contatto, chiave pubblica VAPID |
+| `/api/meteo` | GET | meteo: ultima misura di ogni sensore (visibilità, vento, temperatura aria e acqua, umidità, pressione, rugiada, METAR decodificato), fonti, stato dei cicli; filtri `?stazione=` e `?fonte=cpsm\|veporto\|metar` |
+| `/api/meteo/visibilita`, `/vento`, `/temparia`, `/tempacqua`, `/umidita`, `/pressione`, `/metar` | GET | una sola grandezza, stessi filtri |
 | `/api/watch`, `/api/watch/cancel`, `/api/watch/resub`, `/api/watch/restore` | POST | avvisi di arrivo: crea, annulla, nuova iscrizione, ripristino dopo un riavvio |
 | `/api/watch/poll?id=&token=` · `?ids=id.token,…` | GET | messaggi per i dispositivi senza Web Push (`ids`: fino a 8 avvisi con una richiesta) |
 | `/api/errore` | POST | errore imprevisto di un telefono: solo testo tecnico, contato in memoria (`/api/metriche` → `errori_telefoni`) |
 | `/api/watch/handoff` | POST | passaggio degli avvisi dalla vecchia alla nuova istanza durante un deploy (firmato; mai da un browser) |
-| `/api/audit`, `/api/gtfs`, `/api/avvisi-eventi`, `/api/whoami`, `/api/tide?debug=1` | GET, **DIAG_TOKEN** | diagnosi |
+| `/api/audit`, `/api/gtfs`, `/api/avvisi-eventi`, `/api/whoami`, `/api/tide?debug=1`, `/api/meteo/diagnosi` | GET, **DIAG_TOKEN** | diagnosi (per il meteo: controlli, 304, errori, periodo e ritardo di pubblicazione stimati, prossimo controllo) |
 | `/api/reload-gtfs` | POST, **ADMIN_TOKEN** | ricontrolla e ricarica i GTFS |
 | `/api/alexa` | POST, **ALEXA_TOKEN** | skill Alexa «Venezia TPL» (cartella `alexa/`): riceve la richiesta di Alexa dalla funzione gratuita di Alexa-hosted, risponde con voce e scheda. Spenta (404) senza `ALEXA_TOKEN`. Limite 90 richieste/min per indirizzo |
 | `/api/alexa/flash` | GET | feed pubblico di sola lettura per il Flash Briefing di Alexa (avvisi in corso e marea), in memoria per 60 s |
@@ -403,6 +406,8 @@ personale resta sul dispositivo dell'utente (privacy) e ciò che è pubblico sta
 | `DATI_CDN` | facoltativa | `0` = niente CDN: dati fissi solo dal server, orari di altre date solo dagli ZIP, niente percorsi a piedi lungo le strade (prove) |
 | `MEM_ALTO_MB`, `MEM_CRITICO_MB` | facoltative | soglie della protezione della memoria (predefinite 400 e 450 MB; Render gratuito ha 512 MB) |
 | `DATI_REPO` | facoltativa | repository del ramo `dati` (`utente/nome`); predefinito quello da cui Render prende il codice |
+| `VEPORTO_ENABLED` | facoltativa | `true` = legge i visibilimetri vePORTO (San Servolo, Marittima, Sant'Andrea) con l'accesso anonimo della loro PWA; senza, la visibilità viene solo dal METAR dell'aeroporto |
+| `METEO` | facoltativa | `0` = nessuna lettura meteo (prove) |
 | `MAREA_ARCHIVIO` | facoltativa | `0` = all'avvio non si recupera la storia della marea dal ramo `archivio-marea` (prove) |
 | `KEEPALIVE_URL` | facoltativa | su Render basta `RENDER_EXTERNAL_URL`, impostata da Render |
 | `PORT`, `HOST`, `TLS_CERT`, `TLS_KEY` | solo in locale | porta, indirizzo di ascolto, HTTPS in rete di casa |

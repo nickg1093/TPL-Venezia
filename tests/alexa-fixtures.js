@@ -97,4 +97,26 @@ function richiesta(intent, slots = {}, { adesso = ADESSO, attributi = {}, scherm
 }
 const parlato = r => require('../alexa/parlato').senzaTag(r && r.body && r.body.response && r.body.response.outputSpeech ? r.body.response.outputSpeech.ssml : '');
 const Dir = require('../alexa/diretti');
-module.exports = { gtfs, conG, secsDi, SKILL_ID, stops, routes, ADESSO, MS, partenza, zona, marea, estremo, avviso, mose, soluzione, percorso, ambiente, richiesta, parlato };
+// METEO: /api/meteo prodotto dal vero meteo.js con fonti finte (stessa forma della produzione). Sostituzioni per fonte: { vento: [[id, '76 gradi, 5.5 m/s, 7.6 m/s', minutiFa]], ... }
+async function meteo(o = {}, { adesso = ADESSO } = {}) {
+  const Mt = require('../meteo');
+  const p = n => String(n).padStart(2, '0'), cp = ms => { const d = new Date(ms + 3600e3); return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:00`; };
+  const righe = (l, fa = 3) => l.map(([id, valore, m = fa]) => ({ ID_stazione: id, data: cp(adesso - m * 60e3), valore }));
+  const d = {
+    vento: righe(o.vento || [['1039', '76 gradi, 5.5 m/s, 7.6 m/s'], ['1029', '60 gradi, 3 m/s, 4.5 m/s'], ['1047', '70 gradi, 4.2 m/s, 6 m/s'], ['1049', '50 gradi, 6.5 m/s, 9 m/s']]),
+    temparia: righe(o.temparia || [['1026', '9.4'], ['1039', '9.1']]), tempacqua: righe(o.tempacqua || [['1025', '13.2']]),
+    umidita: righe(o.umidita || [['1026', '88'], ['1039', '90']]), pressione: righe(o.pressione || [['1026', '1012.3']]),
+    veporto: (o.veporto || [['SAN SERVOLO', 12000], ['MARITTIMA', 650], ["SANT'ANDREA", 3500]]).map(([nome, v, m = 2]) => ({ nome, ultimoDato: new Date(adesso - m * 60e3).toISOString(), meterDetails: [{ tipo: 'VISIBILIMETER', visibilita: v }] })),
+    metar: o.metar === null ? [] : [{ icaoId: 'LIPZ', obsTime: Math.floor((adesso - (o.metarFa ?? 20) * 60e3) / 1000), rawOb: o.metar || 'METAR LIPZ 250650Z 02009KT 9000 -RA BKN025 09/08 Q1011 NOSIG' }]
+  };
+  const tok = 'e30.' + Buffer.from(JSON.stringify({ exp: Math.floor(adesso / 1000) + 3600 })).toString('base64url') + '.x';
+  Mt._reset();
+  Mt._opz({ adesso: () => adesso, veporto: true, log: () => {}, fetch: async url => {
+    if (/\/auth$/.test(url)) return new Response('{}', { headers: { Authorization: 'Bearer ' + tok } });
+    const k = /aviationweather/.test(url) ? 'metar' : /veporto/.test(url) ? 'veporto' : /\/(\w+)\.json$/.exec(url)[1];
+    return new Response(JSON.stringify(d[k]));
+  } });
+  for (const f of Mt.FEED) if (!(o.spente || []).includes(f.id)) await Mt.controlla(f);
+  return JSON.parse(JSON.stringify(Mt.snapshot()));
+}
+module.exports = { meteo, gtfs, conG, secsDi, SKILL_ID, stops, routes, ADESSO, MS, partenza, zona, marea, estremo, avviso, mose, soluzione, percorso, ambiente, richiesta, parlato };
