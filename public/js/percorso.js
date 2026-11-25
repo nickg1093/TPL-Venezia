@@ -738,7 +738,7 @@ function tideHtml(o, sn) {
   if (!pts.some(([a, b]) => inVenice(a, b))) return '';
   const p = Livelli.picco(sn.leaveMs, sn.arriveMs); if (!p) return '';
   const liv = XA.livelloCitta(p, Tide.moseState()); if (!(liv.cm >= 90 || (liv.mose && p.cm >= 100))) return '';
-  const hm = new Date(p.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' }), ms = p.prova ? null : Tide.moseState();
+  const hm = new Date(p.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Europe/Rome' }), ms = p.prova ? null : Tide.moseState();
   const mose = liv.mose ? ` Con il MOSE ${ms === 'programmato' ? 'previsto' : 'in funzione'} in città il livello dovrebbe restare sotto circa ${XA.LIV_MOSE + 2} cm.` : ms === 'sollevata' || ms === 'sollevamento' ? ' Il MOSE è in funzione.' : '';
   const calc = Livelli.pronti() && liv.cm >= XA.MIN_ACQUA ? ' I tratti a piedi evitano dove possibile le zone potenzialmente allagabili e usano le passerelle del piano comunale (posa prevista dal livello indicato, non verificata in tempo reale): i dettagli sono in ogni tratto.' : ' Nei tratti a piedi le zone più basse (come San Marco) possono essere allagate: controlla passerelle e calzature.';
   const tot = acqSol.get(acqKey(o)), riep = tot ? `<span class="pp-acqt">${esc(tot)}</span>` : '';

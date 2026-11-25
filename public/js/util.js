@@ -14,7 +14,9 @@ export const romeP = (ms = Date.now()) => {
 export const nowSecs = () => { const r = romeP(); return r.h * 3600 + r.mi * 60 + r.s; };
 export const fmtSecs = s => `${p2(Math.floor(s / 3600) % 24)}:${p2(Math.floor(s % 3600 / 60))}:${p2(s % 60)}`;
 export const localDate = () => romeP().iso;
-export const hm = ms => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
+export const hm = ms => new Date(ms).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Europe/Rome' });
+// data completa «25/11/2026» (ora di Venezia)
+export const dataCompleta = ms => new Date(ms).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Rome' });
 
 // ---------- ICONE ----------
 // Un solo set (icons/sprite.svg), stesso stile ovunque. Niente emoji nel codice: per cambiare o aggiungere un simbolo si modifica lo sprite.

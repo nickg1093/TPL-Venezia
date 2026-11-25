@@ -1,5 +1,5 @@
 // FINESTRA MAREA: livello attuale, categoria, tendenza, prossimi estremi e grafico delle ultime ore (dati CPSM Venezia tramite /api/tide).
-import { $, esc, icon, hm, api, seguiScheda, altezzaUtile, romeP } from './util.js';
+import { $, esc, icon, hm, dataCompleta, api, seguiScheda, altezzaUtile, romeP } from './util.js';
 
 const btn = $('tide-btn'), card = $('tide'), body = $('tide-body');
 let data = null, err = null, timer = null, mose = null, moseOpen = false, drawnEv = null;   // dettaglio delle 4 barriere: chiuso di base, resta come lo lascia l'utente
@@ -193,12 +193,10 @@ async function loadMose() {
 // ---- MOSE: semafori per barriera (verde in recesso, giallo programmato, giallo lampeggiante in movimento, rosso sollevata) ----
 const SEM_TXT = { verde: 'in recesso', giallo: 'sollevamento programmato', lampeggia: 'in movimento', rosso: 'sollevata', grigio: 'stato non riconosciuto' };
 const STATO_TXT = { recesso: 'In recesso', programmato: 'Sollevamento programmato', sollevamento: 'In sollevamento', abbassamento: 'In abbassamento', sollevata: 'Sollevata' };
-function moseEventMs() {                                      // «14/11/2026» + «06:30» (ora di Venezia) -> ms
+function moseEventMs() {                                      // istante del sollevamento programmato (ora di Venezia, già convertito dal server)
   const e = mose && !mose.error && mose.evento; if (!e) return null;
-  const d = String(e.data || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/), t = String(e.orario || '').match(/(\d{1,2})[:.](\d{2})/);
-  if (!d || !t) return null;
-  const ms = new Date(+d[3], +d[2] - 1, +d[1], +t[1], +t[2]).getTime();
-  return Number.isFinite(ms) ? ms : null;
+  if (Number.isFinite(e.ms)) return e.ms;
+  return null;   // senza istante certo non si indovina (AM/PM): si mostra il testo della fonte
 }
 const sema = sem => `<span class="sema" data-sem="${esc(sem)}" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></span>`;
 function riepilogo(list) {                                   // «· 4 in recesso» / «· 2 sollevate, 2 in recesso»
@@ -217,7 +215,7 @@ function moseHtml() {
   const evT = moseEventMs();
   return `<section class="mose" data-sem="${esc(mose.sem)}" aria-label="MOSE: ${esc(mose.titolo)}">`
     + `<h3 class="mose-h">${sema(mose.sem)}<span>${esc(mose.titolo)}</span></h3>`
-    + (mose.evento && (mose.evento.data || mose.evento.orario) ? `<p class="mose-ev">${icon('clock', 'sm')}<span>Sollevamento previsto ${evT ? `${dayTag(evT)}alle ${hm(evT)}` : esc(`${mose.evento.data} ${mose.evento.orario}`.trim())}</span></p>` : '')
+    + (mose.evento && (mose.evento.data || mose.evento.orario) ? `<p class="mose-ev">${icon('clock', 'sm')}<span>Sollevamento previsto ${evT ? `${dataCompleta(evT)} alle ${hm(evT)}` : esc(`${mose.evento.data} ${mose.evento.orario}`.trim())}</span></p>` : '')
     + `<details class="mose-d"${moseOpen ? ' open' : ''}><summary>${icon('chev', 'sm mose-chev')}<span>Barriere${riepilogo(mose.barriere || [])}</span></summary>`
     + `<ul class="mose-b">${groups.map(g => `<li><b>${esc(g.bocca.replace(/^Bocca di /i, ''))}</b><ul>${g.list.map(b => `<li data-sem="${esc(b.sem)}">${sema(b.sem)}<span class="mb-n">${esc(b.barriera.replace(/^Barriera di /i, ''))}</span><span class="mb-s">${esc(STATO_TXT[b.stato] || b.testo)}</span><span class="sr-only"> (${SEM_TXT[b.sem] || ''})</span></li>`).join('')}</ul></li>`).join('')}</ul></details>`
     + `<p class="tide-foot">${mose.aggiornato ? `Stato aggiornato dall'Autorità alle ${dayTag(mose.aggiornato)}${hm(mose.aggiornato)}` : 'Stato'}${mose.stale ? ' · <b>non aggiornato di recente</b>' : ''}. Il sollevamento si decide con previsioni oltre 110 cm; informazione indicativa.<br>Fonte:<a href="${esc(safeUrl(mose.fonte?.url || ''))}" target="_blank" rel="noopener noreferrer">${esc(mose.fonte?.nome || 'Autorità per la Laguna di Venezia')} · Operatività M.O.S.E.</a></p></section>`;

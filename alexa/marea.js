@@ -47,6 +47,8 @@ const dataDi = ms => T.adessoRoma(ms).ymd;
 // «fino alle otto», «fino a domani alle sette», «fino a mezzanotte»
 const fino = s => (/^(alle|all'|a )/.test(s) ? 'fino ' + s : 'fino a ' + s);
 // momento previsto in parole: «oggi alle otto», «domani alle sette e quaranta»
+// «, previsto oggi alle ventidue e trenta» se la fonte dà data e ora del sollevamento programmato (già convertite a 24 ore da mose.js)
+const quando = (C, m) => (m && m.stato === 'programmato' && m.evento && Number.isFinite(m.evento.ms) ? `, ${m.evento.ms < C.adesso() ? 'era previsto' : 'previsto'} ${momento(C, m.evento.ms)}` : '');
 function momento(C, ms) { const oggi = T.adessoRoma(C.adesso()).ymd, g = dataDi(ms); return `${g === oggi ? '' : P.giornoParlato(g, oggi) + ' '}${P.oraParlata(orariOra(ms))}`.trim(); }
 
 // ---- COM'È LA MAREA ----
@@ -64,7 +66,7 @@ async function marea(C) {
     v += ` Il prossimo ${prossimo.type === 'max' ? 'colmo' : 'minimo'} è previsto ${momento(C, prossimo.ts)}, intorno a ${cmParlato(prossimo.cm)}.`;
     righe.push({ badge: cmScheda(prossimo.cm), colore: '#4A5A6A', testo: prossimo.type === 'max' ? 'Prossimo colmo (previsione)' : 'Prossimo minimo (previsione)', dett: momento(C, prossimo.ts), ora: orariOra(prossimo.ts), attesa: '', stato: 'prog' });
   } else v += ' Non ho previsioni per le prossime ore.';
-  const m = t.mose && t.mose.stato && t.mose.stato !== 'recesso' ? ` Il MOSE risulta ${({ programmato: 'programmato per il sollevamento', sollevamento: 'in sollevamento', sollevata: 'sollevato', abbassamento: 'in abbassamento' })[t.mose.stato] || 'attivo'}.` : '';
+  const m = t.mose && t.mose.stato && t.mose.stato !== 'recesso' ? ` Il MOSE risulta ${({ programmato: 'programmato per il sollevamento' + quando(C, t.mose), sollevamento: 'in sollevamento', sollevata: 'sollevato', abbassamento: 'in abbassamento' })[t.mose.stato] || 'attivo'}.` : '';
   v += m;
   return { voce: conMose(P.esc(v).replace(/&apos;/g, "'")), scheda: { titolo: 'Marea a Venezia', sottotitolo: 'Punta della Salute', grande: cmScheda(t.cm), righe, nota: 'Misura e previsione del Centro Maree: le previsioni possono cambiare con vento e pressione.', fonte: FONTE_MAREA }, ctx: { tipo: 'marea' }, fine: false };
 }
@@ -79,7 +81,7 @@ async function sintesi(C) {
     const cls = classe(mx.cm);
     v += cls === 'normale' ? ` Nelle prossime dodici ore non è prevista acqua alta: massimo ${cmParlato(mx.cm)}.` : ` Nelle prossime dodici ore è previsto un massimo di ${cmParlato(mx.cm)} ${momento(C, mx.ts)}${cls === 'sostenuta' ? ': marea sostenuta' : ': acqua alta'}.`;
   } else v += ' Non ho previsioni per le prossime ore.';
-  const ms = t.mose && t.mose.stato && t.mose.stato !== 'recesso' ? ` Il MOSE risulta ${({ programmato: 'programmato', sollevamento: 'in sollevamento', sollevata: 'sollevato', abbassamento: 'in abbassamento' })[t.mose.stato] || 'attivo'}.` : '';
+  const ms = t.mose && t.mose.stato && t.mose.stato !== 'recesso' ? ` Il MOSE risulta ${({ programmato: 'programmato' + quando(C, t.mose), sollevamento: 'in sollevamento', sollevata: 'sollevato', abbassamento: 'in abbassamento' })[t.mose.stato] || 'attivo'}.` : '';
   return { voce: conMose(P.esc(v + ms).replace(/&apos;/g, "'")), cm: t.cm, max: mx && mx.cm != null ? Math.round(mx.cm) : null, trend: tr, riga: { badge: cmScheda(t.cm), colore: mx && mx.cm >= SOGLIA_ALTA ? '#C0392B' : mx && mx.cm >= SOGLIA_BASSA ? '#C99A2E' : '#2E7D6B', testo: 'Marea ora', dett: mx && mx.cm != null ? `Massimo 12 ore: ${cmScheda(mx.cm)}` : '', ora: '', attesa: '', stato: mx && mx.cm >= SOGLIA_BASSA ? 'ritardo' : 'ok' } };
 }
 
@@ -151,7 +153,11 @@ async function mose(C) {
   const frasi = { recesso: 'Il MOSE non è sollevato: le barriere sono a riposo, in recesso.', programmato: 'È programmato un sollevamento del MOSE.', sollevamento: 'Il MOSE si sta sollevando.', sollevata: 'Il MOSE è sollevato.', abbassamento: 'Il MOSE si sta abbassando.', sconosciuto: 'Lo stato del MOSE non è riconosciuto.' };
   let v = frasi[m.stato] || frasi.sconosciuto;
   if (['sollevata', 'sollevamento', 'abbassamento'].includes(m.stato) && m.titolo) v += ' ' + m.titolo.replace(/^MOSE (attivo|in attivazione|in rientro):\s*/i, '') + '.';
-  if (m.evento && m.evento.data && ['programmato', 'recesso'].includes(m.stato) && m.stato === 'programmato') v += ` Evento: ${m.evento.data}${m.evento.orario ? ', ' + m.evento.orario : ''}.`;
+  if (m.evento && m.stato === 'programmato') {
+    // l'orario è già a 24 ore (la fonte scrive AM/PM): si dice «oggi alle diciotto e trenta», mai «06:30 PM»
+    if (Number.isFinite(m.evento.ms)) v += m.evento.ms < adesso ? ` Il sollevamento era previsto ${momento(C, m.evento.ms)}.` : ` Il sollevamento è previsto ${momento(C, m.evento.ms)}.`;
+    else if (m.evento.data || m.evento.orario) v += ' Non riesco a leggere con certezza data e ora del sollevamento programmato: le trovi sulla pagina dell\'Autorità per la Laguna.';
+  }
   const eta = m.letto ? U.etaDato(m.letto, adesso) : null;
   if (m.stale) v += ` Attenzione: lo stato non è aggiornato da ${P.minutiParlati(eta)}.`;
   else if (eta != null && eta >= 10) v += ` Dato letto ${P.minutiParlati(eta)} fa.`;

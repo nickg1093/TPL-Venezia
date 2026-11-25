@@ -36,13 +36,25 @@ function tables(html) {
   }
   return out;
 }
-// «13/11/2026 02:03 AM» (ora di Roma) -> ms
+// «13/11/2026 02:03 AM» (ora di Roma) -> ms. AM/PM (anche «a.m.», «p.m.», «pm» attaccato) si convertono in 24 ore:
+// 12:30 AM = 00:30, 12:30 PM = 12:30, 06:30 PM = 18:30; senza AM/PM l'ora è già a 24 ore.
 function romeMs(s) {
-  const m = String(s || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?:\s*([AP]M))?/i); if (!m) return null;
-  let h = +m[4]; if (m[6]) { h %= 12; if (/pm/i.test(m[6])) h += 12; }
+  const m = String(s || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})[\sT,]+(\d{1,2})[:.](\d{2})(?:[:.]\d{2})?(?:\s*([AP])\.?\s*M\b\.?)?/i); if (!m) return null;
+  let h = +m[4]; if (m[6]) { h %= 12; if (/p/i.test(m[6])) h += 12; }
+  if (h > 23 || +m[5] > 59) return null;
   const guess = Date.UTC(+m[3], +m[2] - 1, +m[1], h, +m[5]);
   const off = t => { const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(t)); const g = k => +p.find(x => x.type === k).value; return Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute')) - t; };
   return guess - off(guess - off(guess));
+}
+// «Evento»: data «14/11/2026» + orario «06:30 PM» -> { data, orario (24 ore, «18:30»), ms (istante reale, ora di Roma) }.
+// Se l'orario non si legge si tiene il testo della fonte, senza ms (chi lo mostra non deve indovinare AM o PM).
+function eventoDa(data, orario) {
+  const d = String(data || '').trim().slice(0, 40), o = String(orario || '').trim().slice(0, 40);
+  if (!d && !o) return null;
+  const ms = romeMs(`${d} ${o}`);
+  if (ms == null) return { data: d, orario: o, ms: null };
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', hour12: false, hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(ms)), g = k => p.find(x => x.type === k).value;
+  return { data: d, orario: `${g('hour') === '24' ? '00' : g('hour')}:${g('minute')}`, ms };
 }
 // dalla pagina allo stato: { stato, sem, titolo, barriere: [{ bocca, barriera, stato, sem, testo }], evento, aggiornato } (null se la tabella manca)
 function parse(html) {
@@ -59,7 +71,7 @@ function parse(html) {
   if (!barriere.length) return null;
   let evento = null;
   const et = ts.find(t => col(t, /^data$/i) >= 0 && col(t, /^orario$/i) >= 0);
-  if (et) { const r = et.rows.find(x => (x[col(et, /^data$/i)] || x[col(et, /^orario$/i)])); if (r) evento = { data: r[col(et, /^data$/i)].slice(0, 40), orario: r[col(et, /^orario$/i)].slice(0, 40) }; }
+  if (et) { const r = et.rows.find(x => (x[col(et, /^data$/i)] || x[col(et, /^orario$/i)])); if (r) evento = eventoDa(r[col(et, /^data$/i)], r[col(et, /^orario$/i)]); }
   const worst = barriere.reduce((m, b) => (RANK[b.stato] > RANK[m.stato] ? b : m), barriere[0]);
   const all = k => barriere.every(b => b.stato === k), some = k => barriere.some(b => b.stato === k);
   // concordanza: «1 barriera sollevata», «2 barriere sollevate», «tutte le barriere sollevate» (barriera e paratoia: femminili)
@@ -97,5 +109,5 @@ function snapshot(now = Date.now()) {
   if (!cur) return null;
   return { ...cur, letto: at, stale: now - at > STALE_MS, fonte: { nome: 'Autorità per la Laguna di Venezia', url: SRC_URL } };
 }
-const brief = (now = Date.now()) => (cur && now - at <= STALE_MS ? { stato: cur.stato, sem: cur.sem } : null);
-module.exports = { parse, classify, romeMs, refresh, snapshot, brief, SRC_URL, _reset: () => { cur = null; at = 0; failAt = 0; busy = null; } };
+const brief = (now = Date.now()) => (cur && now - at <= STALE_MS ? { stato: cur.stato, sem: cur.sem, evento: cur.evento && Number.isFinite(cur.evento.ms) ? { ms: cur.evento.ms, orario: cur.evento.orario } : null } : null);
+module.exports = { parse, classify, romeMs, eventoDa, refresh, snapshot, brief, SRC_URL, _reset: () => { cur = null; at = 0; failAt = 0; busy = null; } };

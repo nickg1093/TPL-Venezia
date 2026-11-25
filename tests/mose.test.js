@@ -36,7 +36,7 @@ test('stati della fonte -> semafori: programmato giallo, in sollevamento lampegg
   const b = mose.parse(page([S, S, S, S])); assert.strictEqual(b.titolo, 'MOSE attivo: tutte le barriere sollevate');
   const c = mose.parse(page([F, F, R, R])); assert.strictEqual(c.sem, 'lampeggia'); assert.match(c.titolo, /in sollevamento/);
   const d = mose.parse(page([P, P, P, P], ['14/11/2026', '06:30'])); assert.strictEqual(d.sem, 'giallo');
-  assert.deepStrictEqual(d.evento, { data: '14/11/2026', orario: '06:30' });
+  assert.deepStrictEqual(d.evento, { data: '14/11/2026', orario: '06:30', ms: Date.UTC(2026, 10, 14, 5, 30) });   // 06:30 ora di Roma (UTC+1)
 });
 
 test('pagina cambiata o vuota: nessuno stato inventato', () => {
@@ -54,7 +54,21 @@ test('lettura: cache, errori della fonte senza perdere l\'ultimo stato, letture 
   fail = true; await mose.refresh({ fetchFn, now: Date.now() + 11 * 60e3 }); assert.strictEqual(n, 2);
   assert.strictEqual(mose.snapshot().stato, 'recesso', 'fonte giù: resta l\'ultimo stato letto');
   assert.ok(mose.snapshot().fonte.url.startsWith('https://www.autoritalaguna.it/'));
-  assert.deepStrictEqual(mose.brief(), { stato: 'recesso', sem: 'verde' });
+  assert.deepStrictEqual(mose.brief(), { stato: 'recesso', sem: 'verde', evento: null });
   assert.strictEqual(mose.brief(Date.now() + 3600e3), null, 'dato vecchio: niente semaforo sul pulsante');
   mose._reset();
+});
+
+test('AM/PM: 12:30 AM = mezzanotte e mezza, 12:30 PM = mezzogiorno e mezza, 06:30 PM = 18:30; senza AM/PM resta a 24 ore', () => {
+  const h = (x) => { const e = mose.eventoDa('14/11/2026', x); return e && e.orario; };
+  assert.strictEqual(h('06:30 AM'), '06:30'); assert.strictEqual(h('06:30 PM'), '18:30');
+  assert.strictEqual(h('12:30 AM'), '00:30'); assert.strictEqual(h('12:30 PM'), '12:30');
+  assert.strictEqual(h('11:59 pm'), '23:59'); assert.strictEqual(h('6:05 p.m.'), '18:05'); assert.strictEqual(h('06:30PM'), '18:30');
+  assert.strictEqual(h('18:30'), '18:30'); assert.strictEqual(h('00:15'), '00:15');
+  assert.strictEqual(mose.eventoDa('14/11/2026', '06:30 PM').ms, Date.UTC(2026, 10, 14, 17, 30));   // inverno: UTC+1
+  assert.strictEqual(mose.eventoDa('14/07/2026', '06:30 PM').ms, Date.UTC(2026, 6, 14, 16, 30));    // estate: UTC+2
+  assert.strictEqual(mose.romeMs('13/11/2026 12:03 AM'), Date.UTC(2026, 10, 12, 23, 3));            // «aggiornato» a mezzanotte: giorno giusto
+  assert.strictEqual(mose.romeMs('13/11/2026 12:03 PM'), Date.UTC(2026, 10, 13, 11, 3));
+  assert.strictEqual(mose.eventoDa('14/11/2026', 'da definire').ms, null, 'orario illeggibile: nessun istante inventato');
+  assert.strictEqual(mose.eventoDa('', ''), null);
 });

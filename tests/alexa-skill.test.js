@@ -113,6 +113,22 @@ test('acqua alta per una parte del giorno (stasera): finestra serale', async () 
   const r = await sessione(SCEN_BASE({ '/api/tide': t })).dire('AcquaAltaIntent', { ora: 'EV' });
   assert.match(r.testo, /Per stasera il massimo previsto/);
 });
+test('MOSE programmato: AM/PM della fonte letti giusti (06:30 PM = diciotto e trenta, 06:30 AM = sei e trenta), orario illeggibile mai inventato', async () => {
+  const mose = require('../mose'), ev = (d, o) => SCEN_BASE({ '/api/mose': F.mose('programmato', { sem: 'giallo', evento: mose.eventoDa(d, o) }) });
+  let r = await sessione(ev('25/11/2026', '06:30 PM')).dire('MoseIntent');
+  assert.match(r.testo, /sollevamento è previsto alle diciotto e trenta/); assert.doesNotMatch(r.testo, /alle sei e trenta/);
+  r = await sessione(ev('26/11/2026', '06:30 AM')).dire('MoseIntent');
+  assert.match(r.testo, /previsto domani alle sei e trenta/);
+  r = await sessione(ev('26/11/2026', '12:15 AM')).dire('MoseIntent');
+  assert.match(r.testo, /previsto domani (a mezzanotte|alle zero|a mezzanotte e)/);
+  r = await sessione(ev('25/11/2026', 'da definire')).dire('MoseIntent');
+  assert.match(r.testo, /non riesco a leggere con certezza data e ora/i); assert.doesNotMatch(r.testo, /da definire/);
+});
+test('Marea con MOSE programmato: dice anche l\'ora in 24 ore («10:30 PM» = ventidue e trenta, mai le dieci)', async () => {
+  const mose = require('../mose'), ev = mose.eventoDa('25/11/2026', '10:30 PM');
+  const r = await sessione(SCEN_BASE({ '/api/tide': F.marea({ cm: 80, extremes: [F.estremo('max', 120, 11)], mose: { stato: 'programmato', sem: 'giallo', evento: { ms: ev.ms, orario: ev.orario } } }) })).dire('MareaIntent');
+  assert.match(r.testo, /programmato per il sollevamento, previsto alle ventidue e trenta/); assert.doesNotMatch(r.testo, /alle dieci/);
+});
 test('MOSE: recesso, sollevato, errore di lettura, dato non aggiornato', async () => {
   let r = await sessione(SCEN_BASE({ '/api/mose': F.mose('recesso') })).dire('MoseIntent');
   assert.match(r.testo, /Il MOSE non è sollevato/);

@@ -161,18 +161,18 @@ const SLOT = {
 const INGL = ['zero', 'one', 'two', 'three'];
 const tramVarianti = n => { const m = /^T(\d)$/i.exec(n); if (!m) return []; const d = m[1], w = P.parole(+d); return [`t ${d}`, `t ${w}`, `ti ${w}`, `ti ${d}`, `t ${INGL[+d] || d}`, `tram ${w}`, `tram ${d}`, `il tram ${w}`]; };
 // METEO: frasi costruite combinando forme e preposizioni (non una per esempio): la grandezza e la stazione sono slot, il resto è la forma
-const PREP_ST = ['a {stazione}', 'in {stazione}', 'alla {stazione}', "all'{stazione}", 'al {stazione}', 'sulla {stazione}', 'verso {stazione}'];
-const FORME_G = ["com'è la {grandezza}", 'come è la {grandezza}', "qual è la {grandezza}", "qual è il {grandezza}", "qual è l'{grandezza}", 'quanta {grandezza} c\'è',
-  "quanto {grandezza} c'è", "c'è {grandezza}", "c'è la {grandezza}", "c'è il {grandezza}", "che {grandezza} c'è", 'che {grandezza} fa', 'dimmi la {grandezza}', 'dimmi il {grandezza}', "dimmi l'{grandezza}",
-  'quali sono le {grandezza}', 'com\'è l\'{grandezza}', 'quanti metri di {grandezza} ci sono', 'a quanto arrivano le {grandezza}', 'quanto sono forti le {grandezza}', 'quanto è calda l\'{grandezza}',
-  "quanto è fredda l'{grandezza}", "a che temperatura è l'{grandezza}", "c'è molto {grandezza}", "c'è molta {grandezza}", 'tira {grandezza}', '{grandezza} adesso'];
+const PREP_ST = ['a {stazione}', 'in {stazione}', 'alla {stazione}', 'al {stazione}', 'sulla {stazione}', 'verso {stazione}'];
+const FORME_G = ["com'è la {grandezza}", 'come è la {grandezza}', "qual è la {grandezza}", "qual è il {grandezza}", 'quanta {grandezza} c\'è',
+  "quanto {grandezza} c'è", "c'è {grandezza}", "c'è la {grandezza}", "c'è il {grandezza}", "che {grandezza} c'è", 'che {grandezza} fa', 'dimmi la {grandezza}', 'dimmi il {grandezza}',
+  'quali sono le {grandezza}', 'quanti metri di {grandezza} ci sono', 'a quanto arrivano le {grandezza}', 'quanto sono forti le {grandezza}', 'quanto è calda la {grandezza}',
+  "quanto è fredda la {grandezza}", "a che temperatura è la {grandezza}", "c'è molto {grandezza}", "c'è molta {grandezza}", 'tira {grandezza}', '{grandezza} adesso'];
 const meteoFrasi = [
   ...FORME_G, ...FORME_G.slice(0, 22).flatMap(f => PREP_ST.slice(0, 4).map(p => `${f} ${p}`)),
   'che tempo fa', 'che tempo fa {stazione}', ...PREP_ST.map(p => `che tempo fa ${p}`), ...PREP_ST.slice(0, 4).map(p => `com'è il tempo ${p}`), 'meteo {stazione}', 'meteo a {stazione}',
   "che {grandezza} c'è fuori", 'quanti gradi ci sono', 'quanti gradi ci sono a {stazione}', 'fa freddo fuori', 'fa caldo fuori', 'quanto fa fuori', 'si vede bene in laguna', 'si vede qualcosa a {stazione}',
-  'è nebbioso a {stazione}', '{grandezza} a {stazione}', 'la {grandezza} a {stazione}', 'il {grandezza} a {stazione}', "l'{grandezza} a {stazione}"
+  'è nebbioso a {stazione}', '{grandezza} a {stazione}', 'la {grandezza} a {stazione}', 'il {grandezza} a {stazione}'
 ];
-const meteoSeguito = ['e le {grandezza}', 'e la {grandezza}', 'e il {grandezza}', "e l'{grandezza}", 'e quanto {grandezza}', 'e com\'è la {grandezza}',
+const meteoSeguito = ['e le {grandezza}', 'e la {grandezza}', 'e il {grandezza}', 'e quanto {grandezza}', 'e com\'è la {grandezza}',
   ...[0, 2, 3].map(i => `e ${PREP_ST[i]}`), ...PREP_ST.slice(0, 4).map(p => `e le {grandezza} ${p}`), ...PREP_ST.slice(0, 4).map(p => `e il {grandezza} ${p}`), 'e invece a {stazione}'];
 const meteoDirezione = ['da dove soffia il vento', 'da dove tira il vento', 'da dove viene il vento', 'da che parte soffia il vento', 'che direzione ha il vento', 'in che direzione soffia il vento',
   'qual è la direzione del vento', 'da dove arriva il vento', ...PREP_ST.slice(0, 4).map(p => `da dove soffia il vento ${p}`), ...PREP_ST.slice(0, 2).map(p => `qual è la direzione del vento ${p}`)];
@@ -224,6 +224,8 @@ Object.assign(FR, { MeteoIntent: meteoFrasi, MeteoSeguitoIntent: meteoSeguito, M
   ].map(i => (i.slots && !i.slots.length ? { name: i.name, samples: i.samples } : i));
   // controllo: ogni {slot} usato in un esempio è dichiarato
   for (const i of intents) for (const s of i.samples || []) for (const m of s.matchAll(/\{(\w+)\}/g)) if (!(i.slots || []).some(x => x.name === m[1])) throw new Error(`${i.name}: slot {${m[1]}} non dichiarato in «${s}»`);
+  // Amazon rifiuta l'apostrofo (o altri simboli) attaccato a uno slot: «l'{slot}», «all'{slot}»
+  for (const i of intents) for (const s of i.samples || []) if (/['’]\{|\}['’]/.test(s)) throw new Error(`${i.name}: apostrofo attaccato a uno slot in «${s}»`);
   const modello = { interactionModel: { languageModel: { invocationName: NOME_INVOCAZIONE, intents, types: tipi } } };
   fs.mkdirSync(path.dirname(USCITA), { recursive: true });
   fs.writeFileSync(USCITA, JSON.stringify(modello, null, 2) + '\n');
