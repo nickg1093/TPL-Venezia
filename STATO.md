@@ -58,6 +58,7 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 | Tempo reale | `live.js`, `tracker.js`, `assign.js`, `turni.js`, `motion.js`, `geo.js` |
 | GTFS e orari | `gtfs.js`, `gtfsstore.js`, `zip.js`, `csv.js`, `ids.js`, `schedule.js`, `calendar.js` (ora di Venezia), `orari.js`, `nomi.js` |
 | Pianificatore (RAPTOR) | `percorso.js`, `pedonale-*.txt` |
+| Skill Alexa (voce) | `alexa/` (`skill.js`, moduli, `lambda/`, `skill-package/`), ingressi `/api/alexa` in `server.js`; prove `tests/alexa-*.test.js` |
 | Avvisi di servizio | `avvisi.js` (regole, 1082 righe), `avvisi-archivio.js`, `avvisi-ai.js` (validazione delle risposte AI) |
 | Avvisi di arrivo e viaggio guidato | `watch.js`, `push.js` (Web Push VAPID) |
 | Marea, MOSE | `tide.js`, `marea-archivio.js`, `mose.js` (il calendario `ics.js` è stato tolto nella v33.2) |
@@ -79,6 +80,7 @@ regole del tempo reale app. B · sicurezza app. C · CDN e dati sul telefono app
 
 ## 5. Stato attuale
 
+- **Skill Alexa (25/11/2026, ramo `feature/alexa`, NON pubblicata)**: cartella `alexa/` (guida `alexa/README.md`, stato `alexa/STATO.md`). Ponte Alexa-hosted gratuito → `POST /api/alexa` → logica in processo che riusa le API della PWA; spenta senza `ALEXA_TOKEN`. Prove verdi; da fare dall'utente: account Amazon, creazione skill, import del modello, token, prove su Echo. Non toccati: Web Push, PWA, versione (resta v34).
 - **v34 (24/11/2026, audit funzionale)**: fermate sospese e avvisi generali (nebbia, acqua/bassa marea) detti
   chiaramente nel pianificatore, nel viaggio e nella fermata («il mezzo potrebbe non fermarsi»); viaggio guidato con controlli sul campo
   (mezzo perso, discesa mancata) e «Ricalcola da qui» dalla posizione; marea vecchia dichiarata; ripristino dei preferiti tutto-o-niente;
@@ -220,6 +222,7 @@ intestazione e §12 del README, CHANGELOG.md; `GUIDA_VER` solo se si aggiungono 
 
 ## 8. Questioni aperte (decide l'utente)
 
+0. **Skill Alexa**: unire `feature/alexa` a `main` e fare il deploy (decide l'utente), poi seguire `alexa/README.md` §3; pubblicazione nello store e Flash Briefing solo se li vuole.
 1. **Banda di Render**: secondo l'analisi del 16/11/2026 il piano gratuito include 5 GB al mese; il flusso SSE pesa circa 139 KB ogni 120 s con
    tutti i servizi e l'app circa 176 KB compressi alla prima apertura; stima del tetto: 500–800 aperture al giorno. Proposta non implementata:
    **inviare il tempo reale solo per la zona visibile**. Alternativa esclusa dalle regole: carta di credito su Render.

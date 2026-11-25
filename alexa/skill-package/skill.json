@@ -1,0 +1,47 @@
+{
+  "manifest": {
+    "manifestVersion": "1.0",
+    "publishingInformation": {
+      "locales": {
+        "it-IT": {
+          "name": "Venezia TPL",
+          "summary": "Partenze di vaporetti, bus e tram a Venezia, percorsi, marea, MOSE e avvisi. Servizio indipendente.",
+          "description": "Venezia TPL è una skill indipendente e non ufficiale, non realizzata né approvata da ACTV, AVM, Comune di Venezia o Amazon. Chiedi quando passa il prossimo vaporetto, bus o tram, se una linea è in ritardo, qual è l'ultima corsa, come arrivare da un posto all'altro, com'è la marea e se è prevista acqua alta, lo stato del MOSE, gli avvisi di servizio e gli scioperi, oppure il riepilogo della mattina. Sugli schermi come Echo Show vedi anche una scheda con le informazioni principali. Usa dati aperti di ACTV e del Centro Previsioni e Segnalazioni Maree del Comune di Venezia: le informazioni sono indicative e possono contenere errori; fanno fede solo le comunicazioni ufficiali. Non indica percorsi sicuri con l'acqua alta. La skill non richiede account e non salva né registra le tue richieste.",
+          "examplePhrases": [
+            "Alexa, apri venezia t. p. l.",
+            "Alexa, chiedi a venezia t. p. l. quando passa il due alle Zattere",
+            "Alexa, chiedi a venezia t. p. l. com'è la marea"
+          ],
+          "keywords": ["venezia", "vaporetto", "actv", "marea", "acqua alta", "mose", "trasporti", "autobus", "tram", "orari"],
+          "smallIconUri": "file://assets/it-IT_smallIcon.png",
+          "largeIconUri": "file://assets/it-IT_largeIcon.png",
+          "updatesDescription": "Prima versione."
+        }
+      },
+      "isAvailableWorldwide": false,
+      "distributionCountries": ["IT"],
+      "distributionMode": "PUBLIC",
+      "category": "PUBLIC_TRANSPORTATION",
+      "testingInstructions": "Nessun account necessario. La skill risponde con dati reali del servizio ACTV di Venezia: se il server è inattivo la prima richiesta può chiedere di riprovare dopo qualche secondo (avvio a freddo). Esempi: 'Alexa, apri venezia t. p. l.'; poi 'quando passa il due alle Zattere', 'com'è la marea', 'ci sono avvisi', 'come arrivo a Rialto da Piazzale Roma', 'riepilogo della mattina'. Fuori dagli orari di servizio le partenze possono mancare: è normale."
+    },
+    "privacyAndCompliance": {
+      "allowsPurchases": false,
+      "usesPersonalInfo": false,
+      "isChildDirected": false,
+      "isExportCompliant": true,
+      "containsAds": false,
+      "locales": {
+        "it-IT": {
+          "privacyPolicyUrl": "https://veneziatpl.onrender.com/",
+          "termsOfUseUrl": "https://veneziatpl.onrender.com/"
+        }
+      }
+    },
+    "apis": {
+      "custom": {
+        "endpoint": { "uri": "ask-custom-VeneziaTPL-default" },
+        "interfaces": [ { "type": "ALEXA_PRESENTATION_APL" } ]
+      }
+    }
+  }
+}

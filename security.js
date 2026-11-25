@@ -67,7 +67,7 @@ function httpsRedirect(req, res, pathname) {
 
 // ---- limitazione di frequenza (finestra di 60 s per IP e classe) ----
 // plan: calcoli del pianificatore (CPU): un utente ne fa ~5-15 al minuto (aggiornamento ogni 60 s, alternative, modifiche); sse: aperture del flusso
-const LIMITS = { api: 1200, heavy: 300, plan: 90, sse: 30, static: 900, admin: 6, watch: 20 };   // watch: attivazione/annullamento degli avvisi di arrivo   // un utente con pannello aperto fa ~30 richieste/min; il margine copre più schede o dispositivi dietro lo stesso IP
+const LIMITS = { api: 1200, heavy: 300, plan: 90, sse: 30, static: 900, admin: 6, watch: 20, alexa: 90 };   // watch: attivazione/annullamento degli avvisi di arrivo   // un utente con pannello aperto fa ~30 richieste/min; il margine copre più schede o dispositivi dietro lo stesso IP
 const hits = new Map();         // "classe|ip" -> { n, reset }
 const MAX_TRACKED = 50000;      // oltre questo numero di IP distinti la tabella si svuota (memoria limitata anche sotto attacco)
 function limit(req, cls) {

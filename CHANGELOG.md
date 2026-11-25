@@ -3,6 +3,16 @@
 Riepilogo per versione delle modifiche che contano per chi usa o mantiene l'app. I dettagli tecnici sono in `README.md` §12; lo storico per
 gli utenti è nell'app (Informazioni → Novità, generato da `public/js/guida.js`).
 
+## Skill Alexa «Venezia TPL» — 25/11/2026 (ramo `feature/alexa`, non pubblicata; l'app resta alla v34)
+- **Nuova skill vocale in italiano** (cartella `alexa/`, guida in `alexa/README.md`): partenze e ritardi, ultima corsa, percorsi con il motore
+  RAPTOR della PWA, marea/colmo/acqua alta/MOSE/passerelle, avvisi e scioperi, riepilogo della mattina, seguiti («e il prossimo?», «e al
+  ritorno?», «e domani?», «senza cambi»), schede per Echo Show e Flash Briefing. Stessi dati e regole della PWA; nessun dato duplicato.
+- **Server**: nuovi ingressi `POST /api/alexa` (token `ALEXA_TOKEN`, spento se assente; 90 richieste/min; massimo 6 contemporanee; cede il
+  posto a mappa e notifiche quando CPU o memoria sono alte) e `GET /api/alexa/flash`. Web Push e tempo reale non toccati.
+- **Privacy**: la funzione Lambda gratuita di Alexa-hosted toglie utente, dispositivo e sessione prima di inoltrare; nessun registro delle
+  frasi, nessuna preferenza salvata. Informativa (Privacy) e note legali (Skill Alexa) aggiornate in *Informazioni*; resta «indipendente e non ufficiale».
+- Prove nuove: `tests/alexa-skill.test.js`, `alexa-modello`, `alexa-lambda`, `alexa-server`, `alexa-unita` (+ `alexa-fixtures.js`).
+
 ## v34 — 24/11/2026 (audit funzionale e simulazioni sul campo)
 - **Fermate sospese e corse incerte**: gli avvisi non cambiano i percorsi (giusto: la fermata sospesa resta negli orari), ma ora lo si dice
   chiaramente. Nel pianificatore la soluzione con una fermata di salita o discesa sospesa/spostata ha una riga in evidenza; nel dettaglio,

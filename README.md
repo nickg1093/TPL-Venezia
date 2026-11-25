@@ -127,7 +127,8 @@ Indirizzo pubblico: <https://veneziatpl.onrender.com> · Repository: <https://gi
 | `public/acqua/` | File per i telefoni generati da `scripts/genera-acqua.js` (~16 kB compressi): per la prova in locale; poi andranno sul ramo `dati`. |
 | `data/gtfs/<nav\|aut>/` | Archivio dei GTFS statici (`<inizio validità>_<hash>.zip`), aggiornato dal workflow. `data/actv_*.zip` sono versioni storiche ancora usate per le date vecchie: **non cancellarle**. |
 | `scripts/` | `update-gtfs.js` (scarica i GTFS), `archivia-avvisi.js` e `interpreta-avvisi.js` (workflow degli avvisi), `pedonale.js` (distanze a piedi tra fermate), `genera-dati.js` e `pedoni-core.js` (file del ramo `dati`: dati fissi e rete pedonale in mattonelle, con il segno «ponte»), `genera-acqua.js`, `acqua-core.js` e `ramses-core.js` (dati dell'acqua alta, v33; quote misurate dal rilievo RAMSES, v33.7), `vapid-keys.js` (chiavi delle notifiche). |
-| `tests/` | Prove automatiche (`*.test.js`, `node --test`), feed simulato (`fakefeed.js`), prove dell'interfaccia (`ui/run.py`, Playwright). |
+| `tests/` | Prove automatiche (`*.test.js`, `node --test`), feed simulato (`fakefeed.js`), prove dell'interfaccia (`ui/run.py`, Playwright). Per la skill Alexa: `alexa-*.test.js` e `alexa-fixtures.js`. |
+| `alexa/` | **Skill vocale Alexa «Venezia TPL»** (indipendente, non ufficiale): logica in Node (`skill.js` e moduli), funzione Lambda gratuita (`lambda/`), modello di interazione italiano e manifesto (`skill-package/`), generatore del modello (`scripts/`). Riusa le API di questo server senza duplicare dati. Guida completa: `alexa/README.md`; stato e decisioni: `alexa/STATO.md`. |
 | `.github/workflows/` | `update-gtfs.yml`, `archivio-avvisi.yml`, `dati.yml`, `keepalive.yml` (vedi [7](#7-github)). |
 
 ---
@@ -376,6 +377,8 @@ personale resta sul dispositivo dell'utente (privacy) e ciò che è pubblico sta
 | `/api/watch/handoff` | POST | passaggio degli avvisi dalla vecchia alla nuova istanza durante un deploy (firmato; mai da un browser) |
 | `/api/audit`, `/api/gtfs`, `/api/avvisi-eventi`, `/api/whoami`, `/api/tide?debug=1` | GET, **DIAG_TOKEN** | diagnosi |
 | `/api/reload-gtfs` | POST, **ADMIN_TOKEN** | ricontrolla e ricarica i GTFS |
+| `/api/alexa` | POST, **ALEXA_TOKEN** | skill Alexa «Venezia TPL» (cartella `alexa/`): riceve la richiesta di Alexa dalla funzione gratuita di Alexa-hosted, risponde con voce e scheda. Spenta (404) senza `ALEXA_TOKEN`. Limite 90 richieste/min per indirizzo |
+| `/api/alexa/flash` | GET | feed pubblico di sola lettura per il Flash Briefing di Alexa (avvisi in corso e marea), in memoria per 60 s |
 | `/healthz` | GET | `ok` (controllo di salute di Render e keep-alive) |
 
 ---
@@ -388,6 +391,8 @@ personale resta sul dispositivo dell'utente (privacy) e ciò che è pubblico sta
 |---|---|---|
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | **sì** per le notifiche | chiavi delle notifiche; si generano con `node scripts/vapid-keys.js`. Senza, cambiano a ogni riavvio e le iscrizioni si perdono |
 | `DIAG_TOKEN` | consigliata | abilita le API di diagnosi (stringa casuale di almeno 16 caratteri) |
+| `ALEXA_TOKEN` | solo per la skill Alexa | abilita `POST /api/alexa` (almeno 16 caratteri; lo stesso valore va in `alexa/lambda/segreto.js`). Senza, la skill è spenta. Cancellarla = interruttore di emergenza |
+| `ALEXA_SKILL_ID` | facoltativa | ID della skill (`amzn1.ask.skill.…`): se impostato, il server rifiuta le richieste di altre skill |
 | `ADMIN_TOKEN` | consigliata | abilita `POST /api/reload-gtfs` |
 | `FORCE_HTTPS` | `1` in produzione | reindirizza a HTTPS e attiva HSTS |
 | `TRUST_PROXY` | `1` su Render | numero di proxy fidati: serve a leggere l'IP vero per i limiti di frequenza |

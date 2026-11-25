@@ -52,7 +52,7 @@ potenzialmente allagabili e passerelle dell'Atlante del Comune), preferiti, perc
 `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` (notifiche, `node scripts/vapid-keys.js`), `DIAG_TOKEN` e `ADMIN_TOKEN` (≥ 16 caratteri: API
 riservate, con `Authorization: Bearer`), `FORCE_HTTPS=1`, `TRUST_PROXY=1`, `APP_CONTACT` (email del titolare mostrata in Informazioni:
 necessaria per l'informativa privacy), facoltative `PUSH_CONTACT`, `RT_POLL_MS`, `AVVISI_ARCHIVIO`, `DATI_CDN`, `MEM_ALTO_MB`,
-`MEM_CRITICO_MB`, `DATI_REPO`, `MAREA_ARCHIVIO`. Segreti di GitHub: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`. Tabella completa: README §6.
+`MEM_CRITICO_MB`, `DATI_REPO`, `MAREA_ARCHIVIO`; per la skill Alexa `ALEXA_TOKEN` (≥ 16 caratteri, stesso valore di `alexa/lambda/segreto.js`) e, facoltativa, `ALEXA_SKILL_ID`. Segreti di GitHub: `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`. Tabella completa: README §6.
 
 ## 6. Comandi
 ```powershell
@@ -147,6 +147,14 @@ testi sull'acqua alta sempre «potenzialmente allagabili», mai allagamento cert
   `tests/ui/tutte.sh` / `tutte.ps1` (13 prove d'interfaccia, anche `TESTO=1.3`). Il server di prova tiene i file statici in memoria:
   dopo una modifica a `public/` va **riavviato** prima delle prove d'interfaccia. Le prove usano un IP diverso per persona simulata
   (`X-Forwarded-For` con `TRUST_PROXY=1`), altrimenti scattano i limiti di frequenza («Troppe richieste»), che è il comportamento giusto.
+
+## 9 quinquies. Skill Alexa «Venezia TPL» (25/11/2026, ramo `feature/alexa`, non pubblicata)
+Cartella `alexa/` (guida per l'utente `alexa/README.md`, decisioni e stato `alexa/STATO.md`). Architettura: Alexa → funzione Lambda gratuita
+di Alexa-hosted (`alexa/lambda`, toglie gli identificativi, gestisce Avvio/Aiuto/Stop) → `POST /api/alexa` su Render (`ALEXA_TOKEN`) → `alexa/skill.js`,
+che riusa in processo `/api/zone`, `/api/percorso`, `/api/tide`, `/api/mose`, `/api/avvisi`, ecc. Nessun dato duplicato, nessun LLM, nessuna
+dipendenza nuova, nessun dato personale salvato. Modifiche al server: solo `POSTS`, costanti `ALEXA_*`, `alexaAmbiente`, `stopsOut()`/`routesOut()`
+(estratte dai gestori esistenti) e due ingressi API; `security.js`: limite `alexa: 90`. Push e tempo reale non toccati. Da verificare solo con
+Amazon e un Echo: compilazione del modello (1328 fermate), pronuncia, schede APL, risveglio di Render al primo uso.
 
 ## 10. Limiti noti e verifiche da fare
 - Non provati su dispositivi veri: Safari iOS (installata e non), Android, Firefox e Safari desktop. Su iPhone le notifiche esistono solo

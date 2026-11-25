@@ -26,6 +26,7 @@ const { D, S, IDS, ready } = live;
 
 const PORT = +process.env.PORT || 3000;
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '', DIAG_TOKEN = process.env.DIAG_TOKEN || '';
+const ALEXA_TOKEN = process.env.ALEXA_TOKEN || '', ALEXA_SKILL_ID = process.env.ALEXA_SKILL_ID || '';   // skill Alexa (alexa/): senza ALEXA_TOKEN l'endpoint è spento
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 const fail = (code, msg) => Object.assign(new Error(msg), { code });
 const q = (u, k) => u.searchParams.get(k);
@@ -199,6 +200,19 @@ const validStyle = st => {
   return st && (st.shape === 'tile' || st.shape === 'circle') && hex(st.bg) && hex(st.fg) ? { shape: st.shape, bg: hex(st.bg), fg: hex(st.fg) } : null;
 };
 const ABOUT_VERSION = 'v34';
+// elenco delle fermate [id, nome, lat, lon, fonte] (stesso formato di /api/stops; lo usa anche la skill Alexa)
+function stopsOut() {
+  const out = [];
+  for (const i of IDS) {
+    const G = D[i];
+    for (const s in G.stopIndex) {
+      const name = G.stopBaseNames?.get(s) || G.stops[s], l = G.stopLoc[s];
+      if (l && name) out.push([`${i}:${s}`, name, l[0], l[1], i]);
+    }
+  }
+  return out;
+}
+function routesOut() { const out = {}; for (const i of IDS) for (const r in D[i].routes) out[`${i}:${r}`] = { ...D[i].routes[r], src: i }; return out; }
 // DATI FISSI sul telefono e dal CDN (fissi.js): file per versione dei GTFS con impronta, indice del ramo «dati» letto da GitHub.
 // DATI_REPO: repository del ramo dati (predefinito: quello da cui Render ha preso il codice); DATI_CDN=0 spegne il CDN (tutto dal server).
 const DATI_REPO = /^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/.test(process.env.DATI_REPO || '') ? process.env.DATI_REPO : (process.env.RENDER_GIT_REPO_SLUG || 'nickg1093/TPL-Venezia');
@@ -225,7 +239,24 @@ function sendTagged(req, res, body, gz, etag, cc = 'no-cache') {
   res.end(req.method === 'HEAD' ? undefined : z ? gz : (body || zlib.gunzipSync(gz)));
 }
 let stopsTag = null, routesMemo = null;
-const POSTS = new Set(['/api/reload-gtfs', '/api/watch', '/api/watch/cancel', '/api/watch/resub', '/api/watch/restore', '/api/watch/handoff', '/api/errore']);
+// ambiente della skill Alexa: esegue in processo le API in lettura già esposte (stesse regole di budget CPU e memoria del pianificatore)
+const ALEXA_API = new Set(['/api/zone', '/api/vehicles', '/api/trip', '/api/avvisi', '/api/tide', '/api/mose', '/api/percorso']);
+const alexaAmbiente = {
+  skillId: ALEXA_SKILL_ID,
+  stops: async () => stopsOut(), routes: async () => routesOut(), versione: () => live.version(),
+  occupato: () => sec.cpuBusy() || memoria.critico(),
+  call: async pathQuery => {
+    const u = new URL(pathQuery, 'http://localhost'), api = API.get(u.pathname);
+    if (!api || !ALEXA_API.has(u.pathname) || api.raw || api.method || api.auth) throw fail(404, 'non trovato');
+    if (api.cpu) {
+      if (sec.cpuBusy() || memoria.critico()) throw Object.assign(fail(503, 'Server occupato, riprova tra pochi secondi'), { busy: true });
+      const t0 = performance.now();
+      try { return await api.fn(u, {}); } finally { sec.cpuSpent(performance.now() - t0); }
+    }
+    return api.fn(u, {});
+  }
+};
+const POSTS = new Set(['/api/reload-gtfs', '/api/watch', '/api/watch/cancel', '/api/watch/resub', '/api/watch/restore', '/api/watch/handoff', '/api/errore', '/api/alexa']);
 
 // ---- ROUTE API ----  auth: 'diag' | 'admin' | undefined;  method: 'POST' solo per azioni che modificano lo stato
 const API = new Map(Object.entries({
@@ -254,17 +285,7 @@ const API = new Map(Object.entries({
   } },
   '/api/stops': { raw: (u, req, res) => {
     let gz = live.stopsCache();
-    if (!gz) {
-      const out = [];
-      for (const i of IDS) {
-        const G = D[i];
-        for (const s in G.stopIndex) {
-          const name = G.stopBaseNames?.get(s) || G.stops[s], l = G.stopLoc[s];
-          if (l && name) out.push([`${i}:${s}`, name, l[0], l[1], i]);
-        }
-      }
-      live.setStopsCache(gz = zlib.gzipSync(Buffer.from(JSON.stringify(out))));
-    }
+    if (!gz) live.setStopsCache(gz = zlib.gzipSync(Buffer.from(JSON.stringify(stopsOut()))));
     if (stopsTag?.gz !== gz) stopsTag = { gz, etag: etagOf(gz) };      // stesso elenco: 304 (prima si riscaricava a ogni apertura)
     sendTagged(req, res, null, gz, stopsTag.etag);
   } },
@@ -363,9 +384,7 @@ const API = new Map(Object.entries({
   '/api/dates': { fn: () => live.dateRange() },
   '/api/routes': { raw: (u, req, res) => {
     if (routesMemo?.ver !== live.version()) {
-      const out = {};
-      for (const i of IDS) for (const r in D[i].routes) out[`${i}:${r}`] = { ...D[i].routes[r], src: i };
-      const body = Buffer.from(JSON.stringify(out)); routesMemo = { ver: live.version(), body, gz: zlib.gzipSync(body), etag: etagOf(body) };
+      const body = Buffer.from(JSON.stringify(routesOut())); routesMemo = { ver: live.version(), body, gz: zlib.gzipSync(body), etag: etagOf(body) };
     }
     sendTagged(req, res, routesMemo.body, routesMemo.gz, routesMemo.etag);
   } },
@@ -379,6 +398,17 @@ const API = new Map(Object.entries({
   '/api/avvisi': { fn: () => avvisi.getAvvisi() },
   // STATO DEL MOSE (barriere alle bocche di porto) dall'Autorità per la Laguna di Venezia, con fonte e ora di lettura (mose.js)
   '/api/mose': { fn: async () => { await mose.refresh(); return mose.snapshot() || { error: 'Stato del MOSE non disponibile in questo momento' }; } },
+  // SKILL ALEXA «Venezia TPL» (alexa/): la richiesta di Alexa arriva dalla funzione Lambda gratuita di Alexa-hosted (alexa/lambda), con ALEXA_TOKEN.
+  // Riusa in processo le API qui sopra (stessi dati, stessi calcoli della PWA); nessun dato personale letto né salvato; spenta senza ALEXA_TOKEN.
+  '/api/alexa': { method: 'POST', limit: 'alexa', fn: async (u, req) => {
+    if (!ALEXA_TOKEN) throw fail(404, 'non trovato');
+    if (!sec.tokenOk(req, ALEXA_TOKEN)) { sec.authFailed(req); throw fail(401, 'Non autorizzato'); }
+    const r = await require('./alexa/skill').gestisci(await readJson(req, 65536), alexaAmbiente);
+    if (r.status !== 200) throw fail(r.status, 'richiesta non valida');
+    return r.body;
+  } },
+  // FLASH BRIEFING (alexa/flash.js): feed pubblico di sola lettura con le notizie di servizio e la marea; nessun dato personale
+  '/api/alexa/flash': { fn: async () => require('./alexa/flash').feed(alexaAmbiente) },
   // DIAGNOSI (riservata, DIAG_TOKEN): analisi dei feed realtime, collegamento col GTFS statico, versioni GTFS in archivio e scelta
   '/api/audit': { auth: 'diag', fn: u => Object.fromEntries(wanted(u).map(i => [i, {
     intervalloLetturaMs: live.REFRESH_MS, periodoPubblicazioneStimatoMs: S[i].pubMs ? Math.round(S[i].pubMs) : null,

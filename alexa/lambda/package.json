@@ -1,0 +1,8 @@
+{
+  "name": "venezia-tpl-alexa-lambda",
+  "version": "1.0.0",
+  "description": "Ponte gratuito Alexa-hosted verso il server Venezia TPL (nessuna dipendenza)",
+  "main": "index.js",
+  "private": true,
+  "license": "UNLICENSED"
+}

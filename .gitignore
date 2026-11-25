@@ -17,3 +17,8 @@ dati-passerelle/
 tmp-atlante/
 
 __pycache__/
+
+# Alexa: segreti della funzione Lambda (mai nel repository)
+alexa/lambda/segreto.js
+alexa/lambda/node_modules/
+.ask/
