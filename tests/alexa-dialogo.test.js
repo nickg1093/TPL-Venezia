@@ -290,3 +290,27 @@ test('voce: nessuna doppia preposizione o punteggiatura sbagliata, SSML con un s
   }
   assert.match(risposte[4].testo, /^Oggi da Rialto passano le linee/);
 });
+
+test('avvisi per mezzo: tram e autobus distinti con il tipo della linea; gli avvisi senza linee sono detti a parte, non attribuiti al mezzo', async () => {
+  const items = [
+    F.avviso({ title: 'Linea 2 deviata', effect: 'detour', lines: [{ n: '2', s: 'nav' }] }),
+    F.avviso({ title: 'Linea 6 sostituita da bus', effect: 'no_service', lines: [{ n: '6', s: 'aut' }], severity: 'severe' }),
+    F.avviso({ title: 'T1 rallentamenti a Mestre', effect: 'delays', lines: [{ n: 'T1', s: 'aut' }] }),
+    F.avviso({ title: 'Mestre via Pio X: cantiere', effect: 'detour', lines: [], stops: [] })
+  ];
+  const amb = F.ambiente({ '/api/avvisi': { updated: F.ADESSO, stale: false, items } }), d = dire(amb);
+  const tram = await d('AvvisiIntent', { mezzo: 'tram' });
+  assert.match(tram.testo, /^C'è un avviso per il tram\./);
+  assert.match(tram.testo, /T uno rallentamenti|T1 rallentamenti/i);
+  assert.doesNotMatch(tram.testo, /Linea 6 sostituita/, 'un avviso di autobus non è del tram');
+  assert.match(tram.testo, /C'è anche un avviso generale, senza linee indicate: .*Pio X/);
+  const bus = await d('AvvisiIntent', { mezzo: 'autobus' });
+  assert.match(bus.testo, /^C'è un avviso per gli autobus\./);
+  assert.match(bus.testo, /sostituita da bus/); assert.doesNotMatch(bus.testo, /rallentamenti/);
+  const nav = await d('AvvisiIntent', { mezzo: 'vaporetto' });
+  assert.match(nav.testo, /^C'è un avviso per i vaporetti\./); assert.match(nav.testo, /Linea 2 deviata/);
+  // nessun avviso mirato: lo dice, e l'avviso generale resta distinto
+  const solo = F.ambiente({ '/api/avvisi': { updated: F.ADESSO, stale: false, items: [items[3]] } });
+  const r = await dire(solo)('AvvisiIntent', { mezzo: 'vaporetto' });
+  assert.match(r.testo, /^Non risultano avvisi specifici per i vaporetti, nei dati disponibili\. C'è però un avviso generale, senza linee indicate:/);
+});

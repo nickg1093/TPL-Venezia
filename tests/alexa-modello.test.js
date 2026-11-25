@@ -29,6 +29,8 @@ test('modello: ogni {slot} negli esempi è dichiarato e ogni tipo esiste; nessun
     }
   }
   assert.ok(visti.size >= 300, 'esempi insufficienti: ' + visti.size);
+  // ogni slot dichiarato deve comparire in almeno un esempio: altrimenti Amazon segnala un avviso in compilazione e lo slot non si riempie mai
+  for (const it of M.intents) for (const s of it.slots || []) assert.ok((it.samples || []).some(x => x.includes('{' + s.name + '}')), `${it.name}: lo slot {${s.name}} è dichiarato ma non compare in nessun esempio`);
 });
 test('modello: tipi personalizzati con valori e sinonimi; fermate e linee presenti; ID unici', () => {
   const per = Object.fromEntries(M.types.map(t => [t.name, t.values]));

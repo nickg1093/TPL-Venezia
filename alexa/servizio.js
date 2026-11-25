@@ -64,15 +64,26 @@ async function avvisi(C, ric = {}) {
   if (ric.soloSciopero) lista = lista.filter(it => it.effect === 'strike');
   else lista = lista.filter(it => it.effect !== 'water' && it.effect !== 'additional');   // acqua alta: c'è la marea; aggiuntivi: non sono problemi
   const generali = it => it.general || (!(it.lines || []).length && !(it.stops || []).length);
-  let filtro = '';
-  if (ric.linea) { lista = lista.filter(it => toccaLinea(it, ric.linea, srcs) || (it.effect === 'strike' && generali(it)) || (generali(it) && it.severity !== 'info')); filtro = `sulla linea ${P.lineaParlata(ric.linea)}`; }
-  else if (ric.gruppo) { lista = lista.filter(it => toccaGruppo(it, ric.gruppo) || (it.effect === 'strike' && generali(it))); filtro = `per ${ric.gruppo.parlato}`; }
-  if (ric.mezzo) {                                   // «e per i vaporetti?»: avvisi di quel servizio e generali
-    const src = ric.mezzo === 'nav' ? 'nav' : 'aut';
-    lista = lista.filter(it => generali(it) || (it.lines || []).some(l => l.s === src));
-    filtro = `${filtro ? filtro + ' ' : ''}per ${src === 'nav' ? 'i vaporetti' : ric.mezzo === 'tram' ? 'il tram' : 'autobus e tram'}`;
+  // Con un filtro (linea, fermata, mezzo) si distinguono gli avvisi MIRATI da quelli GENERALI: un avviso senza linee né fermate indicate
+  // non si può attribuire a un servizio, quindi si dice a parte («in generale…») invece di farlo passare per un avviso di quel mezzo.
+  let filtro = '', mirato = null;
+  if (ric.linea) { mirato = it => toccaLinea(it, ric.linea, srcs); filtro = `sulla linea ${P.lineaParlata(ric.linea)}`; }
+  else if (ric.gruppo) { mirato = it => toccaGruppo(it, ric.gruppo); filtro = `per ${ric.gruppo.parlato}`; }
+  if (ric.mezzo) {
+    // tram e autobus stanno nello stesso servizio («aut»): si distinguono con il tipo della linea (route_type del GTFS, 0 = tram)
+    const src = ric.mezzo === 'nav' ? 'nav' : 'aut', tipo = ric.mezzo === 'tram' ? 0 : ric.mezzo === 'bus' ? 3 : null, prec = mirato;
+    const tipoOk = l => tipo == null || L.infoLinea(C.routes, l.n).some(x => x.src === l.s && x.type === tipo);
+    mirato = it => (!prec || prec(it)) && (it.lines || []).some(l => l.s === src && tipoOk(l));
+    filtro = `${filtro ? filtro + ' ' : ''}per ${src === 'nav' ? 'i vaporetti' : tipo === 0 ? 'il tram' : tipo === 3 ? 'gli autobus' : 'autobus e tram'}`;
   }
-  lista.sort((x, y) => GRAVI[x.severity] - GRAVI[y.severity] || inizio(x) - inizio(y));
+  const ordina = v => v.sort((x, y) => GRAVI[x.severity] - GRAVI[y.severity] || inizio(x) - inizio(y));
+  let generici = [];
+  if (mirato) {
+    const m = ordina(lista.filter(it => mirato(it)));
+    generici = ordina(lista.filter(it => !mirato(it) && generali(it) && (it.effect === 'strike' || it.severity !== 'info')));
+    lista = [...m, ...generici];
+  } else ordina(lista);
+  const nMirati = lista.length - generici.length;
   const dati = U.frasEta(A.updated, adesso, 45, 'Gli avvisi');
   const limite = per.a > T.adessoRoma(adesso + COPERTURA_GIORNI * 86400e3).ymd ? ` Considero solo gli avvisi in corso e dei prossimi ${P.parole(COPERTURA_GIORNI)} giorni: oltre non ho dati.` : '';
   const quando = per.tipo === 'prossimi' ? '' : ` ${P.giornoParlato(per.da, oggi)}`;
@@ -89,9 +100,20 @@ async function avvisi(C, ric = {}) {
   }
   const mostra = lista.slice(0, ric.tutti ? 5 : ric.breve ? 1 : 3);
   const parti = [];
-  const intro = ric.breve ? (lista.length === 1 ? 'C\'è un avviso.' : `Ci sono ${P.parole(lista.length)} avvisi; il più importante:`) : lista.length === 1 ? `C'è un avviso ${filtro}${quando}.` : `Ci sono ${P.parole(lista.length)} avvisi ${filtro}${quando}${lista.length > mostra.length ? `: ti dico i primi ${P.parole(mostra.length)}` : ''}.`;
+  const intro = ric.breve
+    ? (lista.length === 1 ? 'C\'è un avviso.' : `Ci sono ${P.parole(lista.length)} avvisi; il più importante:`)
+    : nMirati === 0 ? `Non risultano avvisi specifici ${filtro}${quando}, nei dati disponibili.`
+      : nMirati === 1 ? `C'è un avviso ${filtro}${quando}.`
+        : `Ci sono ${P.parole(nMirati)} avvisi ${filtro}${quando}${nMirati > mostra.filter(it => !generici.includes(it)).length ? `: ti dico i primi ${P.parole(mostra.filter(it => !generici.includes(it)).length)}` : ''}.`;
   parti.push(P.esc(intro).replace(/&apos;/g, "'").replace(/\s+([.:;])/g, '$1'));
+  let dettoGenerale = false;
   for (const it of mostra) {
+    if (generici.includes(it) && !dettoGenerale && !ric.breve) {
+      const n = mostra.filter(x => generici.includes(x)).length;
+      const quanti = n === 1 ? 'un avviso generale' : `${P.parole(n)} avvisi generali`;
+      parti.push(P.esc(`${n === 1 ? 'C\'è' : 'Ci sono'} ${nMirati === 0 ? 'però' : 'anche'} ${quanti}, senza linee indicate:`).replace(/&apos;/g, "'"));
+      dettoGenerale = true;
+    }
     const et = ETICHETTA[it.effect] || 'avviso', linee = (it.lines || []).filter(l => l.s === 'nav' || l.s).map(l => l.n);
     const chi = linee.length && linee.length <= 3 && !ric.linea ? ` linea ${P.elenco(linee.map(P.lineaParlata))}` : '';
     const tl = L.normalizza(it.title), eti = tl.includes(L.normalizza(et).split(' ')[0]) ? '' : `${P.maiuscola(et)}${linee.length && !linee.some(n => tl.split(' ').includes(L.normalizza(String(n)))) ? chi : ''}: `;

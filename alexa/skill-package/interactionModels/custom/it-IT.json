@@ -710,6 +710,11 @@
             }
           ],
           "samples": [
+            "ci sono avvisi per i {mezzo}",
+            "ci sono avvisi sui {mezzo}",
+            "ci sono problemi per i {mezzo}",
+            "avvisi per i {mezzo}",
+            "ci sono problemi sui {mezzo} {data}",
             "ci sono avvisi",
             "ci sono avvisi sul {linea}",
             "ci sono avvisi a {luogo}",
@@ -749,6 +754,10 @@
             }
           ],
           "samples": [
+            "c'è sciopero per i {mezzo}",
+            "lo sciopero riguarda i {mezzo}",
+            "c'è sciopero sui {mezzo} {data}",
+            "fasce garantite per i {mezzo}",
             "c'è sciopero",
             "c'è sciopero {data}",
             "ci sono scioperi",
@@ -786,7 +795,14 @@
             }
           ],
           "samples": [
-            "riepilogo della {momento}",
+            "riepilogo della {momento} da {luogo} verso {direzione}",
+            "riepilogo da {luogo} verso {direzione}",
+            "riepilogo della {momento} da {luogo} in {mezzo} verso {direzione}",
+            "riepilogo da {luogo} in {mezzo}",
+            "riepilogo della {momento} in {mezzo} da {luogo}",
+            "riepilogo dei {mezzo} da {luogo}",
+            "riepilogo con i {mezzo}",
+            "riepilogo della {momento} da {luogo}",
             "dammi il riepilogo",
             "riepilogo",
             "come sono i trasporti oggi",
