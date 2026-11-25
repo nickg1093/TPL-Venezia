@@ -32,8 +32,8 @@
       "containsAds": false,
       "locales": {
         "it-IT": {
-          "privacyPolicyUrl": "https://veneziatpl.onrender.com/",
-          "termsOfUseUrl": "https://veneziatpl.onrender.com/"
+          "privacyPolicyUrl": "https://veneziatpl.onrender.com/privacy",
+          "termsOfUseUrl": "https://veneziatpl.onrender.com/terms"
         }
       }
     },

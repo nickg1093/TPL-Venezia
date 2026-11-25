@@ -3,6 +3,11 @@
 Riepilogo per versione delle modifiche che contano per chi usa o mantiene l'app. I dettagli tecnici sono in `README.md` §12; lo storico per
 gli utenti è nell'app (Informazioni → Novità, generato da `public/js/guida.js`).
 
+## Pagine legali pubbliche
+- Nuove pagine `/privacy` (informativa, artt. 13-14 GDPR, PWA e skill Alexa) e `/terms` (condizioni d'uso, fonti, licenze, limiti dei dati), file `public/privacy.html` e `public/terms.html`, servite dal server (`pagineLegali()` in `server.js`). Titolare e contatto si impostano su Render con `APP_OWNER` e `APP_CONTACT`.
+- `alexa/skill-package/skill.json` punta a `/privacy` e `/terms`; il service worker non salva più queste pagine al posto dell'app; test in `tests/legale.test.js`.
+- Chiarito che gli indirizzi IP che superano ripetutamente i limiti restano in memoria fino a un'ora (contatori soli).
+
 ## Meteo dal sistema di Intranet-BIS, API e skill Alexa — 25/11/2026 (non pubblicato)
 - **Server** (`meteo.js`, `meteo-parse.js`): acquisizione continua e indipendente per feed di Centro Maree (vento, pressione, temperatura aria e
   acqua, umidità; UTC+1 fisso), vePORTO (visibilità San Servolo, Marittima, Sant'Andrea; con `VEPORTO_ENABLED=true`) e METAR LIPZ (visibilità,

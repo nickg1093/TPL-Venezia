@@ -26,6 +26,7 @@ self.addEventListener('fetch', e => {
   const req = e.request, url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== location.origin) return;                       // tutto il resto (mattonelle comprese) va direttamente alla rete
   const p = url.pathname;
+  if (p === '/privacy' || p === '/terms' || p.startsWith('/privacy/') || p.startsWith('/terms/')) return;        // pagine legali: sempre dalla rete, mai salvate al posto della pagina dell'app
   if (p.startsWith('/api/') || p === '/healthz' || p.startsWith('/acqua/')) return;        // dati live: sempre dalla rete; acqua alta: la salva livelli.js (impronta)
   if (req.mode === 'navigate') {
     e.respondWith(fetch(req).then(r => store('/', r)).catch(() => caches.match('/').then(r => r || offline())));

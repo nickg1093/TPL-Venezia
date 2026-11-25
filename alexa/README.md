@@ -100,7 +100,7 @@ Limite: se Render dorme, Alexa può non ottenere il feed e saltare l'aggiornamen
 ### Passo 9 — Pubblicare nello store (solo se vuoi; serve la tua decisione)
 Con la skill funzionante in *Development* non serve altro per usarla tu. Per metterla nello store: scheda **Distribution** (testi pronti in
 `alexa\skill-package\skill.json`: nome, riassunto, descrizione, frasi di esempio, categoria *Public transportation*, **solo Italia**, icone 108×108 e 512×512,
-privacy: niente acquisti, niente dati personali, niente pubblicità, indirizzo dell'informativa `https://veneziatpl.onrender.com/` → *Informazioni → Privacy*) → **Certification** → *Submit for review*.
+privacy: niente acquisti, niente dati personali, niente pubblicità, informativa `https://veneziatpl.onrender.com/privacy`, condizioni `https://veneziatpl.onrender.com/terms`) → **Certification** → *Submit for review*.
 Prima della certificazione tieni il server sveglio (un avvio a freddo può far fallire il test). Non pubblicare senza aver letto i limiti qui sotto.
 
 ## 4. Manutenzione e recupero

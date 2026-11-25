@@ -496,6 +496,23 @@ function loadStatics(dir, base = '') {
   return true;
 }
 loadStatics(path.join(__dirname, 'public'));
+// PAGINE LEGALI PUBBLICHE: /privacy e /terms (public/privacy.html, terms.html). Titolare e contatto si inseriscono all'avvio dalle variabili
+// APP_OWNER (nome o denominazione del titolare) e APP_CONTACT (e-mail o indirizzo, già usato nella pagina «i»); testo sempre HTML-escapato.
+// Senza APP_OWNER/APP_CONTACT le pagine lo dicono apertamente invece di inventare un nome.
+function pagineLegali() {
+  const esc = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const owner = (process.env.APP_OWNER || '').trim().slice(0, 160), contact = (process.env.APP_CONTACT || '').trim().slice(0, 160);
+  const titolare = owner ? `Titolare del trattamento e gestore del servizio: <b>${esc(owner)}</b>, sviluppatore indipendente del progetto «Venezia TPL live».`
+    : 'Titolare del trattamento e gestore del servizio: lo sviluppatore indipendente del progetto «Venezia TPL live» (profilo Instagram <b>@olocin_g</b>).';
+  const contatto = /^[^\s@<>"']+@[^\s@<>"']+\.[^\s@<>"']+$/.test(contact) ? `<a href="mailto:${esc(contact)}">${esc(contact)}</a>` : contact ? esc(contact) : 'indirizzo indicato nella scheda «Informazioni» dell\'app';
+  for (const [url, file] of [['/privacy', '/privacy.html'], ['/terms', '/terms.html']]) {
+    const ent = statics.get(file); if (!ent) continue;
+    const body = Buffer.from(ent.body.toString('utf8').replace(/\{\{TITOLARE\}\}/g, titolare).replace(/\{\{CONTATTO\}\}/g, contatto));
+    const novo = { head: { ...ent.head, 'Cache-Control': 'no-cache', ETag: '"' + crypto.createHash('md5').update(body).digest('hex').slice(0, 20) + '"' }, body, gz: zlib.gzipSync(body) };
+    statics.set(url, novo); statics.set(url + '/', novo); statics.delete(file);      // un solo indirizzo per pagina, senza duplicati
+  }
+}
+pagineLegali();
 try { loadStatics(path.join(path.dirname(require.resolve('leaflet/package.json')), 'dist'), '/vendor/leaflet'); }
 catch { console.error('Leaflet non trovato: esegui "npm install" (la mappa non si vedrà)'); }
 // dalla cartella dist di Leaflet servono solo libreria, stili e immagini dei controlli
