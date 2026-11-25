@@ -60,6 +60,14 @@
             }
           ],
           "samples": [
+            "i prossimi {numero} {mezzo} da {luogo} per {arrivo}",
+            "i prossimi {numero} {mezzo} da {luogo} verso {direzione}",
+            "i prossimi {mezzo} da {luogo} per {arrivo}",
+            "i prossimi {mezzo} da {luogo} a {arrivo}",
+            "prossimi {mezzo} da {luogo} a {arrivo}",
+            "le prossime partenze da {luogo} per {arrivo}",
+            "prossime partenze da {luogo} a {arrivo}",
+            "partenze da {luogo} a {arrivo}",
             "prossimi {mezzo} da {luogo}",
             "prossimi {mezzo} a {luogo}",
             "i prossimi {mezzo} da {luogo}",
@@ -126,6 +134,14 @@
             }
           ],
           "samples": [
+            "prossimo {mezzo} da {luogo} per {direzione}",
+            "il prossimo {mezzo} da {luogo} per {direzione}",
+            "prossimo {mezzo} da {luogo} verso {direzione}",
+            "il prossimo {mezzo} da {luogo} a {arrivo}",
+            "quando passa il prossimo {mezzo} da {luogo} in direzione {direzione}",
+            "quando parte il prossimo {mezzo} da {luogo} per {direzione}",
+            "quando parte il prossimo {mezzo} da {luogo} a {arrivo}",
+            "il prossimo {linea} da {luogo} per {direzione}",
             "quando passa il {linea} a {luogo}",
             "quando passa il {linea} alle {luogo}",
             "quando passa il {linea} al {luogo}",
@@ -247,6 +263,12 @@
             }
           ],
           "samples": [
+            "ultimo {mezzo} da {luogo} per {arrivo}",
+            "ultimo {mezzo} {data} da {luogo} per {arrivo}",
+            "l'ultimo {mezzo} {data} da {luogo} a {arrivo}",
+            "l'ultimo {mezzo} da {luogo} a {arrivo}",
+            "ultima corsa da {luogo} a {arrivo}",
+            "ultima corsa {data} da {luogo} a {arrivo}",
             "ultimo {mezzo}",
             "ultimo {mezzo} da {luogo}",
             "a che ora è l'ultimo {mezzo} da {luogo}",
@@ -308,6 +330,12 @@
             }
           ],
           "samples": [
+            "primo {mezzo} {data} da {luogo} a {arrivo}",
+            "il primo {mezzo} {data} da {luogo} a {arrivo}",
+            "primo {mezzo} {data} da {luogo} per {arrivo}",
+            "primo {mezzo} da {luogo} a {arrivo}",
+            "prima corsa da {luogo} a {arrivo}",
+            "prima corsa {data} da {luogo} a {arrivo}",
             "prima corsa da {luogo}",
             "primo {mezzo} da {luogo}",
             "primo {mezzo} da {luogo} per {direzione}",
@@ -360,6 +388,13 @@
             }
           ],
           "samples": [
+            "come arrivo a {arrivo} partendo da {partenza}",
+            "come arrivo a {arrivo} partendo dalle {partenza}",
+            "come arrivo a {arrivo} partendo dal {partenza}",
+            "come arrivo a {arrivo} dalle {partenza}",
+            "come arrivo a {arrivo} dal {partenza}",
+            "come vado da {partenza} a {arrivo}",
+            "come arrivo da {partenza} a {arrivo}",
             "come arrivo a {arrivo} da {partenza}",
             "come arrivo a {arrivo}",
             "come vado a {arrivo} da {partenza}",
@@ -413,6 +448,12 @@
             }
           ],
           "samples": [
+            "devo essere a {arrivo} entro le {ora} partendo da {partenza}",
+            "devo essere a {arrivo} entro le {ora} partendo dalle {partenza}",
+            "devo essere a {arrivo} entro le {ora} partendo dal {partenza}",
+            "devo essere a {arrivo} entro le {ora} da {partenza}",
+            "come arrivo a {arrivo} entro le {ora} partendo da {partenza}",
+            "devo essere a {arrivo} entro le {ora} {data} partendo da {partenza}",
             "come arrivo a {arrivo} entro le {ora}",
             "come arrivo a {arrivo} da {partenza} entro le {ora}",
             "voglio arrivare a {arrivo} entro le {ora}",

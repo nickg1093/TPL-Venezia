@@ -143,7 +143,8 @@ const P_senza = s => togliTag(s).trim();
 const maiuscola = s => (s ? s[0].toUpperCase() + s.slice(1) : s);
 // frase di un avviso ACTV ripulita per la voce: niente indirizzi, hashtag, emoji, sigle in maiuscolo prolungate, lunghezza limitata
 function frasePulita(t, max = 160) {
-  let s = String(t ?? '').replace(/https?:\/\/\S+/g, ' ').replace(/#\w+/g, ' ').replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, ' ')
+  let s = String(t ?? '').replace(/https?:\/\/\S+/g, ' ').replace(/#\w+/g, ' ').replace(/\s*[+*=_~|]{2,}\s*/g, ': ')
+    .replace(/\b[A-ZÀ-Ý']{4,}(?:\s+[A-ZÀ-Ý']{2,})+\b/g, m => m.toLowerCase())   // «AGGIORNAMENTO CANTIERE» detto come parole, non sigle.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, ' ')
     .replace(/\s+/g, ' ').trim();
   if (s.length > max) { const cut = s.slice(0, max), p = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('; ')); s = (p > 60 ? cut.slice(0, p) : cut.replace(/\s+\S*$/, '')).replace(/[,:;–-]\s*$/, ''); }
   return s;

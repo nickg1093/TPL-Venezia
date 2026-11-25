@@ -151,7 +151,8 @@ test('GTFS veri: ultima e prima corsa Rialto → Piazzale Roma coincidono con un
   const eccezione = Object.keys(g.ex).sort().find(d => d > domani && Object.values(g.ex[d]).length);
   const giorni = [[oggi, null], [domani, isoDi(domani)]].concat(eccezione ? [[eccezione, isoDi(eccezione)]] : []);
   for (const [ymd, data] of giorni) {
-    const atteso = Reale.diretti(g, ymd, da, a);
+    // regola della skill: l'ultima corsa è l'ultima delle linee diurne (non N) prima delle 03:00 del giorno dopo; la notturna si cita a parte
+    const atteso = Reale.diretti(g, ymd, da, a).filter(x => !/^N/i.test(x.line) && x.dep < 27 * 3600);
     const j = await (await chiedi(S.base, rich('UltimaCorsaIntent', { luogo: 'Rialto', arrivo: 'Piazzale Roma', ...(data ? { data } : {}) }))).json();
     const c = j.sessionAttributes && j.sessionAttributes.ctx;
     if (!atteso.length) { assert.match(parlato(j), /Non risultano/); continue; }
@@ -159,7 +160,7 @@ test('GTFS veri: ultima e prima corsa Rialto → Piazzale Roma coincidono con un
     assert.equal(c.dep, atteso.at(-1).dep, `${ymd}: ultima ${parlato(j)}`);
     assert.equal(c.trip.split(':')[1], atteso.at(-1).tid);
   }
-  const atteso = Reale.diretti(g, domani, da, a);
+  const atteso = Reale.diretti(g, domani, da, a).filter(x => !/^N/i.test(x.line));
   const j = await (await chiedi(S.base, rich('PrimaCorsaIntent', { luogo: 'Rialto', arrivo: 'Piazzale Roma', data: isoDi(domani) }))).json();
   assert.equal(j.sessionAttributes.ctx.dep, atteso[0].dep, parlato(j));
 });

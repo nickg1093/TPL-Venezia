@@ -86,10 +86,65 @@ test('regressione: «tra quanto passa il prossimo tram a San Marco Cattaneo in d
   const b = await d('AltraDirezioneIntent');
   assert.equal(b.testo, 'Il tram ti uno per Monte Celo Favaro passa tra quattro minuti, alle otto e quattordici, dalla fermata San Marco Cattaneo 2.');
   const c = await d('UltimaCorsaIntent');
-  assert.match(c.testo, /^L'ultima corsa da San Marco Cattaneo verso Monte Celo Favaro parte alle otto e quattordici, con il tram ti uno per Monte Celo Favaro, dalla fermata San Marco Cattaneo 2\. È un orario programmato\.$/);
+  assert.match(c.testo, /^L'ultima corsa da San Marco Cattaneo verso Monte Celo Favaro parte alle otto e quattordici, con il tram ti uno, dalla fermata San Marco Cattaneo 2\. È un orario programmato\.$/);
   // «no, verso Venezia» cambia solo la direzione; l'ultima di oggi è dopo mezzanotte e lo dice
   const e = await d('CorrezioneIntent', { direzione: 'Venezia' });
-  assert.match(e.testo, /^L'ultima corsa da San Marco Cattaneo verso Venezia parte a mezzanotte e venti, nella notte tra mercoledì e giovedì, con il tram ti uno per Venezia, dalla fermata San Marco Cattaneo 1\./);
+  assert.match(e.testo, /^L'ultima corsa da San Marco Cattaneo verso Venezia parte a mezzanotte e venti, nella notte tra mercoledì e giovedì, con il tram ti uno, dalla fermata San Marco Cattaneo 1\./);
+});
+// ---------- regressioni dal simulatore Amazon (25/11/2026) ----------
+// Alexa risolve «Venezia» con al massimo cinque fermate di vaporetto (Ferrovia, Fondamente Nove…), nessuna del tram
+const risolto = (value, ...ids) => ({ value, resolutions: { resolutionsPerAuthority: [{ status: { code: 'ER_SUCCESS_MATCH' }, values: ids.map(([id, name]) => ({ value: { id, name } })) }] } });
+test('simulatore: «direzione Venezia» risolta da Alexa con fermate di vaporetto → per il tram vale Venezia (luogo speciale), mai l\'altra direzione', async () => {
+  const gt = rete(), amb = F.ambiente({ '/api/zone': zonaCattaneo(gt.G), '/api/avvisi': { items: [] } }, { gtfs: gt }), d = dire(amb);
+  const dir = risolto('venezia', ['ferrovia', 'Ferrovia'], ['marco_zaccaria', 'San Marco, San Zaccaria'], ['piazzale_roma', 'Piazzale Roma']);
+  const a = await d('ProssimaCorsaIntent', { mezzo: 'tram', luogo: 'San Marco Cattaneo', direzione: dir });
+  assert.equal(a.testo, 'Il tram ti uno per Venezia passa tra cinque minuti, alle otto e quindici, dalla fermata San Marco Cattaneo 1.');
+});
+test('simulatore: una destinazione senza fermate del mezzo richiesto (tram verso Ferrovia) non lascia passare tutte le corse', async () => {
+  const gt = rete(), amb = F.ambiente({ '/api/zone': zonaCattaneo(gt.G), '/api/avvisi': { items: [] } }, { gtfs: gt }), d = dire(amb);
+  const a = await d('ProssimaCorsaIntent', { mezzo: 'tram', luogo: 'San Marco Cattaneo', direzione: 'Ferrovia' });
+  assert.doesNotMatch(a.testo, /Monte Celo Favaro|per Venezia passa/);
+  const b = await d('UltimaCorsaIntent', { mezzo: 'tram', luogo: 'San Marco Cattaneo', direzione: 'Ferrovia' });
+  assert.match(b.testo, /^Non risultano corse da San Marco Cattaneo verso Ferrovia/);
+  // direzione detta con un nome che non è una fermata nota: verifica sui nomi della corsa
+  const c = await d('ProssimaCorsaIntent', { mezzo: 'tram', luogo: 'San Marco Cattaneo', direzione: 'Favaro' });
+  assert.match(c.testo, /^Il tram ti uno per Monte Celo Favaro/);
+});
+test('simulatore: partenza e destinazione nello stesso slot («mestre per venezia», «rialto piazzale roma») e numero nel mezzo («3 vaporetti»)', async () => {
+  const amb = F.ambiente({}, { gtfs: rete() }), d = dire(amb);
+  const a = await d('UltimaCorsaIntent', { mezzo: 'vaporetto', luogo: 'rialto piazzale roma' });
+  assert.match(a.testo, /^L'ultimo collegamento diretto parte alle ventitré e trenta/);
+  assert.deepEqual(amb.richiesteDirette.at(-1).a, ['nav:1201']);
+  const b = await d('UltimaCorsaIntent', { mezzo: 'vaporetto', luogo: 'rialto per piazzale roma' });
+  assert.match(b.testo, /^L'ultimo collegamento diretto parte alle ventitré e trenta/);
+  const amb2 = F.ambiente({ '/api/zone': F.zona([F.partenza({ stop: 'nav:1101', line: '1', headsign: 'P.le Roma "F"', schedIn: 2 }), F.partenza({ stop: 'nav:1101', line: '1', headsign: 'P.le Roma "F"', schedIn: 9 }), F.partenza({ stop: 'nav:1101', line: '1', headsign: 'P.le Roma "F"', schedIn: 20 }), F.partenza({ stop: 'nav:1101', line: '1', headsign: 'P.le Roma "F"', schedIn: 30 })]), '/api/avvisi': { items: [] } }, { gtfs: rete() });
+  const c = await dire(amb2)('PartenzeIntent', { mezzo: '3 vaporetti', luogo: 'Rialto' });
+  assert.equal((c.testo.match(/linea uno/g) || []).length, 1);
+  assert.match(c.testo, /^La linea uno per Piazzale Roma, pontile C: tra due minuti.*; poi .* e .*\./);
+  assert.doesNotMatch(c.testo, /trenta minuti/);
+});
+test('simulatore: «ultima corsa del cinque punto due» dopo una domanda su un\'altra fermata e linea non eredita fermata e direzione', async () => {
+  const gt = rete(), amb = F.ambiente({ '/api/zone': zonaCattaneo(gt.G), '/api/avvisi': { items: [] } }, { gtfs: gt }), d = dire(amb);
+  await d('ProssimaCorsaIntent', { mezzo: 'tram', luogo: 'San Marco Cattaneo', direzione: 'Venezia' });
+  const a = await d('UltimaCorsaIntent', { linea: 'cinque punto due' });
+  assert.equal(a.testo, MSG.fermataMancante);
+});
+test('simulatore: «prima corsa dopo le sei» detto di pomeriggio = dopo le diciotto di oggi, e lo dice', async () => {
+  const amb = F.ambiente({}, { gtfs: rete(), adesso: ORA(17, 47) });
+  const a = await dire(amb, ORA(17, 47))('PrimaCorsaIntent', { luogo: 'Rialto', arrivo: 'Piazzale Roma', ora: '06:00' });
+  assert.match(a.testo, /^Oggi dopo le diciotto, il primo collegamento diretto parte alle ventitré e trenta/);
+});
+test('simulatore: «quando passa il due alle Zattere» → «e quello dopo» resta sullo stesso capolinea; «nell\'altra direzione» passa all\'altro', async () => {
+  const zat = F.zona([F.partenza({ tripId: 'Z1', line: '2', headsign: 'S. Marco-San Zaccaria "F"', schedIn: 3 }), F.partenza({ tripId: 'R1', stop: 'nav:1001', line: '2', headsign: 'Rialto "C"', schedIn: 4 }), F.partenza({ tripId: 'Z2', line: '2', headsign: 'S. Marco-San Zaccaria "F"', schedIn: 15 })]);
+  const amb = F.ambiente({ '/api/zone': zat, '/api/avvisi': { items: [] } }, { gtfs: rete() }), d = dire(amb);
+  const a = await d('ProssimaCorsaIntent', { linea: 'due', luogo: 'Zattere' });
+  assert.match(a.testo, /^La linea due per San Marco, San Zaccaria passa tra tre minuti/);
+  const b = await d('ProssimoIntent');
+  assert.match(b.testo, /^Poi la linea due per San Marco, San Zaccaria passa tra quindici minuti/);
+  const c = await d('AltraDirezioneIntent');
+  assert.match(c.testo, /^La linea due per Rialto passa tra quattro minuti/);
+  const e = await d('UltimaCorsaIntent');
+  assert.doesNotMatch(e.testo, /linea due.*linea due/, 'la linea non si ripete');
 });
 test('pontile o numero detto con il nome: «San Marco Cattaneo uno» usa solo quella fermata', async () => {
   assert.deepEqual(etichettaDetta('San Marco Cattaneo uno'), { etichetta: '1', base: 'San Marco Cattaneo' });
@@ -142,15 +197,15 @@ test('nessuna corsa: lo dice con l\'intervallo vero; con un filtro dice che pass
 });
 
 // ---------- prima e ultima corsa ----------
-test('ultima corsa Rialto → Piazzale Roma: la più tarda dell\'intera giornata di servizio, anche dopo mezzanotte', async () => {
+test('ultima corsa Rialto → Piazzale Roma: la più tarda delle linee diurne dell\'intera giornata di servizio; la notturna si cita a parte', async () => {
   const amb = F.ambiente({}, { gtfs: rete() }), d = dire(amb);
   const a = await d('UltimaCorsaIntent', { mezzo: 'vaporetto', luogo: 'Rialto', arrivo: 'Piazzale Roma' });
-  assert.equal(a.testo, 'L\'ultimo collegamento diretto parte all\'una e dieci, nella notte tra mercoledì e giovedì, con la linea enne per Piazzale Roma, dal pontile C. Arriva all\'una e venticinque. È un orario programmato.');
+  assert.equal(a.testo, 'L\'ultimo collegamento diretto parte alle ventitré e trenta, con la linea uno per Piazzale Roma, dal pontile C. Arriva alle ventitré e quarantacinque. Di notte c\'è anche la linea enne: l\'ultima corsa parte all\'una e dieci, nella notte tra mercoledì e giovedì. È un orario programmato.');
   assert.equal(amb.richiesteDirette[0].ymd, '20261125');
   assert.deepEqual(amb.richiesteDirette[0].a.sort(), ['nav:1201']);
   // «e domani?» cambia solo il giorno
   const b = await d('DomaniIntent');
-  assert.match(b.testo, /^Domani, l'ultimo collegamento diretto parte all'una e dieci, nella notte tra giovedì e venerdì/);
+  assert.match(b.testo, /^Domani, l'ultimo collegamento diretto parte alle ventitré e trenta.*l'ultima corsa parte all'una e dieci, nella notte tra giovedì e venerdì/);
   // data esplicita festiva: altro calendario
   const c = await d('UltimaCorsaIntent', { luogo: 'Rialto', arrivo: 'Piazzale Roma', data: '2026-12-08' });
   assert.match(c.testo, /^Martedì 8 dicembre, l'ultimo collegamento diretto parte alle ventitré e cinquantacinque/);
@@ -158,7 +213,7 @@ test('ultima corsa Rialto → Piazzale Roma: la più tarda dell\'intera giornata
 test('ultima corsa già passata (all\'una e mezza di notte) e prima corsa di domani', async () => {
   const amb = F.ambiente({}, { gtfs: rete(), adesso: F.MS(2026, 11, 26, 0, 30) });
   const a = await dire(amb, F.MS(2026, 11, 26, 0, 30))('UltimaCorsaIntent', { luogo: 'Rialto', arrivo: 'Piazzale Roma' });
-  assert.equal(a.testo, 'L\'ultima corsa programmata da Rialto a Piazzale Roma era all\'una e dieci. Non ne risultano altre per oggi.');
+  assert.equal(a.testo, 'L\'ultima corsa programmata da Rialto a Piazzale Roma era alle ventitré e trenta. Non ne risultano altre per oggi.');
   const amb2 = F.ambiente({}, { gtfs: rete() });
   const b = await dire(amb2)('PrimaCorsaIntent', { luogo: 'Rialto', arrivo: 'Piazzale Roma' });
   assert.equal(b.testo, 'Domani, il primo collegamento diretto parte alle otto e trenta, con la linea uno per Piazzale Roma, dal pontile C. Arriva alle otto e quarantacinque. È un orario programmato.');

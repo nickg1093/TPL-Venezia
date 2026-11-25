@@ -70,15 +70,49 @@ function slot(intent, nome) {
 const nParole = s => L.normalizza(s).split(' ').filter(Boolean).length;
 function testoSlot(intent, nome) {
   const s = slot(intent, nome); if (!s) return null;
+  // un luogo speciale detto per intero («Venezia», «San Marco», «Lido») vale più dei valori di Alexa: per «Venezia» Alexa restituisce
+  // solo alcune delle fermate del centro (al massimo cinque) e la prima non è per forza quella servita dal mezzo richiesto
+  const sp = s.raw ? L.normalizza(s.raw) : '';
+  if (sp && L.LUOGHI_SPECIALI[sp]) return nome === 'direzione' ? s.raw : { chiave: sp, testo: L.LUOGHI_SPECIALI[sp].nome };
   if (s.raw && etichettaDetta(s.raw)) return s.raw;
   if (s.raw && s.nome && nParole(s.raw) > nParole(s.nome)) return s.raw;
   if (s.id && nome !== 'direzione') { const k = s.id.startsWith('speciale:') ? s.id.slice(9) : s.id.replace(/_/g, ' '); return { chiave: k, testo: s.nome || s.raw }; }
   return s.nome || s.raw;
 }
 const MEZZI_SLOT = { nav: 'nav', aut: 'aut', bus: 'bus', tram: 'tram', vaporetto: 'nav', vaporetti: 'nav', battello: 'nav', battelli: 'nav', autobus: 'bus' };
-const mezzoDa = intent => { const s = slot(intent, 'mezzo'); if (!s) return null; return MEZZI_SLOT[s.id] || MEZZI_SLOT[String(s.raw || '').toLowerCase()] || null; };
+const NUM_PAROLA = { un: 1, uno: 1, una: 1, due: 2, tre: 3, quattro: 4, cinque: 5, sei: 6 };
+// «3 vaporetti», «tre autobus»: Alexa a volte mette il numero dentro lo slot del mezzo
+const mezzoNumero = raw => { const m = /^(\d+|un|uno|una|due|tre|quattro|cinque|sei)\s+(.+)$/i.exec(String(raw || '').trim()); return m ? { n: /^\d+$/.test(m[1]) ? +m[1] : NUM_PAROLA[m[1].toLowerCase()], resto: m[2].toLowerCase() } : null; };
+const MEZZI_TESTO = [[/^(vaporett|battell|barc|motonav|motoscaf|lanc)/, 'nav'], [/^(autobus|bus|corrier|pullman|filobus)/, 'bus'], [/^(tram|tranvi)/, 'tram']];
+const mezzoDaTesto = t => { const x = String(t || '').toLowerCase().replace(/^(il|lo|la|i|gli|le)\s+/, ''); if (MEZZI_SLOT[x]) return MEZZI_SLOT[x]; const m = MEZZI_TESTO.find(([re]) => re.test(x)); return m ? m[1] : null; };
+const mezzoDa = intent => { const s = slot(intent, 'mezzo'); if (!s) return null; const mn = mezzoNumero(s.raw); return MEZZI_SLOT[s.id] || mezzoDaTesto(s.raw) || (mn && mezzoDaTesto(mn.resto)) || null; };
 const lineaDa = intent => { const s = slot(intent, 'linea'); if (!s) return null; return L.parseLinea(s.id || s.nome || s.raw || ''); };
-const numeroDa = intent => { const s = slot(intent, 'numero'); const v = s && (s.id || s.raw); return v != null && /^\d+$/.test(String(v)) ? Math.max(1, Math.min(+v, 6)) : null; };
+const numeroDa = intent => {
+  const s = slot(intent, 'numero'); const v = s && (s.id || s.raw);
+  if (v != null && /^\d+$/.test(String(v))) return Math.max(1, Math.min(+v, 6));
+  const mn = mezzoNumero(slot(intent, 'mezzo')?.raw); return mn && mn.n ? Math.max(1, Math.min(mn.n, 6)) : null;
+};
+// F3: Alexa a volte mette partenza e destinazione nello stesso slot («mestre per venezia», «rialto piazzale roma»).
+// Se il testo non è un luogo riconosciuto, si prova a dividerlo in due luoghi noti (con o senza «per», «a», «verso»).
+const SEP_DIR = /^(in direzione( di)?|verso|direzione)$/;
+function dividiLuoghi(C, raw) {
+  const w = L.normalizza(raw).split(' ').filter(Boolean), orig = String(raw).toLowerCase().split(/\s+/).filter(Boolean);
+  if (!C.luoghi || orig.length < 2) return null;
+  const forte = t => { const r = C.luoghi.cerca(t); return r.ok && (r.ok.punteggio == null || r.ok.punteggio >= 0.9) ? r.ok : null; };
+  if (forte(raw)) return null;
+  const SEP = ['in direzione di', 'in direzione', 'direzione', 'verso', 'per', 'fino a', 'a', 'al', 'alla', 'allo', 'ai', 'alle', 'agli', 'all\'', 'e'];
+  for (let i = 1; i < orig.length; i++) {
+    for (const sep of ['', ...SEP]) {
+      const sw = sep ? sep.split(' ') : [];
+      if (sw.length && orig.slice(i, i + sw.length).join(' ') !== sep) continue;
+      const sx = orig.slice(0, i).join(' '), dx = orig.slice(i + sw.length).join(' ');
+      if (!sx || !dx) continue;
+      const a = forte(sx), b = forte(dx);
+      if (a && b && a.chiave !== b.chiave) return { da: sx, a: dx, verso: SEP_DIR.test(sep) };
+    }
+  }
+  void w; return null;
+}
 const quandoDa = (C, intent, entro = false) => T.quando({ data: slot(intent, 'data')?.raw, ora: slot(intent, 'ora')?.raw, adesso: C.adesso(), entro });
 // «oggi» detto senza ora = il resto della giornata (per marea e avvisi)
 function quandoGiorno(C, intent) {
@@ -161,7 +195,7 @@ async function esegui(C, env, req, att) {
   let r;
   try {
     switch (tipo) {
-      case 'partenze': r = await D.partenze(C, { gruppo: gruppi.luogo, ids: idsScelti.luogo, linea: req.linea || null, mezzo, dir, escludiDir: req.escludiDir || null, n: req.n || 1, visti: req.visti, dopoMs: req.dopoMs, dopoSecs: req.dopoSecs, quando: req.quando || null }); break;
+      case 'partenze': r = await D.partenze(C, { gruppo: gruppi.luogo, ids: idsScelti.luogo, linea: req.linea || null, mezzo, dir, escludiDir: req.escludiDir || null, stessoCapolinea: req.stessoCapolinea || null, escludiCapolinea: req.escludiCapolinea || null, verso: !!req.dirTesto, n: req.n || 1, visti: req.visti, dopoMs: req.dopoMs, dopoSecs: req.dopoSecs, quando: req.quando || null }); break;
       case 'ritardo': r = await D.ritardo(C, { gruppo: gruppi.luogo || null, ids: idsScelti.luogo, linea: req.linea || null, mezzo, dir }); break;
       case 'ultima': case 'prima': r = await D.estremo(C, { quale: tipo, gruppo: gruppi.luogo, ids: idsScelti.luogo, linea: req.linea || null, mezzo, dir, verso: !!req.dirTesto, quando: req.quando || null }); break;
       case 'linee': r = await D.linee(C, { gruppo: gruppi.luogo, mezzo }); break;
@@ -181,9 +215,12 @@ async function esegui(C, env, req, att) {
   // contesto per i seguiti: la richiesta (luoghi come chiavi) e ciò che è stato detto
   const rc = richiestaCompatta(req, gruppi, idsScelti);
   if (r.ctx && r.ctx.visti) { rc.visti = r.ctx.visti; rc.dopoMs = r.ctx.dopoMs; rc.dopoSecs = r.ctx.dopoSecs; }
-  if (r.ctx && r.ctx.dirEffettiva) { rc.dirTesto = r.ctx.dirEffettiva; delete rc.escludiDir; }
+  if (r.ctx && r.ctx.dirEffettiva) { rc.dirTesto = r.ctx.dirEffettiva; delete rc.escludiDir; delete rc.escludiCapolinea; }
+  // una sola corsa detta senza direzione («quando passa il due alle Zattere»): i seguiti restano su quel capolinea («e quello dopo?»)
+  // e «nell'altra direzione» vuol dire gli altri capolinea
+  if (r.ctx && r.ctx.capolinea && !rc.dirTesto && !rc.a) rc.capolinea = r.ctx.capolinea; else delete rc.capolinea;
   att.ctx = { ...(r.ctx || {}), req: rc };
-  delete att.ctx.visti; delete att.ctx.dopoMs; delete att.ctx.dopoSecs; delete att.ctx.dirEffettiva;
+  delete att.ctx.visti; delete att.ctx.dopoMs; delete att.ctx.dopoSecs; delete att.ctx.dirEffettiva; delete att.ctx.capolinea;
   if (r.proponi) att.proponi = r.proponi; else delete att.proponi;
   att.ultimo = r.voce; att.ultimoLive = ['partenze', 'ritardo', 'riepilogo'].includes(tipo) && !(req.quando && !req.quando.adesso);
   // la sessione resta aperta per i seguiti («e il prossimo?»), senza una domanda in coda a ogni risposta; il riepilogo (routine) chiude
@@ -194,7 +231,7 @@ async function esegui(C, env, req, att) {
 function richiestaCompatta(req, gruppi, ids) {
   const o = { tipo: req.tipo };
   for (const k of ['luogo', 'da', 'a']) if (gruppi[k]) o[k] = ids[k] ? { chiave: gruppi[k].chiave, ids: ids[k] } : { chiave: gruppi[k].chiave };
-  for (const k of ['linea', 'mezzo', 'cambi', 'pref', 'indice', 'quando', 'dirTesto', 'escludiDir', 'dataRichiesta', 'soloSciopero', 'momento', 'n', 'minimo']) if (req[k] != null) o[k] = req[k];
+  for (const k of ['linea', 'mezzo', 'cambi', 'pref', 'indice', 'quando', 'dirTesto', 'escludiDir', 'escludiCapolinea', 'capolinea', 'dataRichiesta', 'soloSciopero', 'momento', 'n', 'minimo']) if (req[k] != null) o[k] = req[k];
   return o;
 }
 // errori ripetibili: la richiesta resta pronta per «riprova» / «sì»
@@ -216,15 +253,24 @@ function erroreRichiesta(C, req, e, att) {
 const QUANDO_SERIALE = q => (q && !q.adesso ? { adesso: false, ymd: q.ymd, secs: q.secs, hhmm: q.hhmm, conOra: q.conOra, fascia: q.fascia, nomeFascia: q.nomeFascia, tipoData: q.tipoData, entro: !!q.entro, oggi: q.oggi } : null);
 
 function richiestaDa(C, intent, nome, att) {
-  const luogo = testoSlot(intent, 'luogo'), da = testoSlot(intent, 'partenza'), a = testoSlot(intent, 'arrivo'), dir = testoSlot(intent, 'direzione');
+  let luogo = testoSlot(intent, 'luogo'), da = testoSlot(intent, 'partenza'), a = testoSlot(intent, 'arrivo'), dir = testoSlot(intent, 'direzione');
+  for (const campo of ['luogo', 'partenza']) {
+    const s = slot(intent, campo);
+    if (!s || s.id || !s.raw || (campo === 'luogo' ? a || dir : a)) continue;
+    const dv = dividiLuoghi(C, s.raw); if (!dv) continue;
+    if (campo === 'luogo') { luogo = dv.da; if (dv.verso) dir = dv.a; else a = dv.a; } else { da = dv.da; a = dv.a; }
+  }
   const linea = lineaDa(intent), mezzo = mezzoDa(intent), n = numeroDa(intent);
   const entro = /Entro/.test(nome);
   const c = att.ctx && att.ctx.req;
   // domanda senza fermata dopo una risposta su una fermata («e l'ultimo?», «quali linee passano?»): luogo, direzione e filtri dal contesto
   const eredita = req => {
     if (req.luogo || !c || !c.luogo) return req;
+    // «ultima corsa del cinque punto due» dopo una domanda su un'altra linea: la fermata di prima non c'entra, si chiede
+    if (req.linea && !(c.linea && L.stessaLinea(c.linea, req.linea))) return req;
     const out = { ...req, luogo: c.luogo };
-    if (!req.dirTesto && !req.a) { if (c.dirTesto) out.dirTesto = c.dirTesto; if (c.a) out.a = c.a; }
+    const filtroNuovo = (req.mezzo && req.mezzo !== c.mezzo);
+    if (!req.dirTesto && !req.a && !filtroNuovo) { if (c.dirTesto) out.dirTesto = c.dirTesto; if (c.a) out.a = c.a; }
     if (!req.linea && !req.mezzo) { if (c.linea) out.linea = c.linea; if (c.mezzo) out.mezzo = c.mezzo; }
     return out;
   };
@@ -271,7 +317,7 @@ async function seguito(C, env, intent, att, nome) {
   const req = { ...c };
   switch (nome) {
     case 'AMAZON.NextIntent': case 'AltreCorseIntent': {
-      if (c.tipo === 'partenze') { req.n = nome === 'AltreCorseIntent' ? Math.max(3, numeroDa(intent) || 3) : 1; return esegui(C, env, req, att); }
+      if (c.tipo === 'partenze') { req.n = nome === 'AltreCorseIntent' ? Math.max(3, numeroDa(intent) || 3) : 1; if (c.linea && c.capolinea) req.stessoCapolinea = c.capolinea; return esegui(C, env, req, att); }
       if (c.tipo === 'itinerario') { req.indice = att.ctx.indice || 1; delete req.dettagli; return esegui(C, env, req, att); }
       if (c.tipo === 'avvisi') { req.tutti = true; return esegui(C, env, req, att); }
       if (c.tipo === 'ultima' || c.tipo === 'prima') return esegui(C, env, ricomincia({ ...req, tipo: 'partenze', n: 3 }), att);
@@ -321,6 +367,7 @@ async function seguito(C, env, intent, att, nome) {
       if (!['partenze', 'ultima', 'prima'].includes(c.tipo)) return manca();
       const r = ricomincia(req);
       if (c.a) { [r.luogo, r.a] = [c.a, c.luogo]; return esegui(C, env, r, att); }
+      if (!c.dirTesto && c.capolinea) { r.escludiCapolinea = c.capolinea; delete r.capolinea; return esegui(C, env, r, att); }
       if (!c.dirTesto) return testo('In quale direzione?', { reprompt: 'Dimmi la direzione, per esempio: verso Lido.', fine: false, attributi: att });
       // direzione opposta: le corse che NON vanno verso la direzione detta prima
       r.escludiDir = c.dirTesto; delete r.dirTesto;

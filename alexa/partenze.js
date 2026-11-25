@@ -58,16 +58,29 @@ function conGruppo(g, testo, gOrig) {
 function vaVerso(d, nexts, dest) {
   if (!dest) return true;
   if (d._G && d.tripId != null && d.seq != null) {
+    // fermate di arrivo dello stesso servizio (vaporetto/autobus): la sequenza della corsa decide; altrimenti si confrontano i nomi
     const set = dest.sids.get(d.src);
-    const r = Dir.proseguePer(d._G, d.tripId, d.seq, set, null);
-    if (r === true) return true;
-    const t = Dir.proseguePer(d._G, d.tripId, d.seq, null, dest.testo);
-    if (r === false && !t) return false;
+    const r = set && set.size ? Dir.proseguePer(d._G, d.tripId, d.seq, set, null) : null;
+    if (r != null) return r;
+    const nomi = [dest.testo, dest.gruppo ? dest.gruppo.nome : null].filter(x => typeof x === 'string' && x);
+    const t = nomi.map(x => Dir.proseguePer(d._G, d.tripId, d.seq, null, x)).reduce((a, b) => (a === true || b === true ? true : a === false || b === false ? false : null), null);
     if (t != null) return t;
   }
   const k = L.normalizza(dest.gruppo ? dest.gruppo.nome : dest.testo), k2 = L.normalizza(dest.testo);
   const alvo = [d.headsign, ...((nexts && nexts[d.nx] && nexts[d.nx].s) || [])].map(x => L.normalizza(P.dividiPontile(x || '').base));
   return alvo.some(x => [k, k2].some(q => q && (x === q || x.split(' ').includes(q) || (q.length > 3 && x.includes(q)))));
+}
+// da A a B: si tolgono le corse che partono prima ma arrivano dopo di un'altra (es. la linea che fa il giro lungo), come farebbe chi conosce
+// la laguna. Arrivo = durata programmata dalla sequenza GTFS sommata alla partenza prevista; senza sequenza la corsa resta.
+function arrivoAbs(d, dest, absMs) {
+  if (!d._G || d.tripId == null || d.seq == null) return null;
+  const st = d._G.stopTimes.get(d.tripId), set = dest.sids.get(d.src); if (!st || !set) return null;
+  for (let k = d.seq + 1; k < st.s.length; k++) if (set.has(st.s[k])) return absMs(d) + (st.a[k] - st.d[d.seq]) * 1000;
+  return null;
+}
+function senzaDominate(lista, dest, absMs) {
+  const arr = new Map(lista.map(d => [d, arrivoAbs(d, dest, absMs)]));
+  return lista.filter(d => { const a = arr.get(d); if (a == null || d.cancel) return true; return !lista.some(e => e !== d && !e.cancel && arr.get(e) != null && absMs(e) >= absMs(d) && arr.get(e) < a - 60000); });
 }
 // avvisi di fermata sospesa o spostata che toccano queste fermate (solo in corso)
 async function avvisiFermate(C, ids) {
@@ -136,8 +149,12 @@ async function partenze(C, ric) {
   if (ric.linea) lista = lista.filter(d => L.stessaLinea(d.line, ric.linea));
   if (mz) lista = lista.filter(d => tipoOk(mz, tipoRiga(C, d), d.src));
   if (dest) lista = lista.filter(d => vaVerso(d, Z.nexts, dest));
+  if (dest && dest.ids && dest.ids.length && !ric.verso) lista = senzaDominate(lista, dest, absMs);
   const esclusa = ric.escludiDir ? destinazione(C, ric.escludiDir, g) : null;
   if (esclusa) lista = lista.filter(d => !vaVerso(d, Z.nexts, esclusa));
+  const capo = d => L.normalizza(P.senzaTag(P.destinazioneParlata(d.headsign || '')));
+  if (ric.stessoCapolinea) lista = lista.filter(d => capo(d) === L.normalizza(ric.stessoCapolinea));
+  if (ric.escludiCapolinea) lista = lista.filter(d => capo(d) !== L.normalizza(ric.escludiCapolinea));
   const filtrate = lista.length;
   if (visti.size) lista = lista.filter(d => !visti.has(chiave(d)) && absMs(d) >= dopo - 60000);
   // una corsa soppressa si dice, ma non conta come «la prossima»: si aggiunge la prima successiva utilizzabile
@@ -145,9 +162,10 @@ async function partenze(C, ric) {
   for (const d of lista) { mostra.push(d); if (mostra.filter(x => !x.cancel).length >= n) break; }
   const nuoviVisti = [...visti, ...mostra.map(chiave)].slice(-12);
   const ctx = { tipo: 'partenze', visti: nuoviVisti, dopoMs: mostra.length ? absMs(mostra[mostra.length - 1]) : dopo, n };
-  if (esclusa && mostra[0]) ctx.dirEffettiva = P.destinazioneParlata(mostra[0].headsign || '');   // «nell'altra direzione» diventa una direzione precisa per i seguiti
+  if ((esclusa || ric.escludiCapolinea) && mostra[0]) ctx.dirEffettiva = P.senzaTag(P.destinazioneParlata(mostra[0].headsign || ''));
+  else if (!dest && n === 1 && mostra[0]) ctx.capolinea = P.senzaTag(P.destinazioneParlata(mostra[0].headsign || ''));   // «nell'altra direzione» diventa una direzione precisa per i seguiti
   const scheda = { titolo: g.parlato, sottotitolo: dest ? `Verso ${P.senzaTag(dest.nome)}` : 'Prossime partenze', righe: [], nota: '', fonte: 'Orari e tempo reale ACTV · servizio indipendente, non ufficiale' };
-  const chi = descriviFiltro(ric, mz, dest) + (esclusa ? `${descriviFiltro(ric, mz, dest) ? ' ' : ''}nell'altra direzione` : '');
+  const chi = descriviFiltro(ric, mz, dest) + (esclusa || ric.escludiCapolinea ? `${descriviFiltro(ric, mz, dest) ? ' ' : ''}nell'altra direzione` : '');
   if (!mostra.length) {
     let v;
     if (visti.size && filtrate) v = 'Non ci sono altre corse nelle prossime due ore.';
@@ -221,7 +239,7 @@ async function direttiDa(C, { ids, dest, ymd, linea, mz, daSecs, aSecs }) {
   if (!C.diretti) throw Object.assign(new Error('motore orari assente'), { code: 503 });
   const q = { da: ids, ymd, linee: linea ? [linea] : null, tipi: mz && mz.tipi ? mz.tipi : null, daSecs, aSecs };
   if (dest && dest.ids && dest.ids.length) q.a = mz ? dest.ids.filter(id => id.startsWith(mz.src + ':')) : dest.ids; else if (dest) q.dirTesto = dest.testo;
-  if (q.a && !q.a.length) delete q.a;
+  if (q.a && !q.a.length) { delete q.a; q.dirTesto = dest.testo; }   // destinazione senza fermate di questo mezzo: verifica sul nome
   const r = await C.diretti(q);
   if (mz && !mz.tipi) r.righe = r.righe.filter(x => x.src === mz.src);
   return r;
@@ -288,7 +306,7 @@ async function estremo(C, ric) {
   const giorno = oggiServizio ? 'oggi' : P.giornoParlato(ymd, now.ymd);
   const ctxBase = { tipo: quale, ymd };
   const scheda = { titolo: g.parlato, sottotitolo: `${quale === 'ultima' ? 'Ultima corsa' : 'Prima corsa'} · ${giorno}`, righe: [], nota: 'Orari programmati: possono cambiare con ritardi o variazioni.', fonte: 'Orari ACTV · servizio indipendente, non ufficiale' };
-  const tratta = `${dest ? `da ${g.parlato} ${ric.verso ? 'verso' : 'a'} ${dest.nome}` : `da ${g.parlato}`}${ric.linea ? ` con la linea ${P.lineaParlata(ric.linea)}` : ''}`;
+  const tratta = `${ric.linea ? `della linea ${P.lineaParlata(ric.linea)} ` : ''}${dest ? `da ${g.parlato} ${ric.verso ? 'verso' : 'a'} ${dest.nome}` : `da ${g.parlato}`}`;
   if (res.nessunGtfs.length && !res.righe.length) return { voce: P.esc(`Non ho ancora orari validi per ${giorno}.`), scheda, ctx: ctxBase, fine: false, vuoto: true };
   const utili = res.righe.filter(r => !r.cancel);
   if (!utili.length) {
@@ -298,27 +316,42 @@ async function estremo(C, ric) {
     }
     return { voce: P.esc(`Non risultano corse ${tratta} ${giorno}, secondo gli orari disponibili.`), scheda, ctx: ctxBase, fine: false, vuoto: true };
   }
+  // linee notturne (N, N1…): servizio continuo, non sono «l'ultimo vaporetto» né «il primo» che si intende a voce. Si risponde con le linee
+  // diurne e si cita a parte il servizio notturno. Le corse diurne oltre le 03:00 del giorno dopo (orari «27:xx» nei GTFS) sono le prime del
+  // mattino seguente, non le ultime della sera. Se si chiede proprio una linea notturna, o ci sono solo quelle, valgono tutte.
+  const notturna = r => /^N/i.test(String(r.line || ''));
+  let base = utili, notturne = [];
+  if (!(ric.linea && /^N/i.test(String(ric.linea)))) {
+    const diurne = utili.filter(r => !notturna(r) && (quale === 'prima' || r.dep < 27 * 3600));
+    if (diurne.length) { base = diurne; notturne = utili.filter(notturna); }
+  }
+  const ultNotte = quale === 'ultima' && notturne.length ? notturne[notturne.length - 1] : null;
+  const notaNotte = ultNotte ? ` Di notte c'è anche ${[...new Set(notturne.map(r => r.line))].length > 1 ? 'il servizio notturno' : `la linea ${P.lineaParlata(ultNotte.line)}`}: l'ultima corsa parte ${P.oraParlata(T.hhmmDa(ultNotte.dep))}${notte(ultNotte, ymd)}.` : '';
   // senza destinazione né linea: una risposta per direzione (al massimo due), la più tarda/presto per prima
   const scegli = list => (quale === 'ultima' ? list[list.length - 1] : list[0]);
   let gruppi;
-  if (dest || ric.linea) gruppi = [scegli(utili)];
+  if (dest || ric.linea) gruppi = [scegli(base)];
   else {
     const per = new Map();
-    for (const r of utili) { const k = L.normalizza(P.destinazioneParlata(r.headsign || '')); const x = per.get(k); if (!x || (quale === 'ultima' ? r.dep > x.dep : r.dep < x.dep)) per.set(k, r); }
+    for (const r of base) { const k = L.normalizza(P.destinazioneParlata(r.headsign || '')); const x = per.get(k); if (!x || (quale === 'ultima' ? r.dep > x.dep : r.dep < x.dep)) per.set(k, r); }
     gruppi = [...per.values()].sort((a, b) => (quale === 'ultima' ? b.dep - a.dep : a.dep - b.dep)).slice(0, 2);
   }
   const r0 = gruppi[0], fe = fermataEsatta(C, r0.from), lin = r0.type === 0 ? `il tram ${P.lineaParlata(r0.line)}` : `la linea ${P.lineaParlata(r0.line)}`;
   const nowSec = oggiServizio ? ds.secs : null;
   let v;
   if (quale === 'ultima' && nowSec != null && r0.dep < nowSec) {
-    v = `L'ultima corsa programmata ${tratta} era ${P.oraParlata(T.hhmmDa(r0.dep))}. Non ne risultano altre per oggi.`;
+    v = `L'ultima corsa programmata ${tratta} era ${P.oraParlata(T.hhmmDa(r0.dep))}.${ultNotte && ultNotte.dep >= nowSec ? notaNotte : ' Non ne risultano altre per oggi.'}`;
   } else {
     const cosa = dest && !ric.verso ? (quale === 'ultima' ? 'l\'ultimo collegamento diretto' : 'il primo collegamento diretto') : `${quale === 'ultima' ? 'l\'ultima corsa' : 'la prima corsa'} ${tratta}`;
-    const testa = oggiServizio ? P.maiuscola(cosa) : `${P.maiuscola(giorno)}, ${cosa}`;
-    v = `${testa} parte ${P.oraParlata(T.hhmmDa(r0.dep))}${notte(r0, ymd)}, con ${lin} per ${P.destinazioneParlata(r0.headsign || '')}${fe.con ? ', ' + fe.con : ''}.`;
+    const dopo = daSecs != null ? ` dopo ${P.oraSenzaPrep(T.hhmmDa(daSecs))}` : '';
+    const testa = oggiServizio ? P.maiuscola(cosa) : `${P.maiuscola(giorno)}${dopo}, ${cosa}`;
+    const conLinea = ric.linea && L.stessaLinea(r0.line, ric.linea) && String(r0.line) === String(ric.linea) ? '' : ` con ${lin}`;
+    const capo = P.destinazioneParlata(r0.headsign || ''), giaDetto = dest && ric.verso && L.normalizza(P.senzaTag(capo)) === L.normalizza(P.senzaTag(dest.nome));
+    const perCapo = giaDetto ? '' : ` per ${capo}`;
+    v = `${testa} parte ${P.oraParlata(T.hhmmDa(r0.dep))}${notte(r0, ymd)}${conLinea || perCapo ? ',' : ''}${conLinea}${perCapo}${fe.con ? ', ' + fe.con : ''}.`;
     if (r0.arr != null && !ric.verso) v += ` Arriva ${P.oraParlata(T.hhmmDa(r0.arr))}.`;
     if (gruppi[1]) { const r1 = gruppi[1]; v += ` Verso ${P.destinazioneParlata(r1.headsign || '')}, ${quale === 'ultima' ? 'l\'ultima' : 'la prima'} è ${P.oraParlata(T.hhmmDa(r1.dep))}${notte(r1, ymd)}, ${r1.type === 0 ? 'tram' : 'linea'} ${P.lineaParlata(r1.line)}.`; }
-    v += ' È un orario programmato.';
+    v += notaNotte + ' È un orario programmato.';
   }
   const soppressa = res.righe.find(r => r.cancel && (quale === 'ultima' ? r.dep > r0.dep : r.dep < r0.dep));
   if (soppressa) v += ` La corsa ${P.oraParlata(T.hhmmDa(soppressa.dep))} risulta soppressa.`;

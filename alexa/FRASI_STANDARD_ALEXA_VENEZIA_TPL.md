@@ -249,11 +249,11 @@ illustrativi. Rigenerare dopo ogni modifica alle frasi; la prova `tests/alexa-mo
 
 | Condizione | Risposta effettiva |
 |---|---|
-| Ultimo collegamento diretto (dopo mezzanotte) | L'ultimo collegamento diretto parte all'una e dieci, nella notte tra mercoledì e giovedì, con la linea enne per Piazzale Roma, dal pontile C. Arriva all'una e venticinque. È un orario programmato. |
-| «E domani?» dopo l'ultima corsa | Domani, l'ultimo collegamento diretto parte all'una e dieci, nella notte tra giovedì e venerdì, con la linea enne per Piazzale Roma, dal pontile C. Arriva all'una e venticinque. È un orario programmato. |
-| Ultima corsa già passata | L'ultima corsa programmata da Rialto a Piazzale Roma era all'una e dieci. Non ne risultano altre per oggi. |
+| Ultimo collegamento diretto (dopo mezzanotte) | L'ultimo collegamento diretto parte alle ventitré e trenta, con la linea uno per Piazzale Roma, dal pontile C. Arriva alle ventitré e quarantacinque. Di notte c'è anche la linea enne: l'ultima corsa parte all'una e dieci, nella notte tra mercoledì e giovedì. È un orario programmato. |
+| «E domani?» dopo l'ultima corsa | Domani, l'ultimo collegamento diretto parte alle ventitré e trenta, con la linea uno per Piazzale Roma, dal pontile C. Arriva alle ventitré e quarantacinque. Di notte c'è anche la linea enne: l'ultima corsa parte all'una e dieci, nella notte tra giovedì e venerdì. È un orario programmato. |
+| Ultima corsa già passata | L'ultima corsa programmata da Rialto a Piazzale Roma era alle ventitré e trenta. Non ne risultano altre per oggi. |
 | Prima corsa di domani | Domani, il primo collegamento diretto parte alle otto e trenta, con la linea uno per Piazzale Roma, dal pontile C. Arriva alle otto e quarantacinque. È un orario programmato. |
-| Senza destinazione: una risposta per direzione | L'ultima corsa da Rialto parte all'una e dieci, nella notte tra mercoledì e giovedì, con la linea enne per Piazzale Roma, dal pontile C. Verso Lido Santa Maria Elisabetta, l'ultima è alle otto e venti, linea cinque punto uno. È un orario programmato. |
+| Senza destinazione: una risposta per direzione | L'ultima corsa da Rialto parte alle ventitré e trenta, con la linea uno per Piazzale Roma, dal pontile C. Verso Lido Santa Maria Elisabetta, l'ultima è alle otto e venti, linea cinque punto uno. Di notte c'è anche la linea enne: l'ultima corsa parte all'una e dieci, nella notte tra mercoledì e giovedì. È un orario programmato. |
 | Nessun collegamento diretto | Non risultano collegamenti diretti da Rialto a Mestre stazione oggi. Vuoi che cerchi un percorso con cambi? |
 | Nessun orario per la data | Non ho ancora orari validi per venerdì 25 dicembre. |
 

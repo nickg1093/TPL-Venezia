@@ -39,7 +39,9 @@ function quando({ data, ora, adesso, entro = false }) {
   let ymd = d ? d.da : now.ymd, secs = o ? o.secs : (d && d.da !== now.ymd ? FASCE.MO : now.secs);
   let spostato = false;
   // un'ora già passata oggi, senza giorno detto: si intende domani («entro le nove» detto alle 10)
-  if (!d && o && secs < now.secs - 3600) { ymd = cal.addDays(ymd, 1); spostato = true; }
+  // un'ora del mattino già passata (1-11, senza fascia) che di pomeriggio/sera è ancora futura: si intende la sera («dopo le sei» alle 17)
+  if (!d && o && !o.fascia && secs >= 3600 && secs < 12 * 3600 && secs < now.secs - 3600 && secs + 12 * 3600 >= now.secs - 3600) secs += 12 * 3600;
+  else if (!d && o && secs < now.secs - 3600) { ymd = cal.addDays(ymd, 1); spostato = true; }
   if (!o && d && d.da === now.ymd) return { adesso: true, ymd: now.ymd, secs: null, oggi: now.ymd };
   return { adesso: false, ymd, secs, hhmm: hhmmDa(secs), conOra: !!o, fascia: o?.fascia || null, nomeFascia: o?.nomeFascia || null, spostatoADomani: spostato, oggi: now.ymd, tipoData: d?.tipo || null, entro };
 }

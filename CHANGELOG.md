@@ -3,6 +3,19 @@
 Riepilogo per versione delle modifiche che contano per chi usa o mantiene l'app. I dettagli tecnici sono in `README.md` §12; lo storico per
 gli utenti è nell'app (Informazioni → Novità, generato da `public/js/guida.js`).
 
+## Skill Alexa — correzioni dalle prove nel simulatore — 25/11/2026 (non pubblicate)
+- **Direzione**: «verso Venezia» detto per il tram usava la prima fermata di vaporetto restituita da Alexa (Ferrovia) e una destinazione senza
+  fermate di quel mezzo lasciava passare tutte le corse, anche nell'altro senso (T1 per Favaro). Ora «Venezia», «San Marco», «Lido» valgono come
+  luoghi speciali e la direzione si verifica sui nomi della corsa quando mancano fermate dello stesso mezzo.
+- **Frasi spezzate male da Alexa**: «mestre per venezia», «rialto piazzale roma» finiti in un solo slot vengono divisi in partenza e arrivo;
+  «3 vaporetti» dà numero e mezzo. Aggiunte 57 frasi d'esempio al modello (da… per…, partendo da…).
+- **Ultima corsa**: è l'ultima delle linee diurne (prima era la linea N delle 4:34); il servizio notturno si cita a parte. Le corse diurne dopo le
+  03:00 sono le prime del mattino dopo.
+- **Ore del mattino già passate** («dopo le sei» detto alle 17) = le 18 di oggi, e la risposta lo dice.
+- **Seguiti**: «quando passa il due alle Zattere» → «e quello dopo» resta nella stessa direzione; «nell'altra direzione» funziona anche senza
+  direzione detta; una nuova linea non eredita la fermata e la direzione di prima («ultima corsa del cinque punto due» chiede la fermata).
+- Da A a B si tolgono le corse che partono prima ma arrivano dopo; avvisi letti senza «+++» e maiuscole urlate; niente «linea due… con la linea due».
+
 ## Skill Alexa — revisione 2 — 25/11/2026 (ramo `feature/alexa-voce`, non pubblicata; l'app resta alla v34)
 - **Prima e ultima corsa, orari di altri giorni, linee di una fermata** cercati sull'intero GTFS della data (`alexa/diretti.js`): calendario
   ed eccezioni, orari oltre le 24, sequenza delle fermate, niente salita al capolinea d'arrivo, soppressioni del tempo reale. Prima si deduceva

@@ -30,11 +30,17 @@ test('tempo: AMAZON.DATE / AMAZON.TIME — giorno, weekend, settimana, mese, fas
   assert.equal(T.risolviOra('08:30').secs, 8 * 3600 + 1800); assert.equal(T.risolviOra('24:00').secs, 0);
   assert.equal(T.risolviOra('25:00'), null); assert.equal(T.risolviOra('12:75'), null); assert.equal(T.risolviOra(null), null);
 });
-test('tempo: «quando» — senza dati = adesso; ora già passata oggi = domani; data futura senza ora = mattina', () => {
+test('tempo: «quando» — senza dati = adesso; ora del mattino passata = sera, poi domani; data futura senza ora = mattina', () => {
   const ADESSO = Date.UTC(2026, 10, 25, 9, 10);   // mercoledì 10:10 a Venezia
   assert.equal(T.quando({ adesso: ADESSO }).adesso, true);
+  // «le otto» detto alle 10:10 = le venti di oggi (ora del mattino passata, sera ancora futura)
   const q = T.quando({ ora: '08:00', adesso: ADESSO });
-  assert.equal(q.ymd, '20261126'); assert.equal(q.spostatoADomani, true);
+  assert.equal(q.ymd, '20261125'); assert.equal(q.secs, 20 * 3600);
+  // «le sei» detto alle 21: le sei di domani mattina
+  const q2 = T.quando({ ora: '06:00', adesso: Date.UTC(2026, 10, 25, 20, 0) });
+  assert.equal(q2.ymd, '20261126'); assert.equal(q2.secs, 6 * 3600); assert.equal(q2.spostatoADomani, true);
+  // con la fascia detta («domattina», MO) non si sposta alla sera
+  assert.equal(T.quando({ ora: '00:30', adesso: Date.UTC(2026, 10, 25, 20, 0) }).ymd, '20261126');
   assert.equal(T.quando({ ora: '10:30', adesso: ADESSO }).ymd, '20261125');
   const d = T.quando({ data: '2026-11-27', adesso: ADESSO }); assert.equal(d.ymd, '20261127'); assert.equal(d.secs, 8 * 3600);
   assert.equal(T.quando({ data: '2026-11-25', adesso: ADESSO }).adesso, true);
