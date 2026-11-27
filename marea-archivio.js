@@ -3,14 +3,17 @@
 //    dal Centro Maree ogni 5 minuti e aggiunge le letture nuove. Il server non scrive mai (nessuna credenziale su Render).
 //  · LETTURA: il server legge i file pubblici del ramo (raw.githubusercontent.com) all'avvio e ricostruisce le ultime ore (tide.js).
 //  · FORMATO: marea/AAAA-MM-GG.jsonl (giorno UTC), una riga per lettura, in ordine di tempo:
-//      { t: istante in ms UTC, cm: livello in cm (null = dato mancante), st: id della stazione, f: "cpsm", s: "grezzo" | "mancante" }
+//      { t: istante in ms UTC, cm: livello in cm (null = dato mancante), st: id della stazione, f: "cpsm" | "ispra", s: "grezzo" | "mancante" }
+//    «ispra»: riserva quando il portale del Comune non risponde (stazione ISPRA di Punta della Salute, st "I129"), vedi tide.js.
 //    «grezzo»: valore così come pubblicato dal Centro Maree (non validato). Nessun duplicato: una riga per stazione e istante.
 //  · CONSERVAZIONE: 30 giorni (circa 12 kB al giorno, ~350 kB in tutto), i file più vecchi si cancellano dal ramo.
-const KEEP_DAYS = 30, STATI = new Set(['grezzo', 'mancante']), MAX_FILE = 2e6;
+const KEEP_DAYS = 30, STATI = new Set(['grezzo', 'mancante']), FONTI = new Set(['cpsm', 'ispra']), MAX_FILE = 2e6;
 const dayOf = t => new Date(t).toISOString().slice(0, 10);
 const valid = r => r && typeof r === 'object' && Number.isFinite(r.t) && r.t > 946684800000 && r.t < 4102444800000
-  && (r.cm === null || (Number.isInteger(r.cm) && r.cm > -400 && r.cm < 500)) && /^\d{3,6}$/.test(String(r.st || '')) && r.f === 'cpsm' && STATI.has(r.s);
+  && (r.cm === null || (Number.isInteger(r.cm) && r.cm > -400 && r.cm < 500)) && /^(\d{3,6}|I\d{1,4})$/.test(String(r.st || '')) && FONTI.has(r.f) && STATI.has(r.s);
 
+// riga d'archivio dalla lettura ISPRA (forma di tide.parseIspra)
+const rowFromIspra = p => (p && Number.isFinite(p.ts) && Number.isFinite(p.cm) ? { t: p.ts, cm: p.cm, st: p.id, f: 'ispra', s: 'grezzo' } : null);
 // righe d'archivio dalle letture del portale (forma di tide.parseLevels): la stazione principale e le due di riserva, come il server
 function rowsFrom(levels, ids = ['1025', '1045', '1029']) {
   const out = [];
@@ -41,7 +44,7 @@ function merge(text, rows) {
 // file da cancellare (più vecchi di KEEP_DAYS)
 const expired = (names, now = Date.now(), keep = KEEP_DAYS) => names.filter(n => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(n) && Date.parse(n.slice(0, 10) + 'T00:00:00Z') < now - keep * 864e5);
 // storia per il grafico: per ogni istante la stazione principale se c'è, altrimenti la prima di riserva; solo valori veri, ultime «ms»
-function history(rows, now = Date.now(), ms = 6 * 3600e3, order = ['1025', '1045', '1029']) {
+function history(rows, now = Date.now(), ms = 6 * 3600e3, order = ['1025', '1045', '1029', 'I129']) {
   const by = new Map();
   for (const r of rows) {
     if (r.cm === null || r.t < now - ms || r.t > now + 600e3) continue;
@@ -63,4 +66,4 @@ async function restore({ repo, fetchFn = globalThis.fetch, now = Date.now(), ms 
   }
   return history(rows, now, ms);
 }
-module.exports = { KEEP_DAYS, dayOf, rowsFrom, parse, merge, expired, history, restore, valid };
+module.exports = { KEEP_DAYS, dayOf, rowsFrom, rowFromIspra, parse, merge, expired, history, restore, valid };

@@ -3,6 +3,9 @@
 // Dataset: "CPSM: dati meteomarini laguna e litorale veneziano" su dati.venezia.it
 //   livello.json   livello in metri ogni 5 minuti (ritardo ~3 min) per 13 stazioni; ORA SOLARE (UTC+1); -999 = dato mancante
 //   previsione.json estremi (alte/basse) previsti, in cm, riferiti a Punta Salute
+// RISERVA: ISPRA – Servizio Laguna di Venezia, rete mareografica RMLV (www.venezia.isprambiente.it/dati/Dati2.xml, ultimo valore di
+//   ogni stazione, in cm sullo ZMPS, ORA SOLARE). Si usa per il livello quando il portale del Comune non risponde o è fermo: dal 26/11/2026
+//   il firewall del Comune respinge le richieste dai server cloud (Render, GitHub). Le previsioni restano solo quelle del Centro Maree.
 // Stazione ufficiale per Venezia dal 2002: "Punta Salute Canal Grande" (ID 1025).
 // Il livello è riferito allo zero mareografico di Punta della Salute (ZMPS).
 
@@ -11,9 +14,14 @@ const HEADERS = {   // il portale blocca le richieste senza User-Agent da browse
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
   'Accept': 'application/json,*/*;q=0.8', 'Accept-Language': 'it-IT,it;q=0.9'
 };
+const ISPRA_URL = 'https://www.venezia.isprambiente.it/dati/Dati2.xml', ISPRA_ST = { marker: '129', id: 'I129', name: 'Punta della Salute (ISPRA)' };
+const SOURCES = {
+  cpsm: { name: 'Centro Previsioni e Segnalazioni Maree – Comune di Venezia', license: 'CC BY', url: 'https://dati.venezia.it/?q=content/cpsm-dati-meteomarini-laguna-e-litorale-veneziano' },
+  ispra: { name: 'ISPRA – Servizio Laguna di Venezia, rete mareografica RMLV', license: 'CC BY 4.0', url: 'https://www.venezia.isprambiente.it/rete-meteo-mareografica' }
+};
 const MAIN = { id: '1025', name: 'Punta Salute Canal Grande' }, FALLBACK = ['1045', '1029'];   // Giudecca, Misericordia
 const LEVEL_TTL = 90 * 1000, FORECAST_TTL = 20 * 60 * 1000, HIST_MS = 6 * 3600 * 1000, STALE_MS = 20 * 60 * 1000;
-const SOLAR = 3600 * 1000;   // UTC+1: tutti i dati del portale sono in ora solare
+const SOLAR = 3600 * 1000, TREND_MAX_AGE_MS = 40 * 60e3, ISPRA_STALE_MS = 35 * 60e3;   // ISPRA pubblica il file circa ogni 15 minuti   // UTC+1: tutti i dati del portale sono in ora solare
 
 // "2026-10-23 10:30:00" (ora solare) -> millisecondi UTC
 function solarToMs(s) {
@@ -37,6 +45,27 @@ const categoryOf = cm => { const c = CATS.find(([lo, hi]) => cm >= lo && cm < hi
 function parseLevels(json) {
   if (!Array.isArray(json)) return [];
   return json.map(o => ({ id: String(o.ID_stazione), name: o.stazione, cm: toCm(o.valore), ts: solarToMs(o.data) })).filter(s => s.ts != null);
+}
+
+// ISPRA Dati2.xml -> { id, name, cm, ts, src: 'ispra' } della stazione di Punta della Salute (marea), oppure null.
+// "27/11/2026 08:55:00" in ora solare; se l'istante risultasse nel futuro (eventuale ora legale) si toglie un'ora.
+function parseIspra(xml, now = Date.now()) {
+  const m = new RegExp(`<marker\\s+id\\s*=\\s*"${ISPRA_ST.marker}"[^>]*>([\\s\\S]*?)</marker>`).exec(String(xml || ''));
+  if (!m) return null;
+  const ins = /<instrument[^>]*type\s*=\s*"Marea"[^>]*>\s*<value\s+datetime\s*=\s*"(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})(?::(\d{2}))?"\s*>\s*(-?\d+(?:[.,]\d+)?)\s*<\/value>/.exec(m[1]);
+  if (!ins) return null;
+  let ts = Date.UTC(+ins[3], +ins[2] - 1, +ins[1], +ins[4], +ins[5], +(ins[6] || 0)) - SOLAR;
+  if (ts > now + 10 * 60e3) ts -= 3600e3;
+  const cm = Math.round(parseFloat(ins[7].replace(',', '.')));
+  if (!Number.isFinite(cm) || cm <= -400 || cm >= 500 || ts > now + 10 * 60e3) return null;
+  return { id: ISPRA_ST.id, name: ISPRA_ST.name, cm, ts, src: 'ispra' };
+}
+async function getIspra() {
+  const res = await fetch(ISPRA_URL, { headers: HEADERS, signal: AbortSignal.timeout(10000), redirect: 'follow' });
+  if (!res.ok) throw new Error(`ISPRA: HTTP ${res.status}`);
+  const txt = await res.text(); if (txt.length > 2e6) throw new Error('ISPRA: risposta troppo grande');
+  const p = parseIspra(txt); if (!p) throw new Error('ISPRA: Punta della Salute non trovata');
+  return p;
 }
 
 // Tendenza: pendenza (cm/h) della retta ai minimi quadrati sulle letture degli ultimi 45 min (servono >= 3 punti e >= 15 min di storia)
@@ -107,16 +136,27 @@ function buildCurve(extremes, hist, now) {
   return out;
 }
 
-const S = { level: null, levelAt: 0, hist: [], forecast: [], forecastAt: 0, err: null, raw: null };
+const S = { level: null, levelAt: 0, hist: [], forecast: [], forecastAt: 0, err: null, cpsmErr: null, ispraErr: null, raw: null };
 
+// FONTE BLOCCATA: dal 26/11/2026 il portale (dietro il firewall Imperva del Comune) risponde HTTP 403 alle richieste dai server cloud
+// (Render, GitHub Actions). Su 403/429 non si insiste: pausa crescente (5, 10, 20, poi 30 min) e niente secondo tentativo in http://,
+// così il server non peggiora la propria reputazione presso il firewall e non spreca rete. Il blocco non va aggirato.
+const BLOCK_MIN_MS = 5 * 60e3, BLOCK_MAX_MS = 30 * 60e3;
+const B = { until: 0, wait: 0, status: null, since: null };
 async function getJson(name) {
+  if (Date.now() < B.until) throw new Error(`${name}: fonte in pausa dopo HTTP ${B.status}`);
   let last = null;
   for (const b of BASE) {
     try {
       const res = await fetch(b + name, { headers: HEADERS, signal: AbortSignal.timeout(10000), redirect: 'follow' });
+      if (res.status === 403 || res.status === 429) {
+        B.wait = Math.min(BLOCK_MAX_MS, B.wait ? B.wait * 2 : BLOCK_MIN_MS); B.until = Date.now() + B.wait; B.status = res.status; B.since = B.since || Date.now();
+        const e = new Error(`${name}: HTTP ${res.status}`); e.blocked = true; throw e;
+      }
       if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
-      return await res.json();
-    } catch (e) { last = e; }
+      const j = await res.json(); B.wait = 0; B.until = 0; B.status = null; B.since = null;
+      return j;
+    } catch (e) { last = e; if (e.blocked) break; }
   }
   throw last;
 }
@@ -127,17 +167,23 @@ async function refresh(force = false) {
   if (busy) return busy;
   if (!force && now - S.levelAt < LEVEL_TTL) return;
   busy = (async () => {
+    let st = [], cpsmErr = null;
+    try { st = parseLevels(await getJson('livello.json')); } catch (e) { cpsmErr = e; }
+    let pick = [MAIN.id, ...FALLBACK].map(id => st.find(s => s.id === id && s.cm != null)).find(Boolean);
+    if (pick) pick = { ...pick, src: 'cpsm' };
+    // Centro Maree assente o fermo: livello di riserva da ISPRA (Punta della Salute), se più recente
+    if (!pick || Date.now() - pick.ts > STALE_MS) {
+      try { const isp = await getIspra(); if (!pick || isp.ts > pick.ts) pick = isp; S.ispraErr = null; } catch (e) { S.ispraErr = e.message; }
+    }
     try {
-      const st = parseLevels(await getJson('livello.json'));
-      const pick = [MAIN.id, ...FALLBACK].map(id => st.find(s => s.id === id && s.cm != null)).find(Boolean);
-      if (!pick) throw new Error('livello non disponibile');
-      S.level = { ...pick, others: st.filter(s => s.cm != null && s.id !== pick.id).map(({ id, name, cm }) => ({ id, name, cm })) };
-      S.levelAt = Date.now(); S.err = null;
-      if (!S.hist.length || S.hist[S.hist.length - 1].t !== pick.ts) S.hist.push({ t: pick.ts, cm: pick.cm });   // una lettura per istante
+      if (!pick) throw new Error([cpsmErr && cpsmErr.message, S.ispraErr].filter(Boolean).join('; ') || 'livello non disponibile');
+      S.level = { ...pick, others: pick.src === 'cpsm' ? st.filter(s => s.cm != null && s.id !== pick.id).map(({ id, name, cm }) => ({ id, name, cm })) : [] };
+      S.levelAt = Date.now(); S.err = null; S.cpsmErr = cpsmErr ? cpsmErr.message : null;
+      if (!S.hist.length || S.hist[S.hist.length - 1].t < pick.ts) S.hist.push({ t: pick.ts, cm: pick.cm });   // una lettura per istante, in ordine
       S.hist = S.hist.filter(p => p.t >= pick.ts - HIST_MS);
     } catch (e) { S.err = e.message; }
     if (Date.now() - S.forecastAt > FORECAST_TTL) {
-      try { const j = await getJson('previsione.json'); S.raw = Array.isArray(j) ? j.slice(0, 4) : j; S.forecast = parseForecast(j); S.forecastAt = Date.now(); }
+      try { const j = await getJson('previsione.json'); S.raw = Array.isArray(j) ? j.slice(0, 4) : j; S.forecast = parseForecast(j); S.forecastAt = S.forecastOkAt = Date.now(); }
       catch (e) { S.forecastAt = Date.now() - FORECAST_TTL + 120000; }      // riprova tra 2 min senza martellare il portale
     }
   })().finally(() => { busy = null; });
@@ -157,18 +203,22 @@ async function getTide({ debug = false } = {}) {
   if (!S.level) { const e = new Error(S.err || 'dati di marea non disponibili'); e.code = 503; throw e; }
   const now = Date.now(), lv = S.level, cm = lv.cm;
   const next = S.forecast.filter(f => f.ts > now - 5 * 60e3).slice(0, 4);
-  let trend = trendOf(S.hist);
+  const old = now - lv.ts > TREND_MAX_AGE_MS;                         // dato vecchio: la tendenza «osservata» di allora non vale più
+  let trend = old ? null : trendOf(S.hist);
   if (!trend && next.length) trend = { dir: next[0].type === 'max' ? 'up' : 'down', rate: null, basis: 'previsione' };   // senza storia: direzione dal prossimo estremo
   const out = {
-    station: lv.name, cm, ts: lv.ts, ageMin: Math.max(0, Math.round((now - lv.ts) / 60000)), stale: now - lv.ts > STALE_MS,
-    category: categoryOf(cm), trend, next: next.map(n => ({ ...n, cat: categoryOf(n.cm).key })),
+    station: lv.name, cm, ts: lv.ts, ageMin: Math.max(0, Math.round((now - lv.ts) / 60000)), stale: now - lv.ts > (lv.src === 'ispra' ? ISPRA_STALE_MS : STALE_MS),
+    category: categoryOf(cm), trend,
+    // stato della fonte (senza dettagli tecnici): il client spiega perché il dato è vecchio
+    fonte: S.err ? { ok: false, motivo: B.status ? 'bloccata' : 'non disponibile', da: B.since } : { ok: true, riserva: lv.src === 'ispra' }, next: next.map(n => ({ ...n, cat: categoryOf(n.cm).key })),
     history: S.hist.map(p => [p.t, p.cm]),
     // grafico: 6 ore osservate (storia raccolta dal server) + 18 ore previste (curva ricavata dagli estremi previsti)
     chart: { from: now - HIST_MS, to: now + AHEAD_MS, now, observed: S.hist.map(p => [p.t, p.cm]), forecast: buildCurve(S.forecast, S.hist, now),
       extremes: S.forecast.filter(f => f.ts > now - HIST_MS && f.ts < now + AHEAD_MS).map(f => ({ type: f.type, cm: f.cm, ts: f.ts })) },
-    source: { name: 'Centro Previsioni e Segnalazioni Maree – Comune di Venezia', license: 'CC BY', url: 'https://dati.venezia.it/?q=content/cpsm-dati-meteomarini-laguna-e-litorale-veneziano' }
+    source: SOURCES[lv.src] || SOURCES.cpsm,
+    forecastSource: SOURCES.cpsm, forecastAgeMin: S.forecastOkAt ? Math.round((now - S.forecastOkAt) / 60000) : null
   };
-  if (debug) out.debug = { forecastParsed: S.forecast.length, rawSample: S.raw, error: S.err };
+  if (debug) out.debug = { forecastParsed: S.forecast.length, rawSample: S.raw, error: S.err, cpsm: S.cpsmErr, ispra: S.ispraErr, pausa: B.until > now ? Math.round((B.until - now) / 1000) : 0 };
   return out;
 }
 
@@ -189,4 +239,4 @@ function start({ archivio = null } = {}) {
   }
   refresh(true).catch(() => {}); setInterval(() => refresh(true).catch(() => {}), 150000).unref?.();
 }
-module.exports = { snapshot, buildCurve, getTide, start, mergeHist, getJson, parseLevels, parseForecast, trendOf, categoryOf, solarToMs, toCm, _S: S };
+module.exports = { _B: B, parseIspra, getIspra, SOURCES, snapshot, buildCurve, getTide, start, mergeHist, getJson, parseLevels, parseForecast, trendOf, categoryOf, solarToMs, toCm, _S: S };

@@ -10,6 +10,12 @@ const AA_URL = 'https://actv.avmspa.it/it/content/acqua-alta-servizi-di-navigazi
 const peakOf = d => Math.max(d.cm, ...(d.next || []).map(n => n.cm), ...((d.chart && d.chart.forecast) || []).map(p => p[1]));
 // triangolo accanto alle maree oltre la prima soglia del piano ACTV: apre l'avviso di acqua alta (ufficiale o calcolato dal livello)
 const warnBtn = `<button type="button" class="tide-warn" aria-label="Acqua alta oltre ${AA_CM} cm: apri l'avviso sui servizi di navigazione" title="Apri l'avviso di acqua alta">${icon('warn', 'sm')}</button>`;
+// dato vecchio: entro 90 minuti si dice da quanti minuti, oltre si dice l'ora (e il giorno) dell'ultima misura; se la fonte non risponde
+// al server lo si dice chiaramente, così il livello mostrato non sembra quello attuale
+const staleTxt = d => {
+  const min = Math.max(0, Math.round(+d.ageMin) || 0), quando = min <= 90 ? `di ${min} minuti fa` : `delle ${dayTag(d.ts)}${hm(d.ts)}`;
+  return `<b>Livello non aggiornato</b>: ultimo dato ${quando}.${d.fonte && d.fonte.ok === false ? ' Il Centro Maree al momento non risponde al server; per il livello attuale vale la previsione.' : ''}`;
+};
 const safeUrl = u => (/^https:\/\//.test(u) ? u : '#');
 
 // ---- GRAFICO: fino a 6 ore osservate + 18 ore previste, con cursore mobile: si trascina sul grafico (dito o mouse) o si usano le frecce ----
@@ -144,11 +150,13 @@ function render() {
     + `<div class="tide-trend">${icon(tr.icon)}<span>${tr.txt}${t && t.basis === 'previsione' ? ' <span class="muted">(da previsione)</span>' : ''}</span></div>`
     + aaLink(d)
     + (d.salvata ? `<p class="tide-note" role="status"><b>Senza connessione: dati salvati</b> alle ${dayTag(d.salvata)}${hm(d.salvata)}. Livello e tendenza sono di allora; per le ore successive vale la previsione di allora.</p>` : '')
-    + (d.stale && !d.salvata ? `<p class="tide-note" role="status">Ultimo dato di ${Math.round(+d.ageMin) || 0} minuti fa: potrebbe non essere aggiornato.</p>` : '')
+    + (d.stale && !d.salvata ? `<p class="tide-note" role="status">${staleTxt(d)}</p>` : '')
     + (next ? `<ul class="tide-next" aria-label="Prossime alte e basse maree previste">${next}</ul>` : '')
     + (d.chart ? chartHtml(d.chart) : '')
     + moseHtml()
-    + `<p class="tide-foot">${esc(d.station)} · rilevato alle ${hm(d.ts)}. Livello sullo zero mareografico di Punta della Salute; dati grezzi, non validati.<br>Fonte (licenza ${esc(d.source.license)}):<a href="${esc(safeUrl(d.source.url))}" target="_blank" rel="noopener noreferrer">${esc(d.source.name)}</a></p>`;
+    + `<p class="tide-foot">${esc(d.station)} · rilevato alle ${hm(d.ts)}. Livello sullo zero mareografico di Punta della Salute; dati grezzi, non validati.<br>Fonte (licenza ${esc(d.source.license)}):<a href="${esc(safeUrl(d.source.url))}" target="_blank" rel="noopener noreferrer">${esc(d.source.name)}</a>`
+    + (d.forecastSource && d.forecastSource.url !== d.source.url ? `<br>Il Centro Maree non risponde: livello dalla rete ISPRA. Previsioni:<a href="${esc(safeUrl(d.forecastSource.url))}" target="_blank" rel="noopener noreferrer">${esc(d.forecastSource.name)}</a>${d.forecastAgeMin != null && d.forecastAgeMin > 60 ? ` (aggiornate ${d.forecastAgeMin >= 120 ? Math.round(d.forecastAgeMin / 60) + ' ore' : d.forecastAgeMin + ' minuti'} fa)` : ''}` : '')
+    + '</p>';
   if (d.chart) bindChart(d.chart);
   btn.querySelector('.dotc').dataset.cat = d.category.key;
   markBtn();

@@ -1,6 +1,7 @@
 name: Archivio marea
 
-# Conserva i livelli di marea letti dal Centro Previsioni e Segnalazioni Maree (open data CC BY) nel ramo separato «archivio-marea»,
+# Conserva i livelli di marea letti dal Centro Previsioni e Segnalazioni Maree (open data CC BY; riserva: rete ISPRA RMLV, Punta della
+# Salute, quando il portale del Comune respinge GitHub) nel ramo separato «archivio-marea»,
 # cartella marea/ (un file AAAA-MM-GG.jsonl al giorno). Il server su Render lo rilegge all'avvio: dopo un riavvio o un deploy il grafico
 # delle ultime ore e la tendenza non ripartono vuoti. Vedi marea-archivio.js e scripts/archivia-marea.js.
 # Ogni esecuzione legge il livello 3 volte a 5 minuti di distanza (il portale lo aggiorna ogni 5 minuti): con l'avvio ogni 15 minuti si
@@ -21,11 +22,11 @@ concurrency:
 jobs:
   archivia:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 

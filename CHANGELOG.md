@@ -3,6 +3,13 @@
 Riepilogo per versione delle modifiche che contano per chi usa o mantiene l'app. I dettagli tecnici sono in `README.md` §12; lo storico per
 gli utenti è nell'app (Informazioni → Novità, generato da `public/js/guida.js`).
 
+
+## Marea: fonte di riserva ISPRA — 27/11/2026
+- **Causa**: dal 26/11/2026 pomeriggio il firewall (Imperva) del portale dati.venezia.it risponde HTTP 403 ai server cloud (Render, GitHub Actions): il livello restava fermo e il workflow «Archivio marea» falliva. Dal browser di casa il portale risponde ancora.
+- **Server** (`tide.js`): se il Centro Maree non risponde o è fermo, livello dalla stazione ISPRA di Punta della Salute (`venezia.isprambiente.it/dati/Dati2.xml`, CC BY 4.0, ZMPS, ora solare). Su 403/429 pausa crescente (5→30 min) senza altri tentativi; tendenza «osservata» solo con dati recenti; campi `fonte`, `forecastSource`, `forecastAgeMin` in `/api/tide`. Le previsioni restano del Centro Maree (ultime ricevute).
+- **Archivio** (`scripts/archivia-marea.js`, `marea-archivio.js`): righe ISPRA (`st: "I129"`, `f: "ispra"`) quando il Centro Maree non risponde; avviso nel riepilogo del workflow invece dell'errore. Workflow su `actions/checkout@v5` e `setup-node@v5`.
+- **PWA** (`public/js/tide.js`): messaggio chiaro con dato vecchio («Livello non aggiornato: ultimo dato delle 17:20») e indicazione della fonte di riserva. `terms.html`: aggiunta la fonte ISPRA. Test in `tests/tide-fonti.test.js`.
+
 ## Pagine legali pubbliche
 - Nuove pagine `/privacy` (informativa, artt. 13-14 GDPR, PWA e skill Alexa) e `/terms` (condizioni d'uso, fonti, licenze, limiti dei dati), file `public/privacy.html` e `public/terms.html`, servite dal server (`pagineLegali()` in `server.js`). Titolare e contatto si impostano su Render con `APP_OWNER` e `APP_CONTACT`.
 - `alexa/skill-package/skill.json` punta a `/privacy` e `/terms`; il service worker non salva più queste pagine al posto dell'app; test in `tests/legale.test.js`.
