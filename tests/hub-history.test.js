@@ -2,3 +2,13 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const {readHistory}=require('../hub-history'),{mergeSensors}=require('../sensor-merge');
 test('sensor reserve fills only missing, keeps direct and timestamps',()=>{const n=Date.now(),a=[{id:'a',stamp:n-100,valid:true},{id:'b',stamp:n-99999,valid:false}],b=[{id:'a',stamp:n,valid:true},{id:'b',stamp:n-500,valid:true}];const r=mergeSensors(a,b,x=>x,['a','b'],n,10000);assert.deepEqual(r.rows,[a[0],b[1]]);assert.deepEqual(r.filled,['b']);});
 test('bounded history reads two pages and original timestamps',async()=>{const old=process.env.METEO_HUB_URL,ot=process.env.METEO_HUB_TOKEN;process.env.METEO_HUB_URL='https://hub.example.test';process.env.METEO_HUB_TOKEN='x'.repeat(32);let calls=0,rows=[];try{const count=await readHistory('livello',10,20,{fetchFn:async url=>{calls++;assert.ok(url.startsWith('https://hub.example.test/api/v1/history/livello'));return Response.json({feed:'livello',items:[{station:'1025',timestamp:calls===1?10:20,data:{cm:80}}],next:calls===1?{from:10,station:'1025'}:null});},onPage:x=>rows.push(...x)});assert.equal(count,2);assert.deepEqual(rows.map(x=>x.timestamp),[10,20]);}finally{if(old===undefined)delete process.env.METEO_HUB_URL;else process.env.METEO_HUB_URL=old;if(ot===undefined)delete process.env.METEO_HUB_TOKEN;else process.env.METEO_HUB_TOKEN=ot;}});
+
+test('forecast civil-time contract and native source rows have the same direct/reserve interpretation',()=>{
+ const {parseForecast}=require('../tide'),{selectForecast}=require('../forecast-contract'),X=require('../meteo-parse');
+ const now=Date.parse('2026-07-14T10:00:00Z');
+ const rows=[{DATA_PREVISIONE:'2026-07-14 11:55:00',DATA_ESTREMALE:'2026-07-14 12:00:00',VALORE:88,TIPO_ESTREMALE:'max'},{DATA_PREVISIONE:'2026-07-14 11:55:00',DATA_ESTREMALE:'2026-07-14 18:00:00',VALORE:12,TIPO_ESTREMALE:'min'}];
+ assert.deepEqual(parseForecast(rows,now),selectForecast(rows,now).points);
+ assert.equal(parseForecast(rows,now)[1].ts,Date.parse('2026-07-14T16:00:00Z'));
+ const native=[{ID_stazione:1039,data:'2026-07-14 10:55:00',valore:'76 gradi, 5.5 m/s, 7.6 m/s'}];
+ assert.deepEqual(X.parseCpsm('vento',native),X.parseCpsm('vento',JSON.parse(JSON.stringify(native))));
+});

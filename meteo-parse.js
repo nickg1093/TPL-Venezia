@@ -24,7 +24,7 @@ function cpsmMs(s) {
   if (!m) return null;
   const [y, mo, d, h, mi, se] = [+m[1], +m[2], +m[3], +m[4], +m[5], +(m[6] || 0)];
   const ms = Date.UTC(y, mo - 1, d, h - 1, mi, se), c = new Date(ms + 3600e3);
-  return c.getUTCFullYear() === y && c.getUTCMonth() + 1 === mo && c.getUTCDate() === d && c.getUTCHours() === h && c.getUTCMinutes() === mi ? ms : null;
+  return c.getUTCFullYear() === y && c.getUTCMonth() + 1 === mo && c.getUTCDate() === d && c.getUTCHours() === h && c.getUTCMinutes() === mi && c.getUTCSeconds() === se ? ms : null;
 }
 function numero(v, min, max) {
   const m = /^\s*(-?\d+(?:[.,]\d+)?)\s*(?:°C|°|hPa|%|m\/s|W\/mq|W\/m2)?\s*$/i.exec(String(v ?? '').replace(/[  ]/g, ' '));
@@ -75,7 +75,7 @@ const VIS = [['SAN SERVOLO', 'San Servolo'], ['MARITTIMA', 'Marittima'], ["SANT'
 const nomeVp = v => String(v || '').trim().toUpperCase().replace(/[’‘]/g, "'");
 function parseVeporto(rows) {
   if (!Array.isArray(rows)) throw new Error('vePORTO: formato non riconosciuto');
-  const t = r => { const x = Date.parse(r?.ultimoDato || ''); return Number.isFinite(x) ? x : -Infinity; };
+  const t = r => { const raw=r?.ultimoDato; if(typeof raw!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw))return -Infinity; const x=Date.parse(raw);return Number.isFinite(x)?x:-Infinity; };
   const ord = [...rows].sort((a, b) => t(b) - t(a));
   return VIS.map(([k, nome]) => {
     for (const r of ord) {

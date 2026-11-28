@@ -11,6 +11,7 @@
 
 const {withReserve,enabled:hubEnabled}=require('./hub-reserve');
 const {readHistory}=require('./hub-history');
+const {forecastTime,selectForecast}=require('./forecast-contract');
 const BASE = 'https://dati.venezia.it/sites/default/files/dataset/opendata/';
 const { cpsmGate, createSourceGate } = require('./cpsm-access');
 const WEB_FORECAST=require('./cpsm-web-forecast');
@@ -77,17 +78,16 @@ async function boundedText(res, max) {
   return Buffer.concat(chunks,size).toString('utf8');
 }
 // ISPRA Dati2.xml -> { id, name, cm, ts, src: 'ispra' } della stazione di Punta della Salute (marea), oppure null.
-// "27/11/2026 08:55:00" in ora solare; se l'istante risultasse nel futuro (eventuale ora legale) si toglie un'ora.
+// ISPRA measurements use fixed solar time, as in Intranet-BIS. Never shift future timestamps.
 function parseIspra(xml, now = Date.now()) {
   const m = new RegExp(`<marker\\s+id\\s*=\\s*"${ISPRA_ST.marker}"[^>]*>([\\s\\S]*?)</marker>`).exec(String(xml || ''));
   if (!m) return null;
   const ins = /<instrument[^>]*type\s*=\s*"Marea"[^>]*>\s*<value\s+datetime\s*=\s*"(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})(?::(\d{2}))?"\s*>\s*(-?\d+(?:[.,]\d+)?)\s*<\/value>/.exec(m[1]);
   if (!ins) return null;
-  let ts = Date.UTC(+ins[3], +ins[2] - 1, +ins[1], +ins[4], +ins[5], +(ins[6] || 0)) - SOLAR;
-  if (ts > now + 10 * 60e3) ts -= 3600e3;
-  const cm = Math.round(parseFloat(ins[7].replace(',', '.')));
-  if (!Number.isFinite(cm) || cm <= -400 || cm >= 500 || ts > now + 10 * 60e3) return null;
-  return { id: ISPRA_ST.id, name: ISPRA_ST.name, cm, ts, src: 'ispra' };
+  const ts=solarToMs(ins[3]+'-'+ins[2]+'-'+ins[1]+' '+ins[4]+':'+ins[5]+':'+(ins[6]||'00'));
+  const cm = Number(ins[7].replace(',', '.'));
+  if (ts==null||!Number.isFinite(cm)||Math.abs(cm)>300||ts>now+5*60e3)return null;
+  return { id: ISPRA_ST.id, name: ISPRA_ST.name, cm:Math.round(cm), ts, src: 'ispra' };
 }
 async function getIspra() {
   const res = await fetch(ISPRA_URL, { headers: HEADERS, signal: AbortSignal.timeout(10000), redirect: 'follow' });
@@ -110,7 +110,9 @@ function trendOf(hist) {
 
 // Estremi previsti. Il formato non è garantito: si cerca il primo elenco di oggetti e si riconoscono i campi per nome
 // (valore/livello in cm; tipo max|min; istante = data-ora completa oppure "ora" HH:MM con la data dedotta dall'emissione).
-function parseForecast(json) {
+function parseForecast(json,now=Date.now()) {
+  // The documented CPSM schema uses Italian civil time, not solar time.
+  if(Array.isArray(json)&&json.some(r=>r&&Object.hasOwn(r,'DATA_PREVISIONE')&&Object.hasOwn(r,'DATA_ESTREMALE'))){try{return selectForecast(json,now).points;}catch{return [];}}
   let arr = Array.isArray(json) ? json : null;
   if (!arr && json && typeof json === 'object') {
     const st = [json];
@@ -210,7 +212,7 @@ async function refresh(force = false) {
     } catch (e) { S.err = e.message; }
     if (Date.now() - S.forecastAt > FORECAST_TTL) {
       try {
-        const validate=j=>{const points=parseForecast(j),checked=Date.now();const issue=Math.max(0,...j.map(row=>solarToMs(row?.DATA_PREVISIONE ?? row?.data_previsione ?? row?.emissione)||0));if(!points.some(p=>p.ts>checked)||(issue&&(issue>checked+5*60e3||checked-issue>72*3600e3))||(S.forecastIssue&&issue<S.forecastIssue))throw Error('Previsione ufficiale non valida o precedente');return {j,points,checked,issue};};
+        const validate=j=>{const points=parseForecast(j),checked=Date.now();const issue=Math.max(0,...j.map(row=>forecastTime(row?.DATA_PREVISIONE ?? row?.data_previsione ?? row?.emissione)||0));if(!points.some(p=>p.ts>checked)||(issue&&(issue>checked+5*60e3||checked-issue>72*3600e3))||(S.forecastIssue&&issue<S.forecastIssue))throw Error('Previsione ufficiale non valida o precedente');return {j,points,checked,issue};};
         const {j,points,checked,issue}=await withReserve(async()=>validate(await getJson('previsione.json')),BASE+'previsione.json',{parse:body=>validate(JSON.parse(body))});
         S.raw=j.slice(0,4);S.forecast=points;S.forecastAt=checked;S.forecastOrigin='json';
         if(issue){S.forecastIssue=issue;S.forecastOkAt=issue;} else if(!S.forecastOkAt)S.forecastOkAt=checked;

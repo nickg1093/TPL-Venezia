@@ -87,7 +87,7 @@ async function veporto(f, s) {
 function metti(fonte, categoria, oss, ora) {
   const k = `${fonte}|${categoria}|${oss.idStazione}`, p = sensori.get(k);
   if (oss.misuratoMs == null && p) return false;
-  if(p&&Number.isFinite(p.misuratoMs)&&Number.isFinite(oss.misuratoMs)&&oss.misuratoMs<p.misuratoMs)return false;                       // riga senza orario: non cancella una misura valida
+  if(p&&Number.isFinite(p.misuratoMs)&&Number.isFinite(oss.misuratoMs)&&oss.misuratoMs<p.misuratoMs&&Object.values(p.dati||{}).some(v=>typeof v==='number'&&Number.isFinite(v)))return false;                       // riga senza orario: non cancella una misura valida
   const uguale = p && p.misuratoMs === oss.misuratoMs && JSON.stringify(p.dati) === JSON.stringify(oss.dati);
   if (uguale) { p.confermatoMs = ora; return false; }
   sensori.set(k, { fonte, categoria, idStazione: oss.idStazione, stazione: oss.stazione, misuratoMs: oss.misuratoMs, acquisitoMs: ora, confermatoMs: ora, dati: oss.dati });
