@@ -8,6 +8,7 @@
 // CARICO: la pagina pesa ~55 kB compressi. Si legge solo quando serve (pannello marea aperto, oppure marea prevista alta: tide.js),
 // al massimo ogni 10 minuti con le barriere a riposo e ogni 4 minuti quando si muovono; in caso di errore si riprova dopo 5 minuti
 // e si continua a mostrare l'ultimo stato letto, segnato come non aggiornato.
+const {hubFetch}=require('./hub-client');
 const SRC_URL = 'https://www.autoritalaguna.it/operativita-m-o-s-e/';
 const HEADERS = { 'User-Agent': 'VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/about-data.html)', Accept: 'text/html' };
 const TTL_CALM = 10 * 60e3, TTL_ACTIVE = 4 * 60e3, TTL_ERR = 5 * 60e3, MAX_HTML = 3e6, STALE_MS = 45 * 60e3;
@@ -93,11 +94,13 @@ async function refresh({ fetchFn = globalThis.fetch, now = Date.now() } = {}) {
   if (now - at < ttl() || now - failAt < TTL_ERR) return cur;
   busy = (async () => {
     try {
-      const r = await fetchFn(SRC_URL, { headers: HEADERS, signal: AbortSignal.timeout(12000), redirect: 'follow' });
+      const r = await hubFetch(SRC_URL, { headers: HEADERS, signal: AbortSignal.timeout(12000), redirect: 'follow' },fetchFn);
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const html = await r.text(); if (html.length > MAX_HTML) throw new Error('pagina troppo grande');
       const p = parse(html); if (!p) throw new Error('tabella non trovata');
-      cur = p; at = Date.now(); failAt = 0;
+      const checked=process.env.METEO_HUB_URL?Date.parse(r.headers.get('X-Source-Checked-At')):Date.now();
+      if(!Number.isFinite(checked)||checked>now+300000||now-checked>STALE_MS)throw Error('MOSE snapshot expired');
+      cur = p; at = checked; failAt = 0;
     } catch { failAt = Date.now(); }
     finally { busy = null; }
     return cur;

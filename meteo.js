@@ -77,6 +77,7 @@ async function token(forza) {
   jwt = v; jwtScade = scade; return jwt;
 }
 async function veporto(f, s) {
+  if(process.env.METEO_HUB_URL)return getJson(VEPORTO + '/meteo-station?limit=1000',s);
   let t = await token(false);
   try { return await getJson(VEPORTO + '/meteo-station?limit=1000', s, { Authorization: 'Bearer ' + t }); }
   catch (e) { if (!/HTTP 401/.test(e.message)) throw e; t = await token(true); return getJson(VEPORTO + '/meteo-station?limit=1000', s, { Authorization: 'Bearer ' + t }); }

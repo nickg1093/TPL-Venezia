@@ -5,6 +5,8 @@ const registry=Object.freeze({
  'cpsm-web':{url:'https://www.comune.venezia.it/it/content/centro-previsioni-e-segnalazioni-maree-beta',group:'cpsm-web',format:'html',interval:300000,maxAge:259200000,maxBytes:1500000},
  'cpsm-table':{url:'https://www.comune.venezia.it/sites/default/files/publicCPSM2/stazioni/temporeale/Punta_Salute.html',group:'cpsm-web',format:'html',interval:300000,maxAge:1200000,maxBytes:1000000},
  'ispra-level':{url:'https://www.venezia.isprambiente.it/dati/Dati2.xml',group:'ispra',format:'xml',interval:300000,maxAge:2100000,maxBytes:2000000},
+ 'veporto':{url:'https://veporto.it/pwa-api/v1/meteo-station?limit=1000',group:'veporto',format:'json',interval:300000,maxAge:1500000,maxBytes:256000},
+ 'mose':{url:'https://www.autoritalaguna.it/operativita-m-o-s-e/',group:'mose',format:'html',interval:300000,maxAge:2700000,maxBytes:3000000},
  'metar':{url:'https://aviationweather.gov/api/data/metar?ids=LIPZ&format=json&hours=48',group:'metar',format:'json',interval:300000,maxAge:6000000,maxBytes:200000}
 });
 function keyFor(url){

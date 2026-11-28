@@ -1,6 +1,8 @@
 'use strict';
 const BASE='https://dati.venezia.it/sites/default/files/dataset/opendata/';
 const sources={
+ 'https://veporto.it/pwa-api/v1/meteo-station?limit=1000':'veporto',
+ 'https://www.autoritalaguna.it/operativita-m-o-s-e/':'mose',
  'https://www.comune.venezia.it/it/content/centro-previsioni-e-segnalazioni-maree-beta':'cpsm-web',
  'https://www.comune.venezia.it/sites/default/files/publicCPSM2/stazioni/temporeale/Punta_Salute.html':'cpsm-table',
  'https://www.venezia.isprambiente.it/dati/Dati2.xml':'ispra-level',
