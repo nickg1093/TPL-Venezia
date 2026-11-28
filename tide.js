@@ -9,7 +9,8 @@
 // Stazione ufficiale per Venezia dal 2002: "Punta Salute Canal Grande" (ID 1025).
 // Il livello è riferito allo zero mareografico di Punta della Salute (ZMPS).
 
-const BASE = ['https://dati.venezia.it/sites/default/files/dataset/opendata/', 'http://dati.venezia.it/sites/default/files/dataset/opendata/'];
+const BASE = 'https://dati.venezia.it/sites/default/files/dataset/opendata/';
+const { cpsmGate } = require('./cpsm-access');
 const HEADERS = {   // identificazione esplicita del servizio di acquisizione
   'User-Agent': 'VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/)',
   'Accept': 'application/json,*/*;q=0.8', 'Accept-Language': 'it-IT,it;q=0.9'
@@ -141,24 +142,20 @@ const S = { level: null, levelAt: 0, hist: [], forecast: [], forecastAt: 0, err:
 // FONTE BLOCCATA: dal 26/11/2026 il portale (dietro il firewall Imperva del Comune) risponde HTTP 403 alle richieste dai server cloud
 // (Render, GitHub Actions). Su 403/429 non si insiste: pausa crescente (5, 10, 20, poi 30 min) e niente secondo tentativo in http://,
 // così il server non peggiora la propria reputazione presso il firewall e non spreca rete. Il blocco non va aggirato.
-const BLOCK_MIN_MS = 5 * 60e3, BLOCK_MAX_MS = 30 * 60e3;
-const B = { until: 0, wait: 0, status: null, since: null };
+const B = cpsmGate.state;
+const validators = new Map();
 async function getJson(name) {
-  if (Date.now() < B.until) throw new Error(`${name}: fonte in pausa dopo HTTP ${B.status}`);
-  let last = null;
-  for (const b of BASE) {
-    try {
-      const res = await fetch(b + name, { headers: HEADERS, signal: AbortSignal.timeout(10000), redirect: 'follow' });
-      if (res.status === 403 || res.status === 429) {
-        B.wait = Math.min(BLOCK_MAX_MS, B.wait ? B.wait * 2 : BLOCK_MIN_MS); B.until = Date.now() + B.wait; B.status = res.status; B.since = B.since || Date.now();
-        const e = new Error(`${name}: HTTP ${res.status}`); e.blocked = true; throw e;
-      }
-      if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
-      const j = await res.json(); B.wait = 0; B.until = 0; B.status = null; B.since = null;
-      return j;
-    } catch (e) { last = e; if (e.blocked) break; }
-  }
-  throw last;
+  return cpsmGate.run(async check => {
+    const prior=validators.get(name);
+    const headers={...HEADERS,...(prior?.etag?{'If-None-Match':prior.etag}:{}),...(prior?.modified?{'If-Modified-Since':prior.modified}:{})};
+    const res=await check(await fetch(BASE + name,{headers,signal:AbortSignal.timeout(10000),redirect:'error'}));
+    if(res.status===304 && prior)return prior.rows;
+    if(!res.ok){try{await res.body?.cancel();}catch{} throw new Error(name+': HTTP '+res.status);}
+    const rows=await res.json();
+    if(!Array.isArray(rows))throw new Error(name+': JSON non valido');
+    validators.set(name,{rows,etag:res.headers?.get?.('etag'),modified:res.headers?.get?.('last-modified')});
+    return rows;
+  },0);
 }
 
 let busy = null;

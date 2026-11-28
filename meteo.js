@@ -7,7 +7,8 @@
 // Le API leggono solo la cache: nessuna richiesta esterna durante una risposta.
 const X = require('./meteo-parse');
 
-const CPSM = ['https://dati.venezia.it/sites/default/files/dataset/opendata/', 'http://dati.venezia.it/sites/default/files/dataset/opendata/'];
+const CPSM = 'https://dati.venezia.it/sites/default/files/dataset/opendata/';
+const { cpsmGate } = require('./cpsm-access');
 const USER_AGENT = 'VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/)';
 const VEPORTO = 'https://veporto.it/pwa-api/v1';
 const METAR = 'https://aviationweather.gov/api/data/metar?ids=LIPZ&format=json&hours=3';
@@ -45,21 +46,19 @@ async function leggi(res) {
   return JSON.parse(Buffer.concat(parti.map(p => Buffer.from(p)), n).toString('utf8'));
 }
 // GET condizionale; 304 -> null (niente di nuovo)
-async function getJson(url, s, headers = {}) {
+async function getJson(url, s, headers = {}, check = async res => res) {
   const h = { Accept: 'application/json', 'Cache-Control': 'no-cache', 'User-Agent': USER_AGENT, ...headers };
   if (s.etag) h['If-None-Match'] = s.etag;
   if (s.modificato) h['If-Modified-Since'] = s.modificato;
-  const res = await opz.fetch(url, { headers: h, signal: AbortSignal.timeout(TIMEOUT_MS), redirect: 'follow' });
+  const res = await check(await opz.fetch(url, { headers: h, signal: AbortSignal.timeout(TIMEOUT_MS), redirect: url.startsWith(CPSM) ? 'error' : 'follow' }));
   if (res.status === 304) return null;
-  if (!res.ok) throw new Error('HTTP ' + res.status);
+  if (!res.ok) { try { await res.body?.cancel(); } catch {} throw new Error('HTTP ' + res.status); }
   const j = await leggi(res);
   s.etag = res.headers.get('etag') || null; s.modificato = res.headers.get('last-modified') || null;
   return j;
 }
 async function cpsm(f, s) {
-  let ultimo = null;
-  for (const b of CPSM) { try { return await getJson(b + f.file, s, { 'Accept-Language': 'it-IT,it;q=0.9' }); } catch (e) { ultimo = e; } }
-  throw ultimo;
+  return cpsmGate.run(check => getJson(CPSM + f.file, s, { 'Accept-Language': 'it-IT,it;q=0.9' },check),2);
 }
 // vePORTO: accesso anonimo della PWA pubblica (utente «imbarcazione», nessuna password); il JWT resta solo in memoria e non è mai esposto né scritto
 let jwt = null, jwtScade = 0;
@@ -154,7 +153,7 @@ async function controlla(f) {
 }
 function pianifica(f) {
   const s = stato.get(f.id);
-  const giro = async () => { s.timer = null; await controlla(f); if (!avviato) return; const d = Math.round(attesa(f, s, opz.adesso())); s.prossimo = opz.adesso() + d; s.timer = setTimeout(giro, d); s.timer.unref?.(); };
+  const giro = async () => { s.timer = null; await controlla(f); if (!avviato) return; const d = Math.round(Math.max(attesa(f, s, opz.adesso()), f.fonte === 'cpsm' ? Math.max(60000, cpsmGate.state.until - Date.now()) : 0)); s.prossimo = opz.adesso() + d; s.timer = setTimeout(giro, d); s.timer.unref?.(); };
   return giro();
 }
 const attivi = () => FEED.filter(f => f.fonte !== 'veporto' || opz.veporto);
