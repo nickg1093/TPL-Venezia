@@ -1,0 +1,23 @@
+const {parseWebForecast,URL}=require('../cpsm-web-forecast');
+const ua='VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/about-data.html)';
+async function read(url){
+ const r=await fetch(url,{headers:{'User-Agent':ua,Accept:'text/html'},signal:AbortSignal.timeout(12000),redirect:'error'});
+ console.log('HTTP',r.status,new URL(url).hostname,r.headers.get('content-type'));
+ if(!r.ok){await r.body?.cancel();return null;}
+ if(Number(r.headers.get('content-length'))>1500000||!r.body){await r.body?.cancel();throw Error('response too large');}
+ const rd=r.body.getReader(), chunks=[];let n=0,done=false;
+ try{for(;;){const c=await rd.read();if(c.done){done=true;break;}n+=c.value.byteLength;if(n>1500000)throw Error('response too large');chunks.push(c.value);}}
+ finally{if(!done)await rd.cancel().catch(()=>{});rd.releaseLock();}
+ return Buffer.concat(chunks,n).toString('utf8');
+}
+(async()=>{
+ try{const html=await read(URL);if(html){const x=parseWebForecast(html);console.log('CPSM public forecast valid:',new Date(x.issue).toISOString(),'extrema:',x.rows.length,'coverage:',x.rows.at(-1).DATA_ESTREMALE);}}
+ catch(e){console.log('CPSM diagnostic:',String(e.message).slice(0,200));}
+ try{const html=await read('https://www.venezia.isprambiente.it/');if(!html)return;
+ const urls=[...html.matchAll(/(?:src|href)\s*=\s*["']([^"']+)["']/gi)].map(m=>{try{return new URL(m[1],'https://www.venezia.isprambiente.it/');}catch{return null;}}).filter(u=>u&&u.origin==='https://www.venezia.isprambiente.it'&&!u.search&&!u.hash);
+ console.log('ISPRA public resource paths:',[...new Set(urls.filter(u=>/prev|boll|salut|marea|forecast|\.js$|\.xml$|\.json$|\.csv$|\.png$|\.jpe?g$/i.test(u.pathname)).map(u=>u.pathname))].slice(0,70));
+ const clean=html.replace(/<!--[\s\S]*?-->/g,'').replace(/<(?:script|style)\b[^>]*>[\s\S]*?<\/(?:script|style)>/gi,'');
+ const ix=clean.search(/Punta della Salute/i);
+ if(ix>=0)console.log('ISPRA station markup:',clean.slice(Math.max(0,ix-250),ix+1400).replace(/[\r\n]+/g,' ').replace(/[\x00-\x1f]/g,'').slice(0,1650));
+ }catch(e){console.log('ISPRA diagnostic:',String(e.message).slice(0,200));}
+})();

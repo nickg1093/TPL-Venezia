@@ -1,0 +1,16 @@
+name: Diagnostica sorgenti previsione
+on:
+  push:
+    branches: ['diagnostics/forecast-sources']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: node scripts/inspect-public-forecast.js
