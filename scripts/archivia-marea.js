@@ -14,7 +14,7 @@ const tide = require('../tide'), A = require('../marea-archivio');
     try {
       let rows = [], cpsmErr = null;
       try { rows = A.rowsFrom(tide.parseLevels(await tide.getJson('livello.json'))); } catch (e) { cpsmErr = e; }
-      if (!rows.some(r => r.cm !== null && Date.now() - r.t < 20 * 60e3)) {           // Centro Maree assente o fermo: riserva ISPRA
+      if (!rows.some(r => ['1025','1045','1029'].includes(r.st) && r.cm !== null && r.t<=Date.now()+5*60e3 && Date.now() - r.t < 20 * 60e3)) {           // Centro Maree assente o fermo: riserva ISPRA
         try { const r = A.rowFromIspra(await tide.getIspra()); if (r) rows.push(r); }
         catch (e) { if (!rows.length) throw new Error([cpsmErr && cpsmErr.message, e.message].filter(Boolean).join('; ')); }
         if (cpsmErr && !warned) { warned = true; console.log(`::warning title=Centro Maree non raggiungibile::${cpsmErr.message}: livello letto dalla rete ISPRA (Punta della Salute).`); }

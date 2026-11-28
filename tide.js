@@ -27,12 +27,17 @@ const SOLAR = 3600 * 1000, TREND_MAX_AGE_MS = 40 * 60e3, ISPRA_STALE_MS = 35 * 6
 // "2026-10-23 10:30:00" (ora solare) -> millisecondi UTC
 function solarToMs(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(String(s || '').trim());
-  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) - SOLAR : null;
+  if (!m) return null;
+  const [y,mo,d,h,mi,se] = m.slice(1).map(Number);
+  const local = Date.UTC(y, mo-1, d, h, mi, se || 0), check = new Date(local);
+  if (!Number.isFinite(local) || check.getUTCFullYear()!==y || check.getUTCMonth()!==mo-1 || check.getUTCDate()!==d || check.getUTCHours()!==h || check.getUTCMinutes()!==mi || check.getUTCSeconds()!==(se||0)) return null;
+  return local-SOLAR;
 }
 // "0.79 m" -> 79 (cm); -999 / non numerico -> null
 function toCm(v) {
-  const n = parseFloat(String(v ?? '').replace(',', '.'));
-  return Number.isFinite(n) && n > -9 && n < 9 ? Math.round(n * 100) : null;
+  const m = /^\s*(-?\d+(?:[.,]\d+)?)\s*m?\s*$/i.exec(String(v ?? ''));
+  const n = m ? Number(m[1].replace(',','.')) : NaN;
+  return Number.isFinite(n) && Math.abs(n)<=3 ? Math.round(n*100) : null;
 }
 
 // Classificazione indicativa (soglie del Centro Maree, in cm sullo ZMPS)
@@ -45,9 +50,27 @@ const categoryOf = cm => { const c = CATS.find(([lo, hi]) => cm >= lo && cm < hi
 
 function parseLevels(json) {
   if (!Array.isArray(json)) return [];
-  return json.map(o => ({ id: String(o.ID_stazione), name: o.stazione, cm: toCm(o.valore), ts: solarToMs(o.data) })).filter(s => s.ts != null);
+  return json.filter(o=>o && typeof o==='object').map(o => ({ id: String(o.ID_stazione), name: o.stazione, cm: toCm(o.valore), ts: solarToMs(o.data) })).filter(s => s.ts != null);
 }
 
+// Select the latest valid observation per station; prefer the reference station.
+function selectCpsmLevel(rows, now=Date.now()) {
+  const valid=rows.filter(s=>s.cm!=null && s.ts<=now+5*60e3 && s.ts>=now-STALE_MS);
+  for(const id of [MAIN.id,...FALLBACK]) {
+    const newest=valid.filter(s=>s.id===id).sort((a,b)=>b.ts-a.ts)[0];
+    if(newest)return {...newest,src:'cpsm'};
+  }
+  return null;
+}
+async function boundedText(res, max) {
+  if(Number(res.headers?.get?.('content-length'))>max){try{await res.body?.cancel();}catch{} throw new Error('Risposta oltre il limite');}
+  // Real fetch responses have a stream. The text-only branch supports injected test fixtures.
+  if(!res.body){const text=await res.text();if(Buffer.byteLength(text)>max)throw new Error('Risposta oltre il limite');return text;}
+  const reader=res.body.getReader(), chunks=[];let size=0,complete=false;
+  try { for(;;){const {done,value}=await reader.read();if(done){complete=true;break;}size+=value.byteLength;if(size>max)throw new Error('Risposta oltre il limite');chunks.push(value);} }
+  finally {if(!complete)await reader.cancel().catch(()=>{});reader.releaseLock();}
+  return Buffer.concat(chunks,size).toString('utf8');
+}
 // ISPRA Dati2.xml -> { id, name, cm, ts, src: 'ispra' } della stazione di Punta della Salute (marea), oppure null.
 // "27/11/2026 08:55:00" in ora solare; se l'istante risultasse nel futuro (eventuale ora legale) si toglie un'ora.
 function parseIspra(xml, now = Date.now()) {
@@ -63,8 +86,8 @@ function parseIspra(xml, now = Date.now()) {
 }
 async function getIspra() {
   const res = await fetch(ISPRA_URL, { headers: HEADERS, signal: AbortSignal.timeout(10000), redirect: 'follow' });
-  if (!res.ok) throw new Error(`ISPRA: HTTP ${res.status}`);
-  const txt = await res.text(); if (txt.length > 2e6) throw new Error('ISPRA: risposta troppo grande');
+  if (!res.ok) {try{await res.body?.cancel();}catch{} throw new Error(`ISPRA: HTTP ${res.status}`);}
+  const txt = await boundedText(res, 2_000_000);
   const p = parseIspra(txt); if (!p) throw new Error('ISPRA: Punta della Salute non trovata');
   return p;
 }
@@ -105,10 +128,10 @@ function parseForecast(json) {
         if (prevTs != null) { while (ts < prevTs) ts += 864e5; } else if (ts < issued - 3600e3) ts += 864e5;   // elenco cronologico: passaggio di giorno
       }
     }
-    if (!Number.isFinite(cm) || !type || ts == null) continue;
+    if (!Number.isFinite(cm) || Math.abs(cm)>300 || !type || ts == null) continue;
     out.push({ type, cm: Math.round(cm), ts }); prevTs = ts;
   }
-  return out;
+  return [...new Map(out.map(p=>[p.ts,p])).values()].sort((a,b)=>a.ts-b.ts);
 }
 
 
@@ -151,7 +174,7 @@ async function getJson(name) {
     const res=await check(await fetch(BASE + name,{headers,signal:AbortSignal.timeout(10000),redirect:'error'}));
     if(res.status===304 && prior)return prior.rows;
     if(!res.ok){try{await res.body?.cancel();}catch{} throw new Error(name+': HTTP '+res.status);}
-    const rows=await res.json();
+    const rows=JSON.parse(await boundedText(res,1_000_000));
     if(!Array.isArray(rows))throw new Error(name+': JSON non valido');
     validators.set(name,{rows,etag:res.headers?.get?.('etag'),modified:res.headers?.get?.('last-modified')});
     return rows;
@@ -166,21 +189,28 @@ async function refresh(force = false) {
   busy = (async () => {
     let st = [], cpsmErr = null;
     try { st = parseLevels(await getJson('livello.json')); } catch (e) { cpsmErr = e; }
-    let pick = [MAIN.id, ...FALLBACK].map(id => st.find(s => s.id === id && s.cm != null)).find(Boolean);
-    if (pick) pick = { ...pick, src: 'cpsm' };
+    let pick = selectCpsmLevel(st);
+    if (!pick && !cpsmErr) cpsmErr = new Error('Misura CPSM recente non disponibile');
     // Centro Maree assente o fermo: livello di riserva da ISPRA (Punta della Salute), se più recente
-    if (!pick || Date.now() - pick.ts > STALE_MS) {
-      try { const isp = await getIspra(); if (!pick || isp.ts > pick.ts) pick = isp; S.ispraErr = null; } catch (e) { S.ispraErr = e.message; }
+    if (!pick) {
+      try { const isp = await getIspra(); if(Date.now()-isp.ts<=ISPRA_STALE_MS && isp.ts<=Date.now()+5*60e3) pick=isp; else throw new Error('Misura ISPRA non recente'); S.ispraErr = null; } catch (e) { S.ispraErr = e.message; }
     }
     try {
       if (!pick) throw new Error([cpsmErr && cpsmErr.message, S.ispraErr].filter(Boolean).join('; ') || 'livello non disponibile');
-      S.level = { ...pick, others: pick.src === 'cpsm' ? st.filter(s => s.cm != null && s.id !== pick.id).map(({ id, name, cm }) => ({ id, name, cm })) : [] };
+      if(S.level && S.level.ts>pick.ts) pick=S.level;
+      else S.level = { ...pick, others: pick.src === 'cpsm' ? st.filter(s => s.cm != null && s.id !== pick.id && s.ts<=Date.now()+5*60e3 && Date.now()-s.ts<=STALE_MS).map(({ id, name, cm }) => ({ id, name, cm })) : [] };
       S.levelAt = Date.now(); S.err = null; S.cpsmErr = cpsmErr ? cpsmErr.message : null;
       if (!S.hist.length || S.hist[S.hist.length - 1].t < pick.ts) S.hist.push({ t: pick.ts, cm: pick.cm });   // una lettura per istante, in ordine
       S.hist = S.hist.filter(p => p.t >= pick.ts - HIST_MS);
     } catch (e) { S.err = e.message; }
     if (Date.now() - S.forecastAt > FORECAST_TTL) {
-      try { const j = await getJson('previsione.json'); S.raw = Array.isArray(j) ? j.slice(0, 4) : j; S.forecast = parseForecast(j); S.forecastAt = S.forecastOkAt = Date.now(); }
+      try {
+        const j=await getJson('previsione.json'), points=parseForecast(j), checked=Date.now();
+        const issue=Math.max(0,...j.map(row=>solarToMs(row?.DATA_PREVISIONE ?? row?.data_previsione ?? row?.emissione)||0));
+        if(!points.some(p=>p.ts>checked) || (issue && (issue>checked+5*60e3 || checked-issue>72*3600e3)) || (S.forecastIssue && issue<S.forecastIssue)) throw new Error('Previsione ufficiale non valida o precedente');
+        S.raw=j.slice(0,4);S.forecast=points;S.forecastAt=checked;
+        if(issue){S.forecastIssue=issue;S.forecastOkAt=issue;} else if(!S.forecastOkAt)S.forecastOkAt=checked;
+      }
       catch (e) { S.forecastAt = Date.now() - FORECAST_TTL + 120000; }      // riprova tra 2 min senza martellare il portale
     }
   })().finally(() => { busy = null; });
@@ -190,16 +220,19 @@ async function refresh(force = false) {
 // Istantanea SENZA rete (per gli avvisi automatici): livello misurato e picco previsto nelle prossime ore. null se manca il dato.
 function snapshot(ahead = 12 * 3600e3) {
   const lv = S.level; if (!lv) return null;
-  const now = Date.now(), peaks = S.forecast.filter(f => f.type === 'max' && f.ts > now - 30 * 60e3 && f.ts < now + ahead).sort((a, b) => b.cm - a.cm);
+  const now = Date.now(), peaks = validForecast(now).filter(f => f.type === 'max' && f.ts > now - 30 * 60e3 && f.ts < now + ahead).sort((a, b) => b.cm - a.cm);
   return { cm: lv.cm, ts: lv.ts, stale: now - lv.ts > 45 * 60e3, peak: peaks[0] ? { cm: peaks[0].cm, ts: peaks[0].ts } : null };
 }
+
+function validForecast(now) { return S.forecastOkAt && now-S.forecastOkAt<=72*3600e3 && now-S.forecastOkAt>=-5*60e3 ? S.forecast : []; }
 
 // Risposta per il client
 async function getTide({ debug = false } = {}) {
   await refresh();
   if (!S.level) { const e = new Error(S.err || 'dati di marea non disponibili'); e.code = 503; throw e; }
   const now = Date.now(), lv = S.level, cm = lv.cm;
-  const next = S.forecast.filter(f => f.ts > now - 5 * 60e3).slice(0, 4);
+  const forecast=validForecast(now);
+  const next = forecast.filter(f => f.ts > now - 5 * 60e3).slice(0, 4);
   const old = now - lv.ts > TREND_MAX_AGE_MS;                         // dato vecchio: la tendenza «osservata» di allora non vale più
   let trend = old ? null : trendOf(S.hist);
   if (!trend && next.length) trend = { dir: next[0].type === 'max' ? 'up' : 'down', rate: null, basis: 'previsione' };   // senza storia: direzione dal prossimo estremo
@@ -210,8 +243,8 @@ async function getTide({ debug = false } = {}) {
     fonte: S.err ? { ok: false, motivo: B.status ? 'bloccata' : 'non disponibile', da: B.since } : { ok: true, riserva: lv.src === 'ispra' }, next: next.map(n => ({ ...n, cat: categoryOf(n.cm).key })),
     history: S.hist.map(p => [p.t, p.cm]),
     // grafico: 6 ore osservate (storia raccolta dal server) + 18 ore previste (curva ricavata dagli estremi previsti)
-    chart: { from: now - HIST_MS, to: now + AHEAD_MS, now, observed: S.hist.map(p => [p.t, p.cm]), forecast: buildCurve(S.forecast, S.hist, now),
-      extremes: S.forecast.filter(f => f.ts > now - HIST_MS && f.ts < now + AHEAD_MS).map(f => ({ type: f.type, cm: f.cm, ts: f.ts })) },
+    chart: { from: now - HIST_MS, to: now + AHEAD_MS, now, observed: S.hist.map(p => [p.t, p.cm]), forecast: buildCurve(forecast, S.hist, now),
+      extremes: forecast.filter(f => f.ts > now - HIST_MS && f.ts < now + AHEAD_MS).map(f => ({ type: f.type, cm: f.cm, ts: f.ts })) },
     source: SOURCES[lv.src] || SOURCES.cpsm,
     forecastSource: SOURCES.cpsm, forecastAgeMin: S.forecastOkAt ? Math.round((now - S.forecastOkAt) / 60000) : null
   };
@@ -236,4 +269,4 @@ function start({ archivio = null } = {}) {
   }
   refresh(true).catch(() => {}); setInterval(() => refresh(true).catch(() => {}), 150000).unref?.();
 }
-module.exports = { _B: B, parseIspra, getIspra, SOURCES, snapshot, buildCurve, getTide, start, mergeHist, getJson, parseLevels, parseForecast, trendOf, categoryOf, solarToMs, toCm, _S: S };
+module.exports = { selectCpsmLevel, _B: B, parseIspra, getIspra, SOURCES, snapshot, buildCurve, getTide, start, mergeHist, getJson, parseLevels, parseForecast, trendOf, categoryOf, solarToMs, toCm, _S: S };

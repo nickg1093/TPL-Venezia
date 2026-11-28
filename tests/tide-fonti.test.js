@@ -49,3 +49,5 @@ test('archivio: righe ISPRA valide, usate nel grafico solo se manca la stazione 
   assert.equal(m.added, 3);
   assert.deepEqual(A.history(A.parse(m.text), t0 + 600e3), [{ t: t0, cm: 70 }, { t: t0 + 300e3, cm: 66 }]);
 });
+
+test('CPSM: sceglie misura recente della stazione primaria, scarta date e valori non validi',()=>{const t=fresh(),now=Date.UTC(2026,10,27,8);const rows=t.parseLevels([{ID_stazione:1025,data:'2026-11-27 08:40:00',valore:'0.3'},{ID_stazione:1025,data:'2026-11-27 08:55:00',valore:'0.65 m'},{ID_stazione:1045,data:'2026-11-27 08:59:00',valore:'0.9'},{ID_stazione:1025,data:'2026-11-31 08:59:00',valore:'0.8'},{ID_stazione:1025,data:'2026-11-27 09:00:00',valore:'1xyz'}]);assert.equal(t.selectCpsmLevel(rows,now).cm,65);assert.equal(t.selectCpsmLevel(rows,now+3600000),null);});

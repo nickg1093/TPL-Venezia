@@ -19,4 +19,4 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: node --test tests/cpsm-access.test.js tests/tide.test.js tests/tide-fonti.test.js tests/meteo.test.js tests/mose.test.js tests/marea-archivio.test.js tests/alexa-meteo.test.js
+      - run: node --test tests/cpsm-access.test.js tests/tide.test.js tests/tide-fonti.test.js tests/meteo.test.js tests/mose.test.js tests/marea-archivio.test.js tests/alexa-meteo.test.js tests/security.test.js tests/legale.test.js
