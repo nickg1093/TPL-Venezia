@@ -9,6 +9,7 @@
 // Stazione ufficiale per Venezia dal 2002: "Punta Salute Canal Grande" (ID 1025).
 // Il livello è riferito allo zero mareografico di Punta della Salute (ZMPS).
 
+const {withReserve,enabled:hubEnabled}=require('./hub-reserve');
 const BASE = 'https://dati.venezia.it/sites/default/files/dataset/opendata/';
 const { cpsmGate, createSourceGate } = require('./cpsm-access');
 const WEB_FORECAST=require('./cpsm-web-forecast');
@@ -191,12 +192,12 @@ async function refresh(force = false) {
   if (!force && now - S.levelAt < LEVEL_TTL) return;
   busy = (async () => {
     let st = [], cpsmErr = null;
-    try { st = parseLevels(await getJson('livello.json')); } catch (e) { cpsmErr = e; }
+    try { st = await withReserve(async()=>{const rows=await getJson('livello.json'), parsed=parseLevels(rows);if(hubEnabled()&&!selectCpsmLevel(parsed))throw Error('Misura CPSM non recente');return parsed;},BASE+'livello.json',{parse:body=>{const parsed=parseLevels(JSON.parse(body));if(!selectCpsmLevel(parsed))throw Error('Misura Hub non recente');return parsed;}}); } catch (e) { cpsmErr = e; }
     let pick = selectCpsmLevel(st);
     if (!pick && !cpsmErr) cpsmErr = new Error('Misura CPSM recente non disponibile');
     // Centro Maree assente o fermo: livello di riserva da ISPRA (Punta della Salute), se più recente
     if (!pick) {
-      try { const isp = await getIspra(); if(Date.now()-isp.ts<=ISPRA_STALE_MS && isp.ts<=Date.now()+5*60e3) pick=isp; else throw new Error('Misura ISPRA non recente'); S.ispraErr = null; } catch (e) { S.ispraErr = e.message; }
+      try { const valid=isp=>{if(!isp||Date.now()-isp.ts>ISPRA_STALE_MS||isp.ts>Date.now()+5*60e3)throw Error('Misura ISPRA non recente');return isp;};pick=await withReserve(async()=>valid(await getIspra()),ISPRA_URL,{maxBytes:2000000,parse:body=>valid(parseIspra(body))}); S.ispraErr = null; } catch (e) { S.ispraErr = e.message; }
     }
     try {
       if (!pick) throw new Error([cpsmErr && cpsmErr.message, S.ispraErr].filter(Boolean).join('; ') || 'livello non disponibile');
@@ -208,9 +209,8 @@ async function refresh(force = false) {
     } catch (e) { S.err = e.message; }
     if (Date.now() - S.forecastAt > FORECAST_TTL) {
       try {
-        const j=await getJson('previsione.json'), points=parseForecast(j), checked=Date.now();
-        const issue=Math.max(0,...j.map(row=>solarToMs(row?.DATA_PREVISIONE ?? row?.data_previsione ?? row?.emissione)||0));
-        if(!points.some(p=>p.ts>checked) || (issue && (issue>checked+5*60e3 || checked-issue>72*3600e3)) || (S.forecastIssue && issue<S.forecastIssue)) throw new Error('Previsione ufficiale non valida o precedente');
+        const validate=j=>{const points=parseForecast(j),checked=Date.now();const issue=Math.max(0,...j.map(row=>solarToMs(row?.DATA_PREVISIONE ?? row?.data_previsione ?? row?.emissione)||0));if(!points.some(p=>p.ts>checked)||(issue&&(issue>checked+5*60e3||checked-issue>72*3600e3))||(S.forecastIssue&&issue<S.forecastIssue))throw Error('Previsione ufficiale non valida o precedente');return {j,points,checked,issue};};
+        const {j,points,checked,issue}=await withReserve(async()=>validate(await getJson('previsione.json')),BASE+'previsione.json',{parse:body=>validate(JSON.parse(body))});
         S.raw=j.slice(0,4);S.forecast=points;S.forecastAt=checked;S.forecastOrigin='json';
         if(issue){S.forecastIssue=issue;S.forecastOkAt=issue;} else if(!S.forecastOkAt)S.forecastOkAt=checked;
       }

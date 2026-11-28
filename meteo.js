@@ -6,6 +6,7 @@
 // poi ogni 30-60 s finché arriva (richieste condizionali ETag/Last-Modified: un controllo a vuoto costa un 304). Errori: attesa crescente.
 // Le API leggono solo la cache: nessuna richiesta esterna durante una risposta.
 const X = require('./meteo-parse');
+const {withReserve,enabled:hubEnabled}=require('./hub-reserve');
 
 const CPSM = 'https://dati.venezia.it/sites/default/files/dataset/opendata/';
 const { cpsmGate } = require('./cpsm-access');
@@ -131,7 +132,10 @@ async function controlla(f) {
   s.inCorso = (async () => {
     const t0 = opz.adesso(); s.controlli++; s.ultimoControllo = t0;
     try {
-      const j = f.fonte === 'cpsm' ? await cpsm(f, s) : f.fonte === 'veporto' ? await veporto(f, s) : await getJson(METAR, s, { 'User-Agent': USER_AGENT });
+      const direct=()=>f.fonte==='cpsm'?cpsm(f,s):f.fonte==='veporto'?veporto(f,s):getJson(METAR,s,{'User-Agent':USER_AGENT});
+      const url=f.fonte==='cpsm'?CPSM+f.file:f.fonte==='veporto'?VEPORTO+'/meteo-station?limit=1000':METAR;
+      const validate=(j,allow304)=>{if(j===null&&allow304&&s.ultimoDatoMs!=null&&opz.adesso()-s.ultimoDatoMs<=f.vecchio)return j;if(!Array.isArray(j))throw Error('Misura non disponibile');const now=opz.adesso();if(f.fonte==='metar'){const p=X.parseMetar(j,now);if(p&&p.misuratoMs<=now+300000&&now-p.misuratoMs<=f.vecchio)return j;}else{const rows=f.fonte==='cpsm'?X.parseCpsm(f.categorie[0],j):X.parseVeporto(j);if(rows.some(p=>p.valore!==null&&Number.isFinite(p.misuratoMs)&&p.misuratoMs<=now+300000&&now-p.misuratoMs<=f.vecchio))return j;}throw Error('Misura non recente');};
+      const j=await withReserve(async()=>{const j=await direct();return hubEnabled()?validate(j,true):j;},url,{fetchFn:opz.fetch,maxBytes:MAX_BYTES,now:opz.adesso(),parse:body=>validate(JSON.parse(body),false)});
       const ora = opz.adesso();
       if (j === null) s.nonModificati++;
       else {

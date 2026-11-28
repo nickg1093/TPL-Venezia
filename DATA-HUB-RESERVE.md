@@ -1,0 +1,3 @@
+# Data Hub reserve
+
+Direct source collection remains primary, with the original rate limits, credentials, validators, UI and source fallbacks. Optional METEO_HUB_URL (HTTPS origin) and METEO_HUB_TOKEN (server-only, >=32 chars) enable a read-only cached-data reserve after a direct acquisition or validation error. No requests are initiated upstream by the hub API; explicit publisher blocks remain respected. The hub's own acquisition schedule is independent and only authorized sources are enabled. Data are revalidated with original timestamps. If reserve is unavailable, existing fallback logic remains. Chromium and Playwright are not dependencies of this PWA. No automatic import of remote history in this phase. Never set variables until end-to-end testing is complete.

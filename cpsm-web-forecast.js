@@ -1,6 +1,7 @@
 'use strict';
 // Public, human-readable CPSM bulletin. Only parse the visible dated extrema list.
 // Do not use the debugging array, images, or astronomic-only forecasts.
+const {withReserve}=require('./hub-reserve');
 const URL='https://www.comune.venezia.it/it/content/centro-previsioni-e-segnalazioni-maree-beta';
 const LICENSE_URL='https://creativecommons.org/licenses/by-nc-sa/3.0/it/';
 const MONTHS='gennaio febbraio marzo aprile maggio giugno luglio agosto settembre ottobre novembre dicembre'.split(' ');
@@ -72,13 +73,13 @@ function createWebForecastReader({gate,userAgent,now=()=>Date.now(),fetchFn=(...
       if(last&&time-last.issue<=72*3600000&&last.rows.some(x=>Date.parse(x.DATA_ESTREMALE)>time))return Promise.resolve(last);
       return Promise.reject(Error('Bollettino CPSM: prossimo controllo non ancora previsto'));
     }
-    pending=gate.run(async check=>{
+    pending=withReserve(()=>gate.run(async check=>{
       const response=await check(await fetchFn(URL,{headers:{Accept:'text/html','User-Agent':userAgent},signal:AbortSignal.timeout(10000),redirect:'error'}));
       if(!response.ok){try{await response.body?.cancel();}catch{}throw Error('Bollettino CPSM HTTP '+response.status);}
       const parsed=parseWebForecast(await boundedHtml(response),now());
       if(last&&parsed.issue<last.issue)throw Error('Bollettino CPSM: emissione precedente');
       last=parsed;return parsed;
-    },1).finally(()=>{nextAt=now()+5*60000;pending=null;});
+    },1),URL,{fetchFn,maxBytes:1500000,now:now(),parse:body=>{const parsed=parseWebForecast(body,now());if(last&&parsed.issue<last.issue)throw Error('Bollettino Hub precedente');last=parsed;return parsed;}}).finally(()=>{nextAt=now()+5*60000;pending=null;});
     return pending;
   };
 }

@@ -8,6 +8,7 @@
 // CARICO: la pagina pesa ~55 kB compressi. Si legge solo quando serve (pannello marea aperto, oppure marea prevista alta: tide.js),
 // al massimo ogni 10 minuti con le barriere a riposo e ogni 4 minuti quando si muovono; in caso di errore si riprova dopo 5 minuti
 // e si continua a mostrare l'ultimo stato letto, segnato come non aggiornato.
+const {withReserve}=require('./hub-reserve');
 const SRC_URL = 'https://www.autoritalaguna.it/operativita-m-o-s-e/';
 const HEADERS = { 'User-Agent': 'VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/about-data.html)', Accept: 'text/html' };
 const TTL_CALM = 10 * 60e3, TTL_ACTIVE = 4 * 60e3, TTL_ERR = 5 * 60e3, MAX_HTML = 3e6, STALE_MS = 45 * 60e3;
@@ -93,11 +94,9 @@ async function refresh({ fetchFn = globalThis.fetch, now = Date.now() } = {}) {
   if (now - at < ttl() || now - failAt < TTL_ERR) return cur;
   busy = (async () => {
     try {
-      const r = await fetchFn(SRC_URL, { headers: HEADERS, signal: AbortSignal.timeout(12000), redirect: 'follow' });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const html = await r.text(); if (html.length > MAX_HTML) throw new Error('pagina troppo grande');
-      const p = parse(html); if (!p) throw new Error('tabella non trovata');
-      cur = p; at = Date.now(); failAt = 0;
+      const validated=html=>{const p=parse(html);if(!p)throw Error('tabella non trovata');return p;};
+      const result=await withReserve(async()=>{const r=await fetchFn(SRC_URL,{headers:HEADERS,signal:AbortSignal.timeout(12000),redirect:'follow'});if(!r.ok)throw Error('HTTP '+r.status);const html=await r.text();if(html.length>MAX_HTML)throw Error('pagina troppo grande');return {p:validated(html),at:Date.now()};},SRC_URL,{fetchFn,maxBytes:MAX_HTML,now,parse:(html,meta)=>{if(!Number.isFinite(meta.checkedAt)||meta.checkedAt>now+300000||now-meta.checkedAt>STALE_MS)throw Error('MOSE Hub obsoleto');return {p:validated(html),at:meta.checkedAt};}});
+      if(!cur||result.at>=at){cur=result.p;at=result.at;} failAt=0;
     } catch { failAt = Date.now(); }
     finally { busy = null; }
     return cur;
