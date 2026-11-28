@@ -41,7 +41,7 @@ function validate(key,body,now){
  return stamp;
 }
 function retryAfter(value,now){if(!value)return 0;const n=/^\d+$/.test(value)?Number(value)*1000:Date.parse(value)-now;return Number.isFinite(n)?Math.max(0,n):0;}
-async function createHub({dir,enabled=[],contact,fetchFn=fetch,now=Date.now,gap=10000,veportoCredentials}){
+async function createHub({dir,enabled=[],contact,fetchFn=fetch,now=Date.now,gap=10000,veportoCredentials,moseBrowserFetch=null}){
  if(!dir)throw Error('HUB_STATE_DIR required');
  if(enabled.some(k=>!Object.hasOwn(registry,k)))throw Error('unknown source');
  if(enabled.length&&(!contact||!/^https:\/\/[^ ]+$/.test(contact)))throw Error('public contact URL required');
@@ -61,9 +61,10 @@ async function createHub({dir,enabled=[],contact,fetchFn=fetch,now=Date.now,gap=
    // Persist the attempt before making a network request.
    await save();
    try{
-     const res=await (key==='veporto'?vpFetch:fetchFn)(f.url,{headers:{Accept:f.format==='json'?'application/json':f.format==='xml'?'application/xml,text/xml':'text/html','User-Agent':'VeneziaMeteoMarineHub/1.0 (+'+contact+')',...(s.etag?{'If-None-Match':s.etag}:{}),...(s.modified?{'If-Modified-Since':s.modified}:{})},signal:AbortSignal.timeout(12000),redirect:'error'});
+     const transport=key==='veporto'?vpFetch:key==='mose'&&moseBrowserFetch?moseBrowserFetch:fetchFn;
+     const res=await transport(f.url,{headers:{Accept:f.format==='json'?'application/json':f.format==='xml'?'application/xml,text/xml':'text/html','User-Agent':'VeneziaMeteoMarineHub/1.0 (+'+contact+')',...(s.etag?{'If-None-Match':s.etag}:{}),...(s.modified?{'If-Modified-Since':s.modified}:{})},signal:AbortSignal.timeout(key==='mose'&&moseBrowserFetch?25000:12000),redirect:'error'});
      s.http=res.status;
-     if(res.status===403||(key==='veporto'&&res.status===401)){g.denied=true;s.error='access denied; operator review required';await res.body?.cancel().catch(()=>{});return false;}
+     if(res.status===403||res.status===401){g.denied=true;s.error='access denied; operator review required';await res.body?.cancel().catch(()=>{});return false;}
      if(res.status===429||res.status===503){g.failures=(g.failures||0)+1;g.until=now()+Math.max(Math.min(1800000,MIN*2**Math.min(g.failures,5)),retryAfter(res.headers.get('retry-after'),now()));s.error='source cooldown';await res.body?.cancel().catch(()=>{});return false;}
      if(res.status===304){if(!s.body)throw Error('304 without snapshot');try{validate(key,s.body,now());}catch(e){s.etag=null;s.modified=null;throw e;}s.confirmedAt=now();s.error=null;g.failures=0;return true;}
      if(!res.ok){await res.body?.cancel().catch(()=>{});throw Error('upstream HTTP '+res.status);}

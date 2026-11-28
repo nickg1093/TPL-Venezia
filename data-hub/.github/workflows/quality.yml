@@ -12,3 +12,6 @@ jobs:
         with:
           node-version: 22
       - run: npm test
+      - run: npm install --ignore-scripts --no-audit
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run test:browser

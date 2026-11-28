@@ -16,3 +16,6 @@ jobs:
       - run: npm ci
       - run: npm --prefix data-hub test
       - run: node --test tests/tide.test.js tests/tide-fonti.test.js tests/meteo.test.js tests/cpsm-web-forecast.test.js tests/security.test.js
+      - run: npm --prefix data-hub install --ignore-scripts --no-audit
+      - run: cd data-hub && npx --no-install playwright install --with-deps chromium
+      - run: npm --prefix data-hub run test:browser
