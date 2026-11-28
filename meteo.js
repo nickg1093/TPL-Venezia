@@ -9,7 +9,7 @@ const X = require('./meteo-parse');
 
 const CPSM = 'https://dati.venezia.it/sites/default/files/dataset/opendata/';
 const { cpsmGate } = require('./cpsm-access');
-const USER_AGENT = 'VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/)';
+const USER_AGENT = 'VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/about-data.html)';
 const VEPORTO = 'https://veporto.it/pwa-api/v1';
 const METAR = 'https://aviationweather.gov/api/data/metar?ids=LIPZ&format=json&hours=3';
 const MAX_BYTES = 256000, TIMEOUT_MS = 12000;
@@ -153,7 +153,7 @@ async function controlla(f) {
 }
 function pianifica(f) {
   const s = stato.get(f.id);
-  const giro = async () => { s.timer = null; await controlla(f); if (!avviato) return; const d = Math.round(Math.max(attesa(f, s, opz.adesso()), f.fonte === 'cpsm' ? Math.max(60000, cpsmGate.state.until - Date.now()) : 0)); s.prossimo = opz.adesso() + d; s.timer = setTimeout(giro, d); s.timer.unref?.(); };
+  const giro = async () => { s.timer = null; await controlla(f); if (!avviato) return; const d = Math.round(Math.max(attesa(f, s, opz.adesso()), f.fonte === 'cpsm' ? Math.max(60000, Math.min(600000, cpsmGate.state.until - Date.now())) : 0)); s.prossimo = opz.adesso() + d; s.timer = setTimeout(giro, d); s.timer.unref?.(); };
   return giro();
 }
 const attivi = () => FEED.filter(f => f.fonte !== 'veporto' || opz.veporto);

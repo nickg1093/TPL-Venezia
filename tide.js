@@ -12,7 +12,7 @@
 const BASE = 'https://dati.venezia.it/sites/default/files/dataset/opendata/';
 const { cpsmGate } = require('./cpsm-access');
 const HEADERS = {   // identificazione esplicita del servizio di acquisizione
-  'User-Agent': 'VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/)',
+  'User-Agent': 'VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/about-data.html)',
   'Accept': 'application/json,*/*;q=0.8', 'Accept-Language': 'it-IT,it;q=0.9'
 };
 const ISPRA_URL = 'https://www.venezia.isprambiente.it/dati/Dati2.xml', ISPRA_ST = { marker: '129', id: 'I129', name: 'Punta della Salute (ISPRA)' };

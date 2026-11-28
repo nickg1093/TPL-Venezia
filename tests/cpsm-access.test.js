@@ -22,3 +22,5 @@ test('requests are serialized, spaced, and tide goes before queued weather',asyn
  release();await Promise.all([a,b,c]);
  assert.deepEqual(order,[['first',1000],['tide',11000],['weather',21000]]);
 });
+
+test('manual source stop performs no requests',async()=>{const gate=createSourceGate({enabled:()=>false,gapMs:0});let calls=0;await assert.rejects(gate.run(async()=>{calls++;}),/disattivata/);assert.equal(calls,0);});

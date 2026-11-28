@@ -1,0 +1,22 @@
+name: Verifica marea e meteo
+on:
+  push:
+    branches: [main]
+    paths: ['tide.js', 'meteo.js', 'meteo-parse.js', 'mose.js', 'cpsm-access.js', 'marea-archivio.js', 'scripts/archivia-marea.js', 'alexa/**', 'tests/**', 'package*.json', '.github/workflows/quality-meteomare.yml']
+  pull_request:
+    paths: ['tide.js', 'meteo.js', 'meteo-parse.js', 'mose.js', 'cpsm-access.js', 'marea-archivio.js', 'scripts/archivia-marea.js', 'alexa/**', 'tests/**', 'package*.json', '.github/workflows/quality-meteomare.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node --test tests/cpsm-access.test.js tests/tide.test.js tests/tide-fonti.test.js tests/meteo.test.js tests/mose.test.js tests/marea-archivio.test.js tests/alexa-meteo.test.js
