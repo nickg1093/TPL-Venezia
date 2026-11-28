@@ -1,4 +1,4 @@
-const {parseWebForecast,URL}=require('../cpsm-web-forecast');
+const {parseWebForecast,URL:CPSM_URL}=require('../cpsm-web-forecast');
 const ua='VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/about-data.html)';
 async function read(url){
  const r=await fetch(url,{headers:{'User-Agent':ua,Accept:'text/html'},signal:AbortSignal.timeout(12000),redirect:'error'});
@@ -11,7 +11,7 @@ async function read(url){
  return Buffer.concat(chunks,n).toString('utf8');
 }
 (async()=>{
- try{const html=await read(URL);if(html){const x=parseWebForecast(html);console.log('CPSM public forecast valid:',new Date(x.issue).toISOString(),'extrema:',x.rows.length,'coverage:',x.rows.at(-1).DATA_ESTREMALE);}}
+ try{const html=await read(CPSM_URL);if(html){const x=parseWebForecast(html);console.log('CPSM public forecast valid:',new Date(x.issue).toISOString(),'extrema:',x.rows.length,'coverage:',x.rows.at(-1).DATA_ESTREMALE);}}
  catch(e){console.log('CPSM diagnostic:',String(e.message).slice(0,200));}
  try{const html=await read('https://www.venezia.isprambiente.it/');if(!html)return;
  const urls=[...html.matchAll(/(?:src|href)\s*=\s*["']([^"']+)["']/gi)].map(m=>{try{return new URL(m[1],'https://www.venezia.isprambiente.it/');}catch{return null;}}).filter(u=>u&&u.origin==='https://www.venezia.isprambiente.it'&&!u.search&&!u.hash);
