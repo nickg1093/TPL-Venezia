@@ -10,3 +10,5 @@ Progetto indipendente: https://veneziatpl.onrender.com/about-data.html
 - Il riutilizzo è subordinato alle condizioni delle fonti. Attribuzione e modifica dei dati sono descritte nella pagina pubblica. Configurare APP_CONTACT per un recapito verificato; non inventare un contatto.
 
 Riferimento ufficiale: https://www.comune.venezia.it/it/node/7429
+
+- Previsioni: prima `previsione.json`; se indisponibile o non valida, bollettino pubblico CPSM (https://www.comune.venezia.it/it/content/centro-previsioni-e-segnalazioni-maree-beta), senza leggere il file della segreteria escluso da robots.txt. Si acquisiscono solo gli estremi numerici del testo pubblico e si conserva l'emissione originale. Dati del bollettino web e relative elaborazioni CC BY-NC-SA 3.0 IT (https://creativecommons.org/licenses/by-nc-sa/3.0/it/). Cache di cinque minuti, rispetto dei blocchi. `CPSM_WEB_FORECAST_ENABLED=false` disattiva la riserva web. ISPRA previsione non integrata: formato numerico non ancora verificato.

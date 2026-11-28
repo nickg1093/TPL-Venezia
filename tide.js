@@ -10,7 +10,9 @@
 // Il livello è riferito allo zero mareografico di Punta della Salute (ZMPS).
 
 const BASE = 'https://dati.venezia.it/sites/default/files/dataset/opendata/';
-const { cpsmGate } = require('./cpsm-access');
+const { cpsmGate, createSourceGate } = require('./cpsm-access');
+const WEB_FORECAST=require('./cpsm-web-forecast');
+const readWebForecast=WEB_FORECAST.createWebForecastReader({gate:createSourceGate({gapMs:process.env.NODE_TEST_CONTEXT?0:10000,enabled:()=>process.env.CPSM_OFFICIAL_FILES_ENABLED!=='false'}),userAgent:'VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/about-data.html)'});
 const HEADERS = {   // identificazione esplicita del servizio di acquisizione
   'User-Agent': 'VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/about-data.html)',
   'Accept': 'application/json,*/*;q=0.8', 'Accept-Language': 'it-IT,it;q=0.9'
@@ -18,6 +20,7 @@ const HEADERS = {   // identificazione esplicita del servizio di acquisizione
 const ISPRA_URL = 'https://www.venezia.isprambiente.it/dati/Dati2.xml', ISPRA_ST = { marker: '129', id: 'I129', name: 'Punta della Salute (ISPRA)' };
 const SOURCES = {
   cpsm: { name: 'Centro Previsioni e Segnalazioni Maree – Comune di Venezia', license: 'CC BY', url: 'https://dati.venezia.it/?q=content/cpsm-dati-meteomarini-laguna-e-litorale-veneziano' },
+  cpsmWeb: {name:'Centro Maree · bollettino web (riserva)',license:'CC BY-NC-SA 3.0 IT',licenseUrl:WEB_FORECAST.LICENSE_URL,url:WEB_FORECAST.URL},
   ispra: { name: 'ISPRA – Servizio Laguna di Venezia, rete mareografica RMLV', license: 'CC BY 4.0', url: 'https://www.venezia.isprambiente.it/rete-meteo-mareografica' }
 };
 const MAIN = { id: '1025', name: 'Punta Salute Canal Grande' }, FALLBACK = ['1045', '1029'];   // Giudecca, Misericordia
@@ -208,10 +211,19 @@ async function refresh(force = false) {
         const j=await getJson('previsione.json'), points=parseForecast(j), checked=Date.now();
         const issue=Math.max(0,...j.map(row=>solarToMs(row?.DATA_PREVISIONE ?? row?.data_previsione ?? row?.emissione)||0));
         if(!points.some(p=>p.ts>checked) || (issue && (issue>checked+5*60e3 || checked-issue>72*3600e3)) || (S.forecastIssue && issue<S.forecastIssue)) throw new Error('Previsione ufficiale non valida o precedente');
-        S.raw=j.slice(0,4);S.forecast=points;S.forecastAt=checked;
+        S.raw=j.slice(0,4);S.forecast=points;S.forecastAt=checked;S.forecastOrigin='json';
         if(issue){S.forecastIssue=issue;S.forecastOkAt=issue;} else if(!S.forecastOkAt)S.forecastOkAt=checked;
       }
-      catch (e) { S.forecastAt = Date.now() - FORECAST_TTL + 120000; }      // riprova tra 2 min senza martellare il portale
+      catch (e) {
+        try {
+          const web=await readWebForecast();
+          if(S.forecastIssue && web.issue<S.forecastIssue)throw Error('Bollettino web precedente');
+          S.forecast=web.rows.map(row=>({type:row.TIPO_ESTREMALE,cm:row.VALORE,ts:Date.parse(row.DATA_ESTREMALE)}));
+          S.forecastIssue=S.forecastOkAt=web.issue;S.forecastOrigin='web';
+        } catch { /* conserve the last valid official bulletin */ }
+        // Keep checking the primary; the web reader has its own five-minute cache.
+        S.forecastAt=Date.now()-FORECAST_TTL+120000;
+      }
     }
   })().finally(() => { busy = null; });
   return busy;
@@ -246,7 +258,7 @@ async function getTide({ debug = false } = {}) {
     chart: { from: now - HIST_MS, to: now + AHEAD_MS, now, observed: S.hist.map(p => [p.t, p.cm]), forecast: buildCurve(forecast, S.hist, now),
       extremes: forecast.filter(f => f.ts > now - HIST_MS && f.ts < now + AHEAD_MS).map(f => ({ type: f.type, cm: f.cm, ts: f.ts })) },
     source: SOURCES[lv.src] || SOURCES.cpsm, restored: Boolean(lv.restored),
-    forecastSource: SOURCES.cpsm, forecastAgeMin: S.forecastOkAt ? Math.round((now - S.forecastOkAt) / 60000) : null
+    forecastSource: S.forecastOrigin==='web' ? SOURCES.cpsmWeb : SOURCES.cpsm, forecastAgeMin: S.forecastOkAt ? Math.round((now - S.forecastOkAt) / 60000) : null
   };
   if (debug) out.debug = { forecastParsed: S.forecast.length, rawSample: S.raw, error: S.err, cpsm: S.cpsmErr, ispra: S.ispraErr, pausa: B.until > now ? Math.round((B.until - now) / 1000) : 0 };
   return out;

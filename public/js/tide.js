@@ -155,7 +155,7 @@ function render() {
     + (d.chart ? chartHtml(d.chart) : '')
     + moseHtml()
     + `<p class="tide-foot">${esc(d.station)} · rilevato alle ${hm(d.ts)}. Livello sullo zero mareografico di Punta della Salute; dati grezzi, non validati.<br>Fonte (licenza ${esc(d.source.license)}):<a href="${esc(safeUrl(d.source.url))}" target="_blank" rel="noopener noreferrer">${esc(d.source.name)}</a>`
-    + (d.forecastSource && d.forecastSource.url !== d.source.url ? `<br>Il Centro Maree non risponde: livello dalla rete ISPRA. Previsioni:<a href="${esc(safeUrl(d.forecastSource.url))}" target="_blank" rel="noopener noreferrer">${esc(d.forecastSource.name)}</a>${d.forecastAgeMin != null && d.forecastAgeMin > 60 ? ` (aggiornate ${d.forecastAgeMin >= 120 ? Math.round(d.forecastAgeMin / 60) + ' ore' : d.forecastAgeMin + ' minuti'} fa)` : ''}` : '')
+    + (d.forecastSource && d.forecastSource.url !== d.source.url ? `<br>${d.source.name.includes('ISPRA') ? 'Livello dalla rete ISPRA. ' : ''}Previsioni:<a href="${esc(safeUrl(d.forecastSource.url))}" target="_blank" rel="noopener noreferrer">${esc(d.forecastSource.name)}</a>${d.forecastSource.licenseUrl ? ` · <a href="${esc(safeUrl(d.forecastSource.licenseUrl))}" target="_blank" rel="noopener noreferrer">${esc(d.forecastSource.license)}</a>` : ''}${d.forecastAgeMin != null && d.forecastAgeMin > 60 ? ` (aggiornate ${d.forecastAgeMin >= 120 ? Math.round(d.forecastAgeMin / 60) + ' ore' : d.forecastAgeMin + ' minuti'} fa)` : ''}` : '')
     + '</p>';
   if (d.chart) bindChart(d.chart);
   btn.querySelector('.dotc').dataset.cat = d.category.key;
