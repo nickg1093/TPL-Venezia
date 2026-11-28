@@ -14,4 +14,5 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: node --test data-hub/test.js tests/tide.test.js tests/tide-fonti.test.js tests/meteo.test.js tests/cpsm-web-forecast.test.js tests/security.test.js
+      - run: npm --prefix data-hub test
+      - run: node --test tests/tide.test.js tests/tide-fonti.test.js tests/meteo.test.js tests/cpsm-web-forecast.test.js tests/security.test.js
