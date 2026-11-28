@@ -1,10 +1,10 @@
 'use strict';
 const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('node:crypto');
 const {registry}=require('./registry');
-const tide=require('../tide'), meteo=require('../meteo-parse'), web=require('../cpsm-web-forecast');
+const tide=require('./parsers/tide'), meteo=require('./parsers/meteo'), web=require('./parsers/web-forecast');
 const {openHistory}=require('./history');
 const {createVeportoFetch}=require('./veporto');
-const mose=require('../mose');
+const mose=require('./parsers/mose');
 const MIN=60000;
 async function bounded(res,max){
  if(Number(res.headers.get('content-length'))>max||!res.body){await res.body?.cancel().catch(()=>{});throw Error('invalid body');}

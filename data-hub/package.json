@@ -1,0 +1,13 @@
+{
+  "name": "venezia-meteomarine-hub",
+  "version": "0.2.0",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test.js"
+  }
+}

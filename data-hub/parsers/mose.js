@@ -1,0 +1,76 @@
+'use strict';
+const STATI = [
+  { re: /programmat/i, k: 'programmato', sem: 'giallo', lab: 'Sollevamento programmato' },
+  { re: /fase di sollevamento|in sollevamento/i, k: 'sollevamento', sem: 'lampeggia', lab: 'In sollevamento' },
+  { re: /abbassament|in rientro|fase di rientro/i, k: 'abbassamento', sem: 'lampeggia', lab: 'In abbassamento' },
+  { re: /sollevat|alzat|chius/i, k: 'sollevata', sem: 'rosso', lab: 'Sollevata' },
+  { re: /recesso|a riposo|abbassat|apert/i, k: 'recesso', sem: 'verde', lab: 'In recesso' }
+];
+const RANK = { sconosciuto: 0, recesso: 1, programmato: 2, abbassamento: 3, sollevamento: 4, sollevata: 5 };
+const classify = txt => { const t = String(txt || '').trim(); for (const s of STATI) if (s.re.test(t)) return s; return { k: 'sconosciuto', sem: 'grigio', lab: t || 'Non disponibile' }; };
+
+const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', agrave: 'à', egrave: 'è', eacute: 'é', igrave: 'ì', ograve: 'ò', ugrave: 'ù', Agrave: 'À', Egrave: 'È' };
+const text = h => String(h).replace(/<[^>]*>/g, ' ').replace(/&(#x?[0-9a-f]+|\w+);/gi, (m, e) => (e[0] === '#' ? String.fromCodePoint(e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : +e.slice(1)) : ENT[e] ?? m)).replace(/\s+/g, ' ').trim();
+// tabelle della pagina: { head: [intestazioni], rows: [[celle]] }
+function tables(html) {
+  const out = [];
+  for (const m of String(html).matchAll(/<table\b[^>]*>([\s\S]*?)<\/table>/gi)) {
+    const t = m[1], head = [...(t.match(/<thead\b[\s\S]*?<\/thead>/i)?.[0] || '').matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gi)].map(x => text(x[1]));
+    const body = t.match(/<tbody\b[\s\S]*?(<\/tbody>|$)/i)?.[0] || t;
+    const rows = [...body.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].map(r => [...r[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map(x => text(x[1]))).filter(r => r.length);
+    out.push({ head, rows });
+  }
+  return out;
+}
+// «13/11/2026 02:03 AM» (ora di Roma) -> ms. AM/PM (anche «a.m.», «p.m.», «pm» attaccato) si convertono in 24 ore:
+// 12:30 AM = 00:30, 12:30 PM = 12:30, 06:30 PM = 18:30; senza AM/PM l'ora è già a 24 ore.
+function romeMs(s) {
+  const m = String(s || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})[\sT,]+(\d{1,2})[:.](\d{2})(?:[:.]\d{2})?(?:\s*([AP])\.?\s*M\b\.?)?/i); if (!m) return null;
+  let h = +m[4]; if (m[6]) { h %= 12; if (/p/i.test(m[6])) h += 12; }
+  if (h > 23 || +m[5] > 59) return null;
+  const guess = Date.UTC(+m[3], +m[2] - 1, +m[1], h, +m[5]);
+  const off = t => { const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(t)); const g = k => +p.find(x => x.type === k).value; return Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute')) - t; };
+  return guess - off(guess - off(guess));
+}
+// «Evento»: data «14/11/2026» + orario «06:30 PM» -> { data, orario (24 ore, «18:30»), ms (istante reale, ora di Roma) }.
+// Se l'orario non si legge si tiene il testo della fonte, senza ms (chi lo mostra non deve indovinare AM o PM).
+function eventoDa(data, orario) {
+  const d = String(data || '').trim().slice(0, 40), o = String(orario || '').trim().slice(0, 40);
+  if (!d && !o) return null;
+  const ms = romeMs(`${d} ${o}`);
+  if (ms == null) return { data: d, orario: o, ms: null };
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Rome', hour12: false, hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(ms)), g = k => p.find(x => x.type === k).value;
+  return { data: d, orario: `${g('hour') === '24' ? '00' : g('hour')}:${g('minute')}`, ms };
+}
+// dalla pagina allo stato: { stato, sem, titolo, barriere: [{ bocca, barriera, stato, sem, testo }], evento, aggiornato } (null se la tabella manca)
+function parse(html) {
+  const ts = tables(html), col = (t, re) => t.head.findIndex(h => re.test(h));
+  const bt = ts.find(t => col(t, /^barriere$/i) >= 0 && col(t, /^stato$/i) >= 0); if (!bt) return null;
+  const iB = col(bt, /^bocche di porto$/i), iR = col(bt, /^barriere$/i), iS = col(bt, /^stato$/i), iT = col(bt, /last_edited_at/i);
+  const barriere = [], times = [];
+  for (const r of bt.rows) {
+    const barriera = r[iR] || ''; if (!barriera) continue;
+    const c = classify(r[iS]);
+    barriere.push({ bocca: (iB >= 0 && r[iB]) || '', barriera, stato: c.k, sem: c.sem, testo: (r[iS] || '').slice(0, 120) });
+    const t = iT >= 0 ? romeMs(r[iT]) : null; if (t) times.push(t);
+  }
+  if (!barriere.length) return null;
+  let evento = null;
+  const et = ts.find(t => col(t, /^data$/i) >= 0 && col(t, /^orario$/i) >= 0);
+  if (et) { const r = et.rows.find(x => (x[col(et, /^data$/i)] || x[col(et, /^orario$/i)])); if (r) evento = eventoDa(r[col(et, /^data$/i)], r[col(et, /^orario$/i)]); }
+  const worst = barriere.reduce((m, b) => (RANK[b.stato] > RANK[m.stato] ? b : m), barriere[0]);
+  const all = k => barriere.every(b => b.stato === k), some = k => barriere.some(b => b.stato === k);
+  // concordanza: «1 barriera sollevata», «2 barriere sollevate», «tutte le barriere sollevate» (barriera e paratoia: femminili)
+  const n = k => barriere.filter(b => b.stato === k).length, N = barriere.length;
+  const quante = (k, sing, plur) => { const x = n(k); return x === N && N > 1 ? `tutte le barriere ${plur}` : x === 1 ? `1 barriera ${sing} su ${N}` : `${x} barriere ${plur} su ${N}`; };
+  const titolo = all('recesso') ? (N === 1 ? 'MOSE non attivo: paratoia in recesso' : 'MOSE non attivo: paratoie in recesso')
+    : some('sollevata') ? `MOSE attivo: ${quante('sollevata', 'sollevata', 'sollevate')}`
+    : some('sollevamento') ? `MOSE in attivazione: ${quante('sollevamento', 'in sollevamento', 'in sollevamento')}`
+    : some('abbassamento') ? `MOSE in rientro: ${quante('abbassamento', 'in abbassamento', 'in abbassamento')}`
+    : some('programmato') ? 'Sollevamento del MOSE programmato'
+    : 'Stato del MOSE non riconosciuto';
+  return { stato: worst.stato, sem: worst.sem, titolo, barriere, evento, aggiornato: times.length ? Math.max(...times) : null };
+}
+
+
+module.exports={parse,classify,romeMs,eventoDa};

@@ -1,5 +1,5 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
-const {createHub}=require('./core'),{hubFetch}=require('../hub-client');
+const {createHub}=require('./core'),{hubFetch}=require('./client');
 test('authorized feed cache survives restart; 403 locks publisher; no additional requests',async()=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hub-'));let t=Date.parse('2026-11-28T10:00:00Z'),calls=0;
  const opts={dir,enabled:['livello','previsione'],contact:'https://example.test/about',now:()=>t,gap:0,fetchFn:async()=>{calls++;return calls===1?Response.json([{ID_stazione:1025,stazione:'Punta Salute Canal Grande',data:'2026-11-28 10:55:00',valore:'0.7'}]):new Response(null,{status:403});}};

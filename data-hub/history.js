@@ -1,7 +1,7 @@
 'use strict';
 const {DatabaseSync}=require('node:sqlite');
 const path=require('node:path');
-const tide=require('../tide'),meteo=require('../meteo-parse'),web=require('../cpsm-web-forecast'),mose=require('../mose');
+const tide=require('./parsers/tide'),meteo=require('./parsers/meteo'),web=require('./parsers/web-forecast'),mose=require('./parsers/mose');
 const DAY=86400000;
 function retention(key){return ['livello','ispra-level','cpsm-table'].includes(key)?30*DAY:['previsione','cpsm-web','mose'].includes(key)?7*DAY:2*DAY;}
 function records(key,body,stamp,now){
