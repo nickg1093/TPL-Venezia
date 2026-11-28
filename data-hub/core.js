@@ -3,7 +3,6 @@ const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('n
 const {registry}=require('./registry');
 const tide=require('./parsers/tide'), meteo=require('./parsers/meteo'), web=require('./parsers/web-forecast');
 const {openHistory}=require('./history');
-const {createVeportoFetch}=require('./veporto');
 const mose=require('./parsers/mose');
 const MIN=60000;
 async function bounded(res,max){
@@ -41,8 +40,9 @@ function validate(key,body,now){
  return stamp;
 }
 function retryAfter(value,now){if(!value)return 0;const n=/^\d+$/.test(value)?Number(value)*1000:Date.parse(value)-now;return Number.isFinite(n)?Math.max(0,n):0;}
-async function createHub({dir,enabled=[],contact,fetchFn=fetch,now=Date.now,gap=10000,veportoCredentials,moseBrowserFetch=null}){
+async function createHub({dir,enabled=[],contact,acquire,now=Date.now,gap=10000}){
  if(!dir)throw Error('HUB_STATE_DIR required');
+ if(enabled.length&&typeof acquire!=='function')throw Error('acquisition transport required');
  if(enabled.some(k=>!Object.hasOwn(registry,k)))throw Error('unknown source');
  if(enabled.length&&(!contact||!/^https:\/\/[^ ]+$/.test(contact)))throw Error('public contact URL required');
  await fs.mkdir(dir,{recursive:true,mode:0o700});
@@ -50,7 +50,7 @@ async function createHub({dir,enabled=[],contact,fetchFn=fetch,now=Date.now,gap=
  let state={version:1,feeds:{},groups:{}};
  try{const raw=await fs.readFile(filename,'utf8');state=JSON.parse(raw);if(state.version!==1||!state.feeds||!state.groups)throw Error('invalid state');}
  catch(e){if(e.code!=='ENOENT')throw e;}
- const history=openHistory(dir),vpFetch=createVeportoFetch({fetchFn,now,credentials:veportoCredentials});
+ const history=openHistory(dir);
  let writing=Promise.resolve(),flight=null,lastPrune=0;
  const save=()=>{const snapshot=JSON.stringify(state);writing=writing.catch(()=>{}).then(async()=>{const temp=filename+'.tmp';await fs.writeFile(temp,snapshot,{mode:0o600});await fs.rename(temp,filename);});return writing;};
  async function poll(key){
@@ -61,8 +61,7 @@ async function createHub({dir,enabled=[],contact,fetchFn=fetch,now=Date.now,gap=
    // Persist the attempt before making a network request.
    await save();
    try{
-     const transport=key==='veporto'?vpFetch:key==='mose'&&moseBrowserFetch?moseBrowserFetch:fetchFn;
-     const res=await transport(f.url,{headers:{Accept:f.format==='json'?'application/json':f.format==='xml'?'application/xml,text/xml':'text/html','User-Agent':'VeneziaMeteoMarineHub/1.0 (+'+contact+')',...(s.etag?{'If-None-Match':s.etag}:{}),...(s.modified?{'If-Modified-Since':s.modified}:{})},signal:AbortSignal.timeout(key==='mose'&&moseBrowserFetch?25000:12000),redirect:'error'});
+     const res=await acquire(key,{headers:{Accept:f.format==='json'?'application/json':f.format==='xml'?'application/xml,text/xml':'text/html','User-Agent':'VeneziaMeteoMarineHub/1.0 (+'+contact+')',...(s.etag?{'If-None-Match':s.etag}:{}),...(s.modified?{'If-Modified-Since':s.modified}:{})},signal:AbortSignal.timeout(25000),redirect:'error'});
      s.http=res.status;
      if(res.status===403||res.status===401){g.denied=true;s.error='access denied; operator review required';await res.body?.cancel().catch(()=>{});return false;}
      if(res.status===429||res.status===503){g.failures=(g.failures||0)+1;g.until=now()+Math.max(Math.min(1800000,MIN*2**Math.min(g.failures,5)),retryAfter(res.headers.get('retry-after'),now()));s.error='source cooldown';await res.body?.cancel().catch(()=>{});return false;}

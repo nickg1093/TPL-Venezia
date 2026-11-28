@@ -1,6 +1,6 @@
 {
   "name": "venezia-meteomarine-hub",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "commonjs",
   "engines": {
@@ -11,7 +11,7 @@
     "test": "node --test test.js api.test.js browser.test.js",
     "test:browser": "node --test browser-smoke.test.js"
   },
-  "optionalDependencies": {
+  "dependencies": {
     "playwright": "1.65.0"
   }
 }

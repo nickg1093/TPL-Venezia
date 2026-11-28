@@ -2,6 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {createMoseBrowserFetch,allowed,URL}=require('./mose-browser');
 const {createHub}=require('./core');
+const {createBrowserEngine,assertEligible}=require('./browser-engine');
 const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
 const headers={'User-Agent':'VeneziaMeteoMarineHub/1.0 (+https://example.test/about)'};
 test('fixed source only; deny unrelated origin and POST',async()=>{
@@ -27,6 +28,20 @@ test('MOSE browser stops on HTTP 403, closes resources, and persists denial acro
    }};
  }});
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'hub-browser-'));
- const opts={dir,enabled:['mose'],contact:'https://example.test/about',now:()=>t,gap:0,moseBrowserFetch:read,fetchFn:async()=>{throw Error('no HTTP fallback');}};
+ const opts={dir,enabled:['mose'],contact:'https://example.test/about',now:()=>t,gap:0,acquire:(key,options)=>{assert.equal(key,'mose');return read(URL,options);}};
  try{let h=await createHub(opts);await h.tick();assert.ok(h.status().mose.denied);assert.equal(h.status().mose.http,403);assert.equal(h.get('mose'),null);await h.close();t+=3600000;h=await createHub(opts);await h.tick();assert.equal(launches,1);assert.equal(navs,1);assert.equal(closes,1);assert.equal(contextCloses,1);await h.close();}finally{await fs.rm(dir,{recursive:true,force:true});}
+});
+
+test('production engine rejects suspended publishers before launching Chromium',async()=>{
+ let launches=0;
+ const engine=createBrowserEngine({launch:async()=>{launches++;throw Error('unexpected launch');}});
+ for(const key of ['livello','previsione','vento','pressione','temparia','tempacqua','umidita','cpsm-web','cpsm-table','veporto']){
+  assert.throws(()=>assertEligible([key]),/suspended/);
+  await assert.rejects(engine(key,{headers}),/suspended/);
+ }
+ assert.equal(launches,0);
+ assert.doesNotThrow(()=>assertEligible(['mose','ispra-level','metar']));
+});
+test('storage cannot acquire an enabled source without explicit transport',async()=>{
+ await assert.rejects(createHub({dir:'unused',enabled:['mose'],contact:'https://example.test/about'}),/transport required/);
 });

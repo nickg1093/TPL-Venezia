@@ -3,14 +3,13 @@ const http=require('node:http'),crypto=require('node:crypto');
 const {createHub}=require('./core');
 const {registry}=require('./registry');
 const {retention}=require('./history');
-const {createMoseBrowserFetch}=require('./mose-browser');
+const {createBrowserEngine,assertEligible}=require('./browser-engine');
 async function main(){
  const enabled=(process.env.HUB_ENABLED_FEEDS||'').split(',').map(x=>x.trim()).filter(Boolean);
  const secret=process.env.HUB_READ_TOKEN||'';
  if(enabled.length&&secret.length<32)throw Error('HUB_READ_TOKEN must contain at least 32 characters when feeds are enabled');
- const useBrowser=process.env.HUB_MOSE_BROWSER==='true';
- if(useBrowser&&!enabled.includes('mose'))throw Error('browser requires explicitly enabled MOSE source');
- const hub=await createHub({moseBrowserFetch:useBrowser?createMoseBrowserFetch():null,dir:process.env.HUB_STATE_DIR,enabled,contact:process.env.HUB_CONTACT_URL,veportoCredentials:process.env.HUB_VEPORTO_USERNAME?{username:process.env.HUB_VEPORTO_USERNAME,password:process.env.HUB_VEPORTO_PASSWORD||null}:undefined});
+ assertEligible(enabled);
+ const hub=await createHub({acquire:createBrowserEngine(),dir:process.env.HUB_STATE_DIR,enabled,contact:process.env.HUB_CONTACT_URL});
  const digest=s=>crypto.createHash('sha256').update(s).digest();
  function send(res,status,body,type='application/json; charset=utf-8',headers={}){
    res.writeHead(status,{'Content-Type':type,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'",...headers});res.end(body);
