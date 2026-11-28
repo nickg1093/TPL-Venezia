@@ -11,7 +11,7 @@ const feeds={
  'https://aviationweather.gov/api/data/metar?ids=LIPZ&format=json&hours=48':'metar'
 };
 for(const key of ['livello','previsione','vento','pressione','tempacqua','umidita','temparia'])feeds[BASE+key+'.json']=key;
-const enabled=()=>Boolean(process.env.METEO_HUB_URL);
+const enabled=()=>{try{const u=new URL(process.env.METEO_HUB_URL||'');return u.protocol==='https:'&&!u.username&&!u.password&&!u.search&&!u.hash&&u.pathname==='/'&&(process.env.METEO_HUB_TOKEN||'').length>=32;}catch{return false;}};
 const inflight=new Map(), cooldown=new Map();
 async function readHub(url,{fetchFn=globalThis.fetch,maxBytes=1000000,parse=body=>JSON.parse(body),now=Date.now()}={}){
  if(!enabled()||!Object.hasOwn(feeds,url))throw Error('Hub reserve unavailable');
@@ -37,7 +37,7 @@ async function readHub(url,{fetchFn=globalThis.fetch,maxBytes=1000000,parse=body
  const result=await promise;
  if(!Number.isFinite(result.stamp)||result.stamp>now+300000)throw Error('Hub source timestamp missing or future');
  if(Buffer.byteLength(result.body)>maxBytes)throw Error('Hub body too large');
- return parse(result.body,result);
+ try{return await parse(result.body,result);}catch(e){cooldown.set(target,Date.now()+60000);throw e;}
 }
 async function withReserve(primary,url,opts){
  try{return await primary();}catch(original){

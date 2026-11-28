@@ -11,6 +11,7 @@
 
 const {withReserve,enabled:hubEnabled}=require('./hub-reserve');
 const {readHistory}=require('./hub-history');
+const {boundedWait}=require('./bounded-wait');
 const {forecastTime,selectForecast}=require('./forecast-contract');
 const BASE = 'https://dati.venezia.it/sites/default/files/dataset/opendata/';
 const { cpsmGate, createSourceGate } = require('./cpsm-access');
@@ -242,8 +243,9 @@ function snapshot(ahead = 12 * 3600e3) {
 function validForecast(now) { return S.forecastOkAt && now-S.forecastOkAt<=72*3600e3 && now-S.forecastOkAt>=-5*60e3 ? S.forecast : []; }
 
 // Risposta per il client
-async function getTide({ debug = false } = {}) {
-  await refresh();
+async function getTide({ debug = false, maxWaitMs=null } = {}) {
+  if(maxWaitMs===null)await refresh();
+  else {const work=refresh();if(S.level)void work.catch(()=>{});else await boundedWait(work.catch(()=>{}),maxWaitMs);}
   if (!S.level) { const e = new Error(S.err || 'dati di marea non disponibili'); e.code = 503; throw e; }
   const now = Date.now(), lv = S.level, cm = lv.cm;
   const forecast=validForecast(now);
@@ -270,7 +272,7 @@ async function getTide({ debug = false } = {}) {
 // Storia recuperata dall'archivio (marea-archivio.js) unita a quella raccolta: un punto per istante, ultime 6 ore, in ordine di tempo
 function mergeHist(points, now = Date.now()) {
   const by = new Map();
-  for (const p of [...points, ...S.hist]) if (p && Number.isFinite(p.t) && Number.isFinite(p.cm)) by.set(p.t, { t: p.t, cm: p.cm });
+  for (const p of [...points, ...S.hist]) if (p && Number.isFinite(p.t) && p.t<=now+300000 && Number.isFinite(p.cm) && Math.abs(p.cm)<=300) by.set(p.t, { t: p.t, cm: p.cm });
   const all = [...by.values()].sort((a, b) => a.t - b.t), last = all.length ? all[all.length - 1].t : now;
   S.hist = all.filter(p => p.t >= Math.min(now, last) - HIST_MS);
   return S.hist.length;
@@ -291,9 +293,9 @@ function recoverHubHistory(now=Date.now()){
  hubHistoryFlight=(async()=>{
   const points=new Map();
   for(const key of ['livello','cpsm-table','ispra-level']){
-   try{await readHistory(key,now-HIST_MS,now,{onPage:items=>{for(const x of items){const cm=x.data.cm;if(!Number.isFinite(cm)||Math.abs(cm)>300)continue;const rank=key==='livello'?[MAIN.id,...FALLBACK].indexOf(x.station):key==='cpsm-table'?3:x.station===ISPRA_ST.id?4:-1;if(rank<0)continue;const old=points.get(x.timestamp);if(!old||rank<old.rank)points.set(x.timestamp,{t:x.timestamp,cm,rank});}}});}catch{}
+   try{await readHistory(key,now-HIST_MS,now,{onPage:items=>{for(const x of items){const cm=x.data.cm;if(!Number.isFinite(cm)||Math.abs(cm)>300)continue;const rank=key==='livello'?[MAIN.id,...FALLBACK].indexOf(x.station):key==='cpsm-table'?3:x.station===ISPRA_ST.id?4:-1;if(rank<0)continue;const old=points.get(x.timestamp);if(!old||rank<old.rank)points.set(x.timestamp,{t:x.timestamp,cm,rank,st:key==='cpsm-table'?MAIN.id:x.station,f:key==='ispra-level'?'ispra':'cpsm'});}}});}catch{}
   }
-  mergeHist([...points.values()],Date.now());
+  restoreArchivedLevel([...points.values()],Date.now());
  })().finally(()=>{hubHistoryFlight=null;});return hubHistoryFlight;
 }
 // Raccolta periodica: serve a costruire la storia da cui si ricava la tendenza anche senza utenti collegati.

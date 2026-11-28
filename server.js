@@ -268,6 +268,13 @@ const alexaAmbiente = {
   call: async pathQuery => {
     const u = new URL(pathQuery, 'http://localhost'), api = API.get(u.pathname);
     if (!api || !ALEXA_API.has(u.pathname) || api.raw || api.method || api.auth) throw fail(404, 'non trovato');
+    if(u.pathname==='/api/tide')return {...await tide.getTide({maxWaitMs:2000}),mose:mose.brief()};
+    if(u.pathname==='/api/mose'){
+      const cached=mose.snapshot();const work=mose.refresh();
+      if(cached){void work.catch(()=>{});return cached;}
+      await require('./bounded-wait').boundedWait(work.catch(()=>{}),2000);
+      return mose.snapshot()||{error:'Stato del MOSE non disponibile in questo momento'};
+    }
     if (api.cpu) {
       if (sec.cpuBusy() || memoria.critico()) throw Object.assign(fail(503, 'Server occupato, riprova tra pochi secondi'), { busy: true });
       const t0 = performance.now();

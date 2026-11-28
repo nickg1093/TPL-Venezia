@@ -53,3 +53,11 @@ test('archivio: righe ISPRA valide, usate nel grafico solo se manca la stazione 
 test('CPSM: sceglie misura recente della stazione primaria, scarta date e valori non validi',()=>{const t=fresh(),now=Date.UTC(2026,10,27,8);const rows=t.parseLevels([{ID_stazione:1025,data:'2026-11-27 08:40:00',valore:'0.3'},{ID_stazione:1025,data:'2026-11-27 08:55:00',valore:'0.65 m'},{ID_stazione:1045,data:'2026-11-27 08:59:00',valore:'0.9'},{ID_stazione:1025,data:'2026-11-31 08:59:00',valore:'0.8'},{ID_stazione:1025,data:'2026-11-27 09:00:00',valore:'1xyz'}]);assert.equal(t.selectCpsmLevel(rows,now).cm,65);assert.equal(t.selectCpsmLevel(rows,now+3600000),null);});
 
 test('riavvio: recupera la misura archiviata con fonte e orario originali senza simularne la freschezza',()=>{const t=fresh(),now=Date.now();const row={t:now-600000,cm:71,st:'I129',f:'ispra',s:'grezzo'};const points=A.history([row],now,6*3600e3,undefined,true);t.restoreArchivedLevel(points,now);assert.equal(t._S.level.cm,71);assert.equal(t._S.level.ts,row.t);assert.equal(t._S.level.src,'ispra');assert.equal(t._S.level.restored,true);assert.equal(t._S.levelAt,0);});
+
+test('voice tide request does not wait for blocked background acquisition when observation cached',async()=>{
+ const t=fresh(),real=global.fetch,now=Date.now();let release;
+ global.fetch=async()=>new Promise(resolve=>{release=resolve;});
+ t._S.level={id:'1025',name:'Punta Salute Canal Grande',cm:71,ts:now-600000,src:'cpsm',others:[]};
+ try{const before=Date.now();const d=await t.getTide({maxWaitMs:20});assert.equal(d.cm,71);assert.equal(d.ts,now-600000);assert.ok(Date.now()-before<500);}
+ finally{global.fetch=async()=>({ok:false,status:503});release?.({ok:false,status:503});await t.getTide().catch(()=>{});global.fetch=real;}
+});

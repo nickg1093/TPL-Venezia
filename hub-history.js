@@ -2,15 +2,16 @@
 // Bounded read-only pagination; no upstream requests. Caller inserts missing points.
 const allowed=new Set(['livello','cpsm-table','ispra-level','vento','pressione','tempacqua','umidita','temparia','veporto','metar']);
 async function readHistory(key,from,to,{fetchFn=globalThis.fetch,limit=500,maxPages=16,onPage=()=>{}}={}){
- if(!process.env.METEO_HUB_URL)return 0;
+ if(!require('./hub-reserve').enabled())return 0;
  if(!allowed.has(key)||!Number.isSafeInteger(from)||!Number.isSafeInteger(to)||from>to)throw Error('invalid history request');
  const base=new URL(process.env.METEO_HUB_URL),token=process.env.METEO_HUB_TOKEN||'';
  if(base.protocol!=='https:'||base.username||base.password||base.search||base.hash||base.pathname!=='/'||token.length<32)throw Error('invalid Hub configuration');
- let cursor=from,station='',count=0;
+ let cursor=from,station='',count=0;const deadline=Date.now()+30000;
  for(let page=0;page<maxPages;page++){
   const url=new URL('/api/v1/history/'+key,base);
   url.search=new URLSearchParams({from:String(cursor),to:String(to),limit:String(limit),station});
-  const response=await fetchFn(url.href,{headers:{Authorization:'Bearer '+token,Accept:'application/json'},redirect:'error',signal:AbortSignal.timeout(8000)});
+  const left=deadline-Date.now();if(left<=0)throw Error('Hub history deadline');
+  const response=await fetchFn(url.href,{headers:{Authorization:'Bearer '+token,Accept:'application/json'},redirect:'error',signal:AbortSignal.timeout(Math.min(8000,left))});
   if(!response.ok||!response.body){await response.body?.cancel().catch(()=>{});throw Error('Hub history unavailable');}
   const reader=response.body.getReader(),chunks=[];let total=0,done=false;
   try{for(;;){const x=await reader.read();if(x.done){done=true;break;}total+=x.value.byteLength;if(total>1000000)throw Error('Hub history too large');chunks.push(x.value);}}

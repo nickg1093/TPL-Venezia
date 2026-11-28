@@ -1,7 +1,7 @@
 name: Hub reserve regression
 on:
   push:
-    branches: ['feature/meteo-hub-fallback','feature/hub-continuity']
+    branches: [main, 'feature/meteo-hub-fallback','feature/hub-continuity','feature/hub-audit']
 permissions:
   contents: read
 jobs:
@@ -15,3 +15,4 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: node --test tests/hub-reserve.test.js tests/hub-history.test.js tests/tide.test.js tests/tide-fonti.test.js tests/meteo.test.js tests/mose.test.js tests/cpsm-web-forecast.test.js tests/security.test.js
+      - run: node --test tests/alexa-lambda.test.js tests/alexa-dialogo.test.js tests/alexa-modello.test.js tests/alexa-skill.test.js tests/alexa-meteo.test.js tests/alexa-unita.test.js
