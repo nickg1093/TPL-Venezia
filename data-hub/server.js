@@ -7,6 +7,7 @@ async function main(){
  const enabled=(process.env.HUB_ENABLED_FEEDS||'').split(',').map(x=>x.trim()).filter(Boolean);
  const hub=await createHub({dir:process.env.HUB_STATE_DIR,enabled,contact:process.env.HUB_CONTACT_URL,veportoCredentials:process.env.HUB_VEPORTO_USERNAME?{username:process.env.HUB_VEPORTO_USERNAME,password:process.env.HUB_VEPORTO_PASSWORD||null}:undefined});
  const secret=process.env.HUB_READ_TOKEN||'';
+ if(enabled.length&&secret.length<32)throw Error('HUB_READ_TOKEN must contain at least 32 characters when feeds are enabled');
  const digest=s=>crypto.createHash('sha256').update(s).digest();
  function send(res,status,body,type='application/json; charset=utf-8',headers={}){
    res.writeHead(status,{'Content-Type':type,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'",...headers});res.end(body);
@@ -16,7 +17,7 @@ async function main(){
    if(req.url==='/healthz')return send(res,200,'{"ok":true}');
    if(secret&&!crypto.timingSafeEqual(digest(req.headers.authorization||''),digest('Bearer '+secret)))return send(res,401,'{"error":"unauthorized"}');
    if(req.url==='/api/v1/status')return send(res,200,JSON.stringify({version:1,feeds:hub.status()}));
-   const u=new URL(req.url,'http://localhost');
+   let u;try{u=new URL(req.url,'http://localhost');}catch{return send(res,400,'{"error":"invalid URL"}');}
    const hm=/^\/api\/v1\/history\/([a-z-]+)$/.exec(u.pathname);
    if(hm&&Object.hasOwn(registry,hm[1])){
      const now=Date.now(),key=hm[1],from=Number(u.searchParams.get('from')||now-retention(key)),to=Number(u.searchParams.get('to')||now),limit=Number(u.searchParams.get('limit')||200),station=u.searchParams.get('station')||'';

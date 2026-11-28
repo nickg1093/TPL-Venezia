@@ -5,7 +5,7 @@ const tide=require('../tide'),meteo=require('../meteo-parse'),web=require('../cp
 const DAY=86400000;
 function retention(key){return ['livello','ispra-level','cpsm-table'].includes(key)?30*DAY:['previsione','cpsm-web','mose'].includes(key)?7*DAY:2*DAY;}
 function records(key,body,stamp,now){
- const rec=(id,t,data)=>({id:String(id),t:Number(t),data});
+ const rec=(id,t,data)=>({id:String(id),t:t==null?NaN:Number(t),data});
  if(key==='livello')return tide.parseLevels(JSON.parse(body)).filter(x=>x.cm!==null).map(x=>rec(x.id,x.ts,{cm:x.cm,station:x.name}));
  if(key==='ispra-level'){const p=tide.parseIspra(body,now);return p?[rec(p.id,p.ts,{cm:p.cm,station:p.name})]:[];}
  if(key==='cpsm-table')return [...body.matchAll(/<td\b[^>]*>\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*<\/td>\s*<td\b[^>]*>\s*(-?\d+(?:[.,]\d+)?)\s*<\/td>/gi)].map(m=>rec('Punta Salute',tide.solarToMs(m[1]),{cm:Math.round(Number(m[2].replace(',','.'))*100)})).filter(r=>Math.abs(r.data.cm)<=300);

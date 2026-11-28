@@ -34,7 +34,7 @@ function validate(key,body,now){
      stamp=Math.max(0,...rows.filter(r=>r?.icaoId==='LIPZ'&&typeof r.rawOb==='string').map(r=>typeof r.obsTime==='number'?r.obsTime*1000:Date.parse(r.obsTime)).filter(Number.isFinite));
    }else{
      // Keep the source's native measurements; clients still validate each station and metric.
-     stamp=Math.max(0,...rows.filter(r=>r&&r.valore!=null&&String(r.valore).trim()!==''&&String(r.valore)!=='-999').map(r=>meteo.cpsmMs(r.data)).filter(Number.isFinite));
+     stamp=Math.max(0,...meteo.parseCpsm(key,rows).filter(r=>r.valore!==null&&Number.isFinite(r.misuratoMs)).map(r=>r.misuratoMs));
    }
  }
  if(!Number.isFinite(stamp)||stamp>now+5*MIN||now-stamp>f.maxAge)throw Error('stale or invalid source timestamp');
@@ -65,7 +65,7 @@ async function createHub({dir,enabled=[],contact,fetchFn=fetch,now=Date.now,gap=
      s.http=res.status;
      if(res.status===403||(key==='veporto'&&res.status===401)){g.denied=true;s.error='access denied; operator review required';await res.body?.cancel().catch(()=>{});return false;}
      if(res.status===429||res.status===503){g.failures=(g.failures||0)+1;g.until=now()+Math.max(Math.min(1800000,MIN*2**Math.min(g.failures,5)),retryAfter(res.headers.get('retry-after'),now()));s.error='source cooldown';await res.body?.cancel().catch(()=>{});return false;}
-     if(res.status===304){if(!s.body)throw Error('304 without snapshot');validate(key,s.body,now());s.confirmedAt=now();s.error=null;g.failures=0;return true;}
+     if(res.status===304){if(!s.body)throw Error('304 without snapshot');try{validate(key,s.body,now());}catch(e){s.etag=null;s.modified=null;throw e;}s.confirmedAt=now();s.error=null;g.failures=0;return true;}
      if(!res.ok){await res.body?.cancel().catch(()=>{});throw Error('upstream HTTP '+res.status);}
      let body=await bounded(res,f.maxBytes);
      if(key==='veporto'){const rows=JSON.parse(body);body=JSON.stringify(meteo.parseVeporto(rows).filter(x=>x.valore!==null&&Number.isFinite(x.misuratoMs)).map(x=>({nome:x.idStazione,ultimoDato:new Date(x.misuratoMs).toISOString(),meterDetails:[{tipo:'VISIBILIMETER',visibilita:x.valore}]})));}
