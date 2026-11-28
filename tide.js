@@ -9,6 +9,7 @@
 // Stazione ufficiale per Venezia dal 2002: "Punta Salute Canal Grande" (ID 1025).
 // Il livello è riferito allo zero mareografico di Punta della Salute (ZMPS).
 
+const {hubFetch}=require('./hub-client');
 const BASE = 'https://dati.venezia.it/sites/default/files/dataset/opendata/';
 const { cpsmGate, createSourceGate } = require('./cpsm-access');
 const WEB_FORECAST=require('./cpsm-web-forecast');
@@ -88,7 +89,7 @@ function parseIspra(xml, now = Date.now()) {
   return { id: ISPRA_ST.id, name: ISPRA_ST.name, cm, ts, src: 'ispra' };
 }
 async function getIspra() {
-  const res = await fetch(ISPRA_URL, { headers: HEADERS, signal: AbortSignal.timeout(10000), redirect: 'follow' });
+  const res = await hubFetch(ISPRA_URL, { headers: HEADERS, signal: AbortSignal.timeout(10000), redirect: 'follow' });
   if (!res.ok) {try{await res.body?.cancel();}catch{} throw new Error(`ISPRA: HTTP ${res.status}`);}
   const txt = await boundedText(res, 2_000_000);
   const p = parseIspra(txt); if (!p) throw new Error('ISPRA: Punta della Salute non trovata');
@@ -174,7 +175,7 @@ async function getJson(name) {
   return cpsmGate.run(async check => {
     const prior=validators.get(name);
     const headers={...HEADERS,...(prior?.etag?{'If-None-Match':prior.etag}:{}),...(prior?.modified?{'If-Modified-Since':prior.modified}:{})};
-    const res=await check(await fetch(BASE + name,{headers,signal:AbortSignal.timeout(10000),redirect:'error'}));
+    const res=await check(await hubFetch(BASE + name,{headers,signal:AbortSignal.timeout(10000),redirect:'error'}));
     if(res.status===304 && prior)return prior.rows;
     if(!res.ok){try{await res.body?.cancel();}catch{} throw new Error(name+': HTTP '+res.status);}
     const rows=JSON.parse(await boundedText(res,1_000_000));

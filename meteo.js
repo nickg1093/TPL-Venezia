@@ -6,6 +6,7 @@
 // poi ogni 30-60 s finché arriva (richieste condizionali ETag/Last-Modified: un controllo a vuoto costa un 304). Errori: attesa crescente.
 // Le API leggono solo la cache: nessuna richiesta esterna durante una risposta.
 const X = require('./meteo-parse');
+const {hubFetch}=require('./hub-client');
 
 const CPSM = 'https://dati.venezia.it/sites/default/files/dataset/opendata/';
 const { cpsmGate } = require('./cpsm-access');
@@ -50,7 +51,7 @@ async function getJson(url, s, headers = {}, check = async res => res) {
   const h = { Accept: 'application/json', 'Cache-Control': 'no-cache', 'User-Agent': USER_AGENT, ...headers };
   if (s.etag) h['If-None-Match'] = s.etag;
   if (s.modificato) h['If-Modified-Since'] = s.modificato;
-  const res = await check(await opz.fetch(url, { headers: h, signal: AbortSignal.timeout(TIMEOUT_MS), redirect: url.startsWith(CPSM) ? 'error' : 'follow' }));
+  const res = await check(await hubFetch(url, { headers: h, signal: AbortSignal.timeout(TIMEOUT_MS), redirect: url.startsWith(CPSM) ? 'error' : 'follow' },opz.fetch));
   if (res.status === 304) return null;
   if (!res.ok) { try { await res.body?.cancel(); } catch {} throw new Error('HTTP ' + res.status); }
   const j = await leggi(res);

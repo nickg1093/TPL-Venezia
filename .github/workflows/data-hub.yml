@@ -1,0 +1,17 @@
+name: Data Hub prototype tests
+on:
+  push:
+    branches: ['feature/meteo-data-hub']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: node --test data-hub/test.js tests/tide.test.js tests/tide-fonti.test.js tests/meteo.test.js tests/cpsm-web-forecast.test.js tests/security.test.js
