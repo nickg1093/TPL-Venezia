@@ -44,16 +44,16 @@ function merge(text, rows) {
 // file da cancellare (più vecchi di KEEP_DAYS)
 const expired = (names, now = Date.now(), keep = KEEP_DAYS) => names.filter(n => /^\d{4}-\d{2}-\d{2}\.jsonl$/.test(n) && Date.parse(n.slice(0, 10) + 'T00:00:00Z') < now - keep * 864e5);
 // storia per il grafico: per ogni istante la stazione principale se c'è, altrimenti la prima di riserva; solo valori veri, ultime «ms»
-function history(rows, now = Date.now(), ms = 6 * 3600e3, order = ['1025', '1045', '1029', 'I129']) {
+function history(rows, now = Date.now(), ms = 6 * 3600e3, order = ['1025', '1045', '1029', 'I129'], withSource = false) {
   const by = new Map();
   for (const r of rows) {
-    if (r.cm === null || r.t < now - ms || r.t > now + 600e3) continue;
+    if (!valid(r) || !order.includes(r.st) || (r.f==='ispra') !== (r.st==='I129') || r.cm === null || r.t < now - ms || r.t > now + 300e3) continue;
     const o = by.get(r.t); if (!o || order.indexOf(r.st) < order.indexOf(o.st)) by.set(r.t, r);
   }
-  return [...by.values()].sort((a, b) => a.t - b.t).map(r => ({ t: r.t, cm: r.cm }));
+  return [...by.values()].sort((a, b) => a.t - b.t).map(r => ({ t: r.t, cm: r.cm, ...(withSource ? {st:r.st,f:r.f} : {}) }));
 }
 // lettura dal ramo pubblico: oggi e ieri (UTC), per coprire le ultime ore anche subito dopo la mezzanotte
-async function restore({ repo, fetchFn = globalThis.fetch, now = Date.now(), ms = 6 * 3600e3 } = {}) {
+async function restore({ repo, fetchFn = globalThis.fetch, now = Date.now(), ms = 6 * 3600e3, withSource = false } = {}) {
   if (!/^[A-Za-z0-9][\w.-]*\/[A-Za-z0-9][\w.-]*$/.test(repo || '') || !fetchFn) return [];
   const rows = [];
   for (const d of [...new Set([dayOf(now - ms), dayOf(now)])]) {
@@ -64,6 +64,6 @@ async function restore({ repo, fetchFn = globalThis.fetch, now = Date.now(), ms 
       rows.push(...parse(txt));
     } catch { /* archivio irraggiungibile: si riparte dalle sole letture nuove, come prima */ }
   }
-  return history(rows, now, ms);
+  return history(rows, now, ms, ['1025','1045','1029','I129'], withSource);
 }
 module.exports = { KEEP_DAYS, dayOf, rowsFrom, rowFromIspra, parse, merge, expired, history, restore, valid };

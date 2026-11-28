@@ -245,7 +245,7 @@ async function getTide({ debug = false } = {}) {
     // grafico: 6 ore osservate (storia raccolta dal server) + 18 ore previste (curva ricavata dagli estremi previsti)
     chart: { from: now - HIST_MS, to: now + AHEAD_MS, now, observed: S.hist.map(p => [p.t, p.cm]), forecast: buildCurve(forecast, S.hist, now),
       extremes: forecast.filter(f => f.ts > now - HIST_MS && f.ts < now + AHEAD_MS).map(f => ({ type: f.type, cm: f.cm, ts: f.ts })) },
-    source: SOURCES[lv.src] || SOURCES.cpsm,
+    source: SOURCES[lv.src] || SOURCES.cpsm, restored: Boolean(lv.restored),
     forecastSource: SOURCES.cpsm, forecastAgeMin: S.forecastOkAt ? Math.round((now - S.forecastOkAt) / 60000) : null
   };
   if (debug) out.debug = { forecastParsed: S.forecast.length, rawSample: S.raw, error: S.err, cpsm: S.cpsmErr, ispra: S.ispraErr, pausa: B.until > now ? Math.round((B.until - now) / 1000) : 0 };
@@ -260,13 +260,22 @@ function mergeHist(points, now = Date.now()) {
   S.hist = all.filter(p => p.t >= Math.min(now, last) - HIST_MS);
   return S.hist.length;
 }
+// Restore a real observation with its original provenance; never present it as a new HTTP reading.
+function restoreArchivedLevel(points, now=Date.now()) {
+  mergeHist(points,now);
+  if(!S.level){
+    const p=points.filter(p=>Number.isFinite(p.t)&&Number.isFinite(p.cm)&&p.t<=now+300e3&&p.t>=now-HIST_MS&&((p.f==='cpsm'&&[MAIN.id,...FALLBACK].includes(p.st))||(p.f==='ispra'&&p.st===ISPRA_ST.id))).sort((a,b)=>b.t-a.t)[0];
+    if(p){S.level={id:p.st,name:p.f==='ispra'?ISPRA_ST.name:p.st===MAIN.id?MAIN.name:'Stazione CPSM '+p.st,cm:p.cm,ts:p.t,src:p.f,others:[],restored:true};S.err='Misura archiviata; aggiornamento in attesa';}
+  }
+  return S.hist.length;
+}
 // Raccolta periodica: serve a costruire la storia da cui si ricava la tendenza anche senza utenti collegati.
 // archivio: { repo } = all'avvio si recuperano le ultime ore dal ramo «archivio-marea» (dopo un riavvio il grafico non riparte vuoto).
 function start({ archivio = null } = {}) {
   if (archivio?.repo) {
-    const load = () => require('./marea-archivio').restore({ repo: archivio.repo }).then(p => { if (p.length) mergeHist(p); return p.length; }).catch(() => 0);
+    const load = () => require('./marea-archivio').restore({ repo: archivio.repo, withSource:true }).then(p => { if (p.length) restoreArchivedLevel(p); return p.length; }).catch(() => 0);
     load().then(n => { if (!n) setTimeout(load, 5 * 60e3).unref?.(); });   // archivio non raggiungibile: un altro tentativo tra 5 minuti
   }
   refresh(true).catch(() => {}); setInterval(() => refresh(true).catch(() => {}), 150000).unref?.();
 }
-module.exports = { selectCpsmLevel, _B: B, parseIspra, getIspra, SOURCES, snapshot, buildCurve, getTide, start, mergeHist, getJson, parseLevels, parseForecast, trendOf, categoryOf, solarToMs, toCm, _S: S };
+module.exports = { restoreArchivedLevel, selectCpsmLevel, _B: B, parseIspra, getIspra, SOURCES, snapshot, buildCurve, getTide, start, mergeHist, getJson, parseLevels, parseForecast, trendOf, categoryOf, solarToMs, toCm, _S: S };
