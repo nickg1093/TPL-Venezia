@@ -6,7 +6,8 @@
 // poi ogni 30-60 s finché arriva (richieste condizionali ETag/Last-Modified: un controllo a vuoto costa un 304). Errori: attesa crescente.
 // Le API leggono solo la cache: nessuna richiesta esterna durante una risposta.
 const X = require('./meteo-parse');
-const {withReserve,enabled:hubEnabled}=require('./hub-reserve');
+const {withReserve,readHub,enabled:hubEnabled}=require('./hub-reserve');
+const {EXPECTED,mergeSensors}=require('./sensor-merge');
 
 const CPSM = 'https://dati.venezia.it/sites/default/files/dataset/opendata/';
 const { cpsmGate } = require('./cpsm-access');
@@ -85,7 +86,8 @@ async function veporto(f, s) {
 // ---- cache: una voce per sensore; si sostituisce solo se cambia il timestamp (o il dato a pari timestamp: rettifica della fonte) ----
 function metti(fonte, categoria, oss, ora) {
   const k = `${fonte}|${categoria}|${oss.idStazione}`, p = sensori.get(k);
-  if (oss.misuratoMs == null && p) return false;                       // riga senza orario: non cancella una misura valida
+  if (oss.misuratoMs == null && p) return false;
+  if(p&&Number.isFinite(p.misuratoMs)&&Number.isFinite(oss.misuratoMs)&&oss.misuratoMs<p.misuratoMs)return false;                       // riga senza orario: non cancella una misura valida
   const uguale = p && p.misuratoMs === oss.misuratoMs && JSON.stringify(p.dati) === JSON.stringify(oss.dati);
   if (uguale) { p.confermatoMs = ora; return false; }
   sensori.set(k, { fonte, categoria, idStazione: oss.idStazione, stazione: oss.stazione, misuratoMs: oss.misuratoMs, acquisitoMs: ora, confermatoMs: ora, dati: oss.dati });
@@ -135,7 +137,15 @@ async function controlla(f) {
       const direct=()=>f.fonte==='cpsm'?cpsm(f,s):f.fonte==='veporto'?veporto(f,s):getJson(METAR,s,{'User-Agent':USER_AGENT});
       const url=f.fonte==='cpsm'?CPSM+f.file:f.fonte==='veporto'?VEPORTO+'/meteo-station?limit=1000':METAR;
       const validate=(j,allow304)=>{if(j===null&&allow304&&s.ultimoDatoMs!=null&&opz.adesso()-s.ultimoDatoMs<=f.vecchio)return j;if(!Array.isArray(j))throw Error('Misura non disponibile');const now=opz.adesso();if(f.fonte==='metar'){const p=X.parseMetar(j,now);if(p&&p.misuratoMs<=now+300000&&now-p.misuratoMs<=f.vecchio)return j;}else{const rows=f.fonte==='cpsm'?X.parseCpsm(f.categorie[0],j):X.parseVeporto(j);if(rows.some(p=>p.valore!==null&&Number.isFinite(p.misuratoMs)&&p.misuratoMs<=now+300000&&now-p.misuratoMs<=f.vecchio))return j;}throw Error('Misura non recente');};
-      const j=await withReserve(async()=>{const j=await direct();return hubEnabled()?validate(j,true):j;},url,{fetchFn:opz.fetch,maxBytes:MAX_BYTES,now:opz.adesso(),parse:body=>validate(JSON.parse(body),false)});
+      let j=await withReserve(async()=>{const j=await direct();if(Array.isArray(j))s.directRows=j;return hubEnabled()?validate(j,true):j;},url,{fetchFn:opz.fetch,maxBytes:MAX_BYTES,now:opz.adesso(),parse:body=>validate(JSON.parse(body),false)});
+      if(hubEnabled()&&f.fonte!=='metar'){
+        const key=f.fonte==='veporto'?'veporto':f.categorie[0],now=opz.adesso();
+        const inspect=row=>{if(key==='veporto'){const id=String(row?.nome||'').trim().toUpperCase().replace(/[’‘]/g,"'");if(!EXPECTED.veporto.includes(id))return null;const p=X.parseVeporto([row]).find(x=>x.idStazione===id);return {id,stamp:p?.misuratoMs,valid:Number.isFinite(p?.valore)};}const p=X.parseCpsm(key,[row])[0];return p?{id:p.idStazione,stamp:p.misuratoMs,valid:Number.isFinite(p.valore)}:null;};
+        const original=j===null?s.directRows||[]:j;
+        if(mergeSensors(original,[],inspect,EXPECTED[key],now,f.vecchio).missing.length&&now-(s.hubPartialAt||0)>=60000){
+          s.hubPartialAt=now;try{const reserve=await readHub(url,{fetchFn:opz.fetch,maxBytes:MAX_BYTES,now});const merged=mergeSensors(original,reserve,inspect,EXPECTED[key],now,f.vecchio);if(merged.filled.length)j=merged.rows;}catch{}
+        }
+      }
       const ora = opz.adesso();
       if (j === null) s.nonModificati++;
       else {

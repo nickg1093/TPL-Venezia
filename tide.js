@@ -10,6 +10,7 @@
 // Il livello è riferito allo zero mareografico di Punta della Salute (ZMPS).
 
 const {withReserve,enabled:hubEnabled}=require('./hub-reserve');
+const {readHistory}=require('./hub-history');
 const BASE = 'https://dati.venezia.it/sites/default/files/dataset/opendata/';
 const { cpsmGate, createSourceGate } = require('./cpsm-access');
 const WEB_FORECAST=require('./cpsm-web-forecast');
@@ -281,6 +282,18 @@ function restoreArchivedLevel(points, now=Date.now()) {
   }
   return S.hist.length;
 }
+let hubHistoryFlight=null,hubHistoryAt=0;
+function recoverHubHistory(now=Date.now()){
+ if(!hubEnabled()||hubHistoryFlight||now-hubHistoryAt<15*60000)return hubHistoryFlight;
+ hubHistoryAt=now;
+ hubHistoryFlight=(async()=>{
+  const points=new Map();
+  for(const key of ['livello','cpsm-table','ispra-level']){
+   try{await readHistory(key,now-HIST_MS,now,{onPage:items=>{for(const x of items){const cm=x.data.cm;if(!Number.isFinite(cm)||Math.abs(cm)>300)continue;const rank=key==='livello'?[MAIN.id,...FALLBACK].indexOf(x.station):key==='cpsm-table'?3:x.station===ISPRA_ST.id?4:-1;if(rank<0)continue;const old=points.get(x.timestamp);if(!old||rank<old.rank)points.set(x.timestamp,{t:x.timestamp,cm,rank});}}});}catch{}
+  }
+  mergeHist([...points.values()],Date.now());
+ })().finally(()=>{hubHistoryFlight=null;});return hubHistoryFlight;
+}
 // Raccolta periodica: serve a costruire la storia da cui si ricava la tendenza anche senza utenti collegati.
 // archivio: { repo } = all'avvio si recuperano le ultime ore dal ramo «archivio-marea» (dopo un riavvio il grafico non riparte vuoto).
 function start({ archivio = null } = {}) {
@@ -288,6 +301,6 @@ function start({ archivio = null } = {}) {
     const load = () => require('./marea-archivio').restore({ repo: archivio.repo, withSource:true }).then(p => { if (p.length) restoreArchivedLevel(p); return p.length; }).catch(() => 0);
     load().then(n => { if (!n) setTimeout(load, 5 * 60e3).unref?.(); });   // archivio non raggiungibile: un altro tentativo tra 5 minuti
   }
-  refresh(true).catch(() => {}); setInterval(() => refresh(true).catch(() => {}), 150000).unref?.();
+  const run=()=>{refresh(true).catch(()=>{});void recoverHubHistory()?.catch(()=>{});};run();setInterval(run,150000).unref?.();
 }
 module.exports = { restoreArchivedLevel, selectCpsmLevel, _B: B, parseIspra, getIspra, SOURCES, snapshot, buildCurve, getTide, start, mergeHist, getJson, parseLevels, parseForecast, trendOf, categoryOf, solarToMs, toCm, _S: S };

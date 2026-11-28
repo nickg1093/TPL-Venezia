@@ -1,0 +1,2 @@
+## Hub continuity
+Optional Hub configuration preserves direct acquisition. Tide history backfill every 15 minutes within existing six-hour window, existing local points win, only known stations and valid cm values. Weather remains latest-per-sensor (no historical UI); missing sensors may use original-format snapshots from Hub, never replacing fresh direct sensors. No new browser dependency. Network errors retain existing behavior. Integration needs live verification.
