@@ -10,8 +10,8 @@
 // Il livello è riferito allo zero mareografico di Punta della Salute (ZMPS).
 
 const BASE = ['https://dati.venezia.it/sites/default/files/dataset/opendata/', 'http://dati.venezia.it/sites/default/files/dataset/opendata/'];
-const HEADERS = {   // il portale blocca le richieste senza User-Agent da browser (come il sito ACTV)
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+const HEADERS = {   // identificazione esplicita del servizio di acquisizione
+  'User-Agent': 'VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/)',
   'Accept': 'application/json,*/*;q=0.8', 'Accept-Language': 'it-IT,it;q=0.9'
 };
 const ISPRA_URL = 'https://www.venezia.isprambiente.it/dati/Dati2.xml', ISPRA_ST = { marker: '129', id: 'I129', name: 'Punta della Salute (ISPRA)' };

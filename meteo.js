@@ -8,7 +8,7 @@
 const X = require('./meteo-parse');
 
 const CPSM = ['https://dati.venezia.it/sites/default/files/dataset/opendata/', 'http://dati.venezia.it/sites/default/files/dataset/opendata/'];
-const UA_BROWSER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';   // il portale rifiuta i client senza UA da browser
+const USER_AGENT = 'VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/)';
 const VEPORTO = 'https://veporto.it/pwa-api/v1';
 const METAR = 'https://aviationweather.gov/api/data/metar?ids=LIPZ&format=json&hours=3';
 const MAX_BYTES = 256000, TIMEOUT_MS = 12000;
@@ -46,7 +46,7 @@ async function leggi(res) {
 }
 // GET condizionale; 304 -> null (niente di nuovo)
 async function getJson(url, s, headers = {}) {
-  const h = { Accept: 'application/json', 'Cache-Control': 'no-cache', ...headers };
+  const h = { Accept: 'application/json', 'Cache-Control': 'no-cache', 'User-Agent': USER_AGENT, ...headers };
   if (s.etag) h['If-None-Match'] = s.etag;
   if (s.modificato) h['If-Modified-Since'] = s.modificato;
   const res = await opz.fetch(url, { headers: h, signal: AbortSignal.timeout(TIMEOUT_MS), redirect: 'follow' });
@@ -58,7 +58,7 @@ async function getJson(url, s, headers = {}) {
 }
 async function cpsm(f, s) {
   let ultimo = null;
-  for (const b of CPSM) { try { return await getJson(b + f.file, s, { 'User-Agent': UA_BROWSER, 'Accept-Language': 'it-IT,it;q=0.9' }); } catch (e) { ultimo = e; } }
+  for (const b of CPSM) { try { return await getJson(b + f.file, s, { 'Accept-Language': 'it-IT,it;q=0.9' }); } catch (e) { ultimo = e; } }
   throw ultimo;
 }
 // vePORTO: accesso anonimo della PWA pubblica (utente «imbarcazione», nessuna password); il JWT resta solo in memoria e non è mai esposto né scritto
@@ -66,7 +66,7 @@ let jwt = null, jwtScade = 0;
 async function token(forza) {
   const ora = opz.adesso();
   if (!forza && jwt && jwtScade > ora + 60e3) return jwt;
-  const res = await opz.fetch(VEPORTO + '/auth', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+  const res = await opz.fetch(VEPORTO + '/auth', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': USER_AGENT },
     body: JSON.stringify({ username: 'imbarcazione', password: null }), signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (!res.ok) throw new Error('autenticazione HTTP ' + res.status);
   const v = (res.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim();
@@ -132,7 +132,7 @@ async function controlla(f) {
   s.inCorso = (async () => {
     const t0 = opz.adesso(); s.controlli++; s.ultimoControllo = t0;
     try {
-      const j = f.fonte === 'cpsm' ? await cpsm(f, s) : f.fonte === 'veporto' ? await veporto(f, s) : await getJson(METAR, s, { 'User-Agent': 'VeneziaTPL/1.0 (meteo)' });
+      const j = f.fonte === 'cpsm' ? await cpsm(f, s) : f.fonte === 'veporto' ? await veporto(f, s) : await getJson(METAR, s, { 'User-Agent': USER_AGENT });
       const ora = opz.adesso();
       if (j === null) s.nonModificati++;
       else {

@@ -9,7 +9,7 @@
 // al massimo ogni 10 minuti con le barriere a riposo e ogni 4 minuti quando si muovono; in caso di errore si riprova dopo 5 minuti
 // e si continua a mostrare l'ultimo stato letto, segnato come non aggiornato.
 const SRC_URL = 'https://www.autoritalaguna.it/operativita-m-o-s-e/';
-const HEADERS = { 'User-Agent': 'Mozilla/5.0 (compatible; TPL-Venezia/1.0; +https://github.com/nickg1093/TPL-Venezia)', Accept: 'text/html' };
+const HEADERS = { 'User-Agent': 'VeneziaTPL/1.0 (+https://veneziatpl.onrender.com/)', Accept: 'text/html' };
 const TTL_CALM = 10 * 60e3, TTL_ACTIVE = 4 * 60e3, TTL_ERR = 5 * 60e3, MAX_HTML = 3e6, STALE_MS = 45 * 60e3;
 
 // ordine: si prova dall'alto (il testo del «programmato» contiene anche «sollevamento»)
